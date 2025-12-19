@@ -15,7 +15,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::config::{Config, ServerConfig};
 
@@ -237,6 +237,7 @@ async fn add_server(
         token: req.token,
         permission: req.permission,
         tls_verify: req.tls_verify,
+        protocol: None,
     };
 
     // Check if server already exists
@@ -294,6 +295,7 @@ async fn update_server(
         token: req.token,
         permission: req.permission,
         tls_verify: req.tls_verify,
+        protocol: None,
     };
 
     // Update server in config
@@ -404,7 +406,7 @@ async fn remove_server(
 
 /// Save configuration to file
 fn save_config(config: &Config, path: &PathBuf) -> anyhow::Result<()> {
-    let content = if path.extension().map_or(false, |e| e == "toml") {
+    let content = if path.extension().is_some_and(|e| e == "toml") {
         toml::to_string_pretty(config)?
     } else {
         serde_yaml::to_string(config)?

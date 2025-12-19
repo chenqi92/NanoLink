@@ -1,7 +1,7 @@
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::proto::CommandResult;

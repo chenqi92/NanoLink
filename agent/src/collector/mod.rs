@@ -106,7 +106,7 @@ impl MetricsCollector {
     /// Collect all metrics
     fn collect_metrics(&mut self) -> anyhow::Result<Metrics> {
         // Refresh system info
-        self.system.refresh_cpu_all();
+        self.system.refresh_cpu();
         self.system.refresh_memory();
 
         let timestamp = std::time::SystemTime::now()

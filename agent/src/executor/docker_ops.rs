@@ -1,5 +1,4 @@
 use std::process::Command;
-use tracing::{debug, error, info};
 
 use crate::proto::{CommandResult, ContainerInfo};
 
@@ -53,7 +52,7 @@ impl DockerExecutor {
                     .map(|line| {
                         let parts: Vec<&str> = line.split('\t').collect();
                         ContainerInfo {
-                            id: parts.get(0).unwrap_or(&"").to_string(),
+                            id: parts.first().unwrap_or(&"").to_string(),
                             name: parts.get(1).unwrap_or(&"").to_string(),
                             image: parts.get(2).unwrap_or(&"").to_string(),
                             status: parts.get(3).unwrap_or(&"").to_string(),

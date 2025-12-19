@@ -4,15 +4,12 @@ mod websocket;
 
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::broadcast;
 use tokio::time;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::buffer::RingBuffer;
 use crate::config::{Config, Protocol, ServerConfig};
-use crate::proto::Metrics;
 
-pub use grpc::GrpcConnectionManager;
 pub use handler::MessageHandler;
 pub use websocket::WebSocketClient;
 
