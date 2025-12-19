@@ -5,7 +5,7 @@ Python SDK for NanoLink monitoring system.
 ## Installation
 
 ```bash
-pip install nanolink-sdk
+pip install kkape-nanolink
 ```
 
 Or install from source:
@@ -140,4 +140,4 @@ mypy .
 
 ## License
 
-MIT License - see [LICENSE](../../LICENSE) for details.
+Apache 2.0 License - see [LICENSE](../../LICENSE) for details.
