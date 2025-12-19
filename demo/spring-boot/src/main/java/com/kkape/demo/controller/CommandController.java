@@ -1,8 +1,8 @@
-package io.nanolink.demo.controller;
+package com.kkape.demo.controller;
 
-import io.nanolink.sdk.AgentConnection;
-import io.nanolink.sdk.NanoLinkServer;
-import io.nanolink.sdk.model.Command;
+import com.kkape.sdk.AgentConnection;
+import com.kkape.sdk.NanoLinkServer;
+import com.kkape.sdk.model.Command;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;

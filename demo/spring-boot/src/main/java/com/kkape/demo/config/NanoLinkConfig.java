@@ -1,8 +1,8 @@
-package io.nanolink.demo.config;
+package com.kkape.demo.config;
 
-import io.nanolink.sdk.NanoLinkServer;
-import io.nanolink.sdk.TokenValidator;
-import io.nanolink.demo.service.MetricsService;
+import com.kkape.sdk.NanoLinkServer;
+import com.kkape.sdk.TokenValidator;
+import com.kkape.demo.service.MetricsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

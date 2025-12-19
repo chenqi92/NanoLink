@@ -1,4 +1,4 @@
-package io.nanolink.demo.model;
+package com.kkape.demo.model;
 
 import java.time.Instant;
 

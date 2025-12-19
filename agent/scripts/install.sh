@@ -4,8 +4,8 @@
 # Supports: Linux (systemd), macOS (launchd)
 #
 # Usage:
-#   Interactive: curl -fsSL https://get.nanolink.io | bash
-#   Silent:      curl -fsSL https://get.nanolink.io | bash -s -- --silent --url wss://server:9100 --token xxx
+#   Interactive: curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | bash
+#   Silent:      curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | bash -s -- --silent --url wss://server:9100 --token xxx
 #
 
 set -e
@@ -752,17 +752,17 @@ parse_args() {
                 echo ""
                 echo "Examples:"
                 echo "  # Fresh install (interactive)"
-                echo "  curl -fsSL https://get.nanolink.io | sudo bash"
+                echo "  curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash"
                 echo ""
                 echo "  # Fresh install (silent)"
-                echo "  curl -fsSL https://get.nanolink.io | sudo bash -s -- \\"
+                echo "  curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash -s -- \\"
                 echo "    --silent --url wss://monitor.example.com:9100 --token xxx"
                 echo ""
                 echo "  # Add additional server to existing agent"
                 echo "  sudo $0 --add-server --url wss://second.example.com:9100 --token yyy"
                 echo ""
                 echo "  # Fetch config from server and install"
-                echo "  curl -fsSL https://get.nanolink.io | sudo bash -s -- \\"
+                echo "  curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash -s -- \\"
                 echo "    --fetch-config http://monitor.example.com:8080/api/config/generate"
                 exit 0
                 ;;
