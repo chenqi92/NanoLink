@@ -70,11 +70,6 @@ jobs:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
           cache: 'maven'
-          server-id: ossrh
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
-          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Update version in pom.xml
         working-directory: sdk/java
@@ -83,17 +78,17 @@ jobs:
 
       - name: Build Java SDK
         working-directory: sdk/java
-        run: mvn clean package -DskipTests
+        run: mvn clean package -DskipTests -Dskip.protobuf=true
 
       - name: Run tests
         working-directory: sdk/java
-        run: mvn test
+        run: mvn test -Dskip.protobuf=true
 
       - name: Create source and javadoc JARs
         working-directory: sdk/java
         run: |
-          mvn source:jar -DskipTests || true
-          mvn javadoc:jar -DskipTests || true
+          mvn source:jar -DskipTests -Dskip.protobuf=true || true
+          mvn javadoc:jar -DskipTests -Dskip.protobuf=true || true
 
       - name: Prepare artifacts
         run: |
