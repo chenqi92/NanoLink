@@ -1,6 +1,6 @@
-package io.nanolink.sdk;
+package com.kkape.sdk;
 
-import io.nanolink.sdk.model.Metrics;
+import com.kkape.sdk.model.Metrics;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 

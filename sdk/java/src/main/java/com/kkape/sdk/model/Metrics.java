@@ -1,4 +1,4 @@
-package io.nanolink.sdk.model;
+package com.kkape.sdk.model;
 
 import java.util.List;
 
