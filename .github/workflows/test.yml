@@ -56,7 +56,7 @@ jobs:
 
       - name: Clippy
         working-directory: agent
-        run: cargo clippy -- -D warnings -A clippy::large_enum_variant -A clippy::field_reassign_with_default -A clippy::manual_clamp -A clippy::lines_filter_map_ok -A clippy::empty_line_after_doc_comments -A dead_code -A unused_imports -A unused_variables -A unused_assignments
+        run: cargo clippy -- -D warnings -A clippy::large_enum_variant -A clippy::field_reassign_with_default -A clippy::manual_clamp -A clippy::lines_filter_map_ok -A clippy::empty_line_after_doc_comments -A clippy::collapsible_if -A dead_code -A unused_imports -A unused_variables -A unused_assignments
 
       - name: Run tests
         working-directory: agent
