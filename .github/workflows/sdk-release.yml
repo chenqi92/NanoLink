@@ -293,7 +293,7 @@ jobs:
     if: github.event.inputs.publish_pypi == 'true'
     environment:
       name: pypi
-      url: https://pypi.org/project/nanolink-sdk/
+      url: https://pypi.org/project/kkape-nanolink/
     permissions:
       id-token: write
     steps:
@@ -412,16 +412,16 @@ jobs:
             ### Downloads
 
             #### Java SDK
-            - `nanolink-sdk-${{ needs.prepare.outputs.version }}.jar` - Main SDK JAR
-            - `nanolink-sdk-${{ needs.prepare.outputs.version }}-sources.jar` - Source code
-            - `nanolink-sdk-${{ needs.prepare.outputs.version }}-javadoc.jar` - Javadoc
+            - `kkape-nanolink-${{ needs.prepare.outputs.version }}.jar` - Main SDK JAR
+            - `kkape-nanolink-${{ needs.prepare.outputs.version }}-sources.jar` - Source code
+            - `kkape-nanolink-${{ needs.prepare.outputs.version }}-javadoc.jar` - Javadoc
 
             #### Go SDK
             - `nanolink-go-sdk-${{ needs.prepare.outputs.version }}.tar.gz` - Go module source
 
             #### Python SDK
-            - `nanolink_sdk-${{ needs.prepare.outputs.version }}.tar.gz` - Source distribution
-            - `nanolink_sdk-${{ needs.prepare.outputs.version }}-py3-none-any.whl` - Wheel package
+            - `kkape_nanolink-${{ needs.prepare.outputs.version }}.tar.gz` - Source distribution
+            - `kkape_nanolink-${{ needs.prepare.outputs.version }}-py3-none-any.whl` - Wheel package
 
             #### Protocol Buffers
             - `nanolink-proto-${{ needs.prepare.outputs.version }}.tar.gz` - Proto definitions
@@ -432,7 +432,7 @@ jobs:
             ```xml
             <dependency>
                 <groupId>com.kkape</groupId>
-                <artifactId>nanolink-sdk</artifactId>
+                <artifactId>kkape-nanolink</artifactId>
                 <version>${{ needs.prepare.outputs.version }}</version>
             </dependency>
             ```
@@ -444,12 +444,12 @@ jobs:
 
             **Python:**
             ```bash
-            pip install nanolink-sdk==${{ needs.prepare.outputs.version }}
+            pip install kkape-nanolink==${{ needs.prepare.outputs.version }}
             ```
 
             Or download from this release:
             ```bash
-            pip install https://github.com/chenqi92/NanoLink/releases/download/${{ needs.prepare.outputs.tag }}/nanolink_sdk-${{ needs.prepare.outputs.version }}-py3-none-any.whl
+            pip install https://github.com/chenqi92/NanoLink/releases/download/${{ needs.prepare.outputs.tag }}/kkape_nanolink-${{ needs.prepare.outputs.version }}-py3-none-any.whl
             ```
 
             ### Changelog

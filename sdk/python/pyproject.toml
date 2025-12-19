@@ -3,20 +3,20 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nanolink-sdk"
+name = "kkape-nanolink"
 version = "0.1.0"
 description = "Python SDK for NanoLink monitoring system"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 requires-python = ">=3.8"
 authors = [
-    {name = "NanoLink Team", email = "nanolink@example.com"}
+    {name = "chenqi92", email = "chq19920301@163.com"}
 ]
-keywords = ["monitoring", "metrics", "agent", "websocket"]
+keywords = ["monitoring", "metrics", "agent", "websocket", "kkape"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
