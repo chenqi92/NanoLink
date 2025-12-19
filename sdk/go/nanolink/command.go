@@ -6,26 +6,33 @@ import "fmt"
 type CommandType int
 
 const (
-	CommandProcessList CommandType = iota + 1
-	CommandProcessKill
+	// Process Management
+	CommandProcessList CommandType = 1
+	CommandProcessKill CommandType = 2
 
-	CommandServiceStart CommandType = iota + 10
-	CommandServiceStop
-	CommandServiceRestart
-	CommandServiceStatus
+	// Service Management
+	CommandServiceStart   CommandType = 10
+	CommandServiceStop    CommandType = 11
+	CommandServiceRestart CommandType = 12
+	CommandServiceStatus  CommandType = 13
 
-	CommandFileTail CommandType = iota + 20
-	CommandFileDownload
-	CommandFileUpload
-	CommandFileTruncate
+	// File Operations
+	CommandFileTail     CommandType = 20
+	CommandFileDownload CommandType = 21
+	CommandFileUpload   CommandType = 22
+	CommandFileTruncate CommandType = 23
 
-	CommandDockerList CommandType = iota + 30
-	CommandDockerStart
-	CommandDockerStop
-	CommandDockerRestart
-	CommandDockerLogs
+	// Docker Operations
+	CommandDockerList    CommandType = 30
+	CommandDockerStart   CommandType = 31
+	CommandDockerStop    CommandType = 32
+	CommandDockerRestart CommandType = 33
+	CommandDockerLogs    CommandType = 34
 
+	// System Operations
 	CommandSystemReboot CommandType = 40
+
+	// Shell Command (requires SuperToken)
 	CommandShellExecute CommandType = 50
 )
 

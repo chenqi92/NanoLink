@@ -1,11 +1,8 @@
 package nanolink
 
 import (
-	"crypto/tls"
-	"embed"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"log"
 	"net/http"
 	"sync"
@@ -16,12 +13,12 @@ import (
 
 // Server configuration
 type Config struct {
-	Port            int
-	TLSCert         string
-	TLSKey          string
+	Port             int
+	TLSCert          string
+	TLSKey           string
 	DashboardEnabled bool
-	DashboardPath   string
-	TokenValidator  TokenValidator
+	DashboardPath    string
+	TokenValidator   TokenValidator
 }
 
 // Token validation result
@@ -49,14 +46,14 @@ const (
 
 // Server is the NanoLink server
 type Server struct {
-	config          Config
-	agents          map[string]*AgentConnection
-	agentsMu        sync.RWMutex
-	upgrader        websocket.Upgrader
-	onAgentConnect  func(*AgentConnection)
+	config            Config
+	agents            map[string]*AgentConnection
+	agentsMu          sync.RWMutex
+	upgrader          websocket.Upgrader
+	onAgentConnect    func(*AgentConnection)
 	onAgentDisconnect func(*AgentConnection)
-	onMetrics       func(*Metrics)
-	httpServer      *http.Server
+	onMetrics         func(*Metrics)
+	httpServer        *http.Server
 }
 
 // NewServer creates a new NanoLink server
