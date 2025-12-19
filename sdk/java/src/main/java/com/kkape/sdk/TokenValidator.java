@@ -1,4 +1,4 @@
-package io.nanolink.sdk;
+package com.kkape.sdk;
 
 /**
  * Token validator interface for authenticating agents

@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.nanolink</groupId>
+    <groupId>com.kkape</groupId>
     <artifactId>nanolink-sdk</artifactId>
     <version>0.1.0</version>
     <packaging>jar</packaging>
@@ -12,6 +12,26 @@
     <name>NanoLink SDK</name>
     <description>Java SDK for NanoLink monitoring system</description>
     <url>https://github.com/chenqi92/NanoLink</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>chenqi92</name>
+            <email>chq19920301@163.com</email>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/chenqi92/NanoLink.git</connection>
+        <developerConnection>scm:git:ssh://github.com:chenqi92/NanoLink.git</developerConnection>
+        <url>https://github.com/chenqi92/NanoLink/tree/main</url>
+    </scm>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>

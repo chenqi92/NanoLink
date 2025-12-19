@@ -1,9 +1,9 @@
-package io.nanolink.sdk;
+package com.kkape.sdk;
 
 import io.netty.channel.Channel;
 import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
-import io.nanolink.sdk.model.Command;
-import io.nanolink.sdk.model.Metrics;
+import com.kkape.sdk.model.Command;
+import com.kkape.sdk.model.Metrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

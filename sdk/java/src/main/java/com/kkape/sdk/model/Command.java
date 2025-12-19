@@ -1,6 +1,6 @@
-package io.nanolink.sdk.model;
+package com.kkape.sdk.model;
 
-import io.nanolink.sdk.TokenValidator;
+import com.kkape.sdk.TokenValidator;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;

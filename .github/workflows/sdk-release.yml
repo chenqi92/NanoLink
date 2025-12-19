@@ -431,7 +431,7 @@ jobs:
             **Java (Maven):**
             ```xml
             <dependency>
-                <groupId>io.nanolink</groupId>
+                <groupId>com.kkape</groupId>
                 <artifactId>nanolink-sdk</artifactId>
                 <version>${{ needs.prepare.outputs.version }}</version>
             </dependency>

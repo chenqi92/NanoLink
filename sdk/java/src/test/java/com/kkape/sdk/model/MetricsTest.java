@@ -1,4 +1,4 @@
-package io.nanolink.sdk.model;
+package com.kkape.sdk.model;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
