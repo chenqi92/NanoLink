@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use sysinfo::{Pid, System, ProcessRefreshKind, ProcessesToUpdate};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tracing::{debug, error, info};
 
 use crate::proto::{CommandResult, ProcessInfo};
@@ -28,10 +28,7 @@ impl ProcessExecutor {
             .map(|(pid, process)| ProcessInfo {
                 pid: pid.as_u32(),
                 name: process.name().to_string_lossy().to_string(),
-                user: process
-                    .user_id()
-                    .map(|u| u.to_string())
-                    .unwrap_or_default(),
+                user: process.user_id().map(|u| u.to_string()).unwrap_or_default(),
                 cpu_percent: process.cpu_usage() as f64,
                 memory_bytes: process.memory(),
                 status: format!("{:?}", process.status()),
@@ -56,10 +53,7 @@ impl ProcessExecutor {
         target: &str,
         params: &HashMap<String, String>,
     ) -> CommandResult {
-        let signal = params
-            .get("signal")
-            .map(|s| s.as_str())
-            .unwrap_or("KILL");
+        let signal = params.get("signal").map(|s| s.as_str()).unwrap_or("KILL");
 
         // Try to parse as PID first
         if let Ok(pid) = target.parse::<u32>() {
@@ -151,10 +145,7 @@ impl ProcessExecutor {
                 _ => "KILL",
             };
 
-            match Command::new("pkill")
-                .args(["-", sig, name])
-                .output()
-            {
+            match Command::new("pkill").args(["-", sig, name]).output() {
                 Ok(output) => CommandResult {
                     command_id: String::new(),
                     success: output.status.success(),
@@ -180,10 +171,7 @@ impl ProcessExecutor {
         {
             use std::process::Command;
 
-            match Command::new("taskkill")
-                .args(["/IM", name, "/F"])
-                .output()
-            {
+            match Command::new("taskkill").args(["/IM", name, "/F"]).output() {
                 Ok(output) => CommandResult {
                     command_id: String::new(),
                     success: output.status.success(),

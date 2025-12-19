@@ -127,7 +127,8 @@ impl SystemInfoCollector {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
-                    if line.contains("Boot ROM Version") || line.contains("System Firmware Version") {
+                    if line.contains("Boot ROM Version") || line.contains("System Firmware Version")
+                    {
                         if let Some(val) = line.split(':').nth(1) {
                             info.bios_version = val.trim().to_string();
                         }
@@ -229,7 +230,12 @@ impl Default for SystemInfoCollector {
 fn extract_json_string(line: &str) -> Option<String> {
     let parts: Vec<&str> = line.split(':').collect();
     if parts.len() >= 2 {
-        let val = parts[1..].join(":").trim().trim_matches(',').trim_matches('"').to_string();
+        let val = parts[1..]
+            .join(":")
+            .trim()
+            .trim_matches(',')
+            .trim_matches('"')
+            .to_string();
         Some(val)
     } else {
         None

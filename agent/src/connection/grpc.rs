@@ -16,10 +16,9 @@ use tracing::{debug, error, info, warn};
 use crate::buffer::RingBuffer;
 use crate::config::{Config, ServerConfig};
 use crate::proto::{
-    nano_link_service_client::NanoLinkServiceClient,
-    AuthRequest, AuthResponse, Command, CommandResult, Heartbeat,
-    Metrics, MetricsStreamRequest, MetricsStreamResponse,
     metrics_stream_request, metrics_stream_response,
+    nano_link_service_client::NanoLinkServiceClient, AuthRequest, AuthResponse, Command,
+    CommandResult, Heartbeat, Metrics, MetricsStreamRequest, MetricsStreamResponse,
 };
 
 /// gRPC client for communicating with NanoLink server
@@ -33,7 +32,9 @@ pub struct GrpcClient {
 impl GrpcClient {
     /// Connect to a gRPC server
     pub async fn connect(server_config: &ServerConfig, config: &Arc<Config>) -> Result<Self> {
-        let url = server_config.url.replace("grpc://", "http://")
+        let url = server_config
+            .url
+            .replace("grpc://", "http://")
             .replace("grpcs://", "https://");
 
         let mut endpoint = Endpoint::from_shared(url.clone())
@@ -52,7 +53,9 @@ impl GrpcClient {
             endpoint = endpoint.tls_config(tls_config)?;
         }
 
-        let channel = endpoint.connect().await
+        let channel = endpoint
+            .connect()
+            .await
             .context("Failed to connect to gRPC server")?;
 
         let client = NanoLinkServiceClient::new(channel);
@@ -75,7 +78,10 @@ impl GrpcClient {
             arch: std::env::consts::ARCH.to_string(),
         });
 
-        let response = self.client.authenticate(request).await
+        let response = self
+            .client
+            .authenticate(request)
+            .await
             .context("Authentication failed")?;
 
         let auth_response = response.into_inner();
@@ -104,7 +110,8 @@ impl GrpcClient {
         let request_stream = ReceiverStream::new(rx);
 
         // Start the bidirectional stream
-        let response = self.client
+        let response = self
+            .client
             .stream_metrics(Request::new(request_stream))
             .await
             .context("Failed to start metrics stream")?;
@@ -117,8 +124,10 @@ impl GrpcClient {
         let buffer_clone = buffer.clone();
 
         let sender_handle = tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_millis(config.collector.cpu_interval_ms));
-            let mut heartbeat_interval = time::interval(Duration::from_secs(config.agent.heartbeat_interval));
+            let mut interval =
+                time::interval(Duration::from_millis(config.collector.cpu_interval_ms));
+            let mut heartbeat_interval =
+                time::interval(Duration::from_secs(config.agent.heartbeat_interval));
 
             loop {
                 tokio::select! {
@@ -181,7 +190,8 @@ impl GrpcClient {
 
     /// Report metrics using unary RPC (simpler, but less efficient)
     pub async fn report_metrics(&mut self, metrics: Metrics) -> Result<()> {
-        let response = self.client
+        let response = self
+            .client
             .report_metrics(Request::new(metrics))
             .await
             .context("Failed to report metrics")?;
@@ -196,7 +206,8 @@ impl GrpcClient {
 
     /// Execute a command (used for testing or direct command execution)
     pub async fn execute_command(&mut self, command: Command) -> Result<CommandResult> {
-        let response = self.client
+        let response = self
+            .client
             .execute_command(Request::new(command))
             .await
             .context("Failed to execute command")?;
@@ -225,7 +236,10 @@ impl GrpcConnectionManager {
         );
 
         // Only connect to servers configured for gRPC
-        let grpc_servers: Vec<_> = self.config.servers.iter()
+        let grpc_servers: Vec<_> = self
+            .config
+            .servers
+            .iter()
             .filter(|s| s.url.starts_with("grpc://") || s.url.starts_with("grpcs://"))
             .cloned()
             .collect();
@@ -254,11 +268,7 @@ impl GrpcConnectionManager {
     }
 
     /// Manage a single gRPC connection with reconnection logic
-    async fn manage_connection(
-        config: Arc<Config>,
-        buffer: Arc<RingBuffer>,
-        server: ServerConfig,
-    ) {
+    async fn manage_connection(config: Arc<Config>, buffer: Arc<RingBuffer>, server: ServerConfig) {
         let mut reconnect_delay = config.agent.reconnect_delay;
         let max_delay = config.agent.max_reconnect_delay;
 
@@ -275,9 +285,8 @@ impl GrpcConnectionManager {
                             info!("gRPC authenticated successfully");
 
                             // Start streaming
-                            if let Err(e) = client.stream_metrics(
-                                buffer.clone(),
-                                |cmd| {
+                            if let Err(e) = client
+                                .stream_metrics(buffer.clone(), |cmd| {
                                     // TODO: Implement command handler
                                     CommandResult {
                                         command_id: cmd.command_id,
@@ -288,8 +297,9 @@ impl GrpcConnectionManager {
                                         processes: vec![],
                                         containers: vec![],
                                     }
-                                },
-                            ).await {
+                                })
+                                .await
+                            {
                                 error!("gRPC stream error: {}", e);
                             }
                         }

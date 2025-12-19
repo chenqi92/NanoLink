@@ -164,8 +164,14 @@ mod tests {
         assert!(!PermissionChecker::matches_pattern("df -h", "df -m"));
 
         // Wildcard at end
-        assert!(PermissionChecker::matches_pattern("tail -n *", "tail -n 100"));
-        assert!(PermissionChecker::matches_pattern("tail -n *", "tail -n 50"));
+        assert!(PermissionChecker::matches_pattern(
+            "tail -n *",
+            "tail -n 100"
+        ));
+        assert!(PermissionChecker::matches_pattern(
+            "tail -n *",
+            "tail -n 50"
+        ));
 
         // Wildcard in middle
         assert!(PermissionChecker::matches_pattern(

@@ -1,5 +1,5 @@
-use sysinfo::System;
 use std::sync::OnceLock;
+use sysinfo::System;
 
 use crate::config::CollectorConfig;
 use crate::proto::CpuMetrics;
@@ -122,7 +122,9 @@ impl CpuCollector {
         }
 
         // Try to get max frequency from scaling_max_freq
-        if let Ok(max_freq) = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq") {
+        if let Ok(max_freq) =
+            fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq")
+        {
             if let Ok(freq_khz) = max_freq.trim().parse::<u64>() {
                 info.frequency_max_mhz = freq_khz / 1000;
             }
@@ -177,7 +179,9 @@ impl CpuCollector {
         }
 
         // For Apple Silicon, vendor won't be available via sysctl
-        if info.vendor.is_empty() && (info.model.contains("Apple") || std::env::consts::ARCH == "aarch64") {
+        if info.vendor.is_empty()
+            && (info.model.contains("Apple") || std::env::consts::ARCH == "aarch64")
+        {
             info.vendor = "Apple".to_string();
         }
 
@@ -211,7 +215,10 @@ impl CpuCollector {
             .output()
         {
             if output.status.success() {
-                if let Ok(freq) = String::from_utf8_lossy(&output.stdout).trim().parse::<u64>() {
+                if let Ok(freq) = String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .parse::<u64>()
+                {
                     info.frequency_max_mhz = freq / 1_000_000;
                 }
             }
@@ -235,7 +242,12 @@ impl CpuCollector {
 
         // Use WMIC to get CPU info
         if let Ok(output) = Command::new("wmic")
-            .args(["cpu", "get", "Name,Manufacturer,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed", "/format:csv"])
+            .args([
+                "cpu",
+                "get",
+                "Name,Manufacturer,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed",
+                "/format:csv",
+            ])
             .output()
         {
             if output.status.success() {
@@ -324,7 +336,10 @@ impl CpuCollector {
                     // Check if this is a CPU thermal sensor
                     if let Ok(name) = fs::read_to_string(path.join("name")) {
                         let name = name.trim();
-                        if name.contains("coretemp") || name.contains("k10temp") || name.contains("cpu") {
+                        if name.contains("coretemp")
+                            || name.contains("k10temp")
+                            || name.contains("cpu")
+                        {
                             // Read temp1_input (in millidegrees)
                             if let Ok(temp) = fs::read_to_string(path.join("temp1_input")) {
                                 if let Ok(temp_mc) = temp.trim().parse::<i64>() {
@@ -393,7 +408,12 @@ impl Default for CpuCollector {
 fn extract_json_string(line: &str) -> Option<String> {
     let parts: Vec<&str> = line.split(':').collect();
     if parts.len() >= 2 {
-        let val = parts[1..].join(":").trim().trim_matches(',').trim_matches('"').to_string();
+        let val = parts[1..]
+            .join(":")
+            .trim()
+            .trim_matches(',')
+            .trim_matches('"')
+            .to_string();
         Some(val)
     } else {
         None

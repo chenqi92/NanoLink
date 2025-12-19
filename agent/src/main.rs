@@ -16,7 +16,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
-use tracing::{info, error, Level};
+use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use crate::buffer::RingBuffer;
@@ -150,7 +150,12 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
             let mut config = Config::load(config_path)?;
 
             match action {
-                ServerAction::Add { url, token, permission, tls_verify } => {
+                ServerAction::Add {
+                    url,
+                    token,
+                    permission,
+                    tls_verify,
+                } => {
                     // Validate URL
                     if !url.starts_with("ws://") && !url.starts_with("wss://") {
                         anyhow::bail!("URL must start with ws:// or wss://");
@@ -158,7 +163,10 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
 
                     // Check if server already exists
                     if config.servers.iter().any(|s| s.url == url) {
-                        anyhow::bail!("Server {} already exists. Use 'server update' to modify.", url);
+                        anyhow::bail!(
+                            "Server {} already exists. Use 'server update' to modify.",
+                            url
+                        );
                     }
 
                     config.servers.push(ServerConfig {
@@ -192,11 +200,20 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                     println!("Configured servers:");
                     for (i, server) in config.servers.iter().enumerate() {
                         println!("  {}. {}", i + 1, server.url);
-                        println!("     Permission: {} ({})", server.permission, permission_name(server.permission));
+                        println!(
+                            "     Permission: {} ({})",
+                            server.permission,
+                            permission_name(server.permission)
+                        );
                         println!("     TLS Verify: {}", server.tls_verify);
                     }
                 }
-                ServerAction::Update { url, token, permission, tls_verify } => {
+                ServerAction::Update {
+                    url,
+                    token,
+                    permission,
+                    tls_verify,
+                } => {
                     let server = config.servers.iter_mut().find(|s| s.url == url);
 
                     match server {
@@ -268,11 +285,8 @@ async fn run_agent(config_path: PathBuf) -> Result<()> {
 
     // Start management API if enabled
     let management_handle = if management_enabled {
-        let (management_server, _event_rx) = ManagementServer::new(
-            config.clone(),
-            config_path.clone(),
-            management_port,
-        );
+        let (management_server, _event_rx) =
+            ManagementServer::new(config.clone(), config_path.clone(), management_port);
 
         let mut shutdown_rx = shutdown_tx.subscribe();
         Some(tokio::spawn(async move {
@@ -290,10 +304,7 @@ async fn run_agent(config_path: PathBuf) -> Result<()> {
     // Start metrics collector (needs read-only config access)
     let collector = {
         let config_guard = config.read().await;
-        MetricsCollector::new(
-            Arc::new((*config_guard).clone()),
-            ring_buffer.clone(),
-        )
+        MetricsCollector::new(Arc::new((*config_guard).clone()), ring_buffer.clone())
     };
 
     let collector_handle = {
@@ -311,10 +322,7 @@ async fn run_agent(config_path: PathBuf) -> Result<()> {
     // Start connection manager
     let connection_manager = {
         let config_guard = config.read().await;
-        ConnectionManager::new(
-            Arc::new((*config_guard).clone()),
-            ring_buffer.clone(),
-        )
+        ConnectionManager::new(Arc::new((*config_guard).clone()), ring_buffer.clone())
     };
 
     let connection_handle = {

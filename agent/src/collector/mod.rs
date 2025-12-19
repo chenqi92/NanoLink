@@ -7,7 +7,7 @@ mod system;
 
 use std::sync::Arc;
 use std::time::Duration;
-use sysinfo::{System, Disks, Networks};
+use sysinfo::{Disks, Networks, System};
 use tokio::time;
 use tracing::{debug, error, info};
 
@@ -81,13 +81,17 @@ impl MetricsCollector {
                     debug!(
                         "Collected metrics: CPU={:.1}%, MEM={:.1}%, GPUs={}",
                         metrics.cpu.as_ref().map(|c| c.usage_percent).unwrap_or(0.0),
-                        metrics.memory.as_ref().map(|m| {
-                            if m.total > 0 {
-                                (m.used as f64 / m.total as f64) * 100.0
-                            } else {
-                                0.0
-                            }
-                        }).unwrap_or(0.0),
+                        metrics
+                            .memory
+                            .as_ref()
+                            .map(|m| {
+                                if m.total > 0 {
+                                    (m.used as f64 / m.total as f64) * 100.0
+                                } else {
+                                    0.0
+                                }
+                            })
+                            .unwrap_or(0.0),
                         metrics.gpus.len()
                     );
                     self.buffer.push(metrics);
@@ -110,39 +114,48 @@ impl MetricsCollector {
             .as_millis() as u64;
 
         // Collect CPU metrics
-        let cpu = self.cpu_collector.collect(&self.system, &self.config.collector);
+        let cpu = self
+            .cpu_collector
+            .collect(&self.system, &self.config.collector);
 
         // Collect memory metrics
         let memory = self.memory_collector.collect(&self.system);
 
         // Collect disk metrics
         self.disks.refresh();
-        let disks = self.disk_collector.collect(&self.disks, &self.config.collector);
+        let disks = self
+            .disk_collector
+            .collect(&self.disks, &self.config.collector);
 
         // Collect network metrics
         self.networks.refresh();
-        let networks = self.network_collector.collect(&self.networks, &self.config.collector);
+        let networks = self
+            .network_collector
+            .collect(&self.networks, &self.config.collector);
 
         // Collect GPU metrics
         let gpu_metrics = self.gpu_collector.collect();
-        let gpus: Vec<_> = gpu_metrics.into_iter().map(|g| crate::proto::GpuMetrics {
-            index: g.index,
-            name: g.name,
-            vendor: g.vendor,
-            usage_percent: g.usage_percent,
-            memory_total: g.memory_total,
-            memory_used: g.memory_used,
-            temperature: g.temperature,
-            fan_speed_percent: g.fan_speed_percent,
-            power_watts: g.power_watts,
-            power_limit_watts: g.power_limit_watts,
-            clock_core_mhz: g.clock_core_mhz,
-            clock_memory_mhz: g.clock_memory_mhz,
-            driver_version: g.driver_version,
-            pcie_generation: g.pcie_generation,
-            encoder_usage: g.encoder_usage,
-            decoder_usage: g.decoder_usage,
-        }).collect();
+        let gpus: Vec<_> = gpu_metrics
+            .into_iter()
+            .map(|g| crate::proto::GpuMetrics {
+                index: g.index,
+                name: g.name,
+                vendor: g.vendor,
+                usage_percent: g.usage_percent,
+                memory_total: g.memory_total,
+                memory_used: g.memory_used,
+                temperature: g.temperature,
+                fan_speed_percent: g.fan_speed_percent,
+                power_watts: g.power_watts,
+                power_limit_watts: g.power_limit_watts,
+                clock_core_mhz: g.clock_core_mhz,
+                clock_memory_mhz: g.clock_memory_mhz,
+                driver_version: g.driver_version,
+                pcie_generation: g.pcie_generation,
+                encoder_usage: g.encoder_usage,
+                decoder_usage: g.decoder_usage,
+            })
+            .collect();
 
         // Collect system info
         let system_info = self.system_info_collector.collect();

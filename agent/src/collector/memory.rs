@@ -1,5 +1,5 @@
-use sysinfo::System;
 use std::sync::OnceLock;
+use sysinfo::System;
 
 use crate::proto::MemoryMetrics;
 
@@ -49,10 +49,7 @@ impl MemoryCollector {
         let mut info = MemoryHardwareInfo::default();
 
         // Use dmidecode to get memory info (requires root)
-        if let Ok(output) = Command::new("dmidecode")
-            .args(["-t", "memory"])
-            .output()
-        {
+        if let Ok(output) = Command::new("dmidecode").args(["-t", "memory"]).output() {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let mut in_device_section = false;

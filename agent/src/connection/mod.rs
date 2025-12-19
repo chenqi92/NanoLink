@@ -1,6 +1,6 @@
+pub mod grpc;
 mod handler;
 mod websocket;
-pub mod grpc;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,9 +12,9 @@ use crate::buffer::RingBuffer;
 use crate::config::{Config, Protocol, ServerConfig};
 use crate::proto::Metrics;
 
+pub use grpc::GrpcConnectionManager;
 pub use handler::MessageHandler;
 pub use websocket::WebSocketClient;
-pub use grpc::GrpcConnectionManager;
 
 /// Manages connections to multiple servers
 pub struct ConnectionManager {
@@ -87,7 +87,11 @@ impl ConnectionManager {
     }
 
     /// Manage a gRPC connection with reconnection logic
-    async fn manage_grpc_connection(config: Arc<Config>, buffer: Arc<RingBuffer>, server: ServerConfig) {
+    async fn manage_grpc_connection(
+        config: Arc<Config>,
+        buffer: Arc<RingBuffer>,
+        server: ServerConfig,
+    ) {
         let mut reconnect_delay = config.agent.reconnect_delay;
         let max_delay = config.agent.max_reconnect_delay;
 
@@ -101,12 +105,14 @@ impl ConnectionManager {
                     // Authenticate
                     match client.authenticate().await {
                         Ok(auth) if auth.success => {
-                            info!("gRPC authenticated with permission level: {}", auth.permission_level);
+                            info!(
+                                "gRPC authenticated with permission level: {}",
+                                auth.permission_level
+                            );
 
                             // Start streaming
-                            if let Err(e) = client.stream_metrics(
-                                buffer.clone(),
-                                |cmd| {
+                            if let Err(e) = client
+                                .stream_metrics(buffer.clone(), |cmd| {
                                     // TODO: Integrate with executor module
                                     crate::proto::CommandResult {
                                         command_id: cmd.command_id,
@@ -117,8 +123,9 @@ impl ConnectionManager {
                                         processes: vec![],
                                         containers: vec![],
                                     }
-                                },
-                            ).await {
+                                })
+                                .await
+                            {
                                 error!("gRPC stream error: {}", e);
                             }
                         }
@@ -148,7 +155,11 @@ impl ConnectionManager {
     }
 
     /// Manage a WebSocket connection with reconnection logic
-    async fn manage_websocket_connection(config: Arc<Config>, buffer: Arc<RingBuffer>, server: ServerConfig) {
+    async fn manage_websocket_connection(
+        config: Arc<Config>,
+        buffer: Arc<RingBuffer>,
+        server: ServerConfig,
+    ) {
         let mut reconnect_delay = config.agent.reconnect_delay;
         let max_delay = config.agent.max_reconnect_delay;
 
@@ -161,11 +172,8 @@ impl ConnectionManager {
                     reconnect_delay = config.agent.reconnect_delay;
 
                     // Create message handler
-                    let handler = MessageHandler::new(
-                        config.clone(),
-                        buffer.clone(),
-                        server.permission,
-                    );
+                    let handler =
+                        MessageHandler::new(config.clone(), buffer.clone(), server.permission);
 
                     // Run the client
                     if let Err(e) = client.run(handler, &config, &buffer).await {
