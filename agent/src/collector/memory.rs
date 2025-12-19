@@ -71,7 +71,7 @@ impl MemoryCollector {
                             }
                         } else if line.starts_with("Speed:") && info.speed_mhz == 0 {
                             if let Some(val) = line.split(':').nth(1) {
-                                let speed_str = val.trim().split_whitespace().next().unwrap_or("0");
+                                let speed_str = val.split_whitespace().next().unwrap_or("0");
                                 if let Ok(speed) = speed_str.parse() {
                                     info.speed_mhz = speed;
                                 }

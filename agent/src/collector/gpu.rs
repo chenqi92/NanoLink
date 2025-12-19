@@ -307,7 +307,6 @@ impl GpuCollector {
                 if line.contains("Average Graphics Package Power") {
                     if let Some(val) = line.split(':').nth(1) {
                         metrics.power_watts = val
-                            .trim()
                             .split_whitespace()
                             .next()
                             .unwrap_or("0")
