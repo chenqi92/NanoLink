@@ -119,6 +119,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -131,13 +133,13 @@ jobs:
 
       - name: Build Tauri app
         working-directory: apps/desktop
-        run: npm run tauri build
+        run: npm run tauri build -- --target x86_64-apple-darwin
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: nanolink-macos-x64
-          path: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          path: apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
 
   # Build macOS desktop application (Apple Silicon)
   desktop-macos-arm64:
