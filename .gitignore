@@ -33,6 +33,7 @@ sdk/go/go.sum
 # =========================
 # Node.js / Dashboard
 # =========================
+node_modules/
 dashboard/node_modules/
 dashboard/dist/
 dashboard/.vite/
