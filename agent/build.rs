@@ -9,13 +9,16 @@ fn main() -> Result<()> {
     }
 
     let proto_file = Path::new("../sdk/protocol/nanolink.proto");
-    
+
     // Tell cargo to rerun if proto file changes
     println!("cargo:rerun-if-changed=../sdk/protocol/nanolink.proto");
     println!("cargo:rerun-if-changed=../sdk/protocol/");
 
     if !proto_file.exists() {
-        println!("cargo:warning=Proto file not found at {:?}, skipping protobuf generation", proto_file);
+        println!(
+            "cargo:warning=Proto file not found at {:?}, skipping protobuf generation",
+            proto_file
+        );
         return Ok(());
     }
 
@@ -28,4 +31,3 @@ fn main() -> Result<()> {
 
     Ok(())
 }
-
