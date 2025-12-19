@@ -1,0 +1,138 @@
+# =========================
+# Rust / Agent
+# =========================
+agent/target/
+agent/Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# =========================
+# Java SDK
+# =========================
+sdk/java/target/
+sdk/java/*.iml
+sdk/java/.idea/
+sdk/java/*.class
+sdk/java/*.jar
+sdk/java/*.war
+sdk/java/*.ear
+sdk/java/*.log
+sdk/java/dependency-reduced-pom.xml
+
+# =========================
+# Go SDK
+# =========================
+sdk/go/bin/
+sdk/go/pkg/
+sdk/go/*.exe
+sdk/go/*.test
+sdk/go/*.out
+sdk/go/vendor/
+sdk/go/go.sum
+
+# =========================
+# Node.js / Dashboard
+# =========================
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.vite/
+dashboard/*.local
+dashboard/.env
+dashboard/.env.*
+!dashboard/.env.example
+
+# =========================
+# Protocol Buffers Generated
+# =========================
+sdk/java/src/main/java/com/nanolink/proto/
+sdk/go/proto/
+# Rust proto files are generated in OUT_DIR, not tracked
+
+# =========================
+# IDE & Editors
+# =========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+.history/
+
+# =========================
+# OS Generated
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =========================
+# Logs & Debug
+# =========================
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =========================
+# Build & Distribution
+# =========================
+dist/
+build/
+out/
+release/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# =========================
+# Configuration (Sensitive)
+# =========================
+nanolink.yaml
+nanolink.yml
+config.yaml
+config.yml
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+credentials.json
+secrets.yaml
+
+# =========================
+# Testing & Coverage
+# =========================
+coverage/
+*.lcov
+.nyc_output/
+htmlcov/
+.coverage
+.pytest_cache/
+__pycache__/
+
+# =========================
+# Temporary Files
+# =========================
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup

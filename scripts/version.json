@@ -1,0 +1,83 @@
+{
+  "version": "0.1.0",
+  "files": [
+    {
+      "path": "agent/Cargo.toml",
+      "pattern": "^version = \".*\"$",
+      "replacement": "version = \"{{VERSION}}\"",
+      "type": "regex"
+    },
+    {
+      "path": "agent/src/main.rs",
+      "pattern": "const VERSION: &str = \".*\";",
+      "replacement": "const VERSION: &str = \"{{VERSION}}\";",
+      "type": "regex"
+    },
+    {
+      "path": "sdk/java/pom.xml",
+      "pattern": "<version>.*</version><!-- SDK_VERSION -->",
+      "replacement": "<version>{{VERSION}}</version><!-- SDK_VERSION -->",
+      "type": "regex"
+    },
+    {
+      "path": "sdk/go/nanolink/version.go",
+      "pattern": "const Version = \".*\"",
+      "replacement": "const Version = \"{{VERSION}}\"",
+      "type": "regex"
+    },
+    {
+      "path": "sdk/python/pyproject.toml",
+      "pattern": "^version = \".*\"$",
+      "replacement": "version = \"{{VERSION}}\"",
+      "type": "regex"
+    },
+    {
+      "path": "sdk/python/nanolink/__init__.py",
+      "pattern": "__version__ = \".*\"",
+      "replacement": "__version__ = \"{{VERSION}}\"",
+      "type": "regex"
+    },
+    {
+      "path": "dashboard/package.json",
+      "pattern": "\"version\": \".*\"",
+      "replacement": "\"version\": \"{{VERSION}}\"",
+      "type": "regex"
+    },
+    {
+      "path": "apps/server/cmd/main.go",
+      "pattern": "version    = \".*\"",
+      "replacement": "version    = \"{{VERSION}}\"",
+      "type": "regex"
+    },
+    {
+      "path": "apps/server/web/package.json",
+      "pattern": "\"version\": \".*\"",
+      "replacement": "\"version\": \"{{VERSION}}\"",
+      "type": "regex"
+    },
+    {
+      "path": "apps/desktop/package.json",
+      "pattern": "\"version\": \".*\"",
+      "replacement": "\"version\": \"{{VERSION}}\"",
+      "type": "regex"
+    },
+    {
+      "path": "apps/desktop/src-tauri/Cargo.toml",
+      "pattern": "^version = \".*\"$",
+      "replacement": "version = \"{{VERSION}}\"",
+      "type": "regex"
+    },
+    {
+      "path": "apps/desktop/src-tauri/tauri.conf.json",
+      "pattern": "\"version\": \".*\"",
+      "replacement": "\"version\": \"{{VERSION}}\"",
+      "type": "regex"
+    },
+    {
+      "path": "demo/spring-boot/pom.xml",
+      "pattern": "<version>.*</version><!-- DEMO_VERSION -->",
+      "replacement": "<version>{{VERSION}}</version><!-- DEMO_VERSION -->",
+      "type": "regex"
+    }
+  ]
+}

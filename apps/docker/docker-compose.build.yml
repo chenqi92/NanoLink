@@ -1,0 +1,53 @@
+version: '3.8'
+
+# Multi-architecture build configuration
+# Usage: docker-compose -f docker-compose.build.yml build
+
+services:
+  # Linux Server - Multi-arch build
+  nanolink-server:
+    build:
+      context: ../..
+      dockerfile: apps/docker/Dockerfile
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    image: ghcr.io/chenqi92/nanolink-server:${VERSION:-latest}
+
+  # Windows Desktop Builder
+  desktop-windows:
+    image: node:20
+    working_dir: /app
+    volumes:
+      - ../..:/app
+      - desktop-cache:/app/apps/desktop/node_modules
+      - cargo-cache:/root/.cargo
+    command: |
+      bash -c "
+        echo 'Building Windows desktop (requires Windows host or cross-compilation)...'
+        cd apps/desktop
+        npm ci
+        echo 'Note: Windows build requires running on Windows host'
+        echo 'Run: npm run tauri build on Windows'
+      "
+    profiles:
+      - desktop
+
+  # macOS Desktop Builder (requires macOS host)
+  desktop-macos:
+    image: node:20
+    working_dir: /app
+    volumes:
+      - ../..:/app
+    command: |
+      bash -c "
+        echo 'Building macOS desktop (requires macOS host)...'
+        echo 'Note: macOS build requires running on macOS host'
+        echo 'Run: npm run tauri build on macOS'
+      "
+    profiles:
+      - desktop
+
+volumes:
+  desktop-cache:
+  cargo-cache:

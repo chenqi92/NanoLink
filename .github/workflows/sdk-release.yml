@@ -1,0 +1,434 @@
+name: SDK Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'VERSION'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: false
+        type: string
+      publish_maven:
+        description: 'Publish to Maven Central'
+        required: false
+        type: boolean
+        default: false
+      publish_pypi:
+        description: 'Publish to PyPI'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  JAVA_VERSION: '11'
+  GO_VERSION: '1.21'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Read version from VERSION file or input
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(cat VERSION | tr -d '\n\r ')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Check if tag exists
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "::warning::Tag v${{ steps.version.outputs.version }} already exists"
+          fi
+
+  # Build Java SDK
+  build-java-sdk:
+    name: Build Java SDK
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'maven'
+          server-id: ossrh
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Update version in pom.xml
+        working-directory: sdk/java
+        run: |
+          mvn versions:set -DnewVersion=${{ needs.prepare.outputs.version }} -DgenerateBackupPoms=false
+
+      - name: Build Java SDK
+        working-directory: sdk/java
+        run: mvn clean package -DskipTests
+
+      - name: Run tests
+        working-directory: sdk/java
+        run: mvn test
+
+      - name: Create source and javadoc JARs
+        working-directory: sdk/java
+        run: |
+          mvn source:jar -DskipTests || true
+          mvn javadoc:jar -DskipTests || true
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist/java
+          cp sdk/java/target/*.jar dist/java/ || true
+
+      - name: Upload Java SDK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-sdk-${{ needs.prepare.outputs.version }}
+          path: dist/java/
+
+  # Publish Java SDK to Maven Central
+  publish-java-maven:
+    name: Publish Java SDK to Maven Central
+    needs: [prepare, build-java-sdk]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.publish_maven == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'maven'
+          server-id: ossrh
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Update version in pom.xml
+        working-directory: sdk/java
+        run: |
+          mvn versions:set -DnewVersion=${{ needs.prepare.outputs.version }} -DgenerateBackupPoms=false
+
+      - name: Publish to Maven Central
+        working-directory: sdk/java
+        run: |
+          mvn clean deploy -DskipTests -P release
+        env:
+          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+
+  # Build Go SDK
+  build-go-sdk:
+    name: Build Go SDK
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: sdk/go/go.sum
+
+      - name: Update version constant
+        working-directory: sdk/go
+        run: |
+          if [ -f nanolink/version.go ]; then
+            sed -i 's/Version = ".*"/Version = "${{ needs.prepare.outputs.version }}"/' nanolink/version.go
+          fi
+
+      - name: Download dependencies
+        working-directory: sdk/go
+        run: go mod download
+
+      - name: Build
+        working-directory: sdk/go
+        run: go build ./...
+
+      - name: Test
+        working-directory: sdk/go
+        run: go test ./...
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist/go
+          cd sdk/go
+          tar -czvf ../../dist/go/nanolink-go-sdk-${{ needs.prepare.outputs.version }}.tar.gz \
+            --exclude='.git' \
+            --exclude='*.test' \
+            .
+          cd ../..
+
+      - name: Upload Go SDK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-sdk-${{ needs.prepare.outputs.version }}
+          path: dist/go/
+
+  # Build Python SDK
+  build-python-sdk:
+    name: Build Python SDK
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Update version
+        working-directory: sdk/python
+        run: |
+          sed -i 's/version = ".*"/version = "${{ needs.prepare.outputs.version }}"/' pyproject.toml
+          sed -i 's/__version__ = ".*"/__version__ = "${{ needs.prepare.outputs.version }}"/' nanolink/__init__.py
+
+      - name: Install dependencies
+        working-directory: sdk/python
+        run: |
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: sdk/python
+        run: |
+          pytest tests/ -v
+
+      - name: Build package
+        working-directory: sdk/python
+        run: |
+          python -m build
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist/python
+          cp sdk/python/dist/* dist/python/
+
+      - name: Upload Python SDK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-sdk-${{ needs.prepare.outputs.version }}
+          path: dist/python/
+
+  # Publish Python SDK to PyPI
+  publish-python-pypi:
+    name: Publish Python SDK to PyPI
+    needs: [prepare, build-python-sdk]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.publish_pypi == 'true'
+    environment:
+      name: pypi
+      url: https://pypi.org/project/nanolink-sdk/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download Python SDK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-sdk-${{ needs.prepare.outputs.version }}
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # Generate Protocol Buffers for all languages
+  build-proto:
+    name: Build Protocol Buffers
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc plugins
+        run: |
+          # Go plugin
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Generate Go proto
+        run: |
+          mkdir -p dist/proto/go
+          protoc --go_out=dist/proto/go \
+            --go_opt=paths=source_relative \
+            sdk/protocol/nanolink.proto || echo "Go proto generation skipped"
+
+      - name: Prepare proto artifacts
+        run: |
+          mkdir -p dist/proto
+          cp sdk/protocol/nanolink.proto dist/proto/
+          cd dist/proto
+          tar -czvf ../nanolink-proto-${{ needs.prepare.outputs.version }}.tar.gz .
+          cd ../..
+
+      - name: Upload proto artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: proto-${{ needs.prepare.outputs.version }}
+          path: dist/nanolink-proto-*.tar.gz
+
+  # Create GitHub Release
+  create-release:
+    name: Create GitHub Release
+    needs: [prepare, build-java-sdk, build-go-sdk, build-python-sdk, build-proto]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+
+          # Java SDK
+          if [ -d "artifacts/java-sdk-${{ needs.prepare.outputs.version }}" ]; then
+            cd artifacts/java-sdk-${{ needs.prepare.outputs.version }}
+            for f in *.jar; do
+              [ -f "$f" ] && cp "$f" ../../release/
+            done
+            cd ../..
+          fi
+
+          # Go SDK
+          if [ -d "artifacts/go-sdk-${{ needs.prepare.outputs.version }}" ]; then
+            cp artifacts/go-sdk-${{ needs.prepare.outputs.version }}/*.tar.gz release/ || true
+          fi
+
+          # Python SDK
+          if [ -d "artifacts/python-sdk-${{ needs.prepare.outputs.version }}" ]; then
+            cp artifacts/python-sdk-${{ needs.prepare.outputs.version }}/* release/ || true
+          fi
+
+          # Proto
+          if [ -d "artifacts/proto-${{ needs.prepare.outputs.version }}" ]; then
+            cp artifacts/proto-${{ needs.prepare.outputs.version }}/*.tar.gz release/ || true
+          fi
+
+          # List files
+          echo "Release files:"
+          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS.txt || true
+          cat SHA256SUMS.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: NanoLink SDK ${{ needs.prepare.outputs.tag }}
+          body: |
+            ## NanoLink SDK Release ${{ needs.prepare.outputs.version }}
+
+            ### Downloads
+
+            #### Java SDK
+            - `nanolink-sdk-${{ needs.prepare.outputs.version }}.jar` - Main SDK JAR
+            - `nanolink-sdk-${{ needs.prepare.outputs.version }}-sources.jar` - Source code
+            - `nanolink-sdk-${{ needs.prepare.outputs.version }}-javadoc.jar` - Javadoc
+
+            #### Go SDK
+            - `nanolink-go-sdk-${{ needs.prepare.outputs.version }}.tar.gz` - Go module source
+
+            #### Python SDK
+            - `nanolink_sdk-${{ needs.prepare.outputs.version }}.tar.gz` - Source distribution
+            - `nanolink_sdk-${{ needs.prepare.outputs.version }}-py3-none-any.whl` - Wheel package
+
+            #### Protocol Buffers
+            - `nanolink-proto-${{ needs.prepare.outputs.version }}.tar.gz` - Proto definitions
+
+            ### Installation
+
+            **Java (Maven):**
+            ```xml
+            <dependency>
+                <groupId>io.nanolink</groupId>
+                <artifactId>nanolink-sdk</artifactId>
+                <version>${{ needs.prepare.outputs.version }}</version>
+            </dependency>
+            ```
+
+            **Go:**
+            ```bash
+            go get github.com/chenqi92/NanoLink/sdk/go@${{ needs.prepare.outputs.tag }}
+            ```
+
+            **Python:**
+            ```bash
+            pip install nanolink-sdk==${{ needs.prepare.outputs.version }}
+            ```
+
+            Or download from this release:
+            ```bash
+            pip install https://github.com/chenqi92/NanoLink/releases/download/${{ needs.prepare.outputs.tag }}/nanolink_sdk-${{ needs.prepare.outputs.version }}-py3-none-any.whl
+            ```
+
+            ### Changelog
+            See [CHANGELOG.md](https://github.com/chenqi92/NanoLink/blob/main/CHANGELOG.md) for details.
+          files: release/*
+          draft: false
+          prerelease: ${{ contains(needs.prepare.outputs.version, 'alpha') || contains(needs.prepare.outputs.version, 'beta') || contains(needs.prepare.outputs.version, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Notify completion
+  notify:
+    name: Notify
+    needs: [prepare, create-release]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Release Status
+        run: |
+          if [ "${{ needs.create-release.result }}" == "success" ]; then
+            echo "✅ Release ${{ needs.prepare.outputs.tag }} created successfully!"
+            echo "📦 SDK packages are available at:"
+            echo "   https://github.com/chenqi92/NanoLink/releases/tag/${{ needs.prepare.outputs.tag }}"
+          else
+            echo "❌ Release failed"
+            exit 1
+          fi

@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  nanolink-server:
+    build:
+      context: ../..
+      dockerfile: apps/docker/Dockerfile
+    image: ghcr.io/chenqi92/nanolink-server:latest
+    container_name: nanolink-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # HTTP API & Dashboard
+      - "9100:9100"   # WebSocket for agents
+    volumes:
+      - nanolink-data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - TZ=Asia/Shanghai
+      - NANOLINK_SERVER_MODE=release
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  nanolink-data:
+    driver: local

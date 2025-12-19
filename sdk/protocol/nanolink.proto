@@ -1,0 +1,395 @@
+syntax = "proto3";
+package nanolink;
+
+option go_package = "github.com/chenqi92/NanoLink/sdk/go/nanolink/proto";
+option java_package = "io.nanolink.proto";
+option java_multiple_files = true;
+
+// ========== Message Envelope ==========
+message Envelope {
+  uint64 timestamp = 1;
+  string message_id = 2;
+  oneof payload {
+    AuthRequest auth_request = 10;
+    AuthResponse auth_response = 11;
+    Metrics metrics = 20;
+    MetricsSync metrics_sync = 21;
+    Command command = 30;
+    CommandResult command_result = 31;
+    Heartbeat heartbeat = 40;
+    HeartbeatAck heartbeat_ack = 41;
+  }
+}
+
+// ========== Authentication ==========
+message AuthRequest {
+  string token = 1;
+  string hostname = 2;
+  string agent_version = 3;
+  string os = 4;
+  string arch = 5;
+}
+
+message AuthResponse {
+  bool success = 1;
+  int32 permission_level = 2;  // 0=READ_ONLY, 1=BASIC_WRITE, 2=SERVICE_CONTROL, 3=SYSTEM_ADMIN
+  string error_message = 3;
+}
+
+// ========== Metrics ==========
+message Metrics {
+  uint64 timestamp = 1;
+  CpuMetrics cpu = 2;
+  MemoryMetrics memory = 3;
+  repeated DiskMetrics disks = 4;
+  repeated NetworkMetrics networks = 5;
+  repeated double load_average = 6;  // [1min, 5min, 15min]
+  string hostname = 7;
+  repeated GpuMetrics gpus = 8;
+  SystemInfo system_info = 9;
+}
+
+message CpuMetrics {
+  double usage_percent = 1;
+  uint32 core_count = 2;
+  repeated double per_core_usage = 3;
+  string model = 4;              // CPU model name (e.g., "Intel Core i7-12700K")
+  string vendor = 5;             // CPU vendor (e.g., "Intel", "AMD")
+  uint64 frequency_mhz = 6;      // Current frequency in MHz
+  uint64 frequency_max_mhz = 7;  // Max frequency in MHz
+  uint32 physical_cores = 8;     // Physical core count
+  uint32 logical_cores = 9;      // Logical core count (with HT)
+  string architecture = 10;      // Architecture (e.g., "x86_64", "aarch64")
+  double temperature = 11;       // CPU temperature in Celsius (if available)
+}
+
+message MemoryMetrics {
+  uint64 total = 1;
+  uint64 used = 2;
+  uint64 available = 3;
+  uint64 swap_total = 4;
+  uint64 swap_used = 5;
+  uint64 cached = 6;             // Cached memory
+  uint64 buffers = 7;            // Buffer memory (Linux)
+  string memory_type = 8;        // Memory type (e.g., "DDR4", "DDR5")
+  uint32 memory_speed_mhz = 9;   // Memory speed in MHz
+}
+
+message DiskMetrics {
+  string mount_point = 1;
+  string device = 2;
+  string fs_type = 3;
+  uint64 total = 4;
+  uint64 used = 5;
+  uint64 available = 6;
+  uint64 read_bytes_sec = 7;
+  uint64 write_bytes_sec = 8;
+  string model = 9;              // Disk model (e.g., "Samsung SSD 970 EVO Plus")
+  string serial = 10;            // Disk serial number
+  string disk_type = 11;         // Disk type ("SSD", "HDD", "NVMe")
+  uint64 read_iops = 12;         // Read IOPS
+  uint64 write_iops = 13;        // Write IOPS
+  double temperature = 14;       // Disk temperature in Celsius (if available)
+  string health_status = 15;     // S.M.A.R.T health status
+}
+
+message NetworkMetrics {
+  string interface = 1;
+  uint64 rx_bytes_sec = 2;
+  uint64 tx_bytes_sec = 3;
+  uint64 rx_packets_sec = 4;
+  uint64 tx_packets_sec = 5;
+  bool is_up = 6;
+  string mac_address = 7;        // MAC address
+  repeated string ip_addresses = 8;  // IP addresses (IPv4 and IPv6)
+  uint64 speed_mbps = 9;         // Link speed in Mbps
+  string interface_type = 10;    // Type: "ethernet", "wifi", "loopback", "virtual"
+}
+
+message GpuMetrics {
+  uint32 index = 1;              // GPU index
+  string name = 2;               // GPU model name (e.g., "NVIDIA GeForce RTX 4090")
+  string vendor = 3;             // GPU vendor ("NVIDIA", "AMD", "Intel")
+  double usage_percent = 4;      // GPU utilization percentage
+  uint64 memory_total = 5;       // Total VRAM in bytes
+  uint64 memory_used = 6;        // Used VRAM in bytes
+  double temperature = 7;        // GPU temperature in Celsius
+  uint32 fan_speed_percent = 8;  // Fan speed percentage
+  uint32 power_watts = 9;        // Current power draw in watts
+  uint32 power_limit_watts = 10; // Power limit in watts
+  uint64 clock_core_mhz = 11;    // Core clock in MHz
+  uint64 clock_memory_mhz = 12;  // Memory clock in MHz
+  string driver_version = 13;    // Driver version
+  string pcie_generation = 14;   // PCIe generation (e.g., "Gen4 x16")
+  double encoder_usage = 15;     // Encoder utilization (NVENC/VCE)
+  double decoder_usage = 16;     // Decoder utilization (NVDEC/VCN)
+}
+
+message SystemInfo {
+  string os_name = 1;            // OS name (e.g., "Windows 11", "Ubuntu 22.04")
+  string os_version = 2;         // OS version
+  string kernel_version = 3;     // Kernel version
+  string hostname = 4;           // Hostname
+  uint64 boot_time = 5;          // System boot time (Unix timestamp)
+  uint64 uptime_seconds = 6;     // System uptime in seconds
+  string motherboard_model = 7;  // Motherboard model
+  string motherboard_vendor = 8; // Motherboard vendor
+  string bios_version = 9;       // BIOS version
+  string system_model = 10;      // System model (for branded PCs/servers)
+  string system_vendor = 11;     // System vendor
+}
+
+// ========== Metrics Sync (for reconnection) ==========
+message MetricsSync {
+  uint64 last_sync_timestamp = 1;  // Request: last synced timestamp
+  repeated Metrics buffered_metrics = 2;  // Response: buffered data
+}
+
+// ========== Commands ==========
+message Command {
+  string command_id = 1;
+  CommandType type = 2;
+  string target = 3;  // process name/service name/container name/file path
+  map<string, string> params = 4;
+  string super_token = 5;  // Required for SHELL_EXECUTE
+}
+
+enum CommandType {
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  // Process Management
+  PROCESS_LIST = 1;
+  PROCESS_KILL = 2;
+  // Service Management
+  SERVICE_START = 10;
+  SERVICE_STOP = 11;
+  SERVICE_RESTART = 12;
+  SERVICE_STATUS = 13;
+  // File Operations
+  FILE_TAIL = 20;
+  FILE_DOWNLOAD = 21;
+  FILE_UPLOAD = 22;
+  FILE_TRUNCATE = 23;
+  // Docker Operations
+  DOCKER_LIST = 30;
+  DOCKER_START = 31;
+  DOCKER_STOP = 32;
+  DOCKER_RESTART = 33;
+  DOCKER_LOGS = 34;
+  // System Operations
+  SYSTEM_REBOOT = 40;
+  // Shell Command (requires SuperToken)
+  SHELL_EXECUTE = 50;
+}
+
+message CommandResult {
+  string command_id = 1;
+  bool success = 2;
+  string output = 3;
+  string error = 4;
+  bytes file_content = 5;  // Used for file download
+  repeated ProcessInfo processes = 6;  // Used for PROCESS_LIST
+  repeated ContainerInfo containers = 7;  // Used for DOCKER_LIST
+}
+
+message ProcessInfo {
+  uint32 pid = 1;
+  string name = 2;
+  string user = 3;
+  double cpu_percent = 4;
+  uint64 memory_bytes = 5;
+  string status = 6;
+  uint64 start_time = 7;
+}
+
+message ContainerInfo {
+  string id = 1;
+  string name = 2;
+  string image = 3;
+  string status = 4;
+  string state = 5;
+  uint64 created = 6;
+}
+
+// ========== Heartbeat ==========
+message Heartbeat {
+  uint64 timestamp = 1;
+  uint64 uptime_seconds = 2;
+}
+
+message HeartbeatAck {
+  uint64 timestamp = 1;
+}
+
+// ========================================================================
+// gRPC Service Definitions
+// ========================================================================
+
+// NanoLinkService is the main gRPC service for Agent-Server communication
+service NanoLinkService {
+  // Authenticate authenticates the agent and returns permission level
+  rpc Authenticate(AuthRequest) returns (AuthResponse);
+
+  // StreamMetrics is a bidirectional stream for metrics upload and command dispatch
+  // Agent streams metrics to server, server streams commands to agent
+  rpc StreamMetrics(stream MetricsStreamRequest) returns (stream MetricsStreamResponse);
+
+  // ReportMetrics is a simple unary RPC for one-time metrics report
+  rpc ReportMetrics(Metrics) returns (MetricsAck);
+
+  // ExecuteCommand sends a command to the agent and waits for result
+  rpc ExecuteCommand(Command) returns (CommandResult);
+
+  // Heartbeat keeps the connection alive
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // SyncMetrics syncs buffered metrics after reconnection
+  rpc SyncMetrics(MetricsSyncRequest) returns (MetricsSyncResponse);
+
+  // GetAgentInfo returns current agent information
+  rpc GetAgentInfo(AgentInfoRequest) returns (AgentInfoResponse);
+}
+
+// ========== gRPC Request/Response Messages ==========
+
+// MetricsStreamRequest is sent by agent in the bidirectional stream
+message MetricsStreamRequest {
+  oneof request {
+    Metrics metrics = 1;           // Regular metrics data
+    Heartbeat heartbeat = 2;       // Heartbeat to keep stream alive
+    CommandResult command_result = 3;  // Result of executed command
+  }
+}
+
+// MetricsStreamResponse is sent by server in the bidirectional stream
+message MetricsStreamResponse {
+  oneof response {
+    Command command = 1;           // Command to execute
+    HeartbeatAck heartbeat_ack = 2;  // Heartbeat acknowledgment
+    ServerConfig config_update = 3;  // Configuration update from server
+  }
+}
+
+// MetricsAck acknowledges receipt of metrics
+message MetricsAck {
+  bool success = 1;
+  uint64 timestamp = 2;
+}
+
+// HeartbeatRequest for unary heartbeat RPC
+message HeartbeatRequest {
+  string agent_id = 1;
+  uint64 timestamp = 2;
+  uint64 uptime_seconds = 3;
+}
+
+// HeartbeatResponse for unary heartbeat RPC
+message HeartbeatResponse {
+  uint64 server_timestamp = 1;
+  bool config_changed = 2;
+}
+
+// MetricsSyncRequest requests buffered metrics sync
+message MetricsSyncRequest {
+  string agent_id = 1;
+  uint64 last_sync_timestamp = 2;
+}
+
+// MetricsSyncResponse contains buffered metrics
+message MetricsSyncResponse {
+  bool success = 1;
+  repeated Metrics metrics = 2;
+  uint64 server_timestamp = 3;
+}
+
+// AgentInfoRequest requests agent information
+message AgentInfoRequest {
+  string agent_id = 1;
+}
+
+// AgentInfoResponse contains agent information
+message AgentInfoResponse {
+  string agent_id = 1;
+  string hostname = 2;
+  string os = 3;
+  string arch = 4;
+  string version = 5;
+  int32 permission_level = 6;
+  uint64 connected_at = 7;
+  uint64 last_metrics_at = 8;
+  repeated string connected_servers = 9;
+}
+
+// ServerConfig allows server to push configuration updates
+message ServerConfig {
+  uint64 metrics_interval_ms = 1;
+  uint64 heartbeat_interval_ms = 2;
+  bool enable_detailed_metrics = 3;
+  repeated string enabled_collectors = 4;
+}
+
+// ========================================================================
+// Dashboard Service (WebSocket-compatible, also available via gRPC-Web)
+// ========================================================================
+
+// DashboardService provides real-time data for web dashboards
+service DashboardService {
+  // WatchAgents streams agent connection/disconnection events
+  rpc WatchAgents(WatchAgentsRequest) returns (stream AgentEvent);
+
+  // WatchMetrics streams real-time metrics for specified agents
+  rpc WatchMetrics(WatchMetricsRequest) returns (stream Metrics);
+
+  // GetAgents returns list of connected agents
+  rpc GetAgents(GetAgentsRequest) returns (GetAgentsResponse);
+
+  // GetAgentMetrics returns current metrics for an agent
+  rpc GetAgentMetrics(GetAgentMetricsRequest) returns (Metrics);
+
+  // SendCommand sends command to agent through dashboard
+  rpc SendCommand(DashboardCommandRequest) returns (CommandResult);
+}
+
+// WatchAgentsRequest to start watching agent events
+message WatchAgentsRequest {
+  bool include_initial = 1;  // Include current agents in stream
+}
+
+// AgentEvent represents agent connection/disconnection
+message AgentEvent {
+  enum EventType {
+    CONNECTED = 0;
+    DISCONNECTED = 1;
+    UPDATED = 2;
+  }
+  EventType event_type = 1;
+  AgentInfoResponse agent = 2;
+  uint64 timestamp = 3;
+}
+
+// WatchMetricsRequest to start watching metrics
+message WatchMetricsRequest {
+  repeated string agent_ids = 1;  // Empty means all agents
+  uint64 interval_ms = 2;         // Minimum interval between updates
+}
+
+// GetAgentsRequest to get list of agents
+message GetAgentsRequest {
+  bool include_offline = 1;
+}
+
+// GetAgentsResponse contains list of agents
+message GetAgentsResponse {
+  repeated AgentInfoResponse agents = 1;
+}
+
+// GetAgentMetricsRequest to get metrics for specific agent
+message GetAgentMetricsRequest {
+  string agent_id = 1;
+}
+
+// DashboardCommandRequest to send command from dashboard
+message DashboardCommandRequest {
+  string agent_id = 1;
+  Command command = 2;
+  string dashboard_user = 3;  // For audit logging
+}
