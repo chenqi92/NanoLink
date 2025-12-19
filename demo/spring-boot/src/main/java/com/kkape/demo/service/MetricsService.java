@@ -1,9 +1,9 @@
-package io.nanolink.demo.service;
+package com.kkape.demo.service;
 
-import io.nanolink.sdk.AgentConnection;
-import io.nanolink.sdk.model.Metrics;
-import io.nanolink.demo.model.AgentInfo;
-import io.nanolink.demo.model.AgentMetrics;
+import com.kkape.sdk.AgentConnection;
+import com.kkape.sdk.model.Metrics;
+import com.kkape.demo.model.AgentInfo;
+import com.kkape.demo.model.AgentMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;

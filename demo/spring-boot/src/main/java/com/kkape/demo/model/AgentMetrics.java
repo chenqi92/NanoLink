@@ -1,6 +1,6 @@
-package io.nanolink.demo.model;
+package com.kkape.demo.model;
 
-import io.nanolink.sdk.model.Metrics;
+import com.kkape.sdk.model.Metrics;
 
 import java.time.Instant;
 import java.util.List;

@@ -219,7 +219,7 @@ irm https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/insta
 
 **静默安装 (自动化部署):**
 ```bash
-curl -fsSL https://get.nanolink.io | sudo bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash -s -- \
   --silent \
   --url "wss://monitor.example.com:9100" \
   --token "your_token" \
@@ -331,7 +331,7 @@ logging:
 
 ```xml
 <dependency>
-    <groupId>io.nanolink</groupId>
+    <groupId>com.kkape</groupId>
     <artifactId>nanolink-sdk</artifactId>
     <version>0.1.0</version>
 </dependency>
