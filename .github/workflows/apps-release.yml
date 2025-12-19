@@ -3,13 +3,13 @@ name: Apps Release
 on:
   push:
     tags:
-      - 'app-v*'
+      - "app-v*"
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g., 0.1.0)'
+        description: "Version (e.g., 0.1.0)"
         required: true
-        default: '0.1.0'
+        default: "0.1.0"
 
 env:
   REGISTRY: ghcr.io
@@ -75,17 +75,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Setup Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: 'apps/desktop/src-tauri'
+          workspaces: "apps/desktop/src-tauri"
 
       - name: Install dependencies
         working-directory: apps/desktop
@@ -113,17 +113,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Setup Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: 'apps/desktop/src-tauri'
+          workspaces: "apps/desktop/src-tauri"
 
       - name: Install dependencies
         working-directory: apps/desktop
@@ -151,19 +151,19 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Setup Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: 'apps/desktop/src-tauri'
+          workspaces: "apps/desktop/src-tauri"
 
       - name: Install dependencies
         working-directory: apps/desktop
