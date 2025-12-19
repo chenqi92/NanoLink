@@ -103,6 +103,8 @@ mod tests {
             networks: vec![],
             load_average: vec![],
             hostname: "test".to_string(),
+            gpus: vec![],
+            system_info: None,
         }
     }
 
