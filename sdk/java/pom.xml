@@ -21,6 +21,7 @@
         <protobuf.version>3.25.1</protobuf.version>
         <slf4j.version>2.0.9</slf4j.version>
         <jackson.version>2.16.0</jackson.version>
+        <skip.protobuf>false</skip.protobuf>
     </properties>
 
     <dependencies>
@@ -78,12 +79,13 @@
 
     <build>
         <plugins>
-            <!-- Protobuf compiler -->
+            <!-- Protobuf compiler (optional - skip in CI if proto files not available) -->
             <plugin>
                 <groupId>org.xolstice.maven.plugins</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
                 <version>0.6.1</version>
                 <configuration>
+                    <skip>${skip.protobuf}</skip>
                     <protoSourceRoot>${project.basedir}/../protocol</protoSourceRoot>
                     <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
                 </configuration>
