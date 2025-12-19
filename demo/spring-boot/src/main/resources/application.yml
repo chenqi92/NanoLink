@@ -1,0 +1,38 @@
+# Spring Boot Application Configuration
+spring:
+  application:
+    name: nanolink-demo
+
+# Server Configuration
+server:
+  port: 8080
+
+# NanoLink Configuration
+nanolink:
+  server:
+    # Port for NanoLink server (agents connect here)
+    port: 9100
+    # Enable built-in dashboard
+    dashboard:
+      enabled: true
+    # Token for authentication (leave empty for dev mode)
+    token: ""
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    io.nanolink: DEBUG
+    io.nanolink.demo: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

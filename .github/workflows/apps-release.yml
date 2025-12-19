@@ -1,0 +1,261 @@
+name: Apps Release
+
+on:
+  push:
+    tags:
+      - 'app-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., 0.1.0)'
+        required: true
+        default: '0.1.0'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/nanolink-server
+
+jobs:
+  # Build and push Docker image for Linux
+  docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/app-v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./apps/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Build Windows desktop application
+  desktop-windows:
+    name: Build Windows Desktop
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri'
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build Tauri app
+        working-directory: apps/desktop
+        run: npm run tauri build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanolink-windows
+          path: apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+
+  # Build macOS desktop application (Intel)
+  desktop-macos-x64:
+    name: Build macOS Desktop (Intel)
+    runs-on: macos-13
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri'
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build Tauri app
+        working-directory: apps/desktop
+        run: npm run tauri build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanolink-macos-x64
+          path: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+
+  # Build macOS desktop application (Apple Silicon)
+  desktop-macos-arm64:
+    name: Build macOS Desktop (Apple Silicon)
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri'
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build Tauri app
+        working-directory: apps/desktop
+        run: npm run tauri build -- --target aarch64-apple-darwin
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanolink-macos-arm64
+          path: apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+
+  # Create release with all artifacts
+  release:
+    name: Create Release
+    needs: [docker, desktop-windows, desktop-macos-x64, desktop-macos-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nanolink-windows
+          path: release/windows
+
+      - name: Download macOS x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nanolink-macos-x64
+          path: release/macos-x64
+
+      - name: Download macOS arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nanolink-macos-arm64
+          path: release/macos-arm64
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/app-v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: app-v${{ steps.version.outputs.version }}
+          name: NanoLink Apps v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            release/windows/*.msi
+            release/macos-x64/*.dmg
+            release/macos-arm64/*.dmg
+          body: |
+            ## NanoLink Applications v${{ steps.version.outputs.version }}
+
+            ### Downloads
+
+            | Platform | Architecture | Download |
+            |----------|--------------|----------|
+            | Windows | x64 | `NanoLink_${{ steps.version.outputs.version }}_x64_en-US.msi` |
+            | macOS | Intel | `NanoLink_${{ steps.version.outputs.version }}_x64.dmg` |
+            | macOS | Apple Silicon | `NanoLink_${{ steps.version.outputs.version }}_aarch64.dmg` |
+            | Linux | amd64/arm64 | Docker image below |
+
+            ### Docker
+
+            ```bash
+            docker pull ghcr.io/${{ github.repository_owner }}/nanolink-server:${{ steps.version.outputs.version }}
+
+            # Or use latest
+            docker pull ghcr.io/${{ github.repository_owner }}/nanolink-server:latest
+            ```
+
+            ### Quick Start
+
+            ```bash
+            # Docker
+            docker run -d -p 8080:8080 -p 9100:9100 ghcr.io/${{ github.repository_owner }}/nanolink-server:latest
+
+            # Access dashboard
+            open http://localhost:8080/dashboard
+            ```

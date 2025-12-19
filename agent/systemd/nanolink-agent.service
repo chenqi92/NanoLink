@@ -1,0 +1,29 @@
+[Unit]
+Description=NanoLink Monitoring Agent
+Documentation=https://github.com/chenqi92/nanolink
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/local/bin/nanolink-agent -c /etc/nanolink/nanolink.yaml
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/nanolink
+ReadOnlyPaths=/etc/nanolink
+
+# Resource limits
+MemoryMax=128M
+CPUQuota=10%
+
+[Install]
+WantedBy=multi-user.target

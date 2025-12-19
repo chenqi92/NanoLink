@@ -1,0 +1,557 @@
+# NanoLink
+
+[![Test](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml)
+[![Release](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+English | [中文](README.md)
+
+**NanoLink** is a lightweight, cross-platform server monitoring system that includes Agent, SDK, Dashboard, and standalone applications.
+
+## Core Components
+
+| Component | Description | Tech Stack |
+|-----------|-------------|------------|
+| [Agent](./agent) | Monitoring agent deployed on target servers | Rust |
+| [SDK](./sdk) | Client libraries for embedding in existing services | Java / Go / Python |
+| [Dashboard](./dashboard) | Web visualization panel | Vue 3 + TailwindCSS |
+| [Apps](./apps) | Standalone deployable applications | Go + Tauri |
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Target Server                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                         NanoLink Agent (Rust)                          │  │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐          │  │
+│  │  │   CPU   │ │  Memory │ │  Disk   │ │ Network │ │   GPU   │          │  │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘          │  │
+│  │       └───────────┴───────────┴───────────┴───────────┘               │  │
+│  │                               │                                        │  │
+│  │                    ┌──────────▼──────────┐                             │  │
+│  │                    │     Ring Buffer     │  ← 10min offline data cache │  │
+│  │                    └──────────┬──────────┘                             │  │
+│  │                               │                                        │  │
+│  │                    ┌──────────▼──────────┐                             │  │
+│  │                    │   Connection Mgr    │  ← Multi-server + auto reconnect │
+│  │                    └──────────┬──────────┘                             │  │
+│  └───────────────────────────────┼───────────────────────────────────────┘  │
+└──────────────────────────────────┼──────────────────────────────────────────┘
+                                   │
+                    WebSocket / gRPC + Protocol Buffers (TLS)
+                                   │
+         ┌─────────────────────────┼─────────────────────────┐
+         ▼                         ▼                         ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Java Service   │     │   Go Service    │     │ Python Service  │
+│   (with SDK)    │     │   (with SDK)    │     │   (with SDK)    │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │
+         └───────────────────────┴───────────────────────┘
+                                 │
+                      ┌──────────▼──────────┐
+                      │     Dashboard       │
+                      │     (Vue 3)         │
+                      └─────────────────────┘
+```
+
+### Standalone Application Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    NanoLink Applications                         │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │  Linux Server   │  │ Windows Desktop │  │  macOS Desktop  │  │
+│  │   (Go + Web)    │  │    (Tauri)      │  │    (Tauri)      │  │
+│  │                 │  │                 │  │                 │  │
+│  │  Docker Deploy  │  │  Native Desktop │  │  Native Desktop │  │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
+│           └────────────────────┴────────────────────┘           │
+│                                │                                 │
+│                     ┌──────────▼──────────┐                      │
+│                     │   NanoLink Server   │                      │
+│                     │ (WebSocket/gRPC+API)│                      │
+│                     └─────────────────────┘                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Features
+
+### Agent Features
+
+| Feature | Description |
+|---------|-------------|
+| Hardware Monitoring | Comprehensive CPU, memory, disk, network, GPU collection |
+| Offline Buffering | Ring Buffer stores 10 minutes of data, syncs after reconnect |
+| Multi-Server | Connect to multiple servers simultaneously with different permission levels |
+| Auto Reconnect | Exponential backoff reconnection with configurable max delay |
+| Command Execution | Process management, service control, file operations, Docker operations |
+| Cross-Platform | Full support for Linux, macOS, Windows |
+
+### Monitoring Metrics
+
+<details>
+<summary><b>CPU</b></summary>
+
+- Total usage, per-core usage, load average
+- Model, vendor (Intel/AMD/Apple)
+- Current frequency, max frequency, base frequency
+- Physical cores, logical cores
+- Architecture (x86_64/aarch64)
+- Temperature (Linux/macOS)
+- L1/L2/L3 cache sizes
+
+</details>
+
+<details>
+<summary><b>Memory</b></summary>
+
+- Total, used, available, usage percentage
+- Swap total, swap used
+- Cached, buffers (Linux)
+- Memory type (DDR4/DDR5)
+- Memory speed (MHz)
+
+</details>
+
+<details>
+<summary><b>Disk</b></summary>
+
+- Mount point, device name, filesystem type
+- Total capacity, used, available
+- Read/write rates (bytes/s), IOPS
+- Model, serial number, vendor
+- Type (SSD/HDD/NVMe)
+- Temperature, S.M.A.R.T. health status
+
+</details>
+
+<details>
+<summary><b>Network</b></summary>
+
+- Interface name, type (physical/virtual)
+- RX/TX rates (bytes/s), packets/sec
+- MAC address, IPv4/IPv6 addresses
+- Link speed, MTU
+- Connection status
+
+</details>
+
+<details>
+<summary><b>GPU (NVIDIA/AMD/Intel)</b></summary>
+
+- Model, vendor, driver version
+- GPU utilization, VRAM usage
+- Temperature, fan speed
+- Power draw, power limit
+- Core clock, memory clock
+- PCIe info (generation, bandwidth)
+- Encoder/decoder utilization
+
+</details>
+
+<details>
+<summary><b>System Info</b></summary>
+
+- OS name, version
+- Kernel version
+- Hostname
+- Boot time, uptime
+- Motherboard model, vendor
+- BIOS version
+
+</details>
+
+### Permission Levels
+
+| Level | Name | Allowed Operations |
+|-------|------|-------------------|
+| 0 | READ_ONLY | Read metrics, view process list, view logs |
+| 1 | BASIC_WRITE | Download log files, clear temp files, upload files |
+| 2 | SERVICE_CONTROL | Restart services, Docker containers, kill processes |
+| 3 | SYSTEM_ADMIN | System reboot, execute shell commands (requires SuperToken) |
+
+### Communication Protocols
+
+NanoLink supports two communication protocols, choose based on your scenario:
+
+| Protocol | Use Case | Features |
+|----------|----------|----------|
+| **WebSocket** | Browser Dashboard, high compatibility requirements | Native browser support, JSON-friendly |
+| **gRPC** | High-performance Agent connections, service-to-service communication | Bidirectional streaming, high throughput, low latency |
+
+**URL Format:**
+- WebSocket: `ws://` / `wss://` (TLS recommended)
+- gRPC: `grpc://` / `grpcs://` (TLS recommended)
+
+**Default Ports:**
+- WebSocket: 9100
+- gRPC: 9200
+- HTTP API: 8080
+
+### Security Mechanisms
+
+| Mechanism | Description |
+|-----------|-------------|
+| TLS Encryption | All communication (WebSocket/gRPC) enforces TLS |
+| Token Authentication | Each connection uses an independent token |
+| Command Whitelist | Only predefined command patterns allowed |
+| Command Blacklist | Dangerous commands are always blocked |
+| SuperToken | Shell commands require a separate super token |
+| Audit Log | All command executions logged to local file |
+| Rate Limiting | Prevents command flood attacks |
+
+## Quick Start
+
+### One-Click Agent Installation
+
+**Linux/macOS (Interactive):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash
+```
+
+**Windows (PowerShell Admin):**
+```powershell
+irm https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.ps1 | iex
+```
+
+**Silent Installation (Automated Deployment):**
+```bash
+curl -fsSL https://get.nanolink.io | sudo bash -s -- \
+  --silent \
+  --url "wss://monitor.example.com:9100" \
+  --token "your_token" \
+  --permission 2
+```
+
+### Multi-Server Management
+
+Agent supports connecting to multiple servers simultaneously with dynamic add/remove/update of server configurations.
+
+**Add a new server:**
+```bash
+# Using install script
+sudo ./install.sh --add-server --url "wss://second.example.com:9100" --token "token2"
+
+# Using Agent CLI
+nanolink-agent server add --url "wss://second.example.com:9100" --token "token2" --permission 1
+
+# Using Management API (hot-reload)
+curl -X POST http://localhost:9101/api/servers \
+  -H "Content-Type: application/json" \
+  -d '{"url":"wss://second.example.com:9100","token":"token2","permission":1}'
+```
+
+**Remove a server:**
+```bash
+# Using install script
+sudo ./install.sh --remove-server --url "wss://old.example.com:9100"
+
+# Using Agent CLI
+nanolink-agent server remove --url "wss://old.example.com:9100"
+
+# Using Management API
+curl -X DELETE "http://localhost:9101/api/servers?url=wss://old.example.com:9100"
+```
+
+**List configured servers:**
+```bash
+nanolink-agent server list
+```
+
+### Deploy Server with Docker
+
+```bash
+# Using docker-compose
+cd apps/docker
+docker-compose up -d
+
+# Or run directly
+docker run -d \
+  -p 8080:8080 \
+  -p 9100:9100 \
+  ghcr.io/chenqi92/nanolink-server:latest
+```
+
+Access Dashboard: http://localhost:8080/dashboard
+
+### Agent Configuration
+
+```yaml
+# /etc/nanolink/nanolink.yaml
+agent:
+  hostname: ""  # Leave empty for auto-detection
+  heartbeat_interval: 30
+  reconnect_delay: 5
+  max_reconnect_delay: 300
+
+servers:
+  # WebSocket connection (browser Dashboard compatible)
+  - url: "wss://monitor.example.com:9100"
+    token: "your-auth-token"
+    permission: 0
+    tls_verify: true
+  # gRPC connection (high-performance bidirectional streaming)
+  - url: "grpcs://monitor.example.com:9200"
+    token: "your-auth-token"
+    permission: 2
+    tls_verify: true
+
+collector:
+  cpu_interval_ms: 1000
+  disk_interval_ms: 3000
+  network_interval_ms: 1000
+  enable_per_core_cpu: true
+
+buffer:
+  capacity: 600  # 10 minutes (1s sampling)
+
+shell:
+  enabled: false
+  super_token: ""
+  timeout_seconds: 30
+  whitelist:
+    - pattern: "df -h"
+    - pattern: "free -m"
+  blacklist:
+    - "rm -rf"
+    - "mkfs"
+
+logging:
+  level: info
+  audit_enabled: true
+  audit_file: "/var/log/nanolink/audit.log"
+```
+
+## SDK Integration
+
+### Java SDK
+
+```xml
+<dependency>
+    <groupId>io.nanolink</groupId>
+    <artifactId>nanolink-sdk</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+```java
+NanoLinkServer server = NanoLinkServer.builder()
+    .port(9100)
+    .enableDashboard(true)
+    .onAgentConnect(agent -> {
+        log.info("Agent connected: {} ({})", agent.getHostname(), agent.getOs());
+    })
+    .onMetrics(metrics -> {
+        log.info("CPU: {:.1f}% | Memory: {:.1f}%",
+            metrics.getCpu().getUsagePercent(),
+            metrics.getMemory().getUsedPercent());
+    })
+    .build();
+
+server.start();
+```
+
+### Go SDK
+
+```go
+import "github.com/chenqi92/NanoLink/sdk/go/nanolink"
+
+server := nanolink.NewServer(nanolink.Config{
+    Port:            9100,
+    EnableDashboard: true,
+})
+
+server.OnAgentConnect(func(agent *nanolink.Agent) {
+    log.Printf("Agent connected: %s (%s)", agent.Hostname, agent.OS)
+})
+
+server.OnMetrics(func(m *nanolink.Metrics) {
+    log.Printf("CPU: %.1f%% | Memory: %.1f%%",
+        m.Cpu.UsagePercent, m.Memory.UsedPercent)
+})
+
+server.Start()
+```
+
+### Python SDK
+
+```bash
+pip install nanolink-sdk
+```
+
+```python
+from nanolink import NanoLinkServer, ServerConfig
+
+async def main():
+    server = NanoLinkServer(ServerConfig(port=9100))
+
+    @server.on_agent_connect
+    async def on_connect(agent):
+        print(f"Agent connected: {agent.hostname} ({agent.os})")
+
+    @server.on_metrics
+    async def on_metrics(metrics):
+        print(f"CPU: {metrics.cpu.usage_percent:.1f}%")
+
+    await server.run_forever()
+
+asyncio.run(main())
+```
+
+## Project Structure
+
+```
+NanoLink/
+├── agent/                      # Rust Agent
+│   ├── src/
+│   │   ├── collector/          # Data collectors
+│   │   │   ├── cpu.rs
+│   │   │   ├── memory.rs
+│   │   │   ├── disk.rs
+│   │   │   ├── network.rs
+│   │   │   └── gpu.rs
+│   │   ├── connection/         # WebSocket/gRPC client
+│   │   ├── executor/           # Command executors
+│   │   ├── buffer/             # Ring Buffer
+│   │   ├── security/           # Permission system
+│   │   └── platform/           # Platform-specific code
+│   ├── scripts/                # Install/uninstall scripts
+│   └── systemd/                # Linux service config
+│
+├── sdk/                        # Multi-language SDKs
+│   ├── protocol/               # Protocol Buffers definitions
+│   │   └── nanolink.proto
+│   ├── java/                   # Java SDK (Maven)
+│   ├── go/                     # Go SDK (Module)
+│   └── python/                 # Python SDK (PyPI)
+│
+├── dashboard/                  # Web Dashboard
+│   ├── src/
+│   │   ├── components/         # Vue components
+│   │   └── composables/        # WebSocket composables
+│   └── package.json
+│
+├── apps/                       # Standalone Applications
+│   ├── server/                 # Go Web server
+│   │   ├── cmd/                # Entry point
+│   │   ├── internal/           # Internal modules
+│   │   │   ├── grpc/           # gRPC server
+│   │   │   ├── handler/        # HTTP/WebSocket handlers
+│   │   │   └── proto/          # Generated Proto code
+│   │   └── web/                # Embedded Dashboard
+│   ├── desktop/                # Tauri desktop app
+│   │   ├── src/                # Vue frontend
+│   │   └── src-tauri/          # Rust backend
+│   └── docker/                 # Docker configuration
+│       ├── Dockerfile
+│       ├── docker-compose.yml
+│       └── docker-compose.build.yml
+│
+├── demo/                       # Integration examples
+│   └── spring-boot/            # Spring Boot example
+│
+├── scripts/                    # Utility scripts
+│   ├── bump-version.sh         # Version update (Linux/macOS)
+│   └── bump-version.ps1        # Version update (Windows)
+│
+└── .github/workflows/          # CI/CD
+    ├── test.yml                # Tests
+    ├── release.yml             # Agent release
+    ├── sdk-release.yml         # SDK release
+    └── apps-release.yml        # Apps release
+```
+
+## Building
+
+### Agent (Rust)
+
+```bash
+cd agent
+cargo build --release
+# Output: target/release/nanolink-agent
+```
+
+### SDK
+
+```bash
+# Java
+cd sdk/java && mvn clean package
+
+# Go
+cd sdk/go && go build ./...
+
+# Python
+cd sdk/python && pip install -e ".[dev]"
+```
+
+### Dashboard
+
+```bash
+cd dashboard
+npm install && npm run build
+```
+
+### Standalone Applications
+
+```bash
+# Linux Server (Docker)
+cd apps/docker && docker-compose build
+
+# Desktop (requires Rust + Node.js)
+cd apps/desktop && npm install && npm run tauri build
+```
+
+## Service Management
+
+### Linux (systemd)
+
+```bash
+sudo systemctl start nanolink-agent    # Start
+sudo systemctl stop nanolink-agent     # Stop
+sudo systemctl restart nanolink-agent  # Restart
+sudo systemctl status nanolink-agent   # Status
+sudo journalctl -u nanolink-agent -f   # Logs
+```
+
+### macOS (launchd)
+
+```bash
+sudo launchctl start com.nanolink.agent
+sudo launchctl stop com.nanolink.agent
+tail -f /var/log/nanolink/agent.log
+```
+
+### Windows
+
+```powershell
+Start-Service NanoLinkAgent
+Stop-Service NanoLinkAgent
+Restart-Service NanoLinkAgent
+Get-Service NanoLinkAgent
+```
+
+## CI/CD
+
+| Workflow | Trigger | Artifacts |
+|----------|---------|-----------|
+| Test | PR / Push | Test reports |
+| Release Agent | Tag `v*` | Multi-platform binaries |
+| SDK Release | Tag `sdk-v*` | Maven / PyPI / GitHub |
+| Apps Release | Tag `app-v*` | Docker images / Installers |
+
+## License
+
+MIT License - See [LICENSE](LICENSE)
+
+## Contributing
+
+Issues and Pull Requests are welcome!
+
+1. Fork this repository
+2. Create a feature branch (`git checkout -b feature/xxx`)
+3. Commit your changes (`git commit -m 'Add xxx'`)
+4. Push the branch (`git push origin feature/xxx`)
+5. Create a Pull Request
