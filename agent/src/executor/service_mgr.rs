@@ -172,10 +172,7 @@ impl ServiceExecutor {
             ServiceAction::Status => "query",
         };
 
-        match Command::new("sc")
-            .args([action_str, service_name])
-            .output()
-        {
+        match Command::new("sc").args([action_str, service_name]).output() {
             Ok(output) => CommandResult {
                 command_id: String::new(),
                 success: output.status.success(),

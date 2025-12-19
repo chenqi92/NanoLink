@@ -25,7 +25,10 @@ impl ShellExecutor {
     /// Execute a shell command
     pub async fn execute(&self, command: &str, super_token: &str) -> CommandResult {
         // Check permissions
-        if let Err(e) = self.permission_checker.check_shell_command(command, super_token) {
+        if let Err(e) = self
+            .permission_checker
+            .check_shell_command(command, super_token)
+        {
             warn!("Shell command denied: {} - {}", command, e);
             return CommandResult {
                 command_id: String::new(),
@@ -123,10 +126,7 @@ impl ShellExecutor {
                             command_id: String::new(),
                             success: false,
                             output: String::new(),
-                            error: format!(
-                                "Command timed out after {} seconds",
-                                timeout_secs
-                            ),
+                            error: format!("Command timed out after {} seconds", timeout_secs),
                             file_content: vec![],
                             processes: vec![],
                             containers: vec![],
@@ -212,10 +212,7 @@ impl ShellExecutor {
                             command_id: String::new(),
                             success: false,
                             output: String::new(),
-                            error: format!(
-                                "Command timed out after {} seconds",
-                                timeout_secs
-                            ),
+                            error: format!("Command timed out after {} seconds", timeout_secs),
                             file_content: vec![],
                             processes: vec![],
                             containers: vec![],

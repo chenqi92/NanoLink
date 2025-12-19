@@ -56,8 +56,12 @@ impl Default for ManagementConfig {
     }
 }
 
-fn default_management_enabled() -> bool { true }
-fn default_management_port() -> u16 { 9101 }
+fn default_management_enabled() -> bool {
+    true
+}
+fn default_management_port() -> u16 {
+    9101
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -285,19 +289,45 @@ impl Default for LoggingConfig {
 }
 
 // Default value functions
-fn default_heartbeat_interval() -> u64 { 30 }
-fn default_reconnect_delay() -> u64 { 5 }
-fn default_max_reconnect_delay() -> u64 { 300 }
-fn default_cpu_interval() -> u64 { 1000 }
-fn default_disk_interval() -> u64 { 3000 }
-fn default_network_interval() -> u64 { 1000 }
-fn default_process_interval() -> u64 { 5000 }
-fn default_disk_space_interval() -> u64 { 30000 }
-fn default_buffer_capacity() -> usize { 600 }
-fn default_shell_timeout() -> u64 { 30 }
-fn default_true() -> bool { true }
-fn default_log_level() -> String { "info".to_string() }
-fn default_audit_file() -> String { "nanolink-audit.log".to_string() }
+fn default_heartbeat_interval() -> u64 {
+    30
+}
+fn default_reconnect_delay() -> u64 {
+    5
+}
+fn default_max_reconnect_delay() -> u64 {
+    300
+}
+fn default_cpu_interval() -> u64 {
+    1000
+}
+fn default_disk_interval() -> u64 {
+    3000
+}
+fn default_network_interval() -> u64 {
+    1000
+}
+fn default_process_interval() -> u64 {
+    5000
+}
+fn default_disk_space_interval() -> u64 {
+    30000
+}
+fn default_buffer_capacity() -> usize {
+    600
+}
+fn default_shell_timeout() -> u64 {
+    30
+}
+fn default_true() -> bool {
+    true
+}
+fn default_log_level() -> String {
+    "info".to_string()
+}
+fn default_audit_file() -> String {
+    "nanolink-audit.log".to_string()
+}
 
 fn default_blacklist() -> Vec<String> {
     vec![
@@ -305,7 +335,7 @@ fn default_blacklist() -> Vec<String> {
         "mkfs".to_string(),
         "> /dev".to_string(),
         "dd if=".to_string(),
-        ":(){:|:&};:".to_string(),  // fork bomb
+        ":(){:|:&};:".to_string(), // fork bomb
     ]
 }
 
@@ -329,14 +359,12 @@ impl Config {
     pub fn sample() -> Self {
         Self {
             agent: AgentConfig::default(),
-            servers: vec![
-                ServerConfig {
-                    url: "wss://monitor.example.com:9100".to_string(),
-                    token: "your_token_here".to_string(),
-                    permission: 0,
-                    tls_verify: true,
-                },
-            ],
+            servers: vec![ServerConfig {
+                url: "wss://monitor.example.com:9100".to_string(),
+                token: "your_token_here".to_string(),
+                permission: 0,
+                tls_verify: true,
+            }],
             collector: CollectorConfig::default(),
             buffer: BufferConfig::default(),
             shell: ShellConfig {

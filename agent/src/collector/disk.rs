@@ -110,7 +110,10 @@ impl DiskCollector {
                 info.insert(name.clone(), disk_info);
 
                 // Also add with /dev/ prefix
-                info.insert(format!("/dev/{}", name), info.get(&name).cloned().unwrap_or_default());
+                info.insert(
+                    format!("/dev/{}", name),
+                    info.get(&name).cloned().unwrap_or_default(),
+                );
             }
         }
 
@@ -124,10 +127,7 @@ impl DiskCollector {
         let mut info = HashMap::new();
 
         // Use diskutil to get disk info
-        if let Ok(output) = Command::new("diskutil")
-            .args(["list", "-plist"])
-            .output()
-        {
+        if let Ok(output) = Command::new("diskutil").args(["list", "-plist"]).output() {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 // Parse plist to get disk identifiers
@@ -190,7 +190,12 @@ impl DiskCollector {
 
         // Use WMIC to get disk info
         if let Ok(output) = Command::new("wmic")
-            .args(["diskdrive", "get", "DeviceID,Model,SerialNumber,MediaType", "/format:csv"])
+            .args([
+                "diskdrive",
+                "get",
+                "DeviceID,Model,SerialNumber,MediaType",
+                "/format:csv",
+            ])
             .output()
         {
             if output.status.success() {
@@ -299,7 +304,11 @@ impl DiskCollector {
                     let device = parts[2].to_string();
 
                     // Skip partitions, only track whole disks
-                    if device.chars().last().map(|c| c.is_numeric()).unwrap_or(false)
+                    if device
+                        .chars()
+                        .last()
+                        .map(|c| c.is_numeric())
+                        .unwrap_or(false)
                         && !device.starts_with("nvme")
                     {
                         continue;
@@ -311,12 +320,15 @@ impl DiskCollector {
                     let write_sectors: u64 = parts[9].parse().unwrap_or(0);
 
                     // Sector size is typically 512 bytes
-                    stats.insert(device, DiskIoStats {
-                        read_bytes: read_sectors * 512,
-                        write_bytes: write_sectors * 512,
-                        read_ops,
-                        write_ops,
-                    });
+                    stats.insert(
+                        device,
+                        DiskIoStats {
+                            read_bytes: read_sectors * 512,
+                            write_bytes: write_sectors * 512,
+                            read_ops,
+                            write_ops,
+                        },
+                    );
                 }
             }
         }
@@ -336,14 +348,13 @@ impl DiskCollector {
             use std::process::Command;
 
             // Try smartctl (requires smartmontools)
-            if let Ok(output) = Command::new("smartctl")
-                .args(["-A", device])
-                .output()
-            {
+            if let Ok(output) = Command::new("smartctl").args(["-A", device]).output() {
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     for line in stdout.lines() {
-                        if line.contains("Temperature_Celsius") || line.contains("Airflow_Temperature") {
+                        if line.contains("Temperature_Celsius")
+                            || line.contains("Airflow_Temperature")
+                        {
                             let parts: Vec<&str> = line.split_whitespace().collect();
                             if parts.len() >= 10 {
                                 if let Ok(temp) = parts[9].parse::<f64>() {
@@ -385,10 +396,7 @@ impl DiskCollector {
         {
             use std::process::Command;
 
-            if let Ok(output) = Command::new("smartctl")
-                .args(["-H", device])
-                .output()
-            {
+            if let Ok(output) = Command::new("smartctl").args(["-H", device]).output() {
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     if stdout.contains("PASSED") {
@@ -409,7 +417,8 @@ impl DiskCollector {
         let current_io_stats = Self::read_disk_io_stats();
         let disk_info = DISK_INFO.get().unwrap_or(&HashMap::new());
 
-        let elapsed_secs = self.prev_time
+        let elapsed_secs = self
+            .prev_time
             .map(|t| now.duration_since(t).as_secs_f64())
             .unwrap_or(1.0);
 
@@ -430,7 +439,8 @@ impl DiskCollector {
                 .take_while(|c| !c.is_numeric() || device.contains("nvme"))
                 .collect::<String>();
 
-            let hw_info = disk_info.get(&device)
+            let hw_info = disk_info
+                .get(&device)
                 .or_else(|| disk_info.get(&base_device))
                 .cloned()
                 .unwrap_or_default();
@@ -497,7 +507,12 @@ impl Default for DiskCollector {
 fn extract_json_value(line: &str) -> Option<String> {
     let parts: Vec<&str> = line.split(':').collect();
     if parts.len() >= 2 {
-        let val = parts[1..].join(":").trim().trim_matches(',').trim_matches('"').to_string();
+        let val = parts[1..]
+            .join(":")
+            .trim()
+            .trim_matches(',')
+            .trim_matches('"')
+            .to_string();
         Some(val)
     } else {
         None

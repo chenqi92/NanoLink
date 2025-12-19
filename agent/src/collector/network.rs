@@ -33,10 +33,7 @@ impl NetworkCollector {
     fn get_mac_address(interface: &str) -> String {
         use std::process::Command;
 
-        if let Ok(output) = Command::new("ifconfig")
-            .arg(interface)
-            .output()
-        {
+        if let Ok(output) = Command::new("ifconfig").arg(interface).output() {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
@@ -55,10 +52,7 @@ impl NetworkCollector {
     fn get_mac_address(interface: &str) -> String {
         use std::process::Command;
 
-        if let Ok(output) = Command::new("getmac")
-            .args(["/v", "/fo", "csv"])
-            .output()
-        {
+        if let Ok(output) = Command::new("getmac").args(["/v", "/fo", "csv"]).output() {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines().skip(1) {
@@ -110,10 +104,7 @@ impl NetworkCollector {
 
         let mut ips = Vec::new();
 
-        if let Ok(output) = Command::new("ifconfig")
-            .arg(interface)
-            .output()
-        {
+        if let Ok(output) = Command::new("ifconfig").arg(interface).output() {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
@@ -186,7 +177,8 @@ impl NetworkCollector {
                     if line.contains("Speed:") {
                         // Parse speed like "1000baseT" or "100baseTX"
                         if let Some(speed_part) = line.split(':').nth(1) {
-                            let speed_str: String = speed_part.chars().take_while(|c| c.is_numeric()).collect();
+                            let speed_str: String =
+                                speed_part.chars().take_while(|c| c.is_numeric()).collect();
                             if let Ok(speed) = speed_str.parse() {
                                 return speed;
                             }
@@ -203,7 +195,10 @@ impl NetworkCollector {
         use std::process::Command;
 
         if let Ok(output) = Command::new("powershell")
-            .args(["-Command", &format!("(Get-NetAdapter -Name '*{}*').LinkSpeed", interface)])
+            .args([
+                "-Command",
+                &format!("(Get-NetAdapter -Name '*{}*').LinkSpeed", interface),
+            ])
             .output()
         {
             if output.status.success() {
@@ -211,12 +206,16 @@ impl NetworkCollector {
                 let speed_str = stdout.trim();
                 // Parse speeds like "1 Gbps", "100 Mbps", etc.
                 if speed_str.contains("Gbps") {
-                    let num: u64 = speed_str.split_whitespace().next()
+                    let num: u64 = speed_str
+                        .split_whitespace()
+                        .next()
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
                     return num * 1000;
                 } else if speed_str.contains("Mbps") {
-                    return speed_str.split_whitespace().next()
+                    return speed_str
+                        .split_whitespace()
+                        .next()
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
                 }
@@ -233,20 +232,30 @@ impl NetworkCollector {
             return "loopback".to_string();
         }
 
-        if name_lower.starts_with("eth") || name_lower.starts_with("en") ||
-           name_lower.starts_with("eno") || name_lower.starts_with("enp") ||
-           name_lower.contains("ethernet") {
+        if name_lower.starts_with("eth")
+            || name_lower.starts_with("en")
+            || name_lower.starts_with("eno")
+            || name_lower.starts_with("enp")
+            || name_lower.contains("ethernet")
+        {
             return "ethernet".to_string();
         }
 
-        if name_lower.starts_with("wl") || name_lower.starts_with("wlan") ||
-           name_lower.contains("wi-fi") || name_lower.contains("wireless") {
+        if name_lower.starts_with("wl")
+            || name_lower.starts_with("wlan")
+            || name_lower.contains("wi-fi")
+            || name_lower.contains("wireless")
+        {
             return "wifi".to_string();
         }
 
-        if name_lower.starts_with("veth") || name_lower.starts_with("docker") ||
-           name_lower.starts_with("br-") || name_lower.starts_with("virbr") ||
-           name_lower.starts_with("vmnet") || name_lower.starts_with("vbox") {
+        if name_lower.starts_with("veth")
+            || name_lower.starts_with("docker")
+            || name_lower.starts_with("br-")
+            || name_lower.starts_with("virbr")
+            || name_lower.starts_with("vmnet")
+            || name_lower.starts_with("vbox")
+        {
             return "virtual".to_string();
         }
 
@@ -278,7 +287,11 @@ impl NetworkCollector {
     }
 
     /// Collect network metrics
-    pub fn collect(&mut self, networks: &Networks, _config: &CollectorConfig) -> Vec<NetworkMetrics> {
+    pub fn collect(
+        &mut self,
+        networks: &Networks,
+        _config: &CollectorConfig,
+    ) -> Vec<NetworkMetrics> {
         let now = std::time::Instant::now();
         let elapsed = self
             .prev_time

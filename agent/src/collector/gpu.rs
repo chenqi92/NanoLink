@@ -1,5 +1,5 @@
-use std::process::Command;
 use std::collections::HashMap;
+use std::process::Command;
 
 #[derive(Debug, Clone, Default)]
 pub struct GpuMetrics {
@@ -194,7 +194,7 @@ impl GpuCollector {
                 if line.contains("GPU[") {
                     if let Some(idx_start) = line.find('[') {
                         if let Some(idx_end) = line.find(']') {
-                            let idx: u32 = line[idx_start+1..idx_end].parse().unwrap_or(0);
+                            let idx: u32 = line[idx_start + 1..idx_end].parse().unwrap_or(0);
                             if let Some(name_part) = line.split(':').nth(1) {
                                 gpu_names.insert(idx, name_part.trim().to_string());
                             }
@@ -235,8 +235,8 @@ impl GpuCollector {
             for line in stdout.lines() {
                 if line.contains("GPU use") {
                     if let Some(val) = line.split(':').nth(1) {
-                        metrics.usage_percent = val.trim().trim_end_matches('%')
-                            .parse().unwrap_or(0.0);
+                        metrics.usage_percent =
+                            val.trim().trim_end_matches('%').parse().unwrap_or(0.0);
                     }
                 }
             }
@@ -270,8 +270,12 @@ impl GpuCollector {
             for line in stdout.lines() {
                 if line.contains("Temperature") && line.contains("edge") {
                     if let Some(val) = line.split(':').nth(1) {
-                        metrics.temperature = val.trim().trim_end_matches('c')
-                            .trim().parse().unwrap_or(0.0);
+                        metrics.temperature = val
+                            .trim()
+                            .trim_end_matches('c')
+                            .trim()
+                            .parse()
+                            .unwrap_or(0.0);
                     }
                 }
             }
@@ -286,8 +290,8 @@ impl GpuCollector {
             for line in stdout.lines() {
                 if line.contains("Fan Speed") {
                     if let Some(val) = line.split(':').nth(1) {
-                        metrics.fan_speed_percent = val.trim().trim_end_matches('%')
-                            .trim().parse().unwrap_or(0);
+                        metrics.fan_speed_percent =
+                            val.trim().trim_end_matches('%').trim().parse().unwrap_or(0);
                     }
                 }
             }
@@ -302,8 +306,13 @@ impl GpuCollector {
             for line in stdout.lines() {
                 if line.contains("Average Graphics Package Power") {
                     if let Some(val) = line.split(':').nth(1) {
-                        metrics.power_watts = val.trim().split_whitespace()
-                            .next().unwrap_or("0").parse().unwrap_or(0);
+                        metrics.power_watts = val
+                            .trim()
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("0")
+                            .parse()
+                            .unwrap_or(0);
                     }
                 }
             }
@@ -318,13 +327,21 @@ impl GpuCollector {
             for line in stdout.lines() {
                 if line.contains("sclk") {
                     if let Some(val) = line.split(':').nth(1) {
-                        metrics.clock_core_mhz = val.trim().trim_end_matches("Mhz")
-                            .trim().parse().unwrap_or(0);
+                        metrics.clock_core_mhz = val
+                            .trim()
+                            .trim_end_matches("Mhz")
+                            .trim()
+                            .parse()
+                            .unwrap_or(0);
                     }
                 } else if line.contains("mclk") {
                     if let Some(val) = line.split(':').nth(1) {
-                        metrics.clock_memory_mhz = val.trim().trim_end_matches("Mhz")
-                            .trim().parse().unwrap_or(0);
+                        metrics.clock_memory_mhz = val
+                            .trim()
+                            .trim_end_matches("Mhz")
+                            .trim()
+                            .parse()
+                            .unwrap_or(0);
                     }
                 }
             }
@@ -367,7 +384,9 @@ impl GpuCollector {
                                 };
 
                                 // Try to get product name
-                                if let Ok(product) = fs::read_to_string(device_path.join("product_name")) {
+                                if let Ok(product) =
+                                    fs::read_to_string(device_path.join("product_name"))
+                                {
                                     gpu.name = product.trim().to_string();
                                 } else {
                                     gpu.name = "Intel Integrated Graphics".to_string();
@@ -381,10 +400,13 @@ impl GpuCollector {
                                     if output.status.success() {
                                         let stdout = String::from_utf8_lossy(&output.stdout);
                                         for line in stdout.lines().skip(1).take(1) {
-                                            let parts: Vec<&str> = line.split_whitespace().collect();
+                                            let parts: Vec<&str> =
+                                                line.split_whitespace().collect();
                                             if parts.len() > 1 {
-                                                gpu.usage_percent = parts[1].trim_end_matches('%')
-                                                    .parse().unwrap_or(0.0);
+                                                gpu.usage_percent = parts[1]
+                                                    .trim_end_matches('%')
+                                                    .parse()
+                                                    .unwrap_or(0.0);
                                             }
                                         }
                                     }
@@ -458,7 +480,13 @@ mod tests {
 
     #[test]
     fn test_parse_memory_string() {
-        assert_eq!(GpuCollector::parse_memory_string("1024 MB"), 1024 * 1024 * 1024);
-        assert_eq!(GpuCollector::parse_memory_string("2 GB"), 2 * 1024 * 1024 * 1024);
+        assert_eq!(
+            GpuCollector::parse_memory_string("1024 MB"),
+            1024 * 1024 * 1024
+        );
+        assert_eq!(
+            GpuCollector::parse_memory_string("2 GB"),
+            2 * 1024 * 1024 * 1024
+        );
     }
 }

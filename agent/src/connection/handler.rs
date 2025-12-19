@@ -3,7 +3,9 @@ use tracing::{debug, error, info, warn};
 
 use crate::buffer::RingBuffer;
 use crate::config::Config;
-use crate::executor::{DockerExecutor, FileExecutor, ProcessExecutor, ServiceExecutor, ShellExecutor};
+use crate::executor::{
+    DockerExecutor, FileExecutor, ProcessExecutor, ServiceExecutor, ShellExecutor,
+};
 use crate::proto::{Command, CommandResult, CommandType};
 use crate::security::PermissionChecker;
 
@@ -38,7 +40,8 @@ impl MessageHandler {
 
     /// Handle a command
     pub async fn handle_command(&self, command: Command) -> CommandResult {
-        let command_type = CommandType::try_from(command.r#type).unwrap_or(CommandType::Unspecified);
+        let command_type =
+            CommandType::try_from(command.r#type).unwrap_or(CommandType::Unspecified);
 
         info!(
             "Received command: {:?} (target: {}, id: {})",
@@ -46,7 +49,10 @@ impl MessageHandler {
         );
 
         // Check permission
-        if !self.permission_checker.check_permission(command_type, self.permission_level) {
+        if !self
+            .permission_checker
+            .check_permission(command_type, self.permission_level)
+        {
             warn!(
                 "Permission denied for command {:?} (required: {}, have: {})",
                 command_type,
@@ -73,16 +79,14 @@ impl MessageHandler {
             // Process management
             CommandType::ProcessList => self.process_executor.list_processes().await,
             CommandType::ProcessKill => {
-                self.process_executor.kill_process(&command.target, &command.params).await
+                self.process_executor
+                    .kill_process(&command.target, &command.params)
+                    .await
             }
 
             // Service management
-            CommandType::ServiceStart => {
-                self.service_executor.start_service(&command.target).await
-            }
-            CommandType::ServiceStop => {
-                self.service_executor.stop_service(&command.target).await
-            }
+            CommandType::ServiceStart => self.service_executor.start_service(&command.target).await,
+            CommandType::ServiceStop => self.service_executor.stop_service(&command.target).await,
             CommandType::ServiceRestart => {
                 self.service_executor.restart_service(&command.target).await
             }
@@ -99,27 +103,23 @@ impl MessageHandler {
                     .unwrap_or(100);
                 self.file_executor.tail_file(&command.target, lines).await
             }
-            CommandType::FileDownload => {
-                self.file_executor.download_file(&command.target).await
-            }
+            CommandType::FileDownload => self.file_executor.download_file(&command.target).await,
             CommandType::FileUpload => {
                 let content = command.params.get("content").map(|s| s.as_bytes().to_vec());
-                self.file_executor.upload_file(&command.target, content).await
+                self.file_executor
+                    .upload_file(&command.target, content)
+                    .await
             }
-            CommandType::FileTruncate => {
-                self.file_executor.truncate_file(&command.target).await
-            }
+            CommandType::FileTruncate => self.file_executor.truncate_file(&command.target).await,
 
             // Docker operations
             CommandType::DockerList => self.docker_executor.list_containers().await,
-            CommandType::DockerStart => {
-                self.docker_executor.start_container(&command.target).await
-            }
-            CommandType::DockerStop => {
-                self.docker_executor.stop_container(&command.target).await
-            }
+            CommandType::DockerStart => self.docker_executor.start_container(&command.target).await,
+            CommandType::DockerStop => self.docker_executor.stop_container(&command.target).await,
             CommandType::DockerRestart => {
-                self.docker_executor.restart_container(&command.target).await
+                self.docker_executor
+                    .restart_container(&command.target)
+                    .await
             }
             CommandType::DockerLogs => {
                 let lines = command
@@ -127,13 +127,13 @@ impl MessageHandler {
                     .get("lines")
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(100);
-                self.docker_executor.container_logs(&command.target, lines).await
+                self.docker_executor
+                    .container_logs(&command.target, lines)
+                    .await
             }
 
             // System operations
-            CommandType::SystemReboot => {
-                self.execute_system_reboot().await
-            }
+            CommandType::SystemReboot => self.execute_system_reboot().await,
 
             // Shell command
             CommandType::ShellExecute => {

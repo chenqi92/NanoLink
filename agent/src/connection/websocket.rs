@@ -168,10 +168,7 @@ impl WebSocketClient {
                         );
                         Ok(())
                     } else {
-                        anyhow::bail!(
-                            "Authentication failed: {}",
-                            auth_response.error_message
-                        );
+                        anyhow::bail!("Authentication failed: {}", auth_response.error_message);
                     }
                 } else {
                     anyhow::bail!("Unexpected response during authentication");
