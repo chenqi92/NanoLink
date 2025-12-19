@@ -26,7 +26,7 @@ pub struct CpuCollector {
 impl CpuCollector {
     pub fn new() -> Self {
         // Initialize static CPU info once
-        CPU_INFO.get_or_init(|| Self::collect_static_info());
+        CPU_INFO.get_or_init(Self::collect_static_info);
         Self { prev_usage: None }
     }
 
@@ -368,7 +368,7 @@ impl CpuCollector {
 
     /// Collect CPU metrics
     pub fn collect(&mut self, system: &System, config: &CollectorConfig) -> CpuMetrics {
-        let global_cpu = system.global_cpu_usage();
+        let global_cpu = system.global_cpu_info().cpu_usage();
         let cpu_info = CPU_INFO.get().expect("CPU info not initialized");
 
         // Collect per-core usage if enabled

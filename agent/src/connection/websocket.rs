@@ -6,19 +6,14 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::time::{self, Instant};
 use tokio_tungstenite::{
-    connect_async,
-    tungstenite::{self, protocol::Message as WsMessage},
-    MaybeTlsStream, WebSocketStream,
+    connect_async, tungstenite::protocol::Message as WsMessage, MaybeTlsStream, WebSocketStream,
 };
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::buffer::RingBuffer;
 use crate::config::{Config, ServerConfig};
-use crate::proto::{
-    envelope::Payload, AuthRequest, AuthResponse, Envelope, Heartbeat, HeartbeatAck, Metrics,
-    MetricsSync,
-};
+use crate::proto::{envelope::Payload, AuthRequest, Envelope, Heartbeat, Metrics, MetricsSync};
 
 use super::handler::MessageHandler;
 

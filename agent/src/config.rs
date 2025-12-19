@@ -345,7 +345,7 @@ impl Config {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {:?}", path))?;
 
-        let config: Config = if path.extension().map_or(false, |e| e == "toml") {
+        let config: Config = if path.extension().is_some_and(|e| e == "toml") {
             toml::from_str(&content)?
         } else {
             serde_yaml::from_str(&content)?
@@ -364,6 +364,7 @@ impl Config {
                 token: "your_token_here".to_string(),
                 permission: 0,
                 tls_verify: true,
+                protocol: None,
             }],
             collector: CollectorConfig::default(),
             buffer: BufferConfig::default(),

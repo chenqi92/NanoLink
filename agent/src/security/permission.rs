@@ -3,8 +3,6 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::proto::CommandType;
 
-use super::auth::PermissionLevel;
-
 /// Permission checker for commands
 pub struct PermissionChecker {
     config: Arc<Config>,

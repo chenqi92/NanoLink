@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 use crate::buffer::RingBuffer;
 use crate::config::Config;

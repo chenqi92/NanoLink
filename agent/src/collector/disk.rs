@@ -415,7 +415,8 @@ impl DiskCollector {
     pub fn collect(&mut self, disks: &Disks, _config: &CollectorConfig) -> Vec<DiskMetrics> {
         let now = std::time::Instant::now();
         let current_io_stats = Self::read_disk_io_stats();
-        let disk_info = DISK_INFO.get().unwrap_or(&HashMap::new());
+        let empty_map = HashMap::new();
+        let disk_info = DISK_INFO.get().unwrap_or(&empty_map);
 
         let elapsed_secs = self
             .prev_time

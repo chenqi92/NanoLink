@@ -45,11 +45,9 @@ impl GrpcClient {
 
         // Configure TLS if using secure connection
         if url.starts_with("https://") || server_config.url.starts_with("grpcs://") {
-            let tls_config = if server_config.tls_verify {
-                ClientTlsConfig::new()
-            } else {
-                ClientTlsConfig::new().with_native_roots()
-            };
+            // Use default TLS config with native roots
+            // In tonic 0.10, ClientTlsConfig::new() automatically uses native roots when tls-roots feature is enabled
+            let tls_config = ClientTlsConfig::new();
             endpoint = endpoint.tls_config(tls_config)?;
         }
 

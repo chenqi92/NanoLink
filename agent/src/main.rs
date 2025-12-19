@@ -16,7 +16,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
-use tracing::{error, info, Level};
+use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use crate::buffer::RingBuffer;
@@ -116,7 +116,7 @@ async fn main() -> Result<()> {
         _ => Level::INFO,
     };
 
-    let _subscriber = FmtSubscriber::builder()
+    FmtSubscriber::builder()
         .with_max_level(log_level)
         .with_target(false)
         .with_thread_ids(false)
@@ -174,6 +174,7 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                         token,
                         permission,
                         tls_verify,
+                        protocol: None,
                     });
 
                     save_config(&config, config_path)?;
@@ -255,7 +256,7 @@ fn permission_name(level: u8) -> &'static str {
 }
 
 fn save_config(config: &Config, path: &PathBuf) -> Result<()> {
-    let content = if path.extension().map_or(false, |e| e == "toml") {
+    let content = if path.extension().is_some_and(|e| e == "toml") {
         toml::to_string_pretty(config)?
     } else {
         serde_yaml::to_string(config)?
