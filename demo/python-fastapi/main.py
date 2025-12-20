@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "sdk" / "python"))
 
 from nanolink import NanoLinkServer, ServerConfig
 from nanolink.connection import AgentConnection
-from nanolink.metrics import Metrics
+from nanolink.metrics import Metrics, RealtimeMetrics, StaticInfo, PeriodicData
 
 # Configure logging
 logging.basicConfig(
@@ -167,6 +167,63 @@ class MetricsService:
             return 0.0
         return sum(m.memory_usage for m in self.latest_metrics.values()) / len(self.latest_metrics)
 
+    def process_realtime(self, realtime: RealtimeMetrics) -> None:
+        """Process incoming realtime metrics (high-frequency, lightweight)"""
+        # Find agent by hostname
+        agent_id = realtime.hostname
+        for aid, agent in self.agents.items():
+            if agent.hostname == realtime.hostname:
+                agent_id = aid
+                break
+
+        # Update only the realtime fields
+        if agent_id in self.latest_metrics:
+            current = self.latest_metrics[agent_id]
+            current.cpu_usage = realtime.cpu_usage
+            current.memory_usage = realtime.memory_percent
+            current.memory_used = realtime.memory_used
+            current.timestamp = datetime.now()
+        else:
+            # Create new entry with realtime data
+            self.latest_metrics[agent_id] = AgentMetrics(
+                hostname=realtime.hostname,
+                cpu_usage=realtime.cpu_usage,
+                memory_usage=realtime.memory_percent,
+                memory_total=0,
+                memory_used=realtime.memory_used,
+                timestamp=datetime.now()
+            )
+
+        # Check for alerts
+        if realtime.cpu_usage > 90:
+            logger.warning(
+                f"HIGH CPU ALERT: {realtime.hostname} - CPU usage at {realtime.cpu_usage:.1f}%"
+            )
+
+    def process_static_info(self, static_info: StaticInfo) -> None:
+        """Process static hardware info (received once on connect)"""
+        logger.info(
+            f"Static info received from {static_info.hostname}: "
+            f"OS={static_info.os_name} {static_info.os_version}, "
+            f"Kernel={static_info.kernel_version}"
+        )
+        # Update memory_total if available
+        if static_info.memory and static_info.memory.total_physical > 0:
+            for aid, agent in self.agents.items():
+                if agent.hostname == static_info.hostname:
+                    if aid in self.latest_metrics:
+                        self.latest_metrics[aid].memory_total = static_info.memory.total_physical
+                    break
+
+    def process_periodic(self, periodic: PeriodicData) -> None:
+        """Process periodic data (disk usage, user sessions, etc.)"""
+        logger.debug(
+            f"Periodic data received from {periodic.hostname}: "
+            f"uptime={periodic.uptime_seconds}s, "
+            f"disks={len(periodic.disk_usage) if periodic.disk_usage else 0}, "
+            f"sessions={len(periodic.user_sessions) if periodic.user_sessions else 0}"
+        )
+
 
 # === Global instances ===
 metrics_service = MetricsService()
@@ -199,6 +256,18 @@ async def lifespan(app: FastAPI):
     @nanolink_server.on_metrics
     async def on_metrics(metrics: Metrics):
         metrics_service.process_metrics(metrics)
+
+    @nanolink_server.on_realtime_metrics
+    async def on_realtime(realtime: RealtimeMetrics):
+        metrics_service.process_realtime(realtime)
+
+    @nanolink_server.on_static_info
+    async def on_static(static_info: StaticInfo):
+        metrics_service.process_static_info(static_info)
+
+    @nanolink_server.on_periodic_data
+    async def on_periodic(periodic: PeriodicData):
+        metrics_service.process_periodic(periodic)
 
     # Start NanoLink server in background
     logger.info("Starting NanoLink Server - WebSocket port 9100, gRPC port 39100")

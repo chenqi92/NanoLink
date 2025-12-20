@@ -23,7 +23,9 @@ from .connection import (
     TokenValidator,
     default_token_validator,
 )
-from .metrics import Metrics
+from .metrics import (
+    Metrics, RealtimeMetrics, StaticInfo, PeriodicData, DataRequestType
+)
 from .command import CommandResult
 
 logger = logging.getLogger(__name__)
@@ -85,6 +87,9 @@ class NanoLinkServer:
         self._on_agent_connect: Optional[Callable[[AgentConnection], Awaitable[None]]] = None
         self._on_agent_disconnect: Optional[Callable[[AgentConnection], Awaitable[None]]] = None
         self._on_metrics: Optional[Callable[[Metrics], Awaitable[None]]] = None
+        self._on_realtime_metrics: Optional[Callable[[RealtimeMetrics], Awaitable[None]]] = None
+        self._on_static_info: Optional[Callable[[StaticInfo], Awaitable[None]]] = None
+        self._on_periodic_data: Optional[Callable[[PeriodicData], Awaitable[None]]] = None
 
     def on_agent_connect(self, callback: Callable[[AgentConnection], Awaitable[None]]):
         """Decorator to set agent connect callback"""
@@ -99,6 +104,21 @@ class NanoLinkServer:
     def on_metrics(self, callback: Callable[[Metrics], Awaitable[None]]):
         """Decorator to set metrics callback"""
         self._on_metrics = callback
+        return callback
+
+    def on_realtime_metrics(self, callback: Callable[[RealtimeMetrics], Awaitable[None]]):
+        """Decorator to set realtime metrics callback"""
+        self._on_realtime_metrics = callback
+        return callback
+
+    def on_static_info(self, callback: Callable[[StaticInfo], Awaitable[None]]):
+        """Decorator to set static info callback"""
+        self._on_static_info = callback
+        return callback
+
+    def on_periodic_data(self, callback: Callable[[PeriodicData], Awaitable[None]]):
+        """Decorator to set periodic data callback"""
+        self._on_periodic_data = callback
         return callback
 
     @property
@@ -275,6 +295,33 @@ class NanoLinkServer:
                 except Exception as e:
                     logger.error(f"Error in on_metrics callback: {e}")
 
+        elif message_type == "realtime":
+            realtime = RealtimeMetrics.from_dict(data.get("payload", {}))
+            realtime.hostname = agent.hostname
+            if self._on_realtime_metrics:
+                try:
+                    await self._on_realtime_metrics(realtime)
+                except Exception as e:
+                    logger.error(f"Error in on_realtime_metrics callback: {e}")
+
+        elif message_type == "static_info":
+            static_info = StaticInfo.from_dict(data.get("payload", {}))
+            static_info.hostname = agent.hostname
+            if self._on_static_info:
+                try:
+                    await self._on_static_info(static_info)
+                except Exception as e:
+                    logger.error(f"Error in on_static_info callback: {e}")
+
+        elif message_type == "periodic":
+            periodic = PeriodicData.from_dict(data.get("payload", {}))
+            periodic.hostname = agent.hostname
+            if self._on_periodic_data:
+                try:
+                    await self._on_periodic_data(periodic)
+                except Exception as e:
+                    logger.error(f"Error in on_periodic_data callback: {e}")
+
         elif message_type == "heartbeat":
             agent.last_heartbeat = datetime.now()
 
@@ -290,6 +337,9 @@ async def create_server(
     ws_port: int = DEFAULT_WS_PORT,
     grpc_port: int = DEFAULT_GRPC_PORT,
     on_metrics: Optional[Callable[[Metrics], Awaitable[None]]] = None,
+    on_realtime_metrics: Optional[Callable[[RealtimeMetrics], Awaitable[None]]] = None,
+    on_static_info: Optional[Callable[[StaticInfo], Awaitable[None]]] = None,
+    on_periodic_data: Optional[Callable[[PeriodicData], Awaitable[None]]] = None,
     on_agent_connect: Optional[Callable[[AgentConnection], Awaitable[None]]] = None,
     on_agent_disconnect: Optional[Callable[[AgentConnection], Awaitable[None]]] = None,
     token_validator: Optional[TokenValidator] = None,
@@ -300,7 +350,10 @@ async def create_server(
     Args:
         ws_port: WebSocket server port for dashboard (default: 9100)
         grpc_port: gRPC port for agents (default: 39100)
-        on_metrics: Callback for metrics
+        on_metrics: Callback for full metrics
+        on_realtime_metrics: Callback for realtime metrics (CPU, memory usage)
+        on_static_info: Callback for static hardware info
+        on_periodic_data: Callback for periodic data (disk usage, network addresses)
         on_agent_connect: Callback for agent connections
         on_agent_disconnect: Callback for agent disconnections
         token_validator: Custom token validator
@@ -316,6 +369,12 @@ async def create_server(
 
     if on_metrics:
         server._on_metrics = on_metrics
+    if on_realtime_metrics:
+        server._on_realtime_metrics = on_realtime_metrics
+    if on_static_info:
+        server._on_static_info = on_static_info
+    if on_periodic_data:
+        server._on_periodic_data = on_periodic_data
     if on_agent_connect:
         server._on_agent_connect = on_agent_connect
     if on_agent_disconnect:

@@ -59,6 +59,9 @@ type Server struct {
 	onAgentConnect    func(*AgentConnection)
 	onAgentDisconnect func(*AgentConnection)
 	onMetrics         func(*Metrics)
+	onRealtimeMetrics func(*RealtimeMetrics)
+	onStaticInfo      func(*StaticInfo)
+	onPeriodicData    func(*PeriodicData)
 	httpServer        *http.Server
 }
 
@@ -100,6 +103,21 @@ func (s *Server) OnAgentDisconnect(callback func(*AgentConnection)) {
 // OnMetrics sets the callback for receiving metrics
 func (s *Server) OnMetrics(callback func(*Metrics)) {
 	s.onMetrics = callback
+}
+
+// OnRealtimeMetrics sets the callback for receiving realtime metrics
+func (s *Server) OnRealtimeMetrics(callback func(*RealtimeMetrics)) {
+	s.onRealtimeMetrics = callback
+}
+
+// OnStaticInfo sets the callback for receiving static hardware info
+func (s *Server) OnStaticInfo(callback func(*StaticInfo)) {
+	s.onStaticInfo = callback
+}
+
+// OnPeriodicData sets the callback for receiving periodic data
+func (s *Server) OnPeriodicData(callback func(*PeriodicData)) {
+	s.onPeriodicData = callback
 }
 
 // Start starts the server
@@ -215,6 +233,27 @@ func (s *Server) unregisterAgent(agent *AgentConnection) {
 func (s *Server) handleMetrics(metrics *Metrics) {
 	if s.onMetrics != nil {
 		s.onMetrics(metrics)
+	}
+}
+
+// handleRealtimeMetrics handles incoming realtime metrics
+func (s *Server) handleRealtimeMetrics(realtime *RealtimeMetrics) {
+	if s.onRealtimeMetrics != nil {
+		s.onRealtimeMetrics(realtime)
+	}
+}
+
+// handleStaticInfo handles incoming static hardware info
+func (s *Server) handleStaticInfo(staticInfo *StaticInfo) {
+	if s.onStaticInfo != nil {
+		s.onStaticInfo(staticInfo)
+	}
+}
+
+// handlePeriodicData handles incoming periodic data
+func (s *Server) handlePeriodicData(periodic *PeriodicData) {
+	if s.onPeriodicData != nil {
+		s.onPeriodicData(periodic)
 	}
 }
 

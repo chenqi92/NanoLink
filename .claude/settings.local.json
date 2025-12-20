@@ -15,7 +15,9 @@
       "Bash(rustup target list:*)",
       "Bash(cargo install:*)",
       "Bash(docker info:*)",
-      "Bash(cross build:*)"
+      "Bash(cross build:*)",
+      "Bash(rsync:*)",
+      "Bash(tar czf:*)"
     ]
   }
 }
