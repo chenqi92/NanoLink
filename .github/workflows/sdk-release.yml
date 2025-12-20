@@ -105,7 +105,7 @@ jobs:
     name: Publish Java SDK to Maven Central
     needs: [prepare, build-java-sdk]
     runs-on: ubuntu-latest
-    if: github.event.inputs.publish_maven == 'true'
+    if: github.event.inputs.publish_maven == 'true' || needs.prepare.outputs.version != ''
     permissions:
       contents: write
       packages: write
@@ -291,7 +291,7 @@ jobs:
     name: Publish Python SDK to PyPI
     needs: [prepare, build-python-sdk]
     runs-on: ubuntu-latest
-    if: github.event.inputs.publish_pypi == 'true'
+    if: github.event.inputs.publish_pypi == 'true' || needs.prepare.outputs.version != ''
     environment:
       name: pypi
       url: https://pypi.org/project/kkape-nanolink/
