@@ -249,103 +249,11 @@ jobs:
           name: nanolink-linux
           path: apps/desktop/release/*.tar.gz
 
-  # Build Android APK
-  mobile-android:
-    name: Build Android APK
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "17"
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Get dependencies
-        working-directory: apps/desktop
-        run: flutter pub get
-
-      - name: Build APK
-        working-directory: apps/desktop
-        run: flutter build apk --release
-
-      - name: Rename APK
-        working-directory: apps/desktop
-        run: |
-          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
-          mkdir -p release
-          cp build/app/outputs/flutter-apk/app-release.apk "release/NanoLink-Android-$VERSION.apk"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: nanolink-android
-          path: apps/desktop/release/*.apk
-
-  # Build iOS IPA (unsigned for sideload)
-  mobile-ios:
-    name: Build iOS IPA
-    runs-on: macos-14
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Get dependencies
-        working-directory: apps/desktop
-        run: flutter pub get
-
-      - name: Build iOS (no codesign)
-        working-directory: apps/desktop
-        run: flutter build ios --release --no-codesign
-
-      - name: Create IPA
-        working-directory: apps/desktop
-        run: |
-          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
-          mkdir -p release Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r "release/NanoLink-iOS-$VERSION-unsigned.ipa" Payload
-          rm -rf Payload
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: nanolink-ios
-          path: apps/desktop/release/*.ipa
 
   # Create release with all artifacts
   release:
     name: Create Release
-    needs:
-      [
-        docker,
-        desktop-windows,
-        desktop-macos-x64,
-        desktop-macos-arm64,
-        desktop-linux,
-        mobile-android,
-        mobile-ios,
-      ]
+    needs: [docker, desktop-windows, desktop-macos-x64, desktop-macos-arm64, desktop-linux]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -360,38 +268,27 @@ jobs:
         with:
           name: nanolink-windows
           path: release/windows
+        continue-on-error: true
 
       - name: Download macOS x64 artifact
         uses: actions/download-artifact@v4
         with:
           name: nanolink-macos-x64
           path: release/macos-x64
+        continue-on-error: true
 
       - name: Download macOS arm64 artifact
         uses: actions/download-artifact@v4
         with:
           name: nanolink-macos-arm64
           path: release/macos-arm64
+        continue-on-error: true
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
           name: nanolink-linux
           path: release/linux
-        continue-on-error: true
-
-      - name: Download Android artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: nanolink-android
-          path: release/android
-        continue-on-error: true
-
-      - name: Download iOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: nanolink-ios
-          path: release/ios
         continue-on-error: true
 
       - name: Extract version
@@ -412,8 +309,6 @@ jobs:
             release/macos-x64/*
             release/macos-arm64/*
             release/linux/*
-            release/android/*
-            release/ios/*
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
