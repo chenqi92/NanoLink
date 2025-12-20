@@ -29,7 +29,7 @@ sdk/go/*.exe
 sdk/go/*.test
 sdk/go/*.out
 sdk/go/vendor/
-sdk/go/go.sum
+
 
 # =========================
 # Node.js / Dashboard

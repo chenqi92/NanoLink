@@ -3,8 +3,22 @@ name: Test
 on:
   push:
     branches: [main, develop]
+    paths:
+      # Agent (Rust)
+      - "agent/**"
+      # SDKs
+      - "sdk/**"
+      # Dashboard
+      - "dashboard/**"
+      # Workflow definitions
+      - ".github/workflows/test.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "agent/**"
+      - "sdk/**"
+      - "dashboard/**"
+  workflow_dispatch: # Allow manual trigger
 
 env:
   CARGO_TERM_COLOR: always
