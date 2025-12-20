@@ -2,22 +2,13 @@ name: Test
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
     paths:
-      # Agent (Rust)
-      - "agent/**"
-      # SDKs
-      - "sdk/**"
-      # Dashboard
-      - "dashboard/**"
-      # Workflow definitions
-      - ".github/workflows/test.yml"
+      - "VERSION"  # Only trigger on version change
   pull_request:
     branches: [main]
     paths:
-      - "agent/**"
-      - "sdk/**"
-      - "dashboard/**"
+      - "VERSION"
   workflow_dispatch: # Allow manual trigger
 
 env:
