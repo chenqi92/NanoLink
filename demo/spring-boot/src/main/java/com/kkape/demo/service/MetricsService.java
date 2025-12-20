@@ -2,6 +2,9 @@ package com.kkape.demo.service;
 
 import com.kkape.sdk.AgentConnection;
 import com.kkape.sdk.model.Metrics;
+import com.kkape.sdk.model.PeriodicData;
+import com.kkape.sdk.model.RealtimeMetrics;
+import com.kkape.sdk.model.StaticInfo;
 import com.kkape.demo.model.AgentInfo;
 import com.kkape.demo.model.AgentMetrics;
 import org.slf4j.Logger;
@@ -9,7 +12,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -29,6 +34,12 @@ public class MetricsService {
 
     // Store latest metrics per agent
     private final Map<String, AgentMetrics> latestMetrics = new ConcurrentHashMap<>();
+
+    // Store static info per agent (hardware info, rarely changes)
+    private final Map<String, StaticInfo> staticInfoMap = new ConcurrentHashMap<>();
+
+    // Store latest periodic data per agent (disk usage, sessions)
+    private final Map<String, PeriodicData> periodicDataMap = new ConcurrentHashMap<>();
 
     /**
      * Register a new agent connection
@@ -152,5 +163,100 @@ public class MetricsService {
                 .mapToDouble(AgentMetrics::memoryUsage)
                 .average()
                 .orElse(0.0);
+    }
+
+    /**
+     * Process incoming realtime metrics (lightweight, sent every second)
+     */
+    public void processRealtimeMetrics(RealtimeMetrics realtime) {
+        String hostname = realtime.getHostname();
+
+        // Find agent by hostname
+        String agentId = findAgentIdByHostname(hostname);
+
+        // Update existing metrics with realtime data
+        AgentMetrics existing = latestMetrics.get(agentId);
+        if (existing != null) {
+            // Merge realtime data into existing metrics
+            AgentMetrics updated = AgentMetrics.mergeRealtime(existing, realtime);
+            latestMetrics.put(agentId, updated);
+        } else {
+            // Create new metrics from realtime data
+            AgentMetrics newMetrics = AgentMetrics.fromRealtime(realtime);
+            latestMetrics.put(agentId, newMetrics);
+        }
+
+        if (log.isTraceEnabled()) {
+            log.trace("Realtime from {}: CPU={:.1f}%", hostname, realtime.getCpuUsagePercent());
+        }
+    }
+
+    /**
+     * Process incoming static info (hardware info, sent once or on request)
+     */
+    public void processStaticInfo(StaticInfo staticInfo) {
+        String hostname = staticInfo.getHostname();
+        String agentId = findAgentIdByHostname(hostname);
+
+        staticInfoMap.put(agentId, staticInfo);
+
+        // Merge static info into existing metrics
+        AgentMetrics existing = latestMetrics.get(agentId);
+        if (existing != null) {
+            AgentMetrics updated = AgentMetrics.mergeStaticInfo(existing, staticInfo);
+            latestMetrics.put(agentId, updated);
+        }
+
+        log.info("Received static info from {}: CPU={}, Memory={}GB",
+                hostname,
+                staticInfo.getCpu() != null ? staticInfo.getCpu().getModel() : "unknown",
+                staticInfo.getMemory() != null ? staticInfo.getMemory().getTotal() / (1024 * 1024 * 1024) : 0);
+    }
+
+    /**
+     * Process incoming periodic data (disk usage, user sessions)
+     */
+    public void processPeriodicData(PeriodicData periodicData) {
+        String hostname = periodicData.getHostname();
+        String agentId = findAgentIdByHostname(hostname);
+
+        periodicDataMap.put(agentId, periodicData);
+
+        // Merge periodic data into existing metrics
+        AgentMetrics existing = latestMetrics.get(agentId);
+        if (existing != null) {
+            AgentMetrics updated = AgentMetrics.mergePeriodicData(existing, periodicData);
+            latestMetrics.put(agentId, updated);
+        }
+
+        log.debug("Received periodic data from {}: {} disks, {} sessions",
+                hostname,
+                periodicData.getDiskUsage() != null ? periodicData.getDiskUsage().size() : 0,
+                periodicData.getUserSessions() != null ? periodicData.getUserSessions().size() : 0);
+    }
+
+    /**
+     * Find agent ID by hostname
+     */
+    private String findAgentIdByHostname(String hostname) {
+        return agents.entrySet().stream()
+                .filter(e -> e.getValue().hostname().equals(hostname))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(hostname);
+    }
+
+    /**
+     * Get static info for an agent
+     */
+    public StaticInfo getStaticInfo(String agentId) {
+        return staticInfoMap.get(agentId);
+    }
+
+    /**
+     * Get periodic data for an agent
+     */
+    public PeriodicData getPeriodicData(String agentId) {
+        return periodicDataMap.get(agentId);
     }
 }

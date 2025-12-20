@@ -143,6 +143,29 @@ fn default_grpc_port() -> u16 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CollectorConfig {
+    // ========== Realtime data (sent every interval) ==========
+    /// Realtime metrics collection interval in milliseconds (CPU/memory/IO)
+    #[serde(default = "default_realtime_interval")]
+    pub realtime_interval_ms: u64,
+
+    // ========== Periodic data (sent less frequently) ==========
+    /// Disk usage collection interval in milliseconds
+    #[serde(default = "default_disk_usage_interval")]
+    pub disk_usage_interval_ms: u64,
+
+    /// User sessions collection interval in milliseconds
+    #[serde(default = "default_session_interval")]
+    pub session_interval_ms: u64,
+
+    /// IP address check interval in milliseconds
+    #[serde(default = "default_ip_check_interval")]
+    pub ip_check_interval_ms: u64,
+
+    /// Disk health (S.M.A.R.T) check interval in milliseconds
+    #[serde(default = "default_health_check_interval")]
+    pub health_check_interval_ms: u64,
+
+    // ========== Legacy intervals (for backwards compatibility) ==========
     /// CPU/Memory collection interval in milliseconds
     #[serde(default = "default_cpu_interval")]
     pub cpu_interval_ms: u64,
@@ -163,6 +186,7 @@ pub struct CollectorConfig {
     #[serde(default = "default_disk_space_interval")]
     pub disk_space_interval_ms: u64,
 
+    // ========== Feature flags ==========
     /// Enable disk I/O metrics
     #[serde(default = "default_true")]
     pub enable_disk_io: bool,
@@ -174,11 +198,24 @@ pub struct CollectorConfig {
     /// Enable per-core CPU metrics
     #[serde(default = "default_true")]
     pub enable_per_core_cpu: bool,
+
+    /// Enable layered metrics (realtime/periodic/static separation)
+    #[serde(default = "default_true")]
+    pub enable_layered_metrics: bool,
+
+    /// Send full metrics on initial connection
+    #[serde(default = "default_true")]
+    pub send_initial_full: bool,
 }
 
 impl Default for CollectorConfig {
     fn default() -> Self {
         Self {
+            realtime_interval_ms: default_realtime_interval(),
+            disk_usage_interval_ms: default_disk_usage_interval(),
+            session_interval_ms: default_session_interval(),
+            ip_check_interval_ms: default_ip_check_interval(),
+            health_check_interval_ms: default_health_check_interval(),
             cpu_interval_ms: default_cpu_interval(),
             disk_interval_ms: default_disk_interval(),
             network_interval_ms: default_network_interval(),
@@ -187,6 +224,8 @@ impl Default for CollectorConfig {
             enable_disk_io: true,
             enable_network: true,
             enable_per_core_cpu: true,
+            enable_layered_metrics: true,
+            send_initial_full: true,
         }
     }
 }
@@ -309,6 +348,21 @@ fn default_process_interval() -> u64 {
 }
 fn default_disk_space_interval() -> u64 {
     30000
+}
+fn default_realtime_interval() -> u64 {
+    1000 // 1 second for realtime metrics
+}
+fn default_disk_usage_interval() -> u64 {
+    30000 // 30 seconds for disk usage
+}
+fn default_session_interval() -> u64 {
+    60000 // 1 minute for user sessions
+}
+fn default_ip_check_interval() -> u64 {
+    60000 // 1 minute for IP address changes
+}
+fn default_health_check_interval() -> u64 {
+    300000 // 5 minutes for S.M.A.R.T health
 }
 fn default_buffer_capacity() -> usize {
     600
