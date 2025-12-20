@@ -47,6 +47,8 @@ message Metrics {
   string hostname = 7;
   repeated GpuMetrics gpus = 8;
   SystemInfo system_info = 9;
+  repeated UserSession user_sessions = 10;  // Logged-in users
+  repeated NpuMetrics npus = 11;            // AI accelerators (NPU/TPU)
 }
 
 message CpuMetrics {
@@ -137,6 +139,27 @@ message SystemInfo {
   string bios_version = 9;       // BIOS version
   string system_model = 10;      // System model (for branded PCs/servers)
   string system_vendor = 11;     // System vendor
+}
+
+message UserSession {
+  string username = 1;           // Username
+  string tty = 2;                // TTY/terminal (e.g., "pts/0", "console")
+  uint64 login_time = 3;         // Login time (Unix timestamp)
+  string remote_host = 4;        // Remote host for SSH sessions (IP or hostname)
+  uint64 idle_seconds = 5;       // Idle time in seconds
+  string session_type = 6;       // Session type: "local", "ssh", "rdp", "console"
+}
+
+message NpuMetrics {
+  uint32 index = 1;              // NPU index
+  string name = 2;               // NPU model name (e.g., "Intel NPU", "Ascend 910B")
+  string vendor = 3;             // NPU vendor ("Intel", "Huawei", "Qualcomm")
+  double usage_percent = 4;      // NPU utilization percentage
+  uint64 memory_total = 5;       // Total memory in bytes
+  uint64 memory_used = 6;        // Used memory in bytes
+  double temperature = 7;        // Temperature in Celsius
+  uint32 power_watts = 8;        // Current power draw in watts
+  string driver_version = 9;     // Driver version
 }
 
 // ========== Metrics Sync (for reconnection) ==========

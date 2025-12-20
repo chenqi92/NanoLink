@@ -3,6 +3,8 @@ mod disk;
 mod gpu;
 mod memory;
 mod network;
+mod npu;
+mod sessions;
 mod system;
 
 use std::sync::Arc;
@@ -20,11 +22,13 @@ pub use disk::DiskCollector;
 pub use gpu::GpuCollector;
 pub use memory::MemoryCollector;
 pub use network::NetworkCollector;
+pub use npu::NpuCollector;
+pub use sessions::SessionCollector;
 pub use system::SystemInfoCollector;
 
 /// System metrics collector
 ///
-/// Collects CPU, memory, disk, network, GPU metrics at configurable intervals.
+/// Collects CPU, memory, disk, network, GPU, NPU, and user session metrics at configurable intervals.
 pub struct MetricsCollector {
     config: Arc<Config>,
     buffer: Arc<RingBuffer>,
@@ -37,6 +41,8 @@ pub struct MetricsCollector {
     disk_collector: DiskCollector,
     network_collector: NetworkCollector,
     gpu_collector: GpuCollector,
+    npu_collector: NpuCollector,
+    session_collector: SessionCollector,
     system_info_collector: SystemInfoCollector,
 }
 
@@ -59,6 +65,8 @@ impl MetricsCollector {
             disk_collector: DiskCollector::new(),
             network_collector: NetworkCollector::new(),
             gpu_collector: GpuCollector::new(),
+            npu_collector: NpuCollector::new(),
+            session_collector: SessionCollector::new(),
             system_info_collector: SystemInfoCollector::new(),
         }
     }
@@ -79,7 +87,7 @@ impl MetricsCollector {
             match self.collect_metrics() {
                 Ok(metrics) => {
                     debug!(
-                        "Collected metrics: CPU={:.1}%, MEM={:.1}%, GPUs={}",
+                        "Collected metrics: CPU={:.1}%, MEM={:.1}%, GPUs={}, NPUs={}, Sessions={}",
                         metrics.cpu.as_ref().map(|c| c.usage_percent).unwrap_or(0.0),
                         metrics
                             .memory
@@ -92,7 +100,9 @@ impl MetricsCollector {
                                 }
                             })
                             .unwrap_or(0.0),
-                        metrics.gpus.len()
+                        metrics.gpus.len(),
+                        metrics.npus.len(),
+                        metrics.user_sessions.len()
                     );
                     self.buffer.push(metrics);
                 }
@@ -157,6 +167,37 @@ impl MetricsCollector {
             })
             .collect();
 
+        // Collect NPU metrics
+        let npu_metrics = self.npu_collector.collect();
+        let npus: Vec<_> = npu_metrics
+            .into_iter()
+            .map(|n| crate::proto::NpuMetrics {
+                index: n.index,
+                name: n.name,
+                vendor: n.vendor,
+                usage_percent: n.usage_percent,
+                memory_total: n.memory_total,
+                memory_used: n.memory_used,
+                temperature: n.temperature,
+                power_watts: n.power_watts,
+                driver_version: n.driver_version,
+            })
+            .collect();
+
+        // Collect user sessions
+        let session_data = self.session_collector.collect();
+        let user_sessions: Vec<_> = session_data
+            .into_iter()
+            .map(|s| crate::proto::UserSession {
+                username: s.username,
+                tty: s.tty,
+                login_time: s.login_time,
+                remote_host: s.remote_host,
+                idle_seconds: s.idle_seconds,
+                session_type: s.session_type,
+            })
+            .collect();
+
         // Collect system info
         let system_info = self.system_info_collector.collect();
 
@@ -173,6 +214,8 @@ impl MetricsCollector {
             hostname: self.hostname.clone(),
             gpus,
             system_info: Some(system_info),
+            user_sessions,
+            npus,
         })
     }
 
@@ -189,3 +232,4 @@ impl MetricsCollector {
         vec![]
     }
 }
+
