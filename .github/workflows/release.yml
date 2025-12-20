@@ -40,7 +40,7 @@ jobs:
           echo "Version: $VERSION, Tag: $TAG"
 
   build-agent:
-    name: Build Agent (${{ matrix.target }})
+    name: Build Agent (${{ matrix.name }})
     needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
@@ -58,7 +58,7 @@ jobs:
             cross: true
           # macOS - native builds
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-15-intel
             name: macos-x86_64
             cross: false
           - target: aarch64-apple-darwin
@@ -167,6 +167,8 @@ jobs:
   release:
     name: Create Release
     needs: [prepare, build-agent, build-dashboard]
+    # 即使部分构建失败也继续执行 release（只要没有被取消且 prepare 成功）
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -181,20 +183,41 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          # Copy agent binaries
-          for dir in artifacts/agent-*; do
-            cp "$dir"/* release/ || true
-          done
-          # Create dashboard archive
-          cd artifacts/dashboard
-          tar -czvf ../../release/nanolink-dashboard-${{ needs.prepare.outputs.version }}.tar.gz .
-          cd ../..
+          
+          # Copy agent binaries (skip if none exist)
+          if ls artifacts/agent-* 1>/dev/null 2>&1; then
+            for dir in artifacts/agent-*; do
+              cp "$dir"/* release/ 2>/dev/null || true
+            done
+            echo "✅ Agent binaries copied"
+          else
+            echo "⚠️ No agent artifacts found"
+          fi
+          
+          # Create dashboard archive (skip if not available)
+          if [ -d "artifacts/dashboard" ]; then
+            cd artifacts/dashboard
+            tar -czvf ../../release/nanolink-dashboard-${{ needs.prepare.outputs.version }}.tar.gz .
+            cd ../..
+            echo "✅ Dashboard archive created"
+          else
+            echo "⚠️ Dashboard artifacts not found, skipping"
+          fi
+          
+          # List what we have
+          echo ""
+          echo "📦 Release files:"
+          ls -la release/ || echo "No files in release directory"
 
       - name: Generate checksums
         run: |
           cd release
-          sha256sum * > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          if ls * 1>/dev/null 2>&1; then
+            sha256sum * > SHA256SUMS.txt
+            cat SHA256SUMS.txt
+          else
+            echo "No files to checksum"
+          fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
