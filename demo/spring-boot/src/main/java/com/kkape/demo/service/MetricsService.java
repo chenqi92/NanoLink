@@ -39,9 +39,8 @@ public class MetricsService {
                 agent.getHostname(),
                 agent.getOs(),
                 agent.getArch(),
-                agent.getVersion(),
-                Instant.now()
-        );
+                agent.getAgentVersion(),
+                Instant.now());
         agents.put(agent.getAgentId(), info);
         log.debug("Registered agent: {}", info);
     }

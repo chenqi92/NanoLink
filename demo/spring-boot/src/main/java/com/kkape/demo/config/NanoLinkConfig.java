@@ -46,7 +46,7 @@ public class NanoLinkConfig {
                 .onAgentConnect(agent -> {
                     log.info("Agent connected: {} ({})", agent.getHostname(), agent.getAgentId());
                     log.info("  OS: {}/{}", agent.getOs(), agent.getArch());
-                    log.info("  Version: {}", agent.getVersion());
+                    log.info("  Version: {}", agent.getAgentVersion());
                     metricsService.registerAgent(agent);
                 })
                 .onAgentDisconnect(agent -> {

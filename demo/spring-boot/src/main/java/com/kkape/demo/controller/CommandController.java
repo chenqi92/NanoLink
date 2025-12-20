@@ -41,7 +41,7 @@ public class CommandController {
 
         try {
             log.info("Restarting service {} on {}", request.serviceName(), hostname);
-            agent.execute(Command.restartService(request.serviceName()));
+            agent.sendCommand(Command.serviceRestart(request.serviceName()));
             return ResponseEntity.ok(new CommandResponse(true, "Service restart command sent"));
         } catch (Exception e) {
             log.error("Failed to restart service on {}", hostname, e);
@@ -65,7 +65,7 @@ public class CommandController {
 
         try {
             log.info("Killing process {} on {}", request.pid(), hostname);
-            agent.execute(Command.killProcess(request.pid()));
+            agent.sendCommand(Command.processKill(String.valueOf(request.pid())));
             return ResponseEntity.ok(new CommandResponse(true, "Process kill command sent"));
         } catch (Exception e) {
             log.error("Failed to kill process on {}", hostname, e);
@@ -89,7 +89,7 @@ public class CommandController {
 
         try {
             log.info("Getting service status {} on {}", serviceName, hostname);
-            agent.execute(Command.serviceStatus(serviceName));
+            agent.sendCommand(Command.serviceStatus(serviceName));
             return ResponseEntity.ok(new CommandResponse(true, "Service status command sent"));
         } catch (Exception e) {
             log.error("Failed to get service status on {}", hostname, e);
@@ -113,7 +113,7 @@ public class CommandController {
 
         try {
             log.info("Restarting container {} on {}", request.containerName(), hostname);
-            agent.execute(Command.restartDocker(request.containerName()));
+            agent.sendCommand(Command.dockerRestart(request.containerName()));
             return ResponseEntity.ok(new CommandResponse(true, "Container restart command sent"));
         } catch (Exception e) {
             log.error("Failed to restart container on {}", hostname, e);
