@@ -92,10 +92,20 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
                         // Register agent on first metrics if not already
                         if (agent == null) {
+                            String hostname = protoMetrics.getHostname();
+
+                            // Check if agent with same hostname already exists (reconnection case)
+                            AgentConnection existingAgent = server.getAgentByHostname(hostname);
+                            if (existingAgent != null) {
+                                // Remove stale agent and reuse info
+                                server.unregisterAgent(existingAgent);
+                                log.info("Replacing stale agent connection for hostname: {}", hostname);
+                            }
+
                             agentId = UUID.randomUUID().toString();
                             agent = new AgentConnection(
                                     agentId,
-                                    protoMetrics.getHostname(),
+                                    hostname,
                                     protoMetrics.hasSystemInfo() ? protoMetrics.getSystemInfo().getOsName() : "",
                                     protoMetrics.hasCpu() ? protoMetrics.getCpu().getArchitecture() : "",
                                     "0.2.0",
@@ -104,7 +114,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                             server.registerAgent(agent);
                             streamAgents.put(responseObserver, agent);
                             log.info("Agent registered from metrics stream: {} ({})",
-                                    protoMetrics.getHostname(), agentId);
+                                    hostname, agentId);
                         }
 
                         // Convert proto metrics to SDK metrics

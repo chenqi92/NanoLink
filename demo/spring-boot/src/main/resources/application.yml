@@ -10,11 +10,10 @@ server:
 # NanoLink Configuration
 nanolink:
   server:
-    # Port for NanoLink server (agents connect here)
-    port: 9100
-    # Enable built-in dashboard
-    dashboard:
-      enabled: true
+    # gRPC port for agent connections (router maps external 39100 -> internal 9100)
+    grpc-port: 9100
+    # WebSocket port for dashboard
+    ws-port: 9101
     # Token for authentication (leave empty for dev mode)
     token: ""
 
