@@ -18,6 +18,7 @@ sdk/java/*.war
 sdk/java/*.ear
 sdk/java/*.log
 sdk/java/dependency-reduced-pom.xml
+**/target/**
 
 # =========================
 # Go SDK
