@@ -28,16 +28,31 @@ from .command import CommandResult
 
 logger = logging.getLogger(__name__)
 
+# Default ports
+DEFAULT_GRPC_PORT = 39100
+DEFAULT_WS_PORT = 9100
+
 
 @dataclass
 class ServerConfig:
-    """Server configuration"""
-    port: int = 9100
+    """
+    Server configuration
+    
+    Attributes:
+        ws_port: WebSocket port for dashboard connections (default: 9100)
+        grpc_port: gRPC port for agent connections (default: 39100)
+        host: Host to bind to
+        tls_cert_path: Path to TLS certificate
+        tls_key_path: Path to TLS key
+        static_files_path: Optional path to dashboard static files
+        token_validator: Token validation function
+    """
+    ws_port: int = DEFAULT_WS_PORT
+    grpc_port: int = DEFAULT_GRPC_PORT
     host: str = "0.0.0.0"
     tls_cert_path: Optional[str] = None
     tls_key_path: Optional[str] = None
-    dashboard_enabled: bool = True
-    dashboard_path: Optional[str] = None
+    static_files_path: Optional[str] = None
     token_validator: TokenValidator = default_token_validator
 
 
@@ -118,14 +133,15 @@ class NanoLinkServer:
         self._websocket_server = await serve(
             self._handle_websocket,
             self.config.host,
-            self.config.port,
+            self.config.ws_port,
             ssl=ssl_context,
         )
 
-        logger.info(f"NanoLink Server started on port {self.config.port}")
+        logger.info(f"NanoLink Server started on port {self.config.ws_port} (WebSocket for Dashboard)")
+        logger.info(f"Agents should connect via gRPC on port {self.config.grpc_port}")
 
-        if self.config.dashboard_enabled:
-            logger.info(f"Dashboard available at http://localhost:{self.config.port}/")
+        if self.config.static_files_path:
+            logger.info(f"Dashboard available at http://localhost:{self.config.ws_port}/")
 
     async def stop(self) -> None:
         """Stop the server"""
@@ -271,7 +287,8 @@ class NanoLinkServer:
 
 # Convenience function for simple usage
 async def create_server(
-    port: int = 9100,
+    ws_port: int = DEFAULT_WS_PORT,
+    grpc_port: int = DEFAULT_GRPC_PORT,
     on_metrics: Optional[Callable[[Metrics], Awaitable[None]]] = None,
     on_agent_connect: Optional[Callable[[AgentConnection], Awaitable[None]]] = None,
     on_agent_disconnect: Optional[Callable[[AgentConnection], Awaitable[None]]] = None,
@@ -281,7 +298,8 @@ async def create_server(
     Create and start a NanoLink server with simple configuration
 
     Args:
-        port: Server port (default: 9100)
+        ws_port: WebSocket server port for dashboard (default: 9100)
+        grpc_port: gRPC port for agents (default: 39100)
         on_metrics: Callback for metrics
         on_agent_connect: Callback for agent connections
         on_agent_disconnect: Callback for agent disconnections
@@ -290,7 +308,7 @@ async def create_server(
     Returns:
         Running NanoLinkServer instance
     """
-    config = ServerConfig(port=port)
+    config = ServerConfig(ws_port=ws_port, grpc_port=grpc_port)
     if token_validator:
         config.token_validator = token_validator
 

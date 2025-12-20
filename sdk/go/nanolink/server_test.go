@@ -14,24 +14,39 @@ func TestNewServer(t *testing.T) {
 		t.Fatal("Expected server to be created")
 	}
 
-	if server.config.Port != 9100 {
-		t.Errorf("Expected default port 9100, got %d", server.config.Port)
+	if server.config.WsPort != DefaultWsPort {
+		t.Errorf("Expected default WebSocket port %d, got %d", DefaultWsPort, server.config.WsPort)
 	}
 
-	if server.config.DashboardEnabled != true {
-		t.Error("Expected dashboard to be enabled by default")
+	if server.config.GrpcPort != DefaultGrpcPort {
+		t.Errorf("Expected default gRPC port %d, got %d", DefaultGrpcPort, server.config.GrpcPort)
 	}
 }
 
 func TestNewServerWithCustomConfig(t *testing.T) {
 	config := Config{
-		Port:             8080,
-		DashboardEnabled: false,
+		WsPort:   8080,
+		GrpcPort: 40000,
 	}
 	server := NewServer(config)
 
-	if server.config.Port != 8080 {
-		t.Errorf("Expected port 8080, got %d", server.config.Port)
+	if server.config.WsPort != 8080 {
+		t.Errorf("Expected WebSocket port 8080, got %d", server.config.WsPort)
+	}
+
+	if server.config.GrpcPort != 40000 {
+		t.Errorf("Expected gRPC port 40000, got %d", server.config.GrpcPort)
+	}
+}
+
+func TestNewServerWithStaticFilesPath(t *testing.T) {
+	config := Config{
+		StaticFilesPath: "/path/to/dashboard",
+	}
+	server := NewServer(config)
+
+	if server.config.StaticFilesPath != "/path/to/dashboard" {
+		t.Errorf("Expected StaticFilesPath '/path/to/dashboard', got '%s'", server.config.StaticFilesPath)
 	}
 }
 

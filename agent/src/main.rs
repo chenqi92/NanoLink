@@ -64,38 +64,53 @@ enum Commands {
 enum ServerAction {
     /// Add a new server
     Add {
-        /// Server WebSocket URL (ws:// or wss://)
+        /// Server hostname or IP address
         #[arg(long)]
-        url: String,
+        host: String,
+        /// gRPC port (default: 39100)
+        #[arg(long, default_value = "39100")]
+        port: u16,
         /// Authentication token
         #[arg(long)]
         token: String,
         /// Permission level (0-3)
         #[arg(long, default_value = "0")]
         permission: u8,
+        /// Enable TLS
+        #[arg(long, default_value = "false")]
+        tls_enabled: bool,
         /// Enable TLS certificate verification
         #[arg(long, default_value = "true")]
         tls_verify: bool,
     },
     /// Remove a server
     Remove {
-        /// Server WebSocket URL to remove
+        /// Server hostname to remove
         #[arg(long)]
-        url: String,
+        host: String,
+        /// Server port to remove
+        #[arg(long, default_value = "39100")]
+        port: u16,
     },
     /// List all configured servers
     List,
     /// Update a server configuration
     Update {
-        /// Server WebSocket URL
+        /// Server hostname
         #[arg(long)]
-        url: String,
+        host: String,
+        /// Server port
+        #[arg(long, default_value = "39100")]
+        port: u16,
         /// New authentication token
         #[arg(long)]
         token: Option<String>,
         /// New permission level (0-3)
         #[arg(long)]
         permission: Option<u8>,
+        /// Enable TLS
+        #[arg(long)]
+        tls_enabled: Option<bool>,
         /// Enable TLS certificate verification
         #[arg(long)]
         tls_verify: Option<bool>,
@@ -151,42 +166,40 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
 
             match action {
                 ServerAction::Add {
-                    url,
+                    host,
+                    port,
                     token,
                     permission,
+                    tls_enabled,
                     tls_verify,
                 } => {
-                    // Validate URL
-                    if !url.starts_with("ws://") && !url.starts_with("wss://") {
-                        anyhow::bail!("URL must start with ws:// or wss://");
-                    }
-
                     // Check if server already exists
-                    if config.servers.iter().any(|s| s.url == url) {
+                    if config.servers.iter().any(|s| s.host == host && s.port == port) {
                         anyhow::bail!(
-                            "Server {} already exists. Use 'server update' to modify.",
-                            url
+                            "Server {}:{} already exists. Use 'server update' to modify.",
+                            host, port
                         );
                     }
 
                     config.servers.push(ServerConfig {
-                        url: url.clone(),
+                        host: host.clone(),
+                        port,
                         token,
                         permission,
+                        tls_enabled,
                         tls_verify,
-                        protocol: None,
                     });
 
                     save_config(&config, config_path)?;
-                    println!("Server {} added successfully.", url);
+                    println!("Server {}:{} added successfully.", host, port);
                     println!("Restart the agent to apply changes, or use the management API for hot-reload.");
                 }
-                ServerAction::Remove { url } => {
+                ServerAction::Remove { host, port } => {
                     let original_len = config.servers.len();
-                    config.servers.retain(|s| s.url != url);
+                    config.servers.retain(|s| !(s.host == host && s.port == port));
 
                     if config.servers.len() == original_len {
-                        anyhow::bail!("Server {} not found.", url);
+                        anyhow::bail!("Server {}:{} not found.", host, port);
                     }
 
                     if config.servers.is_empty() {
@@ -194,28 +207,30 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                     }
 
                     save_config(&config, config_path)?;
-                    println!("Server {} removed successfully.", url);
+                    println!("Server {}:{} removed successfully.", host, port);
                     println!("Restart the agent to apply changes.");
                 }
                 ServerAction::List => {
                     println!("Configured servers:");
                     for (i, server) in config.servers.iter().enumerate() {
-                        println!("  {}. {}", i + 1, server.url);
+                        println!("  {}. {}:{}", i + 1, server.host, server.port);
                         println!(
                             "     Permission: {} ({})",
                             server.permission,
                             permission_name(server.permission)
                         );
-                        println!("     TLS Verify: {}", server.tls_verify);
+                        println!("     TLS: {}, Verify: {}", server.tls_enabled, server.tls_verify);
                     }
                 }
                 ServerAction::Update {
-                    url,
+                    host,
+                    port,
                     token,
                     permission,
+                    tls_enabled,
                     tls_verify,
                 } => {
-                    let server = config.servers.iter_mut().find(|s| s.url == url);
+                    let server = config.servers.iter_mut().find(|s| s.host == host && s.port == port);
 
                     match server {
                         Some(s) => {
@@ -225,16 +240,19 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                             if let Some(p) = permission {
                                 s.permission = p;
                             }
+                            if let Some(te) = tls_enabled {
+                                s.tls_enabled = te;
+                            }
                             if let Some(tv) = tls_verify {
                                 s.tls_verify = tv;
                             }
 
                             save_config(&config, config_path)?;
-                            println!("Server {} updated successfully.", url);
+                            println!("Server {}:{} updated successfully.", host, port);
                             println!("Restart the agent to apply changes.");
                         }
                         None => {
-                            anyhow::bail!("Server {} not found.", url);
+                            anyhow::bail!("Server {}:{} not found.", host, port);
                         }
                     }
                 }

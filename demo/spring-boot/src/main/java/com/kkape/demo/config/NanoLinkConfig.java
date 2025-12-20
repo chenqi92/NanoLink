@@ -15,17 +15,28 @@ import jakarta.annotation.PreDestroy;
  * NanoLink Server Configuration
  *
  * Configures and starts the NanoLink server to receive metrics from agents.
+ * 
+ * <p>
+ * Architecture:
+ * </p>
+ * <ul>
+ * <li>Agent connections: gRPC (port 39100 by default)</li>
+ * <li>Dashboard connections: WebSocket (port 9100 by default)</li>
+ * </ul>
  */
 @Configuration
 public class NanoLinkConfig {
 
     private static final Logger log = LoggerFactory.getLogger(NanoLinkConfig.class);
 
-    @Value("${nanolink.server.port:9100}")
-    private int serverPort;
+    @Value("${nanolink.server.ws-port:9100}")
+    private int wsPort;
 
-    @Value("${nanolink.server.dashboard.enabled:true}")
-    private boolean dashboardEnabled;
+    @Value("${nanolink.server.grpc-port:39100}")
+    private int grpcPort;
+
+    @Value("${nanolink.server.static-files-path:}")
+    private String staticFilesPath;
 
     @Value("${nanolink.server.token:}")
     private String serverToken;
@@ -37,11 +48,11 @@ public class NanoLinkConfig {
      */
     @Bean
     public NanoLinkServer nanoLinkServer(MetricsService metricsService) {
-        log.info("Starting NanoLink Server on port {}", serverPort);
+        log.info("Starting NanoLink Server - WebSocket port: {}, gRPC port: {}", wsPort, grpcPort);
 
-        nanoLinkServer = NanoLinkServer.builder()
-                .port(serverPort)
-                .enableDashboard(dashboardEnabled)
+        var builder = NanoLinkServer.builder()
+                .wsPort(wsPort)
+                .grpcPort(grpcPort)
                 .tokenValidator(createTokenValidator())
                 .onAgentConnect(agent -> {
                     log.info("Agent connected: {} ({})", agent.getHostname(), agent.getAgentId());
@@ -55,8 +66,14 @@ public class NanoLinkConfig {
                 })
                 .onMetrics(metrics -> {
                     metricsService.processMetrics(metrics);
-                })
-                .build();
+                });
+
+        // Configure static files path if provided
+        if (staticFilesPath != null && !staticFilesPath.isEmpty()) {
+            builder.staticFilesPath(staticFilesPath);
+        }
+
+        nanoLinkServer = builder.build();
 
         // Start server in background
         new Thread(() -> {
@@ -68,8 +85,10 @@ public class NanoLinkConfig {
         }, "nanolink-server").start();
 
         log.info("NanoLink Server started successfully");
-        if (dashboardEnabled) {
-            log.info("Dashboard available at http://localhost:{}/", serverPort);
+        if (staticFilesPath != null && !staticFilesPath.isEmpty()) {
+            log.info("Dashboard available at http://localhost:{}/", wsPort);
+        } else {
+            log.info("No static files configured. To enable dashboard, set nanolink.server.static-files-path");
         }
 
         return nanoLinkServer;

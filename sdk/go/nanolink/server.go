@@ -11,14 +11,20 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Default ports
+const (
+	DefaultGrpcPort = 39100
+	DefaultWsPort   = 9100
+)
+
 // Server configuration
 type Config struct {
-	Port             int
-	TLSCert          string
-	TLSKey           string
-	DashboardEnabled bool
-	DashboardPath    string
-	TokenValidator   TokenValidator
+	WsPort          int // WebSocket port for dashboard (default: 9100)
+	GrpcPort        int // gRPC port for agents (default: 39100)
+	TLSCert         string
+	TLSKey          string
+	StaticFilesPath string // Optional path to dashboard static files
+	TokenValidator  TokenValidator
 }
 
 // Token validation result
@@ -58,14 +64,14 @@ type Server struct {
 
 // NewServer creates a new NanoLink server
 func NewServer(config Config) *Server {
-	if config.Port == 0 {
-		config.Port = 9100
+	if config.WsPort == 0 {
+		config.WsPort = DefaultWsPort
+	}
+	if config.GrpcPort == 0 {
+		config.GrpcPort = DefaultGrpcPort
 	}
 	if config.TokenValidator == nil {
 		config.TokenValidator = DefaultTokenValidator
-	}
-	if config.DashboardEnabled == false {
-		config.DashboardEnabled = true
 	}
 
 	return &Server{
@@ -107,20 +113,24 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/agents", s.handleAPIAgents)
 	mux.HandleFunc("/api/health", s.handleAPIHealth)
 
-	// Dashboard (if enabled)
-	if s.config.DashboardEnabled {
-		mux.HandleFunc("/", s.handleDashboard)
+	// Static files or info page
+	if s.config.StaticFilesPath != "" {
+		fs := http.FileServer(http.Dir(s.config.StaticFilesPath))
+		mux.Handle("/", fs)
+	} else {
+		mux.HandleFunc("/", s.handleInfoPage)
 	}
 
-	addr := fmt.Sprintf(":%d", s.config.Port)
+	addr := fmt.Sprintf(":%d", s.config.WsPort)
 	s.httpServer = &http.Server{
 		Addr:    addr,
 		Handler: mux,
 	}
 
-	log.Printf("NanoLink Server starting on port %d", s.config.Port)
-	if s.config.DashboardEnabled {
-		log.Printf("Dashboard available at http://localhost:%d/", s.config.Port)
+	log.Printf("NanoLink Server started on port %d (WebSocket for Dashboard)", s.config.WsPort)
+	log.Printf("Agents should connect via gRPC on port %d", s.config.GrpcPort)
+	if s.config.StaticFilesPath != "" {
+		log.Printf("Dashboard available at http://localhost:%d/", s.config.WsPort)
 	}
 
 	if s.config.TLSCert != "" && s.config.TLSKey != "" {
@@ -262,98 +272,18 @@ func (s *Server) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleDashboard serves the embedded dashboard
-func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	// Serve embedded dashboard HTML
+// handleInfoPage serves a simple info page when no static files are configured
+func (s *Server) handleInfoPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(embeddedDashboard))
-}
-
-// Embedded minimal dashboard
-var embeddedDashboard = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NanoLink Dashboard</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        h1 { font-size: 24px; font-weight: 600; }
-        .status { display: flex; align-items: center; gap: 8px; }
-        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; }
-        .status-dot.disconnected { background: #ef4444; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
-        .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
-        .card-title { font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 15px; }
-        .card-value { font-size: 32px; font-weight: 700; }
-        .card-subtitle { font-size: 12px; color: #64748b; margin-top: 5px; }
-        .progress-bar { height: 6px; background: #334155; border-radius: 3px; margin-top: 10px; overflow: hidden; }
-        .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
-        .progress-fill.cpu { background: linear-gradient(90deg, #3b82f6, #8b5cf6); }
-        .progress-fill.memory { background: linear-gradient(90deg, #22c55e, #84cc16); }
-        .agents { margin-top: 30px; }
-        .agents h2 { font-size: 18px; margin-bottom: 15px; }
-        .agent-list { display: flex; flex-direction: column; gap: 10px; }
-        .agent-item { background: #1e293b; border-radius: 8px; padding: 15px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #334155; }
-        .no-agents { text-align: center; padding: 40px; color: #64748b; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>NanoLink Dashboard</h1>
-            <div class="status">
-                <div class="status-dot" id="statusDot"></div>
-                <span id="statusText">Connecting...</span>
-            </div>
-        </header>
-        <div class="grid">
-            <div class="card">
-                <div class="card-title">CPU Usage</div>
-                <div class="card-value" id="cpuValue">--</div>
-                <div class="card-subtitle" id="cpuCores">-- cores</div>
-                <div class="progress-bar"><div class="progress-fill cpu" id="cpuBar" style="width: 0%"></div></div>
-            </div>
-            <div class="card">
-                <div class="card-title">Memory</div>
-                <div class="card-value" id="memValue">--</div>
-                <div class="card-subtitle" id="memInfo">-- / --</div>
-                <div class="progress-bar"><div class="progress-fill memory" id="memBar" style="width: 0%"></div></div>
-            </div>
-        </div>
-        <div class="agents">
-            <h2>Connected Agents</h2>
-            <div class="agent-list" id="agentList">
-                <div class="no-agents">No agents connected</div>
-            </div>
-        </div>
-    </div>
-    <script>
-        const ws = new WebSocket("ws://" + window.location.host + "/ws");
-        ws.onopen = () => {
-            document.getElementById('statusDot').classList.remove('disconnected');
-            document.getElementById('statusText').textContent = 'Connected';
-        };
-        ws.onclose = () => {
-            document.getElementById('statusDot').classList.add('disconnected');
-            document.getElementById('statusText').textContent = 'Disconnected';
-        };
-        // Fetch agents periodically
-        setInterval(() => {
-            fetch('/api/agents').then(r => r.json()).then(data => {
-                const list = document.getElementById('agentList');
-                if (data.agents && data.agents.length > 0) {
-                    list.innerHTML = data.agents.map(a =>
-                        '<div class="agent-item"><div>' + a.hostname + '</div><div>' + a.os + '/' + a.arch + '</div></div>'
-                    ).join('');
-                } else {
-                    list.innerHTML = '<div class="no-agents">No agents connected</div>';
-                }
-            });
-        }, 2000);
-    </script>
+	w.Write([]byte(`<!DOCTYPE html>
+<html>
+<head><title>NanoLink Server</title></head>
+<body style="font-family:sans-serif;padding:40px;background:#0f172a;color:#e2e8f0">
+<h1>NanoLink Server</h1>
+<p>The server is running. WebSocket endpoint: <code>/ws</code></p>
+<p>To use a dashboard, configure StaticFilesPath or use the demo projects.</p>
+<p><a href="/api/health" style="color:#3b82f6">Health Check API</a></p>
+<p><a href="/api/agents" style="color:#3b82f6">Connected Agents API</a></p>
 </body>
-</html>`
+</html>`))
+}

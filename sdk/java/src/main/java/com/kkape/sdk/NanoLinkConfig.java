@@ -4,19 +4,50 @@ package com.kkape.sdk;
  * Configuration for NanoLink Server
  */
 public class NanoLinkConfig {
-    private int port = 9100;
+    /** Default gRPC port for agent connections */
+    public static final int DEFAULT_GRPC_PORT = 39100;
+
+    /** Default WebSocket port for dashboard connections */
+    public static final int DEFAULT_WS_PORT = 9100;
+
+    private int grpcPort = DEFAULT_GRPC_PORT;
+    private int wsPort = DEFAULT_WS_PORT;
     private String tlsCertPath;
     private String tlsKeyPath;
-    private boolean dashboardEnabled = true;
-    private String dashboardPath = null; // null means use embedded dashboard
     private TokenValidator tokenValidator = token -> new TokenValidator.ValidationResult(true, 0);
 
-    public int getPort() {
-        return port;
+    public int getGrpcPort() {
+        return grpcPort;
     }
 
+    public void setGrpcPort(int grpcPort) {
+        this.grpcPort = grpcPort;
+    }
+
+    public int getWsPort() {
+        return wsPort;
+    }
+
+    public void setWsPort(int wsPort) {
+        this.wsPort = wsPort;
+    }
+
+    /**
+     * @deprecated Use {@link #getGrpcPort()} for agent connections or
+     *             {@link #getWsPort()} for dashboard
+     */
+    @Deprecated
+    public int getPort() {
+        return wsPort;
+    }
+
+    /**
+     * @deprecated Use {@link #setGrpcPort(int)} for agent connections or
+     *             {@link #setWsPort(int)} for dashboard
+     */
+    @Deprecated
     public void setPort(int port) {
-        this.port = port;
+        this.wsPort = port;
     }
 
     public String getTlsCertPath() {
@@ -33,22 +64,6 @@ public class NanoLinkConfig {
 
     public void setTlsKeyPath(String tlsKeyPath) {
         this.tlsKeyPath = tlsKeyPath;
-    }
-
-    public boolean isDashboardEnabled() {
-        return dashboardEnabled;
-    }
-
-    public void setDashboardEnabled(boolean dashboardEnabled) {
-        this.dashboardEnabled = dashboardEnabled;
-    }
-
-    public String getDashboardPath() {
-        return dashboardPath;
-    }
-
-    public void setDashboardPath(String dashboardPath) {
-        this.dashboardPath = dashboardPath;
     }
 
     public TokenValidator getTokenValidator() {

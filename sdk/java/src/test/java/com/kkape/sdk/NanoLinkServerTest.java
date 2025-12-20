@@ -21,28 +21,30 @@ class NanoLinkServerTest {
 
         assertNotNull(server);
         assertNotNull(server.getConfig());
-        assertEquals(9100, server.getConfig().getPort());
-        assertTrue(server.getConfig().isDashboardEnabled());
+        assertEquals(NanoLinkConfig.DEFAULT_WS_PORT, server.getConfig().getWsPort());
+        assertEquals(NanoLinkConfig.DEFAULT_GRPC_PORT, server.getConfig().getGrpcPort());
     }
 
     @Test
-    @DisplayName("Builder creates server with custom port")
-    void testBuilderCustomPort() {
+    @DisplayName("Builder creates server with custom ports")
+    void testBuilderCustomPorts() {
         NanoLinkServer server = NanoLinkServer.builder()
-                .port(8080)
+                .wsPort(8080)
+                .grpcPort(40000)
                 .build();
 
-        assertEquals(8080, server.getConfig().getPort());
+        assertEquals(8080, server.getConfig().getWsPort());
+        assertEquals(40000, server.getConfig().getGrpcPort());
     }
 
     @Test
-    @DisplayName("Builder creates server with dashboard disabled")
-    void testBuilderDashboardDisabled() {
+    @DisplayName("Builder creates server with static files path")
+    void testBuilderStaticFilesPath() {
         NanoLinkServer server = NanoLinkServer.builder()
-                .enableDashboard(false)
+                .staticFilesPath("/path/to/dashboard")
                 .build();
 
-        assertFalse(server.getConfig().isDashboardEnabled());
+        assertNotNull(server);
     }
 
     @Test
@@ -131,20 +133,22 @@ class NanoLinkServerTest {
     @DisplayName("Builder creates server with all options")
     void testBuilderFullConfig() {
         NanoLinkServer server = NanoLinkServer.builder()
-                .port(9200)
-                .enableDashboard(true)
-                .dashboardPath("/custom/path")
+                .wsPort(9200)
+                .grpcPort(39200)
+                .staticFilesPath("/custom/path")
                 .tlsCert("/cert.pem")
                 .tlsKey("/key.pem")
-                .onAgentConnect(agent -> {})
-                .onAgentDisconnect(agent -> {})
-                .onMetrics(metrics -> {})
+                .onAgentConnect(agent -> {
+                })
+                .onAgentDisconnect(agent -> {
+                })
+                .onMetrics(metrics -> {
+                })
                 .build();
 
         NanoLinkConfig config = server.getConfig();
-        assertEquals(9200, config.getPort());
-        assertTrue(config.isDashboardEnabled());
-        assertEquals("/custom/path", config.getDashboardPath());
+        assertEquals(9200, config.getWsPort());
+        assertEquals(39200, config.getGrpcPort());
         assertEquals("/cert.pem", config.getTlsCertPath());
         assertEquals("/key.pem", config.getTlsKeyPath());
     }
