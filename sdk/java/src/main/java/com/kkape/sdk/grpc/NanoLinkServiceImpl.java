@@ -260,19 +260,37 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
     /**
      * Convert proto Metrics to SDK Metrics model.
-     * Simplified conversion that only maps essential fields.
+     * Complete conversion including all available fields.
      */
     private Metrics convertMetrics(io.nanolink.proto.Metrics proto) {
         Metrics metrics = new Metrics();
         metrics.setTimestamp(proto.getTimestamp());
         metrics.setHostname(proto.getHostname());
 
-        // Convert CPU
+        // Convert load average
+        List<Double> loadAvgList = proto.getLoadAverageList();
+        if (!loadAvgList.isEmpty()) {
+            double[] loadAvg = new double[loadAvgList.size()];
+            for (int i = 0; i < loadAvgList.size(); i++) {
+                loadAvg[i] = loadAvgList.get(i);
+            }
+            metrics.setLoadAverage(loadAvg);
+        }
+
+        // Convert CPU with extended fields
         if (proto.hasCpu()) {
             CpuMetrics cpu = proto.getCpu();
             Metrics.CpuMetrics sdkCpu = new Metrics.CpuMetrics();
             sdkCpu.setUsagePercent(cpu.getUsagePercent());
             sdkCpu.setCoreCount(cpu.getCoreCount());
+            sdkCpu.setModel(cpu.getModel());
+            sdkCpu.setVendor(cpu.getVendor());
+            sdkCpu.setFrequencyMhz(cpu.getFrequencyMhz());
+            sdkCpu.setFrequencyMaxMhz(cpu.getFrequencyMaxMhz());
+            sdkCpu.setPhysicalCores(cpu.getPhysicalCores());
+            sdkCpu.setLogicalCores(cpu.getLogicalCores());
+            sdkCpu.setArchitecture(cpu.getArchitecture());
+            sdkCpu.setTemperature(cpu.getTemperature());
 
             // Convert per-core usage list to array
             List<Double> perCoreList = cpu.getPerCoreUsageList();
@@ -284,7 +302,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
             metrics.setCpu(sdkCpu);
         }
 
-        // Convert Memory
+        // Convert Memory with extended fields
         if (proto.hasMemory()) {
             MemoryMetrics mem = proto.getMemory();
             Metrics.MemoryMetrics sdkMem = new Metrics.MemoryMetrics();
@@ -293,10 +311,14 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
             sdkMem.setAvailable(mem.getAvailable());
             sdkMem.setSwapTotal(mem.getSwapTotal());
             sdkMem.setSwapUsed(mem.getSwapUsed());
+            sdkMem.setCached(mem.getCached());
+            sdkMem.setBuffers(mem.getBuffers());
+            sdkMem.setMemoryType(mem.getMemoryType());
+            sdkMem.setMemorySpeedMhz(mem.getMemorySpeedMhz());
             metrics.setMemory(sdkMem);
         }
 
-        // Convert Disks
+        // Convert Disks with extended fields
         List<Metrics.DiskMetrics> diskList = new ArrayList<>();
         for (DiskMetrics disk : proto.getDisksList()) {
             Metrics.DiskMetrics sdkDisk = new Metrics.DiskMetrics();
@@ -308,11 +330,18 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
             sdkDisk.setAvailable(disk.getAvailable());
             sdkDisk.setReadBytesPerSec(disk.getReadBytesSec());
             sdkDisk.setWriteBytesPerSec(disk.getWriteBytesSec());
+            sdkDisk.setModel(disk.getModel());
+            sdkDisk.setSerial(disk.getSerial());
+            sdkDisk.setDiskType(disk.getDiskType());
+            sdkDisk.setReadIops(disk.getReadIops());
+            sdkDisk.setWriteIops(disk.getWriteIops());
+            sdkDisk.setTemperature(disk.getTemperature());
+            sdkDisk.setHealthStatus(disk.getHealthStatus());
             diskList.add(sdkDisk);
         }
         metrics.setDisks(diskList);
 
-        // Convert Networks
+        // Convert Networks with extended fields
         List<Metrics.NetworkMetrics> netList = new ArrayList<>();
         for (NetworkMetrics net : proto.getNetworksList()) {
             Metrics.NetworkMetrics sdkNet = new Metrics.NetworkMetrics();
@@ -322,9 +351,86 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
             sdkNet.setRxPacketsPerSec(net.getRxPacketsSec());
             sdkNet.setTxPacketsPerSec(net.getTxPacketsSec());
             sdkNet.setUp(net.getIsUp());
+            sdkNet.setMacAddress(net.getMacAddress());
+            sdkNet.setIpAddresses(net.getIpAddressesList());
+            sdkNet.setSpeedMbps(net.getSpeedMbps());
+            sdkNet.setInterfaceType(net.getInterfaceType());
             netList.add(sdkNet);
         }
         metrics.setNetworks(netList);
+
+        // Convert GPUs
+        List<Metrics.GpuMetrics> gpuList = new ArrayList<>();
+        for (GpuMetrics gpu : proto.getGpusList()) {
+            Metrics.GpuMetrics sdkGpu = new Metrics.GpuMetrics();
+            sdkGpu.setIndex(gpu.getIndex());
+            sdkGpu.setName(gpu.getName());
+            sdkGpu.setVendor(gpu.getVendor());
+            sdkGpu.setUsagePercent(gpu.getUsagePercent());
+            sdkGpu.setMemoryTotal(gpu.getMemoryTotal());
+            sdkGpu.setMemoryUsed(gpu.getMemoryUsed());
+            sdkGpu.setTemperature(gpu.getTemperature());
+            sdkGpu.setFanSpeedPercent(gpu.getFanSpeedPercent());
+            sdkGpu.setPowerWatts(gpu.getPowerWatts());
+            sdkGpu.setPowerLimitWatts(gpu.getPowerLimitWatts());
+            sdkGpu.setClockCoreMhz(gpu.getClockCoreMhz());
+            sdkGpu.setClockMemoryMhz(gpu.getClockMemoryMhz());
+            sdkGpu.setDriverVersion(gpu.getDriverVersion());
+            sdkGpu.setPcieGeneration(gpu.getPcieGeneration());
+            sdkGpu.setEncoderUsage(gpu.getEncoderUsage());
+            sdkGpu.setDecoderUsage(gpu.getDecoderUsage());
+            gpuList.add(sdkGpu);
+        }
+        metrics.setGpus(gpuList);
+
+        // Convert SystemInfo
+        if (proto.hasSystemInfo()) {
+            io.nanolink.proto.SystemInfo sysInfo = proto.getSystemInfo();
+            Metrics.SystemInfo sdkSysInfo = new Metrics.SystemInfo();
+            sdkSysInfo.setOsName(sysInfo.getOsName());
+            sdkSysInfo.setOsVersion(sysInfo.getOsVersion());
+            sdkSysInfo.setKernelVersion(sysInfo.getKernelVersion());
+            sdkSysInfo.setHostname(sysInfo.getHostname());
+            sdkSysInfo.setBootTime(sysInfo.getBootTime());
+            sdkSysInfo.setUptimeSeconds(sysInfo.getUptimeSeconds());
+            sdkSysInfo.setMotherboardModel(sysInfo.getMotherboardModel());
+            sdkSysInfo.setMotherboardVendor(sysInfo.getMotherboardVendor());
+            sdkSysInfo.setBiosVersion(sysInfo.getBiosVersion());
+            sdkSysInfo.setSystemModel(sysInfo.getSystemModel());
+            sdkSysInfo.setSystemVendor(sysInfo.getSystemVendor());
+            metrics.setSystemInfo(sdkSysInfo);
+        }
+
+        // Convert User Sessions
+        List<Metrics.UserSession> sessionList = new ArrayList<>();
+        for (io.nanolink.proto.UserSession session : proto.getUserSessionsList()) {
+            Metrics.UserSession sdkSession = new Metrics.UserSession();
+            sdkSession.setUsername(session.getUsername());
+            sdkSession.setTty(session.getTty());
+            sdkSession.setLoginTime(session.getLoginTime());
+            sdkSession.setRemoteHost(session.getRemoteHost());
+            sdkSession.setIdleSeconds(session.getIdleSeconds());
+            sdkSession.setSessionType(session.getSessionType());
+            sessionList.add(sdkSession);
+        }
+        metrics.setUserSessions(sessionList);
+
+        // Convert NPUs
+        List<Metrics.NpuMetrics> npuList = new ArrayList<>();
+        for (NpuMetrics npu : proto.getNpusList()) {
+            Metrics.NpuMetrics sdkNpu = new Metrics.NpuMetrics();
+            sdkNpu.setIndex(npu.getIndex());
+            sdkNpu.setName(npu.getName());
+            sdkNpu.setVendor(npu.getVendor());
+            sdkNpu.setUsagePercent(npu.getUsagePercent());
+            sdkNpu.setMemoryTotal(npu.getMemoryTotal());
+            sdkNpu.setMemoryUsed(npu.getMemoryUsed());
+            sdkNpu.setTemperature(npu.getTemperature());
+            sdkNpu.setPowerWatts(npu.getPowerWatts());
+            sdkNpu.setDriverVersion(npu.getDriverVersion());
+            npuList.add(sdkNpu);
+        }
+        metrics.setNpus(npuList);
 
         return metrics;
     }

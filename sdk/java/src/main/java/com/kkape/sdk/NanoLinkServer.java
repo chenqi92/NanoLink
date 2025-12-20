@@ -116,9 +116,14 @@ public class NanoLinkServer {
         serverChannel = bootstrap.bind(config.getWsPort()).sync().channel();
         log.info("NanoLink Server started on port {} (WebSocket for Dashboard)", config.getWsPort());
 
-        // Start gRPC server for agent connections
+        // Start gRPC server for agent connections with keepalive settings
         grpcServer = ServerBuilder.forPort(config.getGrpcPort())
                 .addService(new NanoLinkServiceImpl(this, config.getTokenValidator()))
+                .keepAliveTime(30, TimeUnit.SECONDS)
+                .keepAliveTimeout(10, TimeUnit.SECONDS)
+                .permitKeepAliveTime(10, TimeUnit.SECONDS)
+                .permitKeepAliveWithoutCalls(true)
+                .maxInboundMessageSize(16 * 1024 * 1024) // 16MB max message size
                 .build()
                 .start();
         log.info("gRPC Server started on port {} (Agent connections)", config.getGrpcPort());

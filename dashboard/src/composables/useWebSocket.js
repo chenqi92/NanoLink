@@ -107,38 +107,121 @@ export function useWebSocket() {
     setInterval(fetchMetrics, 2000)
   }
 
-  // Transform API metrics to dashboard format
+  // Transform API metrics to dashboard format with complete data
   const transformMetrics = (metrics) => {
     if (!metrics) return null
+
+    const cpu = metrics.cpu || {}
+    const memory = metrics.memory || {}
+
     return {
       timestamp: new Date(metrics.timestamp).getTime(),
       cpu: {
-        usagePercent: metrics.cpuUsage || 0,
-        coreCount: metrics.cpuCores || 0,
-        perCoreUsage: []
+        usagePercent: cpu.usagePercent || 0,
+        coreCount: cpu.coreCount || 0,
+        perCoreUsage: cpu.perCoreUsage || [],
+        model: cpu.model || '',
+        vendor: cpu.vendor || '',
+        frequencyMhz: cpu.frequencyMhz || 0,
+        frequencyMaxMhz: cpu.frequencyMaxMhz || 0,
+        physicalCores: cpu.physicalCores || 0,
+        logicalCores: cpu.logicalCores || 0,
+        architecture: cpu.architecture || '',
+        temperature: cpu.temperature || 0
       },
       memory: {
-        total: metrics.memoryTotal || 0,
-        used: metrics.memoryUsed || 0,
-        available: (metrics.memoryTotal || 0) - (metrics.memoryUsed || 0),
-        usagePercent: metrics.memoryUsage || 0
+        total: memory.total || 0,
+        used: memory.used || 0,
+        available: memory.available || 0,
+        usagePercent: memory.usagePercent || 0,
+        swapTotal: memory.swapTotal || 0,
+        swapUsed: memory.swapUsed || 0,
+        cached: memory.cached || 0,
+        buffers: memory.buffers || 0,
+        memoryType: memory.memoryType || '',
+        memorySpeedMhz: memory.memorySpeedMhz || 0
       },
       disks: (metrics.disks || []).map(d => ({
         mountPoint: d.mountPoint,
         device: d.device,
+        fsType: d.fsType,
         total: d.total,
         used: d.used,
+        available: d.available,
         usagePercent: d.usagePercent,
         readBytesPerSec: d.readBytesPerSec || 0,
-        writeBytesPerSec: d.writeBytesPerSec || 0
+        writeBytesPerSec: d.writeBytesPerSec || 0,
+        model: d.model || '',
+        serial: d.serial || '',
+        diskType: d.diskType || '',
+        readIops: d.readIops || 0,
+        writeIops: d.writeIops || 0,
+        temperature: d.temperature || 0,
+        healthStatus: d.healthStatus || ''
       })),
       networks: (metrics.networks || []).map(n => ({
         interface: n.interfaceName,
         rxBytesPerSec: n.rxBytesPerSec || 0,
         txBytesPerSec: n.txBytesPerSec || 0,
-        isUp: n.isUp
+        rxPacketsPerSec: n.rxPacketsPerSec || 0,
+        txPacketsPerSec: n.txPacketsPerSec || 0,
+        isUp: n.isUp,
+        macAddress: n.macAddress || '',
+        ipAddresses: n.ipAddresses || [],
+        speedMbps: n.speedMbps || 0,
+        interfaceType: n.interfaceType || ''
       })),
-      loadAverage: metrics.loadAverage || [0, 0, 0]
+      loadAverage: metrics.loadAverage || [0, 0, 0],
+      systemInfo: metrics.systemInfo ? {
+        osName: metrics.systemInfo.osName || '',
+        osVersion: metrics.systemInfo.osVersion || '',
+        kernelVersion: metrics.systemInfo.kernelVersion || '',
+        hostname: metrics.systemInfo.hostname || '',
+        bootTime: metrics.systemInfo.bootTime || 0,
+        uptimeSeconds: metrics.systemInfo.uptimeSeconds || 0,
+        motherboardModel: metrics.systemInfo.motherboardModel || '',
+        motherboardVendor: metrics.systemInfo.motherboardVendor || '',
+        biosVersion: metrics.systemInfo.biosVersion || '',
+        systemModel: metrics.systemInfo.systemModel || '',
+        systemVendor: metrics.systemInfo.systemVendor || ''
+      } : null,
+      gpus: (metrics.gpus || []).map(g => ({
+        index: g.index,
+        name: g.name || '',
+        vendor: g.vendor || '',
+        usagePercent: g.usagePercent || 0,
+        memoryTotal: g.memoryTotal || 0,
+        memoryUsed: g.memoryUsed || 0,
+        temperature: g.temperature || 0,
+        fanSpeedPercent: g.fanSpeedPercent || 0,
+        powerWatts: g.powerWatts || 0,
+        powerLimitWatts: g.powerLimitWatts || 0,
+        clockCoreMhz: g.clockCoreMhz || 0,
+        clockMemoryMhz: g.clockMemoryMhz || 0,
+        driverVersion: g.driverVersion || '',
+        pcieGeneration: g.pcieGeneration || '',
+        encoderUsage: g.encoderUsage || 0,
+        decoderUsage: g.decoderUsage || 0
+      })),
+      userSessions: (metrics.userSessions || []).map(s => ({
+        username: s.username || '',
+        tty: s.tty || '',
+        loginTime: s.loginTime || 0,
+        remoteHost: s.remoteHost || '',
+        idleSeconds: s.idleSeconds || 0,
+        sessionType: s.sessionType || ''
+      })),
+      npus: (metrics.npus || []).map(n => ({
+        index: n.index,
+        name: n.name || '',
+        vendor: n.vendor || '',
+        usagePercent: n.usagePercent || 0,
+        memoryTotal: n.memoryTotal || 0,
+        memoryUsed: n.memoryUsed || 0,
+        temperature: n.temperature || 0,
+        powerWatts: n.powerWatts || 0,
+        driverVersion: n.driverVersion || ''
+      }))
     }
   }
 
