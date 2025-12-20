@@ -33,16 +33,7 @@
         <url>https://github.com/chenqi92/NanoLink/tree/main</url>
     </scm>
 
-    <distributionManagement>
-        <repository>
-            <id>central</id>
-            <url>https://central.sonatype.com/api/v1/publisher/deployments/download/</url>
-        </repository>
-        <snapshotRepository>
-            <id>central</id>
-            <url>https://central.sonatype.com/api/v1/publisher/deployments/download/</url>
-        </snapshotRepository>
-    </distributionManagement>
+    <!-- distributionManagement not needed with central-publishing-maven-plugin -->
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
@@ -166,10 +157,42 @@
                     <execution>
                         <id>attach-sources</id>
                         <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Javadoc JAR -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.6.3</version>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
                             <goal>jar</goal>
                         </goals>
                     </execution>
                 </executions>
+                <configuration>
+                    <doclint>none</doclint>
+                    <failOnError>false</failOnError>
+                </configuration>
+            </plugin>
+
+            <!-- Sonatype Central Publishing Plugin -->
+            <plugin>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>0.6.0</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <publishingServerId>central</publishingServerId>
+                    <autoPublish>true</autoPublish>
+                    <waitUntil>published</waitUntil>
+                </configuration>
             </plugin>
         </plugins>
     </build>

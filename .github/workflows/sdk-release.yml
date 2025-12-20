@@ -173,9 +173,9 @@ jobs:
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          echo "🚀 Publishing to Maven Central..."
+          echo "🚀 Publishing to Maven Central with Central Publishing Plugin..."
           mvn deploy -Pgpg -DskipTests -Dskip.protobuf=true \
-            -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }}
+            -Dgpg.passphrase="${GPG_PASSPHRASE}"
 
       - name: Publish to GitHub Packages
         working-directory: sdk/java
