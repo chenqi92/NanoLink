@@ -7,9 +7,8 @@ This directory contains demo projects showing how to integrate NanoLink SDK into
 | Demo | Language | Framework | Description |
 |------|----------|-----------|-------------|
 | [spring-boot](./spring-boot) | Java | Spring Boot 3.x | REST API server with NanoLink integration |
-| *go-gin* | Go | Gin | Coming soon |
-| *python-fastapi* | Python | FastAPI | Coming soon |
-| *python-flask* | Python | Flask | Coming soon |
+| [go-gin](./go-gin) | Go | Gin | REST API server with NanoLink integration |
+| [python-fastapi](./python-fastapi) | Python | FastAPI | REST API server with NanoLink integration |
 
 ## Quick Start
 
