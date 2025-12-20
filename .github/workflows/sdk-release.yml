@@ -2,9 +2,8 @@ name: SDK Release
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "VERSION"
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       version:

@@ -3,7 +3,7 @@ name: Apps Release
 on:
   push:
     tags:
-      - "app-v*"
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
@@ -48,7 +48,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
-            echo "version=${GITHUB_REF#refs/tags/app-v}" >> $GITHUB_OUTPUT
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push
@@ -92,7 +92,7 @@ jobs:
         working-directory: apps/desktop
         shell: pwsh
         run: |
-          $version = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ github.event.inputs.version }}" } else { "${{ github.ref_name }}".Replace("app-v", "") }
+          $version = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ github.event.inputs.version }}" } else { "${{ github.ref_name }}".Replace("v", "") }
           $buildDir = "build\windows\x64\runner\Release"
           $outDir = "release"
           New-Item -ItemType Directory -Force -Path $outDir
@@ -133,7 +133,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#app-v}"
+          VERSION="${VERSION#v}"
           mkdir -p release
           hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/desktop.app -ov -format UDZO "release/NanoLink-macOS-Intel-$VERSION.dmg"
 
@@ -172,7 +172,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#app-v}"
+          VERSION="${VERSION#v}"
           mkdir -p release
           hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/desktop.app -ov -format UDZO "release/NanoLink-macOS-AppleSilicon-$VERSION.dmg"
 
@@ -215,7 +215,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#app-v}"
+          VERSION="${VERSION#v}"
           mkdir -p release
           tar -czvf "release/NanoLink-Linux-$VERSION.tar.gz" -C build/linux/x64/release/bundle .
 
@@ -274,13 +274,13 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
-            echo "version=${GITHUB_REF#refs/tags/app-v}" >> $GITHUB_OUTPUT
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
           fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: app-v${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
           name: NanoLink Apps v${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
