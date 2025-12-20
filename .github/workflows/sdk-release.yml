@@ -184,7 +184,8 @@ jobs:
         run: |
           echo "🚀 Publishing to GitHub Packages..."
           mvn deploy -DskipTests -Dskip.protobuf=true \
-            -Dmaven.deploy.skip=false \
+            -Dcentral.publishing.skip=true \
+            -Dgpg.skip=true \
             -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/${{ github.repository }}
 
   # Build Go SDK
