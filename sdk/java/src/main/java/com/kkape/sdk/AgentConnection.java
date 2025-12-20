@@ -32,6 +32,7 @@ public class AgentConnection {
     private Instant connectedAt;
     private Instant lastHeartbeat;
     private Metrics lastMetrics;
+    private Instant lastMetricsAt;
 
     private final Map<String, CompletableFuture<Command.Result>> pendingCommands = new ConcurrentHashMap<>();
 
@@ -39,6 +40,23 @@ public class AgentConnection {
         this.agentId = UUID.randomUUID().toString();
         this.channel = channel;
         this.server = server;
+        this.connectedAt = Instant.now();
+        this.lastHeartbeat = Instant.now();
+    }
+
+    /**
+     * Constructor for gRPC-based connections (no Netty Channel)
+     */
+    public AgentConnection(String agentId, String hostname, String os, String arch,
+            String agentVersion, int permissionLevel) {
+        this.agentId = agentId;
+        this.channel = null;
+        this.server = null;
+        this.hostname = hostname;
+        this.os = os;
+        this.arch = arch;
+        this.agentVersion = agentVersion;
+        this.permissionLevel = permissionLevel;
         this.connectedAt = Instant.now();
         this.lastHeartbeat = Instant.now();
     }
@@ -65,9 +83,8 @@ public class AgentConnection {
         // Check permission
         if (command.getRequiredPermission() > permissionLevel) {
             return CompletableFuture.failedFuture(
-                new SecurityException("Insufficient permission. Required: " + command.getRequiredPermission() +
-                    ", Have: " + permissionLevel)
-            );
+                    new SecurityException("Insufficient permission. Required: " + command.getRequiredPermission() +
+                            ", Have: " + permissionLevel));
         }
 
         String commandId = UUID.randomUUID().toString();
@@ -78,13 +95,12 @@ public class AgentConnection {
 
         // Set timeout
         future.orTimeout(30, TimeUnit.SECONDS)
-            .whenComplete((result, error) -> pendingCommands.remove(commandId));
+                .whenComplete((result, error) -> pendingCommands.remove(commandId));
 
         // Send command
         byte[] data = command.toProtobuf();
         channel.writeAndFlush(new BinaryWebSocketFrame(
-            channel.alloc().buffer().writeBytes(data)
-        ));
+                channel.alloc().buffer().writeBytes(data)));
 
         log.debug("Sent command {} to agent {}", command.getType(), hostname);
         return future;
@@ -112,7 +128,17 @@ public class AgentConnection {
      */
     public void updateMetrics(Metrics metrics) {
         this.lastMetrics = metrics;
-        server.handleMetrics(metrics);
+        this.lastMetricsAt = Instant.now();
+        if (server != null) {
+            server.handleMetrics(metrics);
+        }
+    }
+
+    /**
+     * Update last metrics time (for gRPC connections)
+     */
+    public void updateLastMetricsAt() {
+        this.lastMetricsAt = Instant.now();
     }
 
     /**
@@ -122,9 +148,7 @@ public class AgentConnection {
         if (channel.isActive()) {
             channel.close();
         }
-        pendingCommands.values().forEach(f ->
-            f.completeExceptionally(new IllegalStateException("Connection closed"))
-        );
+        pendingCommands.values().forEach(f -> f.completeExceptionally(new IllegalStateException("Connection closed")));
         pendingCommands.clear();
     }
 
@@ -222,6 +246,10 @@ public class AgentConnection {
 
     public Metrics getLastMetrics() {
         return lastMetrics;
+    }
+
+    public Instant getLastMetricsAt() {
+        return lastMetricsAt;
     }
 
     public Channel getChannel() {
