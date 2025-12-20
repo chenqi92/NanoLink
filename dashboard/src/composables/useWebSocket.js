@@ -69,7 +69,7 @@ export function useWebSocket() {
           data.agents.forEach(agent => {
             newAgents[agent.agentId] = {
               ...agent,
-              lastMetrics: agents.value[agent.agentId]?.lastMetrics || generateDemoMetrics()
+              lastMetrics: agents.value[agent.agentId]?.lastMetrics || null
             }
           })
           agents.value = newAgents
@@ -84,15 +84,62 @@ export function useWebSocket() {
       }
     }
 
-    fetchAgents()
-    setInterval(fetchAgents, 3000)
+    const fetchMetrics = async () => {
+      try {
+        const response = await fetch('/api/metrics')
+        const metricsMap = await response.json()
+        // metricsMap is { agentId: metrics }
+        Object.entries(metricsMap).forEach(([agentId, metrics]) => {
+          if (agents.value[agentId]) {
+            agents.value[agentId].lastMetrics = transformMetrics(metrics)
+          }
+        })
+      } catch (error) {
+        console.error('Failed to fetch metrics:', error)
+      }
+    }
 
-    // Demo: Update metrics periodically
-    setInterval(() => {
-      Object.keys(agents.value).forEach(agentId => {
-        agents.value[agentId].lastMetrics = generateDemoMetrics()
-      })
-    }, 1000)
+    fetchAgents()
+    setInterval(fetchAgents, 5000)
+
+    // Fetch real metrics from API
+    fetchMetrics()
+    setInterval(fetchMetrics, 2000)
+  }
+
+  // Transform API metrics to dashboard format
+  const transformMetrics = (metrics) => {
+    if (!metrics) return null
+    return {
+      timestamp: new Date(metrics.timestamp).getTime(),
+      cpu: {
+        usagePercent: metrics.cpuUsage || 0,
+        coreCount: metrics.cpuCores || 0,
+        perCoreUsage: []
+      },
+      memory: {
+        total: metrics.memoryTotal || 0,
+        used: metrics.memoryUsed || 0,
+        available: (metrics.memoryTotal || 0) - (metrics.memoryUsed || 0),
+        usagePercent: metrics.memoryUsage || 0
+      },
+      disks: (metrics.disks || []).map(d => ({
+        mountPoint: d.mountPoint,
+        device: d.device,
+        total: d.total,
+        used: d.used,
+        usagePercent: d.usagePercent,
+        readBytesPerSec: d.readBytesPerSec || 0,
+        writeBytesPerSec: d.writeBytesPerSec || 0
+      })),
+      networks: (metrics.networks || []).map(n => ({
+        interface: n.interfaceName,
+        rxBytesPerSec: n.rxBytesPerSec || 0,
+        txBytesPerSec: n.txBytesPerSec || 0,
+        isUp: n.isUp
+      })),
+      loadAverage: metrics.loadAverage || [0, 0, 0]
+    }
   }
 
   const generateDemoMetrics = () => ({
