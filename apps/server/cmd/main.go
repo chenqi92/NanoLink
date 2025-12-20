@@ -13,6 +13,7 @@ import (
 
 	server "github.com/chenqi92/NanoLink/apps/server"
 	"github.com/chenqi92/NanoLink/apps/server/internal/config"
+	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	grpcserver "github.com/chenqi92/NanoLink/apps/server/internal/grpc"
 	"github.com/chenqi92/NanoLink/apps/server/internal/handler"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
@@ -42,9 +43,39 @@ func main() {
 		cfg = config.Default()
 	}
 
+	// Initialize database
+	dbCfg := database.Config{
+		Type:     cfg.Database.Type,
+		Path:     cfg.Database.Path,
+		Host:     cfg.Database.Host,
+		Port:     cfg.Database.Port,
+		Database: cfg.Database.Database,
+		Username: cfg.Database.Username,
+		Password: cfg.Database.Password,
+	}
+	if err := database.Initialize(dbCfg, sugar); err != nil {
+		sugar.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer database.Close()
+
 	// Initialize services
 	metricsService := service.NewMetricsService(sugar)
 	agentService := service.NewAgentService(sugar, metricsService)
+
+	// Initialize auth services
+	jwtExpire := time.Duration(cfg.JWT.ExpireHour) * time.Hour
+	if jwtExpire == 0 {
+		jwtExpire = 24 * time.Hour
+	}
+	authConfig := service.AuthConfig{
+		JWTSecret: cfg.JWT.Secret,
+		JWTExpire: jwtExpire,
+		AdminUser: cfg.SuperAdmin.Username,
+		AdminPass: cfg.SuperAdmin.Password,
+	}
+	authService := service.NewAuthService(database.GetDB(), authConfig, sugar)
+	groupService := service.NewGroupService(database.GetDB(), sugar)
+	permService := service.NewPermissionService(database.GetDB(), sugar)
 
 	// Setup Gin router
 	if cfg.Server.Mode == "release" {
@@ -58,17 +89,71 @@ func main() {
 	// API routes
 	api := router.Group("/api")
 	{
-		h := handler.NewHandler(agentService, metricsService, sugar)
-		api.GET("/health", h.Health)
-		api.GET("/agents", h.GetAgents)
-		api.GET("/agents/:id", h.GetAgent)
-		api.GET("/agents/:id/metrics", h.GetAgentMetrics)
-		api.GET("/metrics", h.GetAllMetrics)
-		api.GET("/metrics/history", h.GetMetricsHistory)
-		api.GET("/summary", h.GetSummary)
-		api.POST("/agents/:id/command", h.SendCommand)
+		// Public routes (no auth required)
+		authHandler := handler.NewAuthHandler(authService, sugar)
+		api.POST("/auth/register", authHandler.Register)
+		api.POST("/auth/login", authHandler.Login)
 
-		// Configuration generator routes
+		// Health check (public)
+		h := handler.NewHandlerWithPermissions(agentService, metricsService, permService, sugar)
+		api.GET("/health", h.Health)
+
+		// Protected routes (require authentication)
+		protected := api.Group("")
+		protected.Use(handler.AuthMiddleware(authService))
+		{
+			// Current user
+			protected.GET("/auth/me", authHandler.GetMe)
+			protected.PUT("/auth/password", authHandler.UpdatePassword)
+
+			// Agent routes (with permission filtering)
+			protected.GET("/agents", h.GetAgents)
+			protected.GET("/agents/:id", h.GetAgent)
+			protected.GET("/agents/:id/metrics", h.GetAgentMetrics)
+			protected.GET("/metrics", h.GetAllMetrics)
+			protected.GET("/metrics/history", h.GetMetricsHistory)
+			protected.GET("/summary", h.GetSummary)
+
+			// Command execution (requires permission check)
+			protected.POST("/agents/:id/command",
+				handler.RequireAgentPermission(permService, database.PermissionBasicWrite),
+				h.SendCommand)
+
+			// Group routes
+			groupHandler := handler.NewGroupHandler(groupService, sugar)
+			protected.GET("/groups", groupHandler.ListGroups)
+			protected.GET("/groups/:id", groupHandler.GetGroup)
+
+			// Permission check route
+			permHandler := handler.NewPermissionHandler(permService, sugar)
+			protected.POST("/permissions/check", permHandler.CheckPermission)
+			protected.GET("/agents/:id/groups", permHandler.GetAgentGroups)
+
+			// Super admin only routes
+			admin := protected.Group("")
+			admin.Use(handler.RequireSuperAdmin())
+			{
+				// User management
+				admin.GET("/users", authHandler.ListUsers)
+				admin.DELETE("/users/:id", authHandler.DeleteUser)
+
+				// Group management
+				admin.POST("/groups", groupHandler.CreateGroup)
+				admin.PUT("/groups/:id", groupHandler.UpdateGroup)
+				admin.DELETE("/groups/:id", groupHandler.DeleteGroup)
+				admin.POST("/groups/:id/users", groupHandler.AddUserToGroup)
+				admin.DELETE("/groups/:id/users/:userId", groupHandler.RemoveUserFromGroup)
+
+				// Permission management
+				admin.POST("/agents/groups", permHandler.AssignAgentToGroup)
+				admin.DELETE("/agents/:agentId/groups/:groupId", permHandler.RemoveAgentFromGroup)
+				admin.POST("/permissions", permHandler.SetUserPermission)
+				admin.DELETE("/permissions/:userId/:agentId", permHandler.RemoveUserPermission)
+				admin.GET("/permissions/:userId", permHandler.GetUserPermissions)
+			}
+		}
+
+		// Configuration generator routes (protected)
 		configGen := handler.NewConfigGenHandler(cfg, sugar)
 		api.GET("/server-info", configGen.GetServerURLInfo)
 		api.POST("/config/generate", configGen.GenerateConfig)
@@ -114,8 +199,9 @@ func main() {
 		}
 	}()
 
-	// Start gRPC server
-	grpcServer := grpcserver.NewServer(cfg, agentService, metricsService, sugar)
+	// Start gRPC server with auth interceptor
+	grpcAuthInterceptor := grpcserver.NewAuthInterceptor(authService, permService, sugar)
+	grpcServer := grpcserver.NewServerWithAuth(cfg, agentService, metricsService, grpcAuthInterceptor, sugar)
 	go func() {
 		sugar.Infof("gRPC server starting on port %d", cfg.Server.GRPCPort)
 		if err := grpcServer.Start(cfg.Server.GRPCPort, cfg.Server.TLSCert, cfg.Server.TLSKey); err != nil {

@@ -6,10 +6,13 @@ import (
 
 // Config holds all configuration
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Auth     AuthConfig     `mapstructure:"auth"`
-	Storage  StorageConfig  `mapstructure:"storage"`
-	Metrics  MetricsConfig  `mapstructure:"metrics"`
+	Server     ServerConfig     `mapstructure:"server"`
+	Auth       AuthConfig       `mapstructure:"auth"`
+	Storage    StorageConfig    `mapstructure:"storage"`
+	Metrics    MetricsConfig    `mapstructure:"metrics"`
+	Database   DatabaseConfig   `mapstructure:"database"`
+	JWT        JWTConfig        `mapstructure:"jwt"`
+	SuperAdmin SuperAdminConfig `mapstructure:"superadmin"`
 }
 
 // ServerConfig holds server configuration
@@ -24,7 +27,7 @@ type ServerConfig struct {
 
 // AuthConfig holds authentication configuration
 type AuthConfig struct {
-	Enabled bool        `mapstructure:"enabled"`
+	Enabled bool          `mapstructure:"enabled"`
 	Tokens  []TokenConfig `mapstructure:"tokens"`
 }
 
@@ -52,6 +55,29 @@ type MetricsConfig struct {
 	MaxAgents     int `mapstructure:"max_agents"`
 }
 
+// DatabaseConfig holds database configuration
+type DatabaseConfig struct {
+	Type     string `mapstructure:"type"`     // "sqlite" or "postgres"
+	Path     string `mapstructure:"path"`     // SQLite file path
+	Host     string `mapstructure:"host"`     // PostgreSQL host
+	Port     int    `mapstructure:"port"`     // PostgreSQL port
+	Database string `mapstructure:"database"` // PostgreSQL database name
+	Username string `mapstructure:"username"` // PostgreSQL username
+	Password string `mapstructure:"password"` // PostgreSQL password
+}
+
+// JWTConfig holds JWT configuration
+type JWTConfig struct {
+	Secret     string `mapstructure:"secret"`
+	ExpireHour int    `mapstructure:"expire_hour"` // Token expiration in hours
+}
+
+// SuperAdminConfig holds super admin configuration
+type SuperAdminConfig struct {
+	Username string `mapstructure:"username"` // From NANOLINK_ADMIN_USERNAME
+	Password string `mapstructure:"password"` // From NANOLINK_ADMIN_PASSWORD
+}
+
 // Default returns default configuration
 func Default() *Config {
 	return &Config{
@@ -73,6 +99,15 @@ func Default() *Config {
 			RetentionDays: 7,
 			MaxAgents:     100,
 		},
+		Database: DatabaseConfig{
+			Type: "sqlite",
+			Path: "./data/nanolink.db",
+		},
+		JWT: JWTConfig{
+			Secret:     "",
+			ExpireHour: 24,
+		},
+		SuperAdmin: SuperAdminConfig{},
 	}
 }
 
@@ -95,6 +130,19 @@ func Load(path string) (*Config, error) {
 	// Environment variable support
 	viper.SetEnvPrefix("NANOLINK")
 	viper.AutomaticEnv()
+
+	// Bind environment variables for new auth system
+	_ = viper.BindEnv("database.type", "NANOLINK_DATABASE_TYPE")
+	_ = viper.BindEnv("database.path", "NANOLINK_DATABASE_PATH")
+	_ = viper.BindEnv("database.host", "NANOLINK_DATABASE_HOST")
+	_ = viper.BindEnv("database.port", "NANOLINK_DATABASE_PORT")
+	_ = viper.BindEnv("database.database", "NANOLINK_DATABASE_NAME")
+	_ = viper.BindEnv("database.username", "NANOLINK_DATABASE_USERNAME")
+	_ = viper.BindEnv("database.password", "NANOLINK_DATABASE_PASSWORD")
+	_ = viper.BindEnv("jwt.secret", "NANOLINK_JWT_SECRET")
+	_ = viper.BindEnv("jwt.expire_hour", "NANOLINK_JWT_EXPIRE_HOUR")
+	_ = viper.BindEnv("superadmin.username", "NANOLINK_ADMIN_USERNAME")
+	_ = viper.BindEnv("superadmin.password", "NANOLINK_ADMIN_PASSWORD")
 
 	if err := viper.ReadInConfig(); err != nil {
 		return Default(), err

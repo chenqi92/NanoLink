@@ -1,7 +1,12 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useAuth } from './composables/useAuth.js'
+import LoginForm from './components/LoginForm.vue'
 import AgentCard from './components/AgentCard.vue'
 import SummaryCard from './components/SummaryCard.vue'
+import UserMenu from './components/UserMenu.vue'
+
+const { state: authState, initAuth, authFetch, logout } = useAuth()
 
 const agents = ref([])
 const metrics = ref({})
@@ -12,18 +17,23 @@ const summary = ref({
 })
 const loading = ref(true)
 const error = ref(null)
+const currentView = ref('dashboard') // 'dashboard', 'users', 'groups', 'permissions'
 
 let refreshInterval = null
 
 async function fetchData() {
   try {
     const [agentsRes, metricsRes, summaryRes] = await Promise.all([
-      fetch('/api/agents'),
-      fetch('/api/metrics'),
-      fetch('/api/summary'),
+      authFetch('/agents'),
+      authFetch('/metrics'),
+      authFetch('/summary'),
     ])
 
     if (!agentsRes.ok || !metricsRes.ok || !summaryRes.ok) {
+      if (agentsRes.status === 401) {
+        logout()
+        return
+      }
       throw new Error('Failed to fetch data')
     }
 
@@ -38,20 +48,53 @@ async function fetchData() {
   }
 }
 
-onMounted(() => {
+function startPolling() {
   fetchData()
   refreshInterval = setInterval(fetchData, 2000)
+}
+
+function stopPolling() {
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+    refreshInterval = null
+  }
+}
+
+function handleLoginSuccess() {
+  loading.value = true
+  startPolling()
+}
+
+function handleShowView(view) {
+  currentView.value = view
+}
+
+onMounted(async () => {
+  await initAuth()
+  if (authState.isAuthenticated) {
+    startPolling()
+  }
 })
 
 onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-  }
+  stopPolling()
 })
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-900 text-white">
+  <!-- Auth Loading -->
+  <div v-if="authState.loading" class="min-h-screen bg-gray-900 flex items-center justify-center">
+    <div class="text-center">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+      <p class="mt-4 text-gray-400">Loading...</p>
+    </div>
+  </div>
+
+  <!-- Login Form -->
+  <LoginForm v-else-if="!authState.isAuthenticated" @login-success="handleLoginSuccess" />
+
+  <!-- Main Dashboard -->
+  <div v-else class="min-h-screen bg-gray-900 text-white">
     <!-- Header -->
     <header class="bg-gray-800 border-b border-gray-700 px-6 py-4">
       <div class="flex items-center justify-between">
@@ -66,6 +109,12 @@ onUnmounted(() => {
             {{ agents.length }} Agent{{ agents.length !== 1 ? 's' : '' }} Connected
           </span>
           <div class="w-2 h-2 rounded-full" :class="error ? 'bg-red-500' : 'bg-green-500'"></div>
+          <UserMenu
+            @show-users="handleShowView('users')"
+            @show-groups="handleShowView('groups')"
+            @show-permissions="handleShowView('permissions')"
+            @show-settings="handleShowView('settings')"
+          />
         </div>
       </div>
     </header>
@@ -82,7 +131,7 @@ onUnmounted(() => {
         <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
       </div>
 
-      <template v-else>
+      <template v-else-if="currentView === 'dashboard'">
         <!-- Summary Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <SummaryCard
@@ -117,6 +166,52 @@ onUnmounted(() => {
             :agent="agent"
             :metrics="metrics[agent.id]"
           />
+        </div>
+      </template>
+
+      <!-- Admin Views (placeholder for now) -->
+      <template v-else-if="currentView === 'users'">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-semibold">User Management</h2>
+          <button @click="currentView = 'dashboard'" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">
+            Back to Dashboard
+          </button>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-8 text-center">
+          <svg class="w-16 h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197" />
+          </svg>
+          <p class="text-gray-400">User management interface coming soon</p>
+        </div>
+      </template>
+
+      <template v-else-if="currentView === 'groups'">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-semibold">Group Management</h2>
+          <button @click="currentView = 'dashboard'" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">
+            Back to Dashboard
+          </button>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-8 text-center">
+          <svg class="w-16 h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <p class="text-gray-400">Group management interface coming soon</p>
+        </div>
+      </template>
+
+      <template v-else-if="currentView === 'permissions'">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-semibold">Permission Management</h2>
+          <button @click="currentView = 'dashboard'" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">
+            Back to Dashboard
+          </button>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-8 text-center">
+          <svg class="w-16 h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          </svg>
+          <p class="text-gray-400">Permission management interface coming soon</p>
         </div>
       </template>
     </main>
