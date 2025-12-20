@@ -1,5 +1,7 @@
 package com.kkape.sdk;
 
+import io.grpc.Server;
+import io.grpc.ServerBuilder;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -11,6 +13,7 @@ import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.stream.ChunkedWriteHandler;
+import com.kkape.sdk.grpc.NanoLinkServiceImpl;
 import com.kkape.sdk.handler.WebSocketHandler;
 import com.kkape.sdk.handler.HttpRequestHandler;
 import com.kkape.sdk.model.Metrics;
@@ -20,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -52,6 +56,7 @@ public class NanoLinkServer {
     private Consumer<Metrics> onMetrics;
 
     private Channel serverChannel;
+    private Server grpcServer;
     private SslContext sslContext;
 
     /** Optional static files path for serving dashboard */
@@ -110,7 +115,13 @@ public class NanoLinkServer {
 
         serverChannel = bootstrap.bind(config.getWsPort()).sync().channel();
         log.info("NanoLink Server started on port {} (WebSocket for Dashboard)", config.getWsPort());
-        log.info("Agents should connect via gRPC on port {}", config.getGrpcPort());
+
+        // Start gRPC server for agent connections
+        grpcServer = ServerBuilder.forPort(config.getGrpcPort())
+                .addService(new NanoLinkServiceImpl(this, config.getTokenValidator()))
+                .build()
+                .start();
+        log.info("gRPC Server started on port {} (Agent connections)", config.getGrpcPort());
 
         if (staticFilesPath != null) {
             log.info("Dashboard available at http://localhost:{}/", config.getWsPort());
@@ -122,6 +133,19 @@ public class NanoLinkServer {
      */
     public void stop() {
         log.info("Stopping NanoLink Server...");
+
+        // Stop gRPC server
+        if (grpcServer != null) {
+            grpcServer.shutdown();
+            try {
+                if (!grpcServer.awaitTermination(5, TimeUnit.SECONDS)) {
+                    grpcServer.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                grpcServer.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
 
         if (serverChannel != null) {
             serverChannel.close();
