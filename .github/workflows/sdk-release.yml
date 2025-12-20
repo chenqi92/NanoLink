@@ -77,17 +77,17 @@ jobs:
 
       - name: Build Java SDK
         working-directory: sdk/java
-        run: mvn clean package -DskipTests -Dskip.protobuf=true
+        run: mvn clean package -DskipTests
 
       - name: Run tests
         working-directory: sdk/java
-        run: mvn test -Dskip.protobuf=true
+        run: mvn test
 
       - name: Create source and javadoc JARs
         working-directory: sdk/java
         run: |
-          mvn source:jar -DskipTests -Dskip.protobuf=true || true
-          mvn javadoc:jar -DskipTests -Dskip.protobuf=true || true
+          mvn source:jar -DskipTests || true
+          mvn javadoc:jar -DskipTests || true
 
       - name: Prepare artifacts
         run: |
@@ -164,7 +164,7 @@ jobs:
 
       - name: Build with Maven
         working-directory: sdk/java
-        run: mvn clean package -DskipTests -Dskip.protobuf=true
+        run: mvn clean package -DskipTests
 
       - name: Publish to Maven Central
         working-directory: sdk/java
@@ -174,7 +174,7 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           echo "🚀 Publishing to Maven Central with Central Publishing Plugin..."
-          mvn deploy -DskipTests -Dskip.protobuf=true \
+          mvn deploy -DskipTests \
             -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}"
 
       - name: Publish to GitHub Packages
@@ -183,7 +183,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🚀 Publishing to GitHub Packages..."
-          mvn deploy -DskipTests -Dskip.protobuf=true \
+          mvn deploy -DskipTests \
             -Dcentral.publishing.skip=true \
             -Dgpg.skip=true \
             -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/${{ github.repository }}
