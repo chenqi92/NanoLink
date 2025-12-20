@@ -20,6 +20,7 @@ RUN go mod download
 COPY apps/server/ ./
 COPY --from=web-builder /app/web/dist ./web/dist
 
+RUN go mod tidy
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o nanolink-server ./cmd
 
 # Final stage

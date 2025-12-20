@@ -131,7 +131,7 @@ jobs:
   # Build macOS desktop application (Intel)
   desktop-macos-x64:
     name: Build macOS Desktop (Intel)
-    runs-on: macos-13
+    runs-on: macos-15  # macos-13 is deprecated
 
     steps:
       - name: Checkout
