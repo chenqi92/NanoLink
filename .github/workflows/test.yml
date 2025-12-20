@@ -85,9 +85,9 @@ jobs:
           java-version: "11"
           cache: "maven"
 
-      - name: Build and test (skip protobuf)
+      - name: Build and test
         working-directory: sdk/java
-        run: mvn clean verify -Dskip.protobuf=true
+        run: mvn clean verify
 
   test-go-sdk:
     name: Test Go SDK
