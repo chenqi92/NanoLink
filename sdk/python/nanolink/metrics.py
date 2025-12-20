@@ -120,6 +120,38 @@ class GpuMetrics:
 
 
 @dataclass
+class NpuMetrics:
+    """NPU/AI accelerator metrics data"""
+    index: int = 0
+    name: str = ""
+    vendor: str = ""  # Intel, Huawei, Qualcomm
+    usage_percent: float = 0.0
+    memory_total: int = 0
+    memory_used: int = 0
+    temperature_celsius: float = 0.0
+    power_watts: int = 0
+    driver_version: str = ""
+
+    @property
+    def memory_usage_percent(self) -> float:
+        """Calculate NPU memory usage percentage"""
+        if self.memory_total == 0:
+            return 0.0
+        return (self.memory_used / self.memory_total) * 100
+
+
+@dataclass
+class UserSession:
+    """User session/login information"""
+    username: str = ""
+    tty: str = ""
+    login_time: int = 0
+    remote_host: str = ""
+    idle_seconds: int = 0
+    session_type: str = ""  # local, ssh, rdp, console
+
+
+@dataclass
 class SystemInfo:
     """System information data"""
     os_name: str = ""
@@ -143,6 +175,8 @@ class Metrics:
     disks: List[DiskMetrics] = field(default_factory=list)
     networks: List[NetworkMetrics] = field(default_factory=list)
     gpus: List[GpuMetrics] = field(default_factory=list)
+    npus: List[NpuMetrics] = field(default_factory=list)
+    user_sessions: List[UserSession] = field(default_factory=list)
     system: Optional[SystemInfo] = None
     load_average: List[float] = field(default_factory=list)
 
@@ -236,6 +270,31 @@ class Metrics:
                     pcie_width=gpu_data.get("pcieWidth", 0),
                     encoder_usage_percent=gpu_data.get("encoderUsagePercent", 0.0),
                     decoder_usage_percent=gpu_data.get("decoderUsagePercent", 0.0),
+                ))
+
+        if "npus" in data:
+            for npu_data in data["npus"]:
+                metrics.npus.append(NpuMetrics(
+                    index=npu_data.get("index", 0),
+                    name=npu_data.get("name", ""),
+                    vendor=npu_data.get("vendor", ""),
+                    usage_percent=npu_data.get("usagePercent", 0.0),
+                    memory_total=npu_data.get("memoryTotal", 0),
+                    memory_used=npu_data.get("memoryUsed", 0),
+                    temperature_celsius=npu_data.get("temperatureCelsius", 0.0),
+                    power_watts=npu_data.get("powerWatts", 0),
+                    driver_version=npu_data.get("driverVersion", ""),
+                ))
+
+        if "userSessions" in data:
+            for session_data in data["userSessions"]:
+                metrics.user_sessions.append(UserSession(
+                    username=session_data.get("username", ""),
+                    tty=session_data.get("tty", ""),
+                    login_time=session_data.get("loginTime", 0),
+                    remote_host=session_data.get("remoteHost", ""),
+                    idle_seconds=session_data.get("idleSeconds", 0),
+                    session_type=session_data.get("sessionType", ""),
                 ))
 
         if "system" in data and data["system"]:
