@@ -9,7 +9,7 @@ COPY apps/server/web/ ./
 RUN npm run build
 
 # Build stage - Go server
-FROM golang:1.21-alpine AS go-builder
+FROM golang:1.23-alpine AS go-builder
 
 RUN apk add --no-cache gcc musl-dev
 
@@ -45,15 +45,15 @@ EXPOSE 8080 9100 9200
 VOLUME ["/app/data"]
 
 ENV NANOLINK_SERVER_HTTP_PORT=8080 \
-    NANOLINK_SERVER_WS_PORT=9100 \
-    NANOLINK_SERVER_GRPC_PORT=9200 \
-    NANOLINK_STORAGE_PATH=/app/data/nanolink.db \
-    NANOLINK_DATABASE_TYPE=sqlite \
-    NANOLINK_DATABASE_PATH=/app/data/nanolink.db \
-    NANOLINK_ADMIN_USERNAME="" \
-    NANOLINK_ADMIN_PASSWORD="" \
-    NANOLINK_JWT_SECRET="" \
-    NANOLINK_JWT_EXPIRE_HOUR=24
+  NANOLINK_SERVER_WS_PORT=9100 \
+  NANOLINK_SERVER_GRPC_PORT=9200 \
+  NANOLINK_STORAGE_PATH=/app/data/nanolink.db \
+  NANOLINK_DATABASE_TYPE=sqlite \
+  NANOLINK_DATABASE_PATH=/app/data/nanolink.db \
+  NANOLINK_ADMIN_USERNAME="" \
+  NANOLINK_ADMIN_PASSWORD="" \
+  NANOLINK_JWT_SECRET="" \
+  NANOLINK_JWT_EXPIRE_HOUR=24
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/health || exit 1
