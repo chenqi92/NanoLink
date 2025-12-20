@@ -28,7 +28,7 @@ use crate::management::ManagementServer;
 #[derive(Parser, Debug)]
 #[command(name = "nanolink-agent")]
 #[command(author = "NanoLink Team")]
-#[command(version = "0.1.1")]
+#[command(version = "0.1.2")]
 #[command(about = "Lightweight server monitoring agent", long_about = None)]
 struct Args {
     /// Path to configuration file
