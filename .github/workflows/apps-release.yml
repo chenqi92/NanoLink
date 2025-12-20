@@ -14,6 +14,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/nanolink-server
+  FLUTTER_VERSION: "3.27.4"
 
 jobs:
   # Build and push Docker image for Linux
@@ -63,7 +64,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Build Windows desktop application
+  # Build Windows desktop application (Flutter)
   desktop-windows:
     name: Build Windows Desktop
     runs-on: windows-latest
@@ -72,74 +73,75 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: apps/desktop/package-lock.json
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "apps/desktop/src-tauri"
-
-      - name: Install dependencies
+      - name: Get dependencies
         working-directory: apps/desktop
-        run: npm ci
+        run: flutter pub get
 
-      - name: Build Tauri app
+      - name: Build Windows
         working-directory: apps/desktop
-        run: npm run tauri build
+        run: flutter build windows --release
+
+      - name: Create installer package
+        working-directory: apps/desktop
+        shell: pwsh
+        run: |
+          $version = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ github.event.inputs.version }}" } else { "${{ github.ref_name }}".Replace("app-v", "") }
+          $buildDir = "build\windows\x64\runner\Release"
+          $outDir = "release"
+          New-Item -ItemType Directory -Force -Path $outDir
+          Compress-Archive -Path "$buildDir\*" -DestinationPath "$outDir\NanoLink-Windows-$version.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: nanolink-windows
-          path: apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+          path: apps/desktop/release/*.zip
 
   # Build macOS desktop application (Intel)
   desktop-macos-x64:
     name: Build macOS Desktop (Intel)
-    runs-on: macos-15
+    runs-on: macos-13
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: apps/desktop/package-lock.json
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+          architecture: x64
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "apps/desktop/src-tauri"
-
-      - name: Install dependencies
+      - name: Get dependencies
         working-directory: apps/desktop
-        run: npm ci
+        run: flutter pub get
 
-      - name: Build Tauri app
+      - name: Build macOS
         working-directory: apps/desktop
-        run: npm run tauri build -- --target x86_64-apple-darwin
+        run: flutter build macos --release
+
+      - name: Create DMG
+        working-directory: apps/desktop
+        run: |
+          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#app-v}"
+          mkdir -p release
+          hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/desktop.app -ov -format UDZO "release/NanoLink-macOS-Intel-$VERSION.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: nanolink-macos-x64
-          path: apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+          path: apps/desktop/release/*.dmg
 
   # Build macOS desktop application (Apple Silicon)
   desktop-macos-arm64:
@@ -150,41 +152,90 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: apps/desktop/package-lock.json
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+          architecture: arm64
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "apps/desktop/src-tauri"
-
-      - name: Install dependencies
+      - name: Get dependencies
         working-directory: apps/desktop
-        run: npm ci
+        run: flutter pub get
 
-      - name: Build Tauri app
+      - name: Build macOS
         working-directory: apps/desktop
-        run: npm run tauri build -- --target aarch64-apple-darwin
+        run: flutter build macos --release
+
+      - name: Create DMG
+        working-directory: apps/desktop
+        run: |
+          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#app-v}"
+          mkdir -p release
+          hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/desktop.app -ov -format UDZO "release/NanoLink-macOS-AppleSilicon-$VERSION.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: nanolink-macos-arm64
-          path: apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          path: apps/desktop/release/*.dmg
+
+  # Build Linux desktop application
+  desktop-linux:
+    name: Build Linux Desktop
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        working-directory: apps/desktop
+        run: flutter pub get
+
+      - name: Build Linux
+        working-directory: apps/desktop
+        run: flutter build linux --release
+
+      - name: Create tarball
+        working-directory: apps/desktop
+        run: |
+          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#app-v}"
+          mkdir -p release
+          tar -czvf "release/NanoLink-Linux-$VERSION.tar.gz" -C build/linux/x64/release/bundle .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanolink-linux
+          path: apps/desktop/release/*.tar.gz
 
   # Create release with all artifacts
   release:
     name: Create Release
-    needs: [docker, desktop-windows, desktop-macos-x64, desktop-macos-arm64]
+    needs:
+      [
+        docker,
+        desktop-windows,
+        desktop-macos-x64,
+        desktop-macos-arm64,
+        desktop-linux,
+      ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -211,6 +262,12 @@ jobs:
           name: nanolink-macos-arm64
           path: release/macos-arm64
 
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nanolink-linux
+          path: release/linux
+
       - name: Extract version
         id: version
         run: |
@@ -228,9 +285,10 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            release/windows/*.msi
-            release/macos-x64/*.dmg
-            release/macos-arm64/*.dmg
+            release/windows/*
+            release/macos-x64/*
+            release/macos-arm64/*
+            release/linux/*
           body: |
             ## NanoLink Applications v${{ steps.version.outputs.version }}
 
@@ -238,10 +296,10 @@ jobs:
 
             | Platform | Architecture | Download |
             |----------|--------------|----------|
-            | Windows | x64 | `NanoLink_${{ steps.version.outputs.version }}_x64_en-US.msi` |
-            | macOS | Intel | `NanoLink_${{ steps.version.outputs.version }}_x64.dmg` |
-            | macOS | Apple Silicon | `NanoLink_${{ steps.version.outputs.version }}_aarch64.dmg` |
-            | Linux | amd64/arm64 | Docker image below |
+            | Windows | x64 | `NanoLink-Windows-${{ steps.version.outputs.version }}.zip` |
+            | macOS | Intel | `NanoLink-macOS-Intel-${{ steps.version.outputs.version }}.dmg` |
+            | macOS | Apple Silicon | `NanoLink-macOS-AppleSilicon-${{ steps.version.outputs.version }}.dmg` |
+            | Linux | x64 | `NanoLink-Linux-${{ steps.version.outputs.version }}.tar.gz` |
 
             ### Docker
 
@@ -256,8 +314,8 @@ jobs:
 
             ```bash
             # Docker
-            docker run -d -p 8080:8080 -p 9100:9100 ghcr.io/${{ github.repository_owner }}/nanolink-server:latest
+            docker run -d -p 8080:8080 -p 9100:9100 -p 9200:9200 ghcr.io/${{ github.repository_owner }}/nanolink-server:latest
 
             # Access dashboard
-            open http://localhost:8080/dashboard
+            open http://localhost:8080
             ```

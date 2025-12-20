@@ -1,0 +1,32 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1024" height="1024" rx="240" fill="#0f172a"/>
+
+    <mask id="grid-mask">
+        <rect width="1024" height="1024" rx="240" fill="white"/>
+    </mask>
+    <path d="M112 312H912M112 512H912M112 712H912" stroke="#334155" stroke-width="2" stroke-opacity="0.2" mask="url(#grid-mask)"/>
+    <path d="M312 112V912M512 112V912M712 112V912" stroke="#334155" stroke-width="2" stroke-opacity="0.2" mask="url(#grid-mask)"/>
+
+    <g opacity="0.4" filter="url(#glow-filter)">
+        <path d="M320 760 V340 C320 260 360 260 420 340 L604 684 C664 764 704 764 704 684 V264"
+              stroke="#6366f1" stroke-width="60" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <path d="M320 760 V340 C320 260 360 260 420 340 L604 684 C664 764 704 764 704 684 V264"
+          stroke="url(#neon-gradient)"
+          stroke-width="60"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+
+    <circle cx="320" cy="760" r="15" fill="#fff"/>
+    <circle cx="704" cy="264" r="15" fill="#fff"/>
+
+    <defs>
+        <linearGradient id="neon-gradient" x1="320" y1="760" x2="704" y2="264" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#22d3ee"/> <stop offset="0.5" stop-color="#818cf8"/> <stop offset="1" stop-color="#c084fc"/> </linearGradient>
+
+        <filter id="glow-filter" x="200" y="200" width="624" height="624" filterUnits="userSpaceOnUse">
+            <feGaussianBlur stdDeviation="20" result="effect1_foregroundBlur"/>
+        </filter>
+    </defs>
+</svg>
