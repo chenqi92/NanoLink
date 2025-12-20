@@ -153,3 +153,170 @@ type ContainerInfo struct {
 	State   string `json:"state"`
 	Created int64  `json:"created"`
 }
+
+// MetricsType indicates the type of metrics message
+type MetricsType int
+
+const (
+	MetricsFull     MetricsType = 0
+	MetricsRealtime MetricsType = 1
+	MetricsStatic   MetricsType = 2
+	MetricsPeriodic MetricsType = 3
+)
+
+// DataRequestType indicates what data the server is requesting
+type DataRequestType int
+
+const (
+	DataRequestFull     DataRequestType = 0
+	DataRequestStatic   DataRequestType = 1
+	DataRequestPeriodic DataRequestType = 2
+)
+
+// DiskIO represents disk I/O metrics for realtime data
+type DiskIO struct {
+	Device           string `json:"device"`
+	ReadBytesPerSec  uint64 `json:"readBytesPerSec"`
+	WriteBytesPerSec uint64 `json:"writeBytesPerSec"`
+}
+
+// NetworkIO represents network I/O metrics for realtime data
+type NetworkIO struct {
+	Interface     string `json:"interface"`
+	RxBytesPerSec uint64 `json:"rxBytesPerSec"`
+	TxBytesPerSec uint64 `json:"txBytesPerSec"`
+}
+
+// GPUUsage represents lightweight GPU usage for realtime data
+type GPUUsage struct {
+	Index        uint32  `json:"index"`
+	UsagePercent float64 `json:"usagePercent"`
+	MemoryUsed   uint64  `json:"memoryUsed"`
+	Temperature  float64 `json:"temperature"`
+}
+
+// NPUUsage represents lightweight NPU usage for realtime data
+type NPUUsage struct {
+	Index        uint32  `json:"index"`
+	UsagePercent float64 `json:"usagePercent"`
+	MemoryUsed   uint64  `json:"memoryUsed"`
+	Temperature  float64 `json:"temperature"`
+}
+
+// RealtimeMetrics represents high-frequency metrics (sent every ~1 second)
+type RealtimeMetrics struct {
+	Timestamp      int64       `json:"timestamp"`
+	Hostname       string      `json:"hostname"`
+	CPUUsage       float64     `json:"cpuUsage"`
+	CPUPerCore     []float64   `json:"cpuPerCore,omitempty"`
+	MemoryUsed     uint64      `json:"memoryUsed"`
+	MemoryPercent  float64     `json:"memoryPercent"`
+	SwapUsed       uint64      `json:"swapUsed"`
+	DiskIO         []DiskIO    `json:"diskIo,omitempty"`
+	NetworkIO      []NetworkIO `json:"networkIo,omitempty"`
+	GPUUsages      []GPUUsage  `json:"gpuUsages,omitempty"`
+	NPUUsages      []NPUUsage  `json:"npuUsages,omitempty"`
+	LoadAverage    []float64   `json:"loadAverage,omitempty"`
+	CPUTemperature float64     `json:"cpuTemperature,omitempty"`
+}
+
+// CPUStaticInfo represents static CPU information
+type CPUStaticInfo struct {
+	Model        string `json:"model"`
+	Vendor       string `json:"vendor"`
+	Cores        int    `json:"cores"`
+	Threads      int    `json:"threads"`
+	FrequencyMHz uint64 `json:"frequencyMhz"`
+	CacheSize    uint64 `json:"cacheSize"`
+	Architecture string `json:"architecture"`
+}
+
+// MemoryStaticInfo represents static memory information
+type MemoryStaticInfo struct {
+	TotalPhysical uint64 `json:"totalPhysical"`
+	TotalSwap     uint64 `json:"totalSwap"`
+	MemoryType    string `json:"memoryType,omitempty"`
+	SpeedMHz      uint32 `json:"speedMhz,omitempty"`
+	Slots         uint32 `json:"slots,omitempty"`
+}
+
+// DiskStaticInfo represents static disk information
+type DiskStaticInfo struct {
+	Device     string `json:"device"`
+	Model      string `json:"model,omitempty"`
+	Serial     string `json:"serial,omitempty"`
+	Type       string `json:"type"` // SSD, HDD, NVMe
+	Total      uint64 `json:"total"`
+	FSType     string `json:"fsType"`
+	MountPoint string `json:"mountPoint"`
+}
+
+// NetworkStaticInfo represents static network interface information
+type NetworkStaticInfo struct {
+	Interface  string   `json:"interface"`
+	MacAddress string   `json:"macAddress"`
+	SpeedMbps  uint64   `json:"speedMbps,omitempty"`
+	Type       string   `json:"type,omitempty"` // ethernet, wifi, virtual
+	IPAddress  []string `json:"ipAddress,omitempty"`
+}
+
+// GPUStaticInfo represents static GPU information
+type GPUStaticInfo struct {
+	Index          uint32 `json:"index"`
+	Name           string `json:"name"`
+	Vendor         string `json:"vendor"`
+	MemoryTotal    uint64 `json:"memoryTotal"`
+	DriverVersion  string `json:"driverVersion"`
+	PCIeGeneration uint32 `json:"pcieGeneration,omitempty"`
+}
+
+// NPUStaticInfo represents static NPU information
+type NPUStaticInfo struct {
+	Index         uint32 `json:"index"`
+	Name          string `json:"name"`
+	Vendor        string `json:"vendor"`
+	MemoryTotal   uint64 `json:"memoryTotal"`
+	DriverVersion string `json:"driverVersion"`
+}
+
+// StaticInfo represents hardware information that rarely changes (sent once on connect)
+type StaticInfo struct {
+	Timestamp         int64               `json:"timestamp"`
+	Hostname          string              `json:"hostname"`
+	OSName            string              `json:"osName"`
+	OSVersion         string              `json:"osVersion"`
+	KernelVersion     string              `json:"kernelVersion"`
+	BootTime          uint64              `json:"bootTime"`
+	MotherboardModel  string              `json:"motherboardModel,omitempty"`
+	MotherboardVendor string              `json:"motherboardVendor,omitempty"`
+	BIOSVersion       string              `json:"biosVersion,omitempty"`
+	CPU               *CPUStaticInfo      `json:"cpu,omitempty"`
+	Memory            *MemoryStaticInfo   `json:"memory,omitempty"`
+	Disks             []DiskStaticInfo    `json:"disks,omitempty"`
+	Networks          []NetworkStaticInfo `json:"networks,omitempty"`
+	GPUs              []GPUStaticInfo     `json:"gpus,omitempty"`
+	NPUs              []NPUStaticInfo     `json:"npus,omitempty"`
+}
+
+// DiskUsage represents periodic disk usage update
+type DiskUsage struct {
+	MountPoint string `json:"mountPoint"`
+	Used       uint64 `json:"used"`
+	Available  uint64 `json:"available"`
+}
+
+// NetworkAddressUpdate represents periodic network address update
+type NetworkAddressUpdate struct {
+	Interface   string   `json:"interface"`
+	IPAddresses []string `json:"ipAddresses"`
+}
+
+// PeriodicData represents data that changes slowly (sent every 30s-5min)
+type PeriodicData struct {
+	Timestamp      int64                  `json:"timestamp"`
+	Hostname       string                 `json:"hostname"`
+	UptimeSeconds  uint64                 `json:"uptimeSeconds"`
+	DiskUsage      []DiskUsage            `json:"diskUsage,omitempty"`
+	NetworkAddress []NetworkAddressUpdate `json:"networkAddress,omitempty"`
+	UserSessions   []UserSession          `json:"userSessions,omitempty"`
+}

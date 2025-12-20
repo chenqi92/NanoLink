@@ -168,6 +168,80 @@ func (s *MetricsService) GetAverageMemory() float64 {
 	return total / float64(len(s.latestMetrics))
 }
 
+// ProcessRealtime processes realtime metrics (high-frequency, lightweight)
+func (s *MetricsService) ProcessRealtime(realtime *nanolink.RealtimeMetrics) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Find agent by hostname
+	var agentID string
+	for id, agent := range s.agents {
+		if agent.Hostname == realtime.Hostname {
+			agentID = id
+			break
+		}
+	}
+	if agentID == "" {
+		agentID = realtime.Hostname
+	}
+
+	// Update or create metrics with realtime data
+	if existing, ok := s.latestMetrics[agentID]; ok {
+		existing.CPUUsage = realtime.CPUUsage
+		existing.MemoryUsage = realtime.MemoryPercent
+		existing.MemoryUsed = realtime.MemoryUsed
+		existing.Timestamp = time.Now()
+	} else {
+		s.latestMetrics[agentID] = &AgentMetrics{
+			Hostname:    realtime.Hostname,
+			CPUUsage:    realtime.CPUUsage,
+			MemoryUsage: realtime.MemoryPercent,
+			MemoryUsed:  realtime.MemoryUsed,
+			Timestamp:   time.Now(),
+		}
+	}
+
+	// Check for alerts
+	if realtime.CPUUsage > 90 {
+		log.Printf("HIGH CPU ALERT: %s - CPU usage at %.1f%%", realtime.Hostname, realtime.CPUUsage)
+	}
+}
+
+// ProcessStaticInfo processes static hardware info (received once on connect)
+func (s *MetricsService) ProcessStaticInfo(staticInfo *nanolink.StaticInfo) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	log.Printf("Static info received from %s: OS=%s %s, Kernel=%s",
+		staticInfo.Hostname, staticInfo.OSName, staticInfo.OSVersion, staticInfo.KernelVersion)
+
+	// Update memory_total if available
+	if staticInfo.Memory != nil && staticInfo.Memory.TotalPhysical > 0 {
+		for id, agent := range s.agents {
+			if agent.Hostname == staticInfo.Hostname {
+				if existing, ok := s.latestMetrics[id]; ok {
+					existing.MemoryTotal = staticInfo.Memory.TotalPhysical
+				}
+				break
+			}
+		}
+	}
+}
+
+// ProcessPeriodic processes periodic data (disk usage, user sessions, etc.)
+func (s *MetricsService) ProcessPeriodic(periodic *nanolink.PeriodicData) {
+	diskCount := 0
+	if periodic.DiskUsage != nil {
+		diskCount = len(periodic.DiskUsage)
+	}
+	sessionCount := 0
+	if periodic.UserSessions != nil {
+		sessionCount = len(periodic.UserSessions)
+	}
+	log.Printf("Periodic data received from %s: uptime=%ds, disks=%d, sessions=%d",
+		periodic.Hostname, periodic.UptimeSeconds, diskCount, sessionCount)
+}
+
 func main() {
 	// Initialize metrics service
 	metricsService := NewMetricsService()
@@ -194,6 +268,18 @@ func main() {
 
 	server.OnMetrics(func(metrics *nanolink.Metrics) {
 		metricsService.ProcessMetrics(metrics)
+	})
+
+	server.OnRealtimeMetrics(func(realtime *nanolink.RealtimeMetrics) {
+		metricsService.ProcessRealtime(realtime)
+	})
+
+	server.OnStaticInfo(func(staticInfo *nanolink.StaticInfo) {
+		metricsService.ProcessStaticInfo(staticInfo)
+	})
+
+	server.OnPeriodicData(func(periodic *nanolink.PeriodicData) {
+		metricsService.ProcessPeriodic(periodic)
 	})
 
 	// Start NanoLink server in background

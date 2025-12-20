@@ -135,6 +135,12 @@ func (c *AgentConnection) handleMessage(data []byte) {
 		c.handleMetrics(data)
 	case 21: // MetricsSync
 		c.handleMetricsSync(data)
+	case 22: // RealtimeMetrics
+		c.handleRealtimeMetrics(data)
+	case 23: // StaticInfo
+		c.handleStaticInfo(data)
+	case 24: // PeriodicData
+		c.handlePeriodicData(data)
 	case 31: // CommandResult
 		c.handleCommandResult(data)
 	case 40: // Heartbeat
@@ -212,6 +218,48 @@ func (c *AgentConnection) handleMetricsSync(data []byte) {
 		return
 	}
 	log.Printf("Received metrics sync from %s", c.Hostname)
+}
+
+func (c *AgentConnection) handleRealtimeMetrics(data []byte) {
+	if !c.authenticated {
+		return
+	}
+
+	// Parse realtime metrics from protobuf (simplified)
+	realtime := &RealtimeMetrics{
+		Timestamp: time.Now().UnixMilli(),
+		Hostname:  c.Hostname,
+	}
+
+	c.server.handleRealtimeMetrics(realtime)
+}
+
+func (c *AgentConnection) handleStaticInfo(data []byte) {
+	if !c.authenticated {
+		return
+	}
+
+	// Parse static info from protobuf (simplified)
+	staticInfo := &StaticInfo{
+		Timestamp: time.Now().UnixMilli(),
+		Hostname:  c.Hostname,
+	}
+
+	c.server.handleStaticInfo(staticInfo)
+}
+
+func (c *AgentConnection) handlePeriodicData(data []byte) {
+	if !c.authenticated {
+		return
+	}
+
+	// Parse periodic data from protobuf (simplified)
+	periodic := &PeriodicData{
+		Timestamp: time.Now().UnixMilli(),
+		Hostname:  c.Hostname,
+	}
+
+	c.server.handlePeriodicData(periodic)
 }
 
 func (c *AgentConnection) handleCommandResult(data []byte) {
