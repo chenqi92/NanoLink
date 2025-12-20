@@ -7,56 +7,64 @@ on:
   workflow_dispatch: # Allow manual trigger
 
 jobs:
-  # Keep latest 5 runs for release workflows
-  cleanup-release-workflows:
-    name: Cleanup Release Workflows
+  cleanup:
+    name: Cleanup Workflow Runs
     runs-on: ubuntu-latest
     permissions:
       actions: write
-    strategy:
-      matrix:
-        workflow: ["SDK Release", "Release Agent", "Apps Release"]
     steps:
-      - name: Delete old runs for ${{ matrix.workflow }}
+      # Release workflows - keep 5
+      - name: Cleanup SDK Release
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 5
-          delete_workflow_pattern: "^${{ matrix.workflow }}$"
+          delete_workflow_pattern: sdk-release.yml
 
-  # Delete all runs for other workflows
-  cleanup-other-workflows:
-    name: Cleanup Other Workflows
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      - name: Delete old Test workflow runs
+      - name: Cleanup Release Agent
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 5
+          delete_workflow_pattern: release.yml
+
+      - name: Cleanup Apps Release
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 5
+          delete_workflow_pattern: apps-release.yml
+
+      # Other workflows - keep fewer
+      - name: Cleanup Test
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 3
-          delete_workflow_pattern: "^Test$"
+          delete_workflow_pattern: test.yml
 
-      - name: Delete old Auto Tag workflow runs
+      - name: Cleanup Auto Tag
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 3
-          delete_workflow_pattern: "^Auto Tag Release$"
+          delete_workflow_pattern: auto-tag.yml
 
-      - name: Delete old Cleanup workflow runs
+      - name: Cleanup self
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 1
-          delete_workflow_pattern: "^Cleanup Old Workflow Runs$"
-
+          delete_workflow_pattern: cleanup.yml
