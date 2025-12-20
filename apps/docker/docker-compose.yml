@@ -11,12 +11,22 @@ services:
     ports:
       - "8080:8080"   # HTTP API & Dashboard
       - "9100:9100"   # WebSocket for agents
+      - "9200:9200"   # gRPC for agents
     volumes:
       - nanolink-data:/app/data
       - ./config.yaml:/app/config.yaml:ro
     environment:
       - TZ=Asia/Shanghai
       - NANOLINK_SERVER_MODE=release
+      # Superadmin credentials (REQUIRED for first deployment)
+      - NANOLINK_ADMIN_USERNAME=admin
+      - NANOLINK_ADMIN_PASSWORD=changeme  # Change this in production!
+      # JWT configuration
+      - NANOLINK_JWT_SECRET=your-secret-key-change-me  # Change this in production!
+      - NANOLINK_JWT_EXPIRE_HOUR=24
+      # Database configuration (SQLite by default)
+      - NANOLINK_DATABASE_TYPE=sqlite
+      - NANOLINK_DATABASE_PATH=/app/data/nanolink.db
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
       interval: 30s
