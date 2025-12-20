@@ -43,17 +43,18 @@ type Server struct {
 	metricsService *service.MetricsService
 	logger         *zap.SugaredLogger
 
-	grpcServer *grpc.Server
-	agents     map[string]*GrpcAgent
-	agentsMu   sync.RWMutex
+	grpcServer      *grpc.Server
+	authInterceptor *AuthInterceptor
+	agents          map[string]*GrpcAgent
+	agentsMu        sync.RWMutex
 
 	// Event subscribers for dashboard
-	agentEventSubscribers   []chan *pb.AgentEvent
-	metricsSubscribers      map[string][]chan *pb.Metrics
-	subscribersMu           sync.RWMutex
+	agentEventSubscribers []chan *pb.AgentEvent
+	metricsSubscribers    map[string][]chan *pb.Metrics
+	subscribersMu         sync.RWMutex
 }
 
-// NewServer creates a new gRPC server
+// NewServer creates a new gRPC server (without auth interceptor for backward compatibility)
 func NewServer(
 	cfg *config.Config,
 	agentService *service.AgentService,
@@ -65,6 +66,25 @@ func NewServer(
 		agentService:       agentService,
 		metricsService:     metricsService,
 		logger:             logger,
+		agents:             make(map[string]*GrpcAgent),
+		metricsSubscribers: make(map[string][]chan *pb.Metrics),
+	}
+}
+
+// NewServerWithAuth creates a new gRPC server with JWT authentication interceptor
+func NewServerWithAuth(
+	cfg *config.Config,
+	agentService *service.AgentService,
+	metricsService *service.MetricsService,
+	authInterceptor *AuthInterceptor,
+	logger *zap.SugaredLogger,
+) *Server {
+	return &Server{
+		config:             cfg,
+		agentService:       agentService,
+		metricsService:     metricsService,
+		logger:             logger,
+		authInterceptor:    authInterceptor,
 		agents:             make(map[string]*GrpcAgent),
 		metricsSubscribers: make(map[string][]chan *pb.Metrics),
 	}
@@ -101,6 +121,12 @@ func (s *Server) Start(port int, tlsCert, tlsKey string) error {
 		MinTime:             10 * time.Second,
 		PermitWithoutStream: true,
 	}))
+
+	// Add auth interceptors if available
+	if s.authInterceptor != nil {
+		opts = append(opts, grpc.UnaryInterceptor(s.authInterceptor.UnaryInterceptor()))
+		opts = append(opts, grpc.StreamInterceptor(s.authInterceptor.StreamInterceptor()))
+	}
 
 	s.grpcServer = grpc.NewServer(opts...)
 	pb.RegisterNanoLinkServiceServer(s.grpcServer, s)
