@@ -18,6 +18,25 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0  # ^6.0.0 requires Dart SDK ^3.8.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
+  # macOS uses different icon with padding
+  macos:
+    generate: true
+    image_path: "assets/icon-macos.png"
+  windows:
+    generate: true
+    icon_size: 256
+    image_path: "assets/icon.png"
+  web:
+    generate: true
+    image_path: "assets/icon.png"
+    background_color: "#0f172a"
+    theme_color: "#6366f1"
 
 flutter:
   uses-material-design: true
