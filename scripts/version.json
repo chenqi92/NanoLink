@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0",
+  "version": "0.1.1",
   "files": [
     {
       "path": "agent/Cargo.toml",
@@ -56,22 +56,11 @@
       "type": "regex"
     },
     {
-      "path": "apps/desktop/package.json",
-      "pattern": "\"version\": \".*\"",
-      "replacement": "\"version\": \"{{VERSION}}\"",
-      "type": "regex"
-    },
-    {
-      "path": "apps/desktop/src-tauri/Cargo.toml",
-      "pattern": "^version = \".*\"$",
-      "replacement": "version = \"{{VERSION}}\"",
-      "type": "regex"
-    },
-    {
-      "path": "apps/desktop/src-tauri/tauri.conf.json",
-      "pattern": "\"version\": \".*\"",
-      "replacement": "\"version\": \"{{VERSION}}\"",
-      "type": "regex"
+      "path": "apps/desktop/pubspec.yaml",
+      "pattern": "^version: .*$",
+      "replacement": "version: {{VERSION}}",
+      "type": "regex",
+      "description": "Flutter desktop app version"
     },
     {
       "path": "demo/spring-boot/pom.xml",
