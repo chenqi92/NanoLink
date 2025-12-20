@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(go mod tidy:*)",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Bash(cat:*)",
+      "Bash(ssh root@47.113.224.61 \"ps aux | grep nanolink && cat /etc/nanolink/nanolink.yaml 2>/dev/null | head -40\")",
+      "Bash(python3:*)",
+      "Bash(ssh root@47.113.224.61:*)",
+      "Bash(mvn compile:*)",
+      "Bash(mvn test:*)"
     ]
   }
 }
