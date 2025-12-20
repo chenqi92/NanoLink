@@ -277,45 +277,15 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create Release
+      - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.version.outputs.version }}
-          name: NanoLink Apps v${{ steps.version.outputs.version }}
-          draft: false
-          prerelease: false
           files: |
             release/windows/*
             release/macos-x64/*
             release/macos-arm64/*
             release/linux/*
-          body: |
-            ## NanoLink Applications v${{ steps.version.outputs.version }}
-
-            ### Downloads
-
-            | Platform | Architecture | Download |
-            |----------|--------------|----------|
-            | Windows | x64 | `NanoLink-Windows-${{ steps.version.outputs.version }}.zip` |
-            | macOS | Intel | `NanoLink-macOS-Intel-${{ steps.version.outputs.version }}.dmg` |
-            | macOS | Apple Silicon | `NanoLink-macOS-AppleSilicon-${{ steps.version.outputs.version }}.dmg` |
-            | Linux | x64 | `NanoLink-Linux-${{ steps.version.outputs.version }}.tar.gz` |
-
-            ### Docker
-
-            ```bash
-            docker pull ghcr.io/${{ github.repository_owner }}/nanolink-server:${{ steps.version.outputs.version }}
-
-            # Or use latest
-            docker pull ghcr.io/${{ github.repository_owner }}/nanolink-server:latest
-            ```
-
-            ### Quick Start
-
-            ```bash
-            # Docker
-            docker run -d -p 8080:8080 -p 9100:9100 -p 9200:9200 ghcr.io/${{ github.repository_owner }}/nanolink-server:latest
-
-            # Access dashboard
-            open http://localhost:8080
-            ```
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

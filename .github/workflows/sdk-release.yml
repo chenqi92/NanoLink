@@ -403,62 +403,12 @@ jobs:
           sha256sum * > SHA256SUMS.txt || true
           cat SHA256SUMS.txt
 
-      - name: Create Release
+      - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          name: NanoLink SDK ${{ needs.prepare.outputs.tag }}
-          body: |
-            ## NanoLink SDK Release ${{ needs.prepare.outputs.version }}
-
-            ### Downloads
-
-            #### Java SDK
-            - `kkape-nanolink-${{ needs.prepare.outputs.version }}.jar` - Main SDK JAR
-            - `kkape-nanolink-${{ needs.prepare.outputs.version }}-sources.jar` - Source code
-            - `kkape-nanolink-${{ needs.prepare.outputs.version }}-javadoc.jar` - Javadoc
-
-            #### Go SDK
-            - `nanolink-go-sdk-${{ needs.prepare.outputs.version }}.tar.gz` - Go module source
-
-            #### Python SDK
-            - `kkape_nanolink-${{ needs.prepare.outputs.version }}.tar.gz` - Source distribution
-            - `kkape_nanolink-${{ needs.prepare.outputs.version }}-py3-none-any.whl` - Wheel package
-
-            #### Protocol Buffers
-            - `nanolink-proto-${{ needs.prepare.outputs.version }}.tar.gz` - Proto definitions
-
-            ### Installation
-
-            **Java (Maven):**
-            ```xml
-            <dependency>
-                <groupId>com.kkape</groupId>
-                <artifactId>kkape-nanolink</artifactId>
-                <version>${{ needs.prepare.outputs.version }}</version>
-            </dependency>
-            ```
-
-            **Go:**
-            ```bash
-            go get github.com/chenqi92/NanoLink/sdk/go@${{ needs.prepare.outputs.tag }}
-            ```
-
-            **Python:**
-            ```bash
-            pip install kkape-nanolink==${{ needs.prepare.outputs.version }}
-            ```
-
-            Or download from this release:
-            ```bash
-            pip install https://github.com/chenqi92/NanoLink/releases/download/${{ needs.prepare.outputs.tag }}/kkape_nanolink-${{ needs.prepare.outputs.version }}-py3-none-any.whl
-            ```
-
-            ### Changelog
-            See [CHANGELOG.md](https://github.com/chenqi92/NanoLink/blob/main/CHANGELOG.md) for details.
           files: release/*
-          draft: false
-          prerelease: ${{ contains(needs.prepare.outputs.version, 'alpha') || contains(needs.prepare.outputs.version, 'beta') || contains(needs.prepare.outputs.version, 'rc') }}
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
