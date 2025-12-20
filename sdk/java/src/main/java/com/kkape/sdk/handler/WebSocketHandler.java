@@ -10,8 +10,11 @@ import com.kkape.sdk.AgentConnection;
 import com.kkape.sdk.NanoLinkServer;
 import com.kkape.sdk.TokenValidator;
 import com.kkape.sdk.model.Metrics;
+import io.nanolink.proto.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.UUID;
 
 /**
  * WebSocket handler for agent connections
@@ -58,66 +61,42 @@ public class WebSocketHandler extends SimpleChannelInboundHandler<WebSocketFrame
 
         try {
             // Parse the protobuf envelope
-            // In real implementation, use generated protobuf classes
-            // For now, we'll use a simplified parsing
+            Envelope envelope = Envelope.parseFrom(data);
 
-            // Check message type from first few bytes (simplified)
-            if (data.length < 4) {
-                return;
-            }
-
-            // Simplified message type detection
-            // In production, properly parse the protobuf Envelope
-            int messageType = detectMessageType(data);
-
-            switch (messageType) {
-                case 10: // AuthRequest
-                    handleAuthRequest(ctx, data);
+            switch (envelope.getPayloadCase()) {
+                case AUTH_REQUEST:
+                    handleAuthRequest(ctx, envelope);
                     break;
-                case 20: // Metrics
-                    handleMetrics(data);
+                case METRICS:
+                    handleMetrics(envelope);
                     break;
-                case 21: // MetricsSync
-                    handleMetricsSync(data);
+                case METRICS_SYNC:
+                    handleMetricsSync(envelope);
                     break;
-                case 31: // CommandResult
-                    handleCommandResult(data);
+                case COMMAND_RESULT:
+                    handleCommandResult(envelope);
                     break;
-                case 40: // Heartbeat
-                    handleHeartbeat(ctx, data);
+                case HEARTBEAT:
+                    handleHeartbeat(ctx, envelope);
                     break;
                 default:
-                    log.warn("Unknown message type: {}", messageType);
+                    log.warn("Unknown message type: {}", envelope.getPayloadCase());
             }
         } catch (Exception e) {
             log.error("Error processing message", e);
         }
     }
 
-    private int detectMessageType(byte[] data) {
-        // Simplified detection - in production use proper protobuf parsing
-        // Look for field numbers in the protobuf data
-        for (int i = 0; i < Math.min(data.length, 20); i++) {
-            int fieldTag = data[i] & 0xFF;
-            int fieldNumber = fieldTag >> 3;
-            if (fieldNumber >= 10 && fieldNumber <= 50) {
-                return fieldNumber;
-            }
-        }
-        return 0;
-    }
+    private void handleAuthRequest(ChannelHandlerContext ctx, Envelope envelope) {
+        AuthRequest authRequest = envelope.getAuthRequest();
 
-    private void handleAuthRequest(ChannelHandlerContext ctx, byte[] data) {
-        // Parse auth request (simplified)
-        // Extract token, hostname, version, os, arch from protobuf
+        String token = authRequest.getToken();
+        String hostname = authRequest.getHostname();
+        String version = authRequest.getAgentVersion();
+        String os = authRequest.getOs();
+        String arch = authRequest.getArch();
 
-        // For demo purposes, accept all connections
-        // In production, properly parse and validate
-        String token = "demo_token";
-        String hostname = "unknown";
-        String version = "0.1.0";
-        String os = "unknown";
-        String arch = "unknown";
+        log.info("Auth request from {} (os={}, arch={}, version={})", hostname, os, arch, version);
 
         // Validate token
         TokenValidator validator = server.getConfig().getTokenValidator();
@@ -139,57 +118,106 @@ public class WebSocketHandler extends SimpleChannelInboundHandler<WebSocketFrame
     }
 
     private void sendAuthResponse(ChannelHandlerContext ctx, boolean success, int permissionLevel, String error) {
-        // Build and send auth response protobuf
-        // Simplified - in production use generated protobuf classes
-        byte[] response = buildAuthResponse(success, permissionLevel, error);
-        ctx.writeAndFlush(new BinaryWebSocketFrame(ctx.alloc().buffer().writeBytes(response)));
+        AuthResponse.Builder responseBuilder = AuthResponse.newBuilder()
+                .setSuccess(success)
+                .setPermissionLevel(permissionLevel);
+
+        if (error != null) {
+            responseBuilder.setErrorMessage(error);
+        }
+
+        Envelope envelope = Envelope.newBuilder()
+                .setTimestamp(System.currentTimeMillis())
+                .setMessageId(UUID.randomUUID().toString())
+                .setAuthResponse(responseBuilder.build())
+                .build();
+
+        byte[] data = envelope.toByteArray();
+        ctx.writeAndFlush(new BinaryWebSocketFrame(ctx.alloc().buffer().writeBytes(data)));
     }
 
-    private byte[] buildAuthResponse(boolean success, int permissionLevel, String error) {
-        // Simplified response building
-        // In production, use generated protobuf builders
-        return new byte[0];
-    }
-
-    private void handleMetrics(byte[] data) {
+    private void handleMetrics(Envelope envelope) {
         if (!authenticated) {
             log.warn("Received metrics from unauthenticated agent");
             return;
         }
 
-        // Parse metrics from protobuf
-        Metrics metrics = parseMetrics(data);
+        io.nanolink.proto.Metrics protoMetrics = envelope.getMetrics();
+
+        // Convert proto metrics to our model
+        Metrics metrics = convertMetrics(protoMetrics);
         if (metrics != null) {
             agent.updateMetrics(metrics);
         }
     }
 
-    private Metrics parseMetrics(byte[] data) {
-        // Simplified parsing - in production use generated protobuf classes
+    private Metrics convertMetrics(io.nanolink.proto.Metrics protoMetrics) {
         Metrics metrics = new Metrics();
-        metrics.setTimestamp(System.currentTimeMillis());
-        metrics.setHostname(agent.getHostname());
+        metrics.setTimestamp(protoMetrics.getTimestamp());
+        metrics.setHostname(protoMetrics.getHostname());
+
+        // Convert CPU metrics
+        if (protoMetrics.hasCpu()) {
+            CpuMetrics protoCpu = protoMetrics.getCpu();
+            Metrics.CpuMetrics cpu = new Metrics.CpuMetrics();
+            cpu.setUsagePercent(protoCpu.getUsagePercent());
+            cpu.setCoreCount(protoCpu.getCoreCount());
+            metrics.setCpu(cpu);
+        }
+
+        // Convert memory metrics
+        if (protoMetrics.hasMemory()) {
+            MemoryMetrics protoMem = protoMetrics.getMemory();
+            Metrics.MemoryMetrics memory = new Metrics.MemoryMetrics();
+            memory.setTotal(protoMem.getTotal());
+            memory.setUsed(protoMem.getUsed());
+            memory.setAvailable(protoMem.getAvailable());
+            memory.setSwapTotal(protoMem.getSwapTotal());
+            memory.setSwapUsed(protoMem.getSwapUsed());
+            metrics.setMemory(memory);
+        }
+
         return metrics;
     }
 
-    private void handleMetricsSync(byte[] data) {
+    private void handleMetricsSync(Envelope envelope) {
         if (!authenticated) {
             return;
         }
         // Handle buffered metrics from agent after reconnection
-        log.debug("Received metrics sync from {}", agent.getHostname());
+        MetricsSync sync = envelope.getMetricsSync();
+        log.info("Received metrics sync from {} with {} buffered entries",
+                agent.getHostname(), sync.getBufferedMetricsCount());
+
+        // Process each buffered metric
+        for (io.nanolink.proto.Metrics protoMetrics : sync.getBufferedMetricsList()) {
+            Metrics metrics = convertMetrics(protoMetrics);
+            if (metrics != null) {
+                agent.updateMetrics(metrics);
+            }
+        }
     }
 
-    private void handleCommandResult(byte[] data) {
+    private void handleCommandResult(Envelope envelope) {
         if (!authenticated) {
             return;
         }
-        // Parse command result and notify waiting future
-        // Simplified - in production properly parse the protobuf
-        log.debug("Received command result from {}", agent.getHostname());
+        io.nanolink.proto.CommandResult protoResult = envelope.getCommandResult();
+        log.debug("Received command result from {}: success={}",
+                agent.getHostname(), protoResult.getSuccess());
+
+        // Convert proto result to Command.Result
+        com.kkape.sdk.model.Command.Result result = new com.kkape.sdk.model.Command.Result();
+        result.setCommandId(protoResult.getCommandId());
+        result.setSuccess(protoResult.getSuccess());
+        result.setOutput(protoResult.getOutput());
+        result.setError(protoResult.getError());
+
+        // Notify the agent connection about the result
+        agent.handleCommandResult(protoResult.getCommandId(), result);
     }
 
-    private void handleHeartbeat(ChannelHandlerContext ctx, byte[] data) {
+    private void handleHeartbeat(ChannelHandlerContext ctx, Envelope envelope) {
         if (!authenticated) {
             return;
         }
@@ -197,13 +225,18 @@ public class WebSocketHandler extends SimpleChannelInboundHandler<WebSocketFrame
         agent.updateHeartbeat();
 
         // Send heartbeat ack
-        byte[] ack = buildHeartbeatAck();
-        ctx.writeAndFlush(new BinaryWebSocketFrame(ctx.alloc().buffer().writeBytes(ack)));
-    }
+        HeartbeatAck ack = HeartbeatAck.newBuilder()
+                .setTimestamp(System.currentTimeMillis())
+                .build();
 
-    private byte[] buildHeartbeatAck() {
-        // Simplified - in production use generated protobuf classes
-        return new byte[0];
+        Envelope ackEnvelope = Envelope.newBuilder()
+                .setTimestamp(System.currentTimeMillis())
+                .setMessageId(UUID.randomUUID().toString())
+                .setHeartbeatAck(ack)
+                .build();
+
+        byte[] data = ackEnvelope.toByteArray();
+        ctx.writeAndFlush(new BinaryWebSocketFrame(ctx.alloc().buffer().writeBytes(data)));
     }
 
     @Override

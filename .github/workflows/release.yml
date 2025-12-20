@@ -47,21 +47,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          # Linux - use musl for static linking (maximum compatibility)
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             name: linux-x86_64
-          - target: aarch64-unknown-linux-gnu
+            cross: true
+          - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             name: linux-aarch64
+            cross: true
+          # macOS - native builds
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
             name: macos-x86_64
+            cross: false
           - target: aarch64-apple-darwin
             os: macos-latest
             name: macos-aarch64
+            cross: false
+          # Windows - native build
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: windows-x86_64
+            cross: false
 
     steps:
       - uses: actions/checkout@v4
@@ -85,21 +93,29 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install protoc
 
-      - name: Install cross-compilation tools (Linux ARM64)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+      # Install zig and cargo-zigbuild for Linux musl static builds
+      - name: Install Zig (Linux)
+        if: matrix.cross == true
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.11.0
 
-      - name: Set linker for ARM64
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          mkdir -p .cargo
-          echo '[target.aarch64-unknown-linux-gnu]' >> .cargo/config.toml
-          echo 'linker = "aarch64-linux-gnu-gcc"' >> .cargo/config.toml
+      - name: Install cargo-zigbuild (Linux)
+        if: matrix.cross == true
+        run: cargo install cargo-zigbuild
 
-      - name: Build Agent
+      # Build with zigbuild for musl targets (static linking)
+      - name: Build Agent (Linux musl)
+        if: matrix.cross == true
+        working-directory: agent
+        run: cargo zigbuild --release --target ${{ matrix.target }}
+
+      # Native build for macOS/Windows
+      - name: Build Agent (Native)
+        if: matrix.cross != true
         working-directory: agent
         run: cargo build --release --target ${{ matrix.target }}
+
 
       - name: Prepare artifact (Unix)
         if: runner.os != 'Windows'
