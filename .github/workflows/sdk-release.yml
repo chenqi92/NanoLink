@@ -4,28 +4,28 @@ on:
   push:
     branches: [main]
     paths:
-      - 'VERSION'
+      - "VERSION"
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 0.1.0)'
+        description: "Version to release (e.g., 0.1.0)"
         required: false
         type: string
       publish_maven:
-        description: 'Publish to Maven Central'
+        description: "Publish to Maven Central"
         required: false
         type: boolean
         default: false
       publish_pypi:
-        description: 'Publish to PyPI'
+        description: "Publish to PyPI"
         required: false
         type: boolean
         default: false
 
 env:
-  JAVA_VERSION: '11'
-  GO_VERSION: '1.21'
-  PYTHON_VERSION: '3.11'
+  JAVA_VERSION: "11"
+  GO_VERSION: "1.21"
+  PYTHON_VERSION: "3.11"
 
 jobs:
   # Read version from VERSION file or input
@@ -67,9 +67,9 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: "temurin"
           java-version: ${{ env.JAVA_VERSION }}
-          cache: 'maven'
+          cache: "maven"
 
       - name: Update version in pom.xml
         working-directory: sdk/java
@@ -116,9 +116,9 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: "temurin"
           java-version: ${{ env.JAVA_VERSION }}
-          cache: 'maven'
+          cache: "maven"
 
       - name: Configure Maven settings
         env:
@@ -151,9 +151,11 @@ jobs:
           EOF
 
       - name: Import GPG key
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: env.GPG_PRIVATE_KEY != ''
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | base64 --decode | gpg --batch --import
+          echo "$GPG_PRIVATE_KEY" | base64 --decode | gpg --batch --import
           gpg --list-secret-keys --keyid-format LONG
 
       - name: Update version in pom.xml
@@ -351,7 +353,8 @@ jobs:
   # Create GitHub Release
   create-release:
     name: Create GitHub Release
-    needs: [prepare, build-java-sdk, build-go-sdk, build-python-sdk, build-proto]
+    needs:
+      [prepare, build-java-sdk, build-go-sdk, build-python-sdk, build-proto]
     runs-on: ubuntu-latest
     permissions:
       contents: write
