@@ -119,6 +119,10 @@ main() {
     update_file "apps/desktop/pubspec.yaml" "$CURRENT_VERSION" "$NEW_VERSION"
     update_file "demo/spring-boot/pom.xml" "$CURRENT_VERSION" "$NEW_VERSION"
     update_file "scripts/version.json" "$CURRENT_VERSION" "$NEW_VERSION"
+    
+    # Update root VERSION file (triggers auto-release)
+    echo "$NEW_VERSION" > "$ROOT_DIR/VERSION"
+    success "Updated: VERSION"
 
     echo ""
     success "Version bumped from $CURRENT_VERSION to $NEW_VERSION"
