@@ -186,9 +186,14 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: NanoLink ${{ needs.prepare.outputs.tag }}
           body: |
-            ## NanoLink Agent Release ${{ needs.prepare.outputs.version }}
+            ## NanoLink Release ${{ needs.prepare.outputs.version }}
 
-            ### Agent Downloads
+            > 本 Release 包含 Agent、SDK 和桌面应用的所有构建产物。
+            > 各工作流并行构建，产物将陆续上传到此页面。
+
+            ---
+
+            ### 🔧 Agent
 
             | Platform | Architecture | Download |
             |----------|--------------|----------|
@@ -198,25 +203,46 @@ jobs:
             | macOS | ARM64 (M1/M2) | `nanolink-agent-macos-aarch64` |
             | Windows | x86_64 | `nanolink-agent-windows-x86_64.exe` |
 
-            ### Dashboard
-            - `nanolink-dashboard-${{ needs.prepare.outputs.version }}.tar.gz` - Web UI static files
+            ### 📦 SDK
 
-            ### Quick Install
+            - **Java**: `kkape-nanolink-${{ needs.prepare.outputs.version }}.jar`
+            - **Python**: `kkape_nanolink-${{ needs.prepare.outputs.version }}-py3-none-any.whl`
+            - **Go**: `nanolink-go-sdk-${{ needs.prepare.outputs.version }}.tar.gz`
 
-            **Linux/macOS:**
+            ### 🖥️ Desktop Apps
+
+            | Platform | Download |
+            |----------|----------|
+            | Windows | `NanoLink-Windows-${{ needs.prepare.outputs.version }}.zip` |
+            | macOS Intel | `NanoLink-macOS-Intel-${{ needs.prepare.outputs.version }}.dmg` |
+            | macOS Apple Silicon | `NanoLink-macOS-AppleSilicon-${{ needs.prepare.outputs.version }}.dmg` |
+            | Linux | `NanoLink-Linux-${{ needs.prepare.outputs.version }}.tar.gz` |
+
+            ### 🐳 Docker
+
+            ```bash
+            docker pull ghcr.io/chenqi92/nanolink-server:${{ needs.prepare.outputs.version }}
+            docker pull ghcr.io/chenqi92/nanolink-server:latest
+            ```
+
+            ### 📥 Quick Install
+
+            **Agent (Linux/macOS):**
             ```bash
             curl -fsSL https://github.com/chenqi92/NanoLink/releases/download/${{ needs.prepare.outputs.tag }}/nanolink-agent-linux-x86_64 -o nanolink-agent
-            chmod +x nanolink-agent
-            ./nanolink-agent --help
+            chmod +x nanolink-agent && ./nanolink-agent --help
             ```
 
-            **Windows (PowerShell):**
-            ```powershell
-            Invoke-WebRequest -Uri "https://github.com/chenqi92/NanoLink/releases/download/${{ needs.prepare.outputs.tag }}/nanolink-agent-windows-x86_64.exe" -OutFile "nanolink-agent.exe"
-            .\nanolink-agent.exe --help
+            **SDK:**
+            ```bash
+            # Python
+            pip install kkape-nanolink==${{ needs.prepare.outputs.version }}
+
+            # Go
+            go get github.com/chenqi92/NanoLink/sdk/go@${{ needs.prepare.outputs.tag }}
             ```
 
-            ### Changelog
+            ---
             See [CHANGELOG.md](https://github.com/chenqi92/NanoLink/blob/main/CHANGELOG.md) for details.
           files: release/*
           draft: false
