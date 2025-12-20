@@ -41,6 +41,13 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
             TokenValidator.ValidationResult result = tokenValidator.validate(request.getToken());
 
             if (result.isValid()) {
+                // Check if agent with same hostname already exists (reconnection case)
+                AgentConnection existingAgent = server.getAgentByHostname(request.getHostname());
+                if (existingAgent != null) {
+                    server.unregisterAgent(existingAgent);
+                    log.info("Replacing stale agent connection for hostname: {}", request.getHostname());
+                }
+
                 // Create agent connection
                 String agentId = UUID.randomUUID().toString();
                 AgentConnection agent = new AgentConnection(
