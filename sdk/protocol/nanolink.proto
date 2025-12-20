@@ -36,7 +36,34 @@ message AuthResponse {
   string error_message = 3;
 }
 
-// ========== Metrics ==========
+// ========== Metrics Type ==========
+// Defines what type of metrics data is being sent
+enum MetricsType {
+  METRICS_FULL = 0;      // Complete data (first connection or on request)
+  METRICS_REALTIME = 1;  // Realtime data only (CPU/memory/network IO/GPU usage)
+  METRICS_PERIODIC = 2;  // Periodic data (disk usage, user sessions)
+  METRICS_STATIC = 3;    // Static data (hardware info, system info)
+}
+
+// ========== Data Request Types ==========
+// Commands from server to agent to request specific data
+enum DataRequestType {
+  DATA_REQUEST_FULL = 0;           // Request complete metrics
+  DATA_REQUEST_STATIC = 1;         // Request static hardware/system info
+  DATA_REQUEST_DISK_USAGE = 2;     // Request disk capacity/usage
+  DATA_REQUEST_NETWORK_INFO = 3;   // Request network info (IPs, MACs)
+  DATA_REQUEST_USER_SESSIONS = 4;  // Request user sessions
+  DATA_REQUEST_GPU_INFO = 5;       // Request GPU static info
+  DATA_REQUEST_HEALTH = 6;         // Request disk S.M.A.R.T status
+}
+
+// Data request message from server to agent
+message DataRequest {
+  DataRequestType request_type = 1;
+  string target = 2;  // Optional: specific device/interface name
+}
+
+// ========== Complete Metrics (for first connection or full request) ==========
 message Metrics {
   uint64 timestamp = 1;
   CpuMetrics cpu = 2;
@@ -49,6 +76,159 @@ message Metrics {
   SystemInfo system_info = 9;
   repeated UserSession user_sessions = 10;  // Logged-in users
   repeated NpuMetrics npus = 11;            // AI accelerators (NPU/TPU)
+  MetricsType metrics_type = 12;            // Type of this metrics message
+  bool is_initial = 13;                      // True if this is initial full data
+}
+
+// ========== Realtime Metrics (sent every second) ==========
+// Lightweight message for frequently changing data
+message RealtimeMetrics {
+  uint64 timestamp = 1;
+  double cpu_usage_percent = 2;
+  repeated double cpu_per_core = 3;
+  double cpu_temperature = 4;
+  uint64 cpu_frequency_mhz = 5;      // Current frequency
+  uint64 memory_used = 6;
+  uint64 memory_cached = 7;
+  uint64 swap_used = 8;
+  repeated DiskIO disk_io = 9;
+  repeated NetworkIO network_io = 10;
+  repeated double load_average = 11;
+  repeated GpuUsage gpu_usage = 12;
+  repeated NpuUsage npu_usage = 13;
+}
+
+// Disk IO metrics (realtime)
+message DiskIO {
+  string device = 1;
+  uint64 read_bytes_sec = 2;
+  uint64 write_bytes_sec = 3;
+  uint64 read_iops = 4;
+  uint64 write_iops = 5;
+}
+
+// Network IO metrics (realtime)
+message NetworkIO {
+  string interface = 1;
+  uint64 rx_bytes_sec = 2;
+  uint64 tx_bytes_sec = 3;
+  uint64 rx_packets_sec = 4;
+  uint64 tx_packets_sec = 5;
+  bool is_up = 6;
+}
+
+// GPU usage metrics (realtime)
+message GpuUsage {
+  uint32 index = 1;
+  double usage_percent = 2;
+  uint64 memory_used = 3;
+  double temperature = 4;
+  uint32 power_watts = 5;
+  uint64 clock_core_mhz = 6;
+  double encoder_usage = 7;
+  double decoder_usage = 8;
+}
+
+// NPU usage metrics (realtime)
+message NpuUsage {
+  uint32 index = 1;
+  double usage_percent = 2;
+  uint64 memory_used = 3;
+  double temperature = 4;
+  uint32 power_watts = 5;
+}
+
+// ========== Static Hardware Info (sent once or on request) ==========
+message StaticInfo {
+  uint64 timestamp = 1;
+  CpuStaticInfo cpu = 2;
+  MemoryStaticInfo memory = 3;
+  repeated DiskStaticInfo disks = 4;
+  repeated NetworkStaticInfo networks = 5;
+  repeated GpuStaticInfo gpus = 6;
+  repeated NpuStaticInfo npus = 7;
+  SystemInfo system_info = 8;
+}
+
+message CpuStaticInfo {
+  string model = 1;
+  string vendor = 2;
+  uint32 physical_cores = 3;
+  uint32 logical_cores = 4;
+  string architecture = 5;
+  uint64 frequency_max_mhz = 6;
+  uint64 l1_cache_kb = 7;
+  uint64 l2_cache_kb = 8;
+  uint64 l3_cache_kb = 9;
+}
+
+message MemoryStaticInfo {
+  uint64 total = 1;
+  uint64 swap_total = 2;
+  string memory_type = 3;
+  uint32 memory_speed_mhz = 4;
+  uint32 memory_slots = 5;
+}
+
+message DiskStaticInfo {
+  string device = 1;
+  string mount_point = 2;
+  string fs_type = 3;
+  string model = 4;
+  string serial = 5;
+  string disk_type = 6;      // SSD, HDD, NVMe
+  uint64 total_bytes = 7;
+  string health_status = 8;  // S.M.A.R.T status
+}
+
+message NetworkStaticInfo {
+  string interface = 1;
+  string mac_address = 2;
+  repeated string ip_addresses = 3;
+  uint64 speed_mbps = 4;
+  string interface_type = 5;  // ethernet, wifi, loopback, virtual
+  bool is_virtual = 6;
+}
+
+message GpuStaticInfo {
+  uint32 index = 1;
+  string name = 2;
+  string vendor = 3;
+  uint64 memory_total = 4;
+  string driver_version = 5;
+  string pcie_generation = 6;
+  uint32 power_limit_watts = 7;
+}
+
+message NpuStaticInfo {
+  uint32 index = 1;
+  string name = 2;
+  string vendor = 3;
+  uint64 memory_total = 4;
+  string driver_version = 5;
+}
+
+// ========== Periodic Data (disk usage, user sessions) ==========
+message PeriodicData {
+  uint64 timestamp = 1;
+  repeated DiskUsage disk_usage = 2;
+  repeated UserSession user_sessions = 3;
+  repeated NetworkAddressUpdate network_updates = 4;
+}
+
+message DiskUsage {
+  string device = 1;
+  string mount_point = 2;
+  uint64 total = 3;
+  uint64 used = 4;
+  uint64 available = 5;
+  double temperature = 6;
+}
+
+message NetworkAddressUpdate {
+  string interface = 1;
+  repeated string ip_addresses = 2;
+  bool is_up = 3;
 }
 
 message CpuMetrics {
@@ -277,18 +457,22 @@ service NanoLinkService {
 // MetricsStreamRequest is sent by agent in the bidirectional stream
 message MetricsStreamRequest {
   oneof request {
-    Metrics metrics = 1;           // Regular metrics data
-    Heartbeat heartbeat = 2;       // Heartbeat to keep stream alive
+    Metrics metrics = 1;               // Full metrics data (initial or on request)
+    Heartbeat heartbeat = 2;           // Heartbeat to keep stream alive
     CommandResult command_result = 3;  // Result of executed command
+    RealtimeMetrics realtime = 4;      // Realtime metrics (sent every second)
+    StaticInfo static_info = 5;        // Static hardware info (on connect or request)
+    PeriodicData periodic = 6;         // Periodic data (disk usage, sessions)
   }
 }
 
 // MetricsStreamResponse is sent by server in the bidirectional stream
 message MetricsStreamResponse {
   oneof response {
-    Command command = 1;           // Command to execute
-    HeartbeatAck heartbeat_ack = 2;  // Heartbeat acknowledgment
-    ServerConfig config_update = 3;  // Configuration update from server
+    Command command = 1;               // Command to execute
+    HeartbeatAck heartbeat_ack = 2;    // Heartbeat acknowledgment
+    ServerConfig config_update = 3;    // Configuration update from server
+    DataRequest data_request = 4;      // Request for specific data from agent
   }
 }
 

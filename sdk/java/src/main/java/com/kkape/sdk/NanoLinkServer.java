@@ -17,6 +17,9 @@ import com.kkape.sdk.grpc.NanoLinkServiceImpl;
 import com.kkape.sdk.handler.WebSocketHandler;
 import com.kkape.sdk.handler.HttpRequestHandler;
 import com.kkape.sdk.model.Metrics;
+import com.kkape.sdk.model.PeriodicData;
+import com.kkape.sdk.model.RealtimeMetrics;
+import com.kkape.sdk.model.StaticInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +57,9 @@ public class NanoLinkServer {
     private Consumer<AgentConnection> onAgentConnect;
     private Consumer<AgentConnection> onAgentDisconnect;
     private Consumer<Metrics> onMetrics;
+    private Consumer<RealtimeMetrics> onRealtimeMetrics;
+    private Consumer<StaticInfo> onStaticInfo;
+    private Consumer<PeriodicData> onPeriodicData;
 
     private Channel serverChannel;
     private Server grpcServer;
@@ -221,6 +227,45 @@ public class NanoLinkServer {
     }
 
     /**
+     * Handle incoming realtime metrics (lightweight, sent every second)
+     */
+    public void handleRealtimeMetrics(RealtimeMetrics realtime) {
+        if (onRealtimeMetrics != null) {
+            try {
+                onRealtimeMetrics.accept(realtime);
+            } catch (Exception e) {
+                log.error("Error in onRealtimeMetrics callback", e);
+            }
+        }
+    }
+
+    /**
+     * Handle incoming static info (sent once on connect or on request)
+     */
+    public void handleStaticInfo(StaticInfo staticInfo) {
+        if (onStaticInfo != null) {
+            try {
+                onStaticInfo.accept(staticInfo);
+            } catch (Exception e) {
+                log.error("Error in onStaticInfo callback", e);
+            }
+        }
+    }
+
+    /**
+     * Handle incoming periodic data (disk usage, sessions, etc.)
+     */
+    public void handlePeriodicData(PeriodicData periodicData) {
+        if (onPeriodicData != null) {
+            try {
+                onPeriodicData.accept(periodicData);
+            } catch (Exception e) {
+                log.error("Error in onPeriodicData callback", e);
+            }
+        }
+    }
+
+    /**
      * Get agent by ID
      */
     public AgentConnection getAgent(String agentId) {
@@ -264,6 +309,18 @@ public class NanoLinkServer {
         this.onMetrics = callback;
     }
 
+    void setOnRealtimeMetrics(Consumer<RealtimeMetrics> callback) {
+        this.onRealtimeMetrics = callback;
+    }
+
+    void setOnStaticInfo(Consumer<StaticInfo> callback) {
+        this.onStaticInfo = callback;
+    }
+
+    void setOnPeriodicData(Consumer<PeriodicData> callback) {
+        this.onPeriodicData = callback;
+    }
+
     void setStaticFilesPath(String path) {
         this.staticFilesPath = path;
     }
@@ -276,6 +333,9 @@ public class NanoLinkServer {
         private Consumer<AgentConnection> onAgentConnect;
         private Consumer<AgentConnection> onAgentDisconnect;
         private Consumer<Metrics> onMetrics;
+        private Consumer<RealtimeMetrics> onRealtimeMetrics;
+        private Consumer<StaticInfo> onStaticInfo;
+        private Consumer<PeriodicData> onPeriodicData;
         private String staticFilesPath;
 
         /**
@@ -342,11 +402,38 @@ public class NanoLinkServer {
             return this;
         }
 
+        /**
+         * Set callback for realtime metrics (lightweight, sent every second)
+         */
+        public Builder onRealtimeMetrics(Consumer<RealtimeMetrics> callback) {
+            this.onRealtimeMetrics = callback;
+            return this;
+        }
+
+        /**
+         * Set callback for static info (hardware info, sent once or on request)
+         */
+        public Builder onStaticInfo(Consumer<StaticInfo> callback) {
+            this.onStaticInfo = callback;
+            return this;
+        }
+
+        /**
+         * Set callback for periodic data (disk usage, sessions, etc.)
+         */
+        public Builder onPeriodicData(Consumer<PeriodicData> callback) {
+            this.onPeriodicData = callback;
+            return this;
+        }
+
         public NanoLinkServer build() {
             NanoLinkServer server = new NanoLinkServer(config);
             server.setOnAgentConnect(onAgentConnect);
             server.setOnAgentDisconnect(onAgentDisconnect);
             server.setOnMetrics(onMetrics);
+            server.setOnRealtimeMetrics(onRealtimeMetrics);
+            server.setOnStaticInfo(onStaticInfo);
+            server.setOnPeriodicData(onPeriodicData);
             server.setStaticFilesPath(staticFilesPath);
             return server;
         }

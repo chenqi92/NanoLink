@@ -1,6 +1,7 @@
 mod cpu;
 mod disk;
 mod gpu;
+pub mod layered;
 mod memory;
 mod network;
 mod npu;
@@ -216,6 +217,8 @@ impl MetricsCollector {
             system_info: Some(system_info),
             user_sessions,
             npus,
+            metrics_type: crate::proto::MetricsType::MetricsFull as i32,
+            is_initial: false,
         })
     }
 

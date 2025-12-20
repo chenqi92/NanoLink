@@ -14,11 +14,13 @@ use tonic::{Request, Streaming};
 use tracing::{debug, error, info, warn};
 
 use crate::buffer::RingBuffer;
+use crate::collector::layered::{DataRequest, LayeredCollector, LayeredMetricsMessage};
 use crate::config::{Config, ServerConfig};
 use crate::proto::{
     metrics_stream_request, metrics_stream_response,
     nano_link_service_client::NanoLinkServiceClient, AuthRequest, AuthResponse, Command,
-    CommandResult, Heartbeat, Metrics, MetricsStreamRequest, MetricsStreamResponse,
+    CommandResult, DataRequestType, Heartbeat, Metrics, MetricsStreamRequest,
+    MetricsStreamResponse,
 };
 
 /// gRPC client for communicating with NanoLink server
@@ -173,6 +175,11 @@ impl GrpcClient {
                     info!("Received config update from server");
                     // TODO: Apply config update
                 }
+                Some(metrics_stream_response::Response::DataRequest(req)) => {
+                    info!("Received data request: {:?}", req.request_type);
+                    // In legacy stream_metrics, we don't have layered support
+                    // Just log the request for now
+                }
                 None => {}
             }
         }
@@ -206,5 +213,133 @@ impl GrpcClient {
             .context("Failed to execute command")?;
 
         Ok(response.into_inner())
+    }
+
+    /// Start bidirectional streaming with layered metrics support
+    ///
+    /// This method uses the LayeredCollector to send different types of metrics
+    /// at different intervals (realtime, periodic, static).
+    pub async fn stream_layered_metrics(
+        &mut self,
+        mut command_handler: impl FnMut(Command) -> CommandResult + Send + 'static,
+    ) -> Result<()> {
+        // Create channel for sending requests
+        let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(100);
+        let request_stream = ReceiverStream::new(rx);
+
+        // Start the bidirectional stream
+        let response = self
+            .client
+            .stream_metrics(Request::new(request_stream))
+            .await
+            .context("Failed to start metrics stream")?;
+
+        let mut response_stream: Streaming<MetricsStreamResponse> = response.into_inner();
+
+        // Create layered collector
+        let (metrics_tx, mut metrics_rx) = mpsc::channel::<LayeredMetricsMessage>(100);
+        let (request_tx, request_rx) = mpsc::channel::<DataRequest>(10);
+
+        let config = self.config.clone();
+        let collector = LayeredCollector::new(config.clone());
+
+        // Spawn the layered collector
+        tokio::spawn(async move {
+            collector.run(metrics_tx, request_rx).await;
+        });
+
+        // Spawn task to forward layered messages to gRPC stream
+        let tx_clone = tx.clone();
+        let heartbeat_interval = self.config.agent.heartbeat_interval;
+
+        let sender_handle = tokio::spawn(async move {
+            let mut heartbeat_ticker = time::interval(Duration::from_secs(heartbeat_interval));
+
+            loop {
+                tokio::select! {
+                    Some(msg) = metrics_rx.recv() => {
+                        let request = match msg {
+                            LayeredMetricsMessage::Static(static_info) => {
+                                debug!("Sending static info");
+                                MetricsStreamRequest {
+                                    request: Some(metrics_stream_request::Request::StaticInfo(static_info)),
+                                }
+                            }
+                            LayeredMetricsMessage::Realtime(realtime) => {
+                                MetricsStreamRequest {
+                                    request: Some(metrics_stream_request::Request::Realtime(realtime)),
+                                }
+                            }
+                            LayeredMetricsMessage::Periodic(periodic) => {
+                                debug!("Sending periodic data");
+                                MetricsStreamRequest {
+                                    request: Some(metrics_stream_request::Request::Periodic(periodic)),
+                                }
+                            }
+                            LayeredMetricsMessage::Full(metrics) => {
+                                debug!("Sending full metrics (initial={})", metrics.is_initial);
+                                MetricsStreamRequest {
+                                    request: Some(metrics_stream_request::Request::Metrics(metrics)),
+                                }
+                            }
+                        };
+
+                        if tx_clone.send(request).await.is_err() {
+                            error!("Failed to send to gRPC stream");
+                            break;
+                        }
+                    }
+                    _ = heartbeat_ticker.tick() => {
+                        let heartbeat = Heartbeat {
+                            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                            uptime_seconds: 0, // TODO: Calculate uptime
+                        };
+                        let request = MetricsStreamRequest {
+                            request: Some(metrics_stream_request::Request::Heartbeat(heartbeat)),
+                        };
+                        if tx_clone.send(request).await.is_err() {
+                            error!("Failed to send heartbeat");
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        // Handle responses from server
+        while let Some(response) = response_stream.message().await? {
+            match response.response {
+                Some(metrics_stream_response::Response::Command(cmd)) => {
+                    info!("Received command: {:?}", cmd.r#type);
+                    let result = command_handler(cmd);
+
+                    // Send command result back
+                    let request = MetricsStreamRequest {
+                        request: Some(metrics_stream_request::Request::CommandResult(result)),
+                    };
+                    if tx.send(request).await.is_err() {
+                        break;
+                    }
+                }
+                Some(metrics_stream_response::Response::HeartbeatAck(ack)) => {
+                    debug!("Heartbeat acknowledged: {}", ack.timestamp);
+                }
+                Some(metrics_stream_response::Response::ConfigUpdate(config)) => {
+                    info!("Received config update from server");
+                    // TODO: Apply config update
+                }
+                Some(metrics_stream_response::Response::DataRequest(data_req)) => {
+                    info!("Received data request: {:?}", data_req.request_type);
+                    // Forward the request to the layered collector
+                    let request_type = DataRequestType::try_from(data_req.request_type)
+                        .unwrap_or(DataRequestType::DataRequestFull);
+                    let _ = request_tx.send(DataRequest::from(request_type)).await;
+                }
+                None => {}
+            }
+        }
+
+        sender_handle.abort();
+        Ok(())
     }
 }

@@ -66,6 +66,15 @@ public class NanoLinkConfig {
                 })
                 .onMetrics(metrics -> {
                     metricsService.processMetrics(metrics);
+                })
+                .onRealtimeMetrics(realtime -> {
+                    metricsService.processRealtimeMetrics(realtime);
+                })
+                .onStaticInfo(staticInfo -> {
+                    metricsService.processStaticInfo(staticInfo);
+                })
+                .onPeriodicData(periodic -> {
+                    metricsService.processPeriodicData(periodic);
                 });
 
         // Configure static files path if provided
