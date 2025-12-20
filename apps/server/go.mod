@@ -1,8 +1,6 @@
 module github.com/chenqi92/NanoLink/apps/server
 
-go 1.24.0
-
-toolchain go1.24.5
+go 1.21
 
 require (
 	github.com/gin-gonic/gin v1.9.1
