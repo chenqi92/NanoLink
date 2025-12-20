@@ -42,10 +42,7 @@ impl ConnectionManager {
             let buffer = self.buffer.clone();
             let server = server_config.clone();
 
-            info!(
-                "Connecting to gRPC server: {}:{}",
-                server.host, server.port
-            );
+            info!("Connecting to gRPC server: {}:{}", server.host, server.port);
 
             let handle = tokio::spawn(async move {
                 Self::manage_grpc_connection(config, buffer, server).await;

@@ -247,7 +247,11 @@ async fn add_server(
     // Check if server already exists
     {
         let config = state.config.read().await;
-        if config.servers.iter().any(|s| s.host == req.host && s.port == req.port) {
+        if config
+            .servers
+            .iter()
+            .any(|s| s.host == req.host && s.port == req.port)
+        {
             return (
                 StatusCode::CONFLICT,
                 Json(ApiResponse {
@@ -306,7 +310,10 @@ async fn update_server(
     // Update server in config
     {
         let mut config = state.config.write().await;
-        let found = config.servers.iter_mut().find(|s| s.host == req.host && s.port == req.port);
+        let found = config
+            .servers
+            .iter_mut()
+            .find(|s| s.host == req.host && s.port == req.port);
 
         match found {
             Some(server) => {
@@ -358,7 +365,9 @@ async fn remove_server(
     {
         let mut config = state.config.write().await;
         let original_len = config.servers.len();
-        config.servers.retain(|s| !(s.host == query.host && s.port == query.port));
+        config
+            .servers
+            .retain(|s| !(s.host == query.host && s.port == query.port));
 
         if config.servers.len() == original_len {
             return (
@@ -396,7 +405,9 @@ async fn remove_server(
     }
 
     // Notify about the removal
-    let _ = state.event_tx.send(ServerEvent::Remove(query.host.clone(), query.port));
+    let _ = state
+        .event_tx
+        .send(ServerEvent::Remove(query.host.clone(), query.port));
 
     info!("Removed server: {}:{}", query.host, query.port);
 

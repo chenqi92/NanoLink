@@ -174,10 +174,15 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                     tls_verify,
                 } => {
                     // Check if server already exists
-                    if config.servers.iter().any(|s| s.host == host && s.port == port) {
+                    if config
+                        .servers
+                        .iter()
+                        .any(|s| s.host == host && s.port == port)
+                    {
                         anyhow::bail!(
                             "Server {}:{} already exists. Use 'server update' to modify.",
-                            host, port
+                            host,
+                            port
                         );
                     }
 
@@ -196,7 +201,9 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                 }
                 ServerAction::Remove { host, port } => {
                     let original_len = config.servers.len();
-                    config.servers.retain(|s| !(s.host == host && s.port == port));
+                    config
+                        .servers
+                        .retain(|s| !(s.host == host && s.port == port));
 
                     if config.servers.len() == original_len {
                         anyhow::bail!("Server {}:{} not found.", host, port);
@@ -219,7 +226,10 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                             server.permission,
                             permission_name(server.permission)
                         );
-                        println!("     TLS: {}, Verify: {}", server.tls_enabled, server.tls_verify);
+                        println!(
+                            "     TLS: {}, Verify: {}",
+                            server.tls_enabled, server.tls_verify
+                        );
                     }
                 }
                 ServerAction::Update {
@@ -230,7 +240,10 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                     tls_enabled,
                     tls_verify,
                 } => {
-                    let server = config.servers.iter_mut().find(|s| s.host == host && s.port == port);
+                    let server = config
+                        .servers
+                        .iter_mut()
+                        .find(|s| s.host == host && s.port == port);
 
                     match server {
                         Some(s) => {

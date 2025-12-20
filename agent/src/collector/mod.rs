@@ -232,4 +232,3 @@ impl MetricsCollector {
         vec![]
     }
 }
-
