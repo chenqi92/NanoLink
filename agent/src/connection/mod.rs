@@ -1,6 +1,9 @@
+//! Connection management for NanoLink Agent
+//!
+//! Manages gRPC connections to NanoLink servers with automatic reconnection.
+
 pub mod grpc;
 mod handler;
-mod websocket;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,12 +11,11 @@ use tokio::time;
 use tracing::{error, info, warn};
 
 use crate::buffer::RingBuffer;
-use crate::config::{Config, Protocol, ServerConfig};
+use crate::config::{Config, ServerConfig};
 
 pub use handler::MessageHandler;
-pub use websocket::WebSocketClient;
 
-/// Manages connections to multiple servers
+/// Manages gRPC connections to multiple servers
 pub struct ConnectionManager {
     config: Arc<Config>,
     buffer: Arc<RingBuffer>,
@@ -32,43 +34,18 @@ impl ConnectionManager {
             self.config.servers.len()
         );
 
-        // Separate servers by protocol
-        let mut ws_servers = Vec::new();
-        let mut grpc_servers = Vec::new();
-
-        for server_config in &self.config.servers {
-            match server_config.get_protocol() {
-                Protocol::WebSocket => ws_servers.push(server_config.clone()),
-                Protocol::Grpc => grpc_servers.push(server_config.clone()),
-            }
-        }
-
-        info!(
-            "Protocols: {} WebSocket, {} gRPC",
-            ws_servers.len(),
-            grpc_servers.len()
-        );
-
-        // Spawn WebSocket connection tasks
+        // Spawn gRPC connection tasks for each server
         let mut handles = Vec::new();
 
-        for server_config in ws_servers {
+        for server_config in &self.config.servers {
             let config = self.config.clone();
             let buffer = self.buffer.clone();
             let server = server_config.clone();
 
-            let handle = tokio::spawn(async move {
-                Self::manage_websocket_connection(config, buffer, server).await;
-            });
-
-            handles.push(handle);
-        }
-
-        // Spawn gRPC connection tasks
-        for server_config in grpc_servers {
-            let config = self.config.clone();
-            let buffer = self.buffer.clone();
-            let server = server_config.clone();
+            info!(
+                "Connecting to gRPC server: {}:{}",
+                server.host, server.port
+            );
 
             let handle = tokio::spawn(async move {
                 Self::manage_grpc_connection(config, buffer, server).await;
@@ -91,12 +68,14 @@ impl ConnectionManager {
     ) {
         let mut reconnect_delay = config.agent.reconnect_delay;
         let max_delay = config.agent.max_reconnect_delay;
+        let grpc_url = server.get_grpc_url();
 
         loop {
-            info!("Connecting to gRPC server: {}", server.url);
+            info!("Connecting to gRPC server: {}", grpc_url);
 
             match grpc::GrpcClient::connect(&server, &config).await {
                 Ok(mut client) => {
+                    // Reset reconnect delay on successful connection
                     reconnect_delay = config.agent.reconnect_delay;
 
                     // Authenticate
@@ -107,7 +86,7 @@ impl ConnectionManager {
                                 auth.permission_level
                             );
 
-                            // Start streaming
+                            // Start streaming metrics
                             if let Err(e) = client
                                 .stream_metrics(buffer.clone(), |cmd| {
                                     // TODO: Integrate with executor module
@@ -134,64 +113,21 @@ impl ConnectionManager {
                         }
                     }
 
-                    warn!("gRPC connection to {} lost", server.url);
+                    warn!("gRPC connection to {} lost", grpc_url);
                 }
                 Err(e) => {
-                    error!("Failed to connect to gRPC server {}: {}", server.url, e);
+                    error!("Failed to connect to gRPC server {}: {}", grpc_url, e);
                 }
             }
 
-            info!(
-                "Reconnecting to gRPC {} in {} seconds...",
-                server.url, reconnect_delay
-            );
-            time::sleep(Duration::from_secs(reconnect_delay)).await;
-
-            reconnect_delay = (reconnect_delay * 2).min(max_delay);
-        }
-    }
-
-    /// Manage a WebSocket connection with reconnection logic
-    async fn manage_websocket_connection(
-        config: Arc<Config>,
-        buffer: Arc<RingBuffer>,
-        server: ServerConfig,
-    ) {
-        let mut reconnect_delay = config.agent.reconnect_delay;
-        let max_delay = config.agent.max_reconnect_delay;
-
-        loop {
-            info!("Connecting to {}", server.url);
-
-            match WebSocketClient::connect(&server, &config).await {
-                Ok(mut client) => {
-                    // Reset reconnect delay on successful connection
-                    reconnect_delay = config.agent.reconnect_delay;
-
-                    // Create message handler
-                    let handler =
-                        MessageHandler::new(config.clone(), buffer.clone(), server.permission);
-
-                    // Run the client
-                    if let Err(e) = client.run(handler, &config, &buffer).await {
-                        error!("Connection error: {}", e);
-                    }
-
-                    warn!("Connection to {} lost", server.url);
-                }
-                Err(e) => {
-                    error!("Failed to connect to {}: {}", server.url, e);
-                }
-            }
-
-            // Wait before reconnecting
+            // Wait before reconnecting with exponential backoff
             info!(
                 "Reconnecting to {} in {} seconds...",
-                server.url, reconnect_delay
+                grpc_url, reconnect_delay
             );
             time::sleep(Duration::from_secs(reconnect_delay)).await;
 
-            // Exponential backoff
+            // Exponential backoff, capped at max_delay
             reconnect_delay = (reconnect_delay * 2).min(max_delay);
         }
     }

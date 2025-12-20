@@ -32,10 +32,7 @@ pub struct GrpcClient {
 impl GrpcClient {
     /// Connect to a gRPC server
     pub async fn connect(server_config: &ServerConfig, config: &Arc<Config>) -> Result<Self> {
-        let url = server_config
-            .url
-            .replace("grpc://", "http://")
-            .replace("grpcs://", "https://");
+        let url = server_config.get_grpc_url();
 
         let mut endpoint = Endpoint::from_shared(url.clone())
             .context("Invalid server URL")?
@@ -43,10 +40,8 @@ impl GrpcClient {
             .connect_timeout(Duration::from_secs(10))
             .tcp_keepalive(Some(Duration::from_secs(30)));
 
-        // Configure TLS if using secure connection
-        if url.starts_with("https://") || server_config.url.starts_with("grpcs://") {
-            // Use default TLS config with native roots
-            // In tonic 0.10, ClientTlsConfig::new() automatically uses native roots when tls-roots feature is enabled
+        // Configure TLS if enabled
+        if server_config.tls_enabled {
             let tls_config = ClientTlsConfig::new();
             endpoint = endpoint.tls_config(tls_config)?;
         }
@@ -211,118 +206,5 @@ impl GrpcClient {
             .context("Failed to execute command")?;
 
         Ok(response.into_inner())
-    }
-}
-
-/// gRPC connection manager
-pub struct GrpcConnectionManager {
-    config: Arc<Config>,
-    buffer: Arc<RingBuffer>,
-}
-
-impl GrpcConnectionManager {
-    /// Create a new gRPC connection manager
-    pub fn new(config: Arc<Config>, buffer: Arc<RingBuffer>) -> Self {
-        Self { config, buffer }
-    }
-
-    /// Run the gRPC connection manager
-    pub async fn run(self) {
-        info!(
-            "gRPC connection manager started with {} server(s)",
-            self.config.servers.len()
-        );
-
-        // Only connect to servers configured for gRPC
-        let grpc_servers: Vec<_> = self
-            .config
-            .servers
-            .iter()
-            .filter(|s| s.url.starts_with("grpc://") || s.url.starts_with("grpcs://"))
-            .cloned()
-            .collect();
-
-        if grpc_servers.is_empty() {
-            info!("No gRPC servers configured");
-            return;
-        }
-
-        let mut handles = Vec::new();
-
-        for server_config in grpc_servers {
-            let config = self.config.clone();
-            let buffer = self.buffer.clone();
-
-            let handle = tokio::spawn(async move {
-                Self::manage_connection(config, buffer, server_config).await;
-            });
-
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            let _ = handle.await;
-        }
-    }
-
-    /// Manage a single gRPC connection with reconnection logic
-    async fn manage_connection(config: Arc<Config>, buffer: Arc<RingBuffer>, server: ServerConfig) {
-        let mut reconnect_delay = config.agent.reconnect_delay;
-        let max_delay = config.agent.max_reconnect_delay;
-
-        loop {
-            info!("Connecting to gRPC server: {}", server.url);
-
-            match GrpcClient::connect(&server, &config).await {
-                Ok(mut client) => {
-                    reconnect_delay = config.agent.reconnect_delay;
-
-                    // Authenticate
-                    match client.authenticate().await {
-                        Ok(auth) if auth.success => {
-                            info!("gRPC authenticated successfully");
-
-                            // Start streaming
-                            if let Err(e) = client
-                                .stream_metrics(buffer.clone(), |cmd| {
-                                    // TODO: Implement command handler
-                                    CommandResult {
-                                        command_id: cmd.command_id,
-                                        success: true,
-                                        output: "Command received".to_string(),
-                                        error: String::new(),
-                                        file_content: vec![],
-                                        processes: vec![],
-                                        containers: vec![],
-                                    }
-                                })
-                                .await
-                            {
-                                error!("gRPC stream error: {}", e);
-                            }
-                        }
-                        Ok(auth) => {
-                            error!("gRPC authentication failed: {}", auth.error_message);
-                        }
-                        Err(e) => {
-                            error!("gRPC authentication error: {}", e);
-                        }
-                    }
-
-                    warn!("gRPC connection to {} lost", server.url);
-                }
-                Err(e) => {
-                    error!("Failed to connect to gRPC server {}: {}", server.url, e);
-                }
-            }
-
-            info!(
-                "Reconnecting to gRPC server {} in {} seconds...",
-                server.url, reconnect_delay
-            );
-            time::sleep(Duration::from_secs(reconnect_delay)).await;
-
-            reconnect_delay = (reconnect_delay * 2).min(max_delay);
-        }
     }
 }

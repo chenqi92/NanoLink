@@ -173,9 +173,12 @@ func main() {
 	metricsService := NewMetricsService()
 
 	// Initialize NanoLink server
+	// WsPort: for dashboard WebSocket connections (default: 9100)
+	// GrpcPort: for agent gRPC connections (default: 39100)
 	server := nanolink.NewServer(nanolink.Config{
-		Port:             9100,
-		DashboardEnabled: true,
+		WsPort:   9100,
+		GrpcPort: 39100,
+		// StaticFilesPath: "/path/to/dashboard", // Optional: serve dashboard static files
 	})
 
 	// Set callbacks
@@ -195,7 +198,7 @@ func main() {
 
 	// Start NanoLink server in background
 	go func() {
-		log.Printf("NanoLink Server starting on port 9100")
+		log.Printf("NanoLink Server starting - WebSocket port 9100, gRPC port 39100")
 		if err := server.Start(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start NanoLink server: %v", err)
 		}

@@ -23,7 +23,21 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
- * NanoLink Server - receives metrics from agents and provides management interface
+ * NanoLink Server - receives metrics from agents and provides management
+ * interface.
+ * 
+ * <p>
+ * Note: Dashboard functionality has been removed from the SDK.
+ * Use the dashboard from the demo projects or implement your own frontend.
+ * </p>
+ * 
+ * <p>
+ * Architecture:
+ * </p>
+ * <ul>
+ * <li>Agent connections: gRPC (port 39100 by default)</li>
+ * <li>Dashboard connections: WebSocket (port 9100 by default)</li>
+ * </ul>
  */
 public class NanoLinkServer {
     private static final Logger log = LoggerFactory.getLogger(NanoLinkServer.class);
@@ -39,6 +53,9 @@ public class NanoLinkServer {
 
     private Channel serverChannel;
     private SslContext sslContext;
+
+    /** Optional static files path for serving dashboard */
+    private String staticFilesPath;
 
     private NanoLinkServer(NanoLinkConfig config) {
         this.config = config;
@@ -60,45 +77,43 @@ public class NanoLinkServer {
         // Setup SSL if configured
         if (config.getTlsCertPath() != null && config.getTlsKeyPath() != null) {
             sslContext = SslContextBuilder.forServer(
-                new File(config.getTlsCertPath()),
-                new File(config.getTlsKeyPath())
-            ).build();
+                    new File(config.getTlsCertPath()),
+                    new File(config.getTlsKeyPath())).build();
             log.info("TLS enabled");
         }
 
         ServerBootstrap bootstrap = new ServerBootstrap();
         bootstrap.group(bossGroup, workerGroup)
-            .channel(NioServerSocketChannel.class)
-            .childHandler(new ChannelInitializer<SocketChannel>() {
-                @Override
-                protected void initChannel(SocketChannel ch) {
-                    ChannelPipeline pipeline = ch.pipeline();
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) {
+                        ChannelPipeline pipeline = ch.pipeline();
 
-                    if (sslContext != null) {
-                        pipeline.addLast(sslContext.newHandler(ch.alloc()));
+                        if (sslContext != null) {
+                            pipeline.addLast(sslContext.newHandler(ch.alloc()));
+                        }
+
+                        pipeline.addLast(new HttpServerCodec());
+                        pipeline.addLast(new HttpObjectAggregator(65536));
+                        pipeline.addLast(new ChunkedWriteHandler());
+
+                        // Handle HTTP requests (for API and optional static files)
+                        pipeline.addLast(new HttpRequestHandler("/ws", staticFilesPath));
+
+                        pipeline.addLast(new WebSocketServerProtocolHandler("/ws", null, true, 65536));
+                        pipeline.addLast(new WebSocketHandler(NanoLinkServer.this));
                     }
+                })
+                .option(ChannelOption.SO_BACKLOG, 128)
+                .childOption(ChannelOption.SO_KEEPALIVE, true);
 
-                    pipeline.addLast(new HttpServerCodec());
-                    pipeline.addLast(new HttpObjectAggregator(65536));
-                    pipeline.addLast(new ChunkedWriteHandler());
+        serverChannel = bootstrap.bind(config.getWsPort()).sync().channel();
+        log.info("NanoLink Server started on port {} (WebSocket for Dashboard)", config.getWsPort());
+        log.info("Agents should connect via gRPC on port {}", config.getGrpcPort());
 
-                    // Handle HTTP requests (for dashboard)
-                    if (config.isDashboardEnabled()) {
-                        pipeline.addLast(new HttpRequestHandler("/ws", config.getDashboardPath()));
-                    }
-
-                    pipeline.addLast(new WebSocketServerProtocolHandler("/ws", null, true, 65536));
-                    pipeline.addLast(new WebSocketHandler(NanoLinkServer.this));
-                }
-            })
-            .option(ChannelOption.SO_BACKLOG, 128)
-            .childOption(ChannelOption.SO_KEEPALIVE, true);
-
-        serverChannel = bootstrap.bind(config.getPort()).sync().channel();
-        log.info("NanoLink Server started on port {}", config.getPort());
-
-        if (config.isDashboardEnabled()) {
-            log.info("Dashboard available at http://localhost:{}/", config.getPort());
+        if (staticFilesPath != null) {
+            log.info("Dashboard available at http://localhost:{}/", config.getWsPort());
         }
     }
 
@@ -188,9 +203,9 @@ public class NanoLinkServer {
      */
     public AgentConnection getAgentByHostname(String hostname) {
         return agents.values().stream()
-            .filter(a -> a.getHostname().equals(hostname))
-            .findFirst()
-            .orElse(null);
+                .filter(a -> a.getHostname().equals(hostname))
+                .findFirst()
+                .orElse(null);
     }
 
     /**
@@ -220,6 +235,10 @@ public class NanoLinkServer {
         this.onMetrics = callback;
     }
 
+    void setStaticFilesPath(String path) {
+        this.staticFilesPath = path;
+    }
+
     /**
      * Builder for NanoLinkServer
      */
@@ -228,9 +247,30 @@ public class NanoLinkServer {
         private Consumer<AgentConnection> onAgentConnect;
         private Consumer<AgentConnection> onAgentDisconnect;
         private Consumer<Metrics> onMetrics;
+        private String staticFilesPath;
 
+        /**
+         * Set the WebSocket port for dashboard connections (default: 9100)
+         */
+        public Builder wsPort(int port) {
+            config.setWsPort(port);
+            return this;
+        }
+
+        /**
+         * Set the gRPC port for agent connections (default: 39100)
+         */
+        public Builder grpcPort(int port) {
+            config.setGrpcPort(port);
+            return this;
+        }
+
+        /**
+         * @deprecated Use {@link #wsPort(int)} instead
+         */
+        @Deprecated
         public Builder port(int port) {
-            config.setPort(port);
+            config.setWsPort(port);
             return this;
         }
 
@@ -244,13 +284,12 @@ public class NanoLinkServer {
             return this;
         }
 
-        public Builder enableDashboard(boolean enabled) {
-            config.setDashboardEnabled(enabled);
-            return this;
-        }
-
-        public Builder dashboardPath(String path) {
-            config.setDashboardPath(path);
+        /**
+         * Set the path to static files directory (for dashboard).
+         * If not set, only the API endpoints will be available.
+         */
+        public Builder staticFilesPath(String path) {
+            this.staticFilesPath = path;
             return this;
         }
 
@@ -279,6 +318,7 @@ public class NanoLinkServer {
             server.setOnAgentConnect(onAgentConnect);
             server.setOnAgentDisconnect(onAgentDisconnect);
             server.setOnMetrics(onMetrics);
+            server.setStaticFilesPath(staticFilesPath);
             return server;
         }
     }

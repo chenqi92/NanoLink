@@ -2,7 +2,6 @@ package com.kkape.sdk.model;
 
 import com.kkape.sdk.TokenValidator;
 
-import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -175,7 +174,8 @@ public class Command {
      * Convert to protobuf bytes
      */
     public byte[] toProtobuf() {
-        // Simplified serialization - in real implementation use generated protobuf classes
+        // Simplified serialization - in real implementation use generated protobuf
+        // classes
         // This is a placeholder
         return new byte[0];
     }
@@ -307,18 +307,53 @@ public class Command {
         private String status;
 
         // Getters and setters
-        public int getPid() { return pid; }
-        public void setPid(int pid) { this.pid = pid; }
-        public String getName() { return name; }
-        public void setName(String name) { this.name = name; }
-        public String getUser() { return user; }
-        public void setUser(String user) { this.user = user; }
-        public double getCpuPercent() { return cpuPercent; }
-        public void setCpuPercent(double cpuPercent) { this.cpuPercent = cpuPercent; }
-        public long getMemoryBytes() { return memoryBytes; }
-        public void setMemoryBytes(long memoryBytes) { this.memoryBytes = memoryBytes; }
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
+        public int getPid() {
+            return pid;
+        }
+
+        public void setPid(int pid) {
+            this.pid = pid;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getUser() {
+            return user;
+        }
+
+        public void setUser(String user) {
+            this.user = user;
+        }
+
+        public double getCpuPercent() {
+            return cpuPercent;
+        }
+
+        public void setCpuPercent(double cpuPercent) {
+            this.cpuPercent = cpuPercent;
+        }
+
+        public long getMemoryBytes() {
+            return memoryBytes;
+        }
+
+        public void setMemoryBytes(long memoryBytes) {
+            this.memoryBytes = memoryBytes;
+        }
+
+        public String getStatus() {
+            return status;
+        }
+
+        public void setStatus(String status) {
+            this.status = status;
+        }
     }
 
     /**
@@ -332,15 +367,44 @@ public class Command {
         private String state;
 
         // Getters and setters
-        public String getId() { return id; }
-        public void setId(String id) { this.id = id; }
-        public String getName() { return name; }
-        public void setName(String name) { this.name = name; }
-        public String getImage() { return image; }
-        public void setImage(String image) { this.image = image; }
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
-        public String getState() { return state; }
-        public void setState(String state) { this.state = state; }
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getImage() {
+            return image;
+        }
+
+        public void setImage(String image) {
+            this.image = image;
+        }
+
+        public String getStatus() {
+            return status;
+        }
+
+        public void setStatus(String status) {
+            this.status = status;
+        }
+
+        public String getState() {
+            return state;
+        }
+
+        public void setState(String state) {
+            this.state = state;
+        }
     }
 }

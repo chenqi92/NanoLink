@@ -181,7 +181,9 @@ async def lifespan(app: FastAPI):
     global nanolink_server
 
     # Initialize NanoLink server
-    config = ServerConfig(port=9100, dashboard_enabled=True)
+    # ws_port: for dashboard WebSocket connections (default: 9100)
+    # grpc_port: for agent gRPC connections (default: 39100)
+    config = ServerConfig(ws_port=9100, grpc_port=39100)
     nanolink_server = NanoLinkServer(config)
 
     @nanolink_server.on_agent_connect
@@ -199,7 +201,7 @@ async def lifespan(app: FastAPI):
         metrics_service.process_metrics(metrics)
 
     # Start NanoLink server in background
-    logger.info("Starting NanoLink Server on port 9100")
+    logger.info("Starting NanoLink Server - WebSocket port 9100, gRPC port 39100")
     await nanolink_server.start()
 
     yield

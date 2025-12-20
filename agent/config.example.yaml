@@ -1,0 +1,63 @@
+# NanoLink Agent Configuration Example
+# Place this file at /etc/nanolink/nanolink.yaml
+
+# Agent settings
+agent:
+  # Override hostname (optional, defaults to system hostname)
+  # hostname: my-server
+  
+  # Heartbeat interval in seconds
+  heartbeat_interval: 30
+  
+  # Reconnect delay in seconds (uses exponential backoff)
+  reconnect_delay: 5
+  max_reconnect_delay: 300
+
+# Server connections (gRPC only)
+servers:
+  - host: localhost      # Server hostname or IP
+    port: 39100          # gRPC port (default: 39100)
+    token: your_token_here
+    permission: 0        # 0=READ_ONLY, 1=BASIC_WRITE, 2=SERVICE_CONTROL, 3=SYSTEM_ADMIN
+    tls_enabled: false   # Enable TLS (grpcs://)
+    tls_verify: true     # Verify TLS certificates
+
+# Metrics collection settings
+collector:
+  cpu_interval_ms: 1000       # CPU/Memory collection interval
+  disk_interval_ms: 3000      # Disk I/O collection interval
+  network_interval_ms: 1000   # Network collection interval
+  process_interval_ms: 5000   # Process list interval
+  disk_space_interval_ms: 30000
+  enable_disk_io: true
+  enable_network: true
+  enable_per_core_cpu: true
+
+# Ring buffer settings
+buffer:
+  capacity: 600  # Cache 10 minutes of data at 1-second interval
+
+# Shell command execution (DANGEROUS - disabled by default)
+shell:
+  enabled: false
+  # super_token: your_super_secret_token
+  timeout_seconds: 30
+  whitelist: []
+  blacklist:
+    - "rm -rf"
+    - "mkfs"
+    - "> /dev"
+    - "dd if="
+
+# Logging settings
+logging:
+  level: info          # debug, info, warn, error
+  # file: /var/log/nanolink-agent.log
+  audit_enabled: true
+  audit_file: /var/log/nanolink-audit.log
+
+# Management API (localhost only)
+management:
+  enabled: true
+  port: 9101
+  # api_token: optional_api_token

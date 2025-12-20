@@ -17,17 +17,17 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
 use tracing::{error, info};
 
-use crate::config::{Config, ServerConfig};
+use crate::config::{Config, ServerConfig, DEFAULT_GRPC_PORT};
 
 /// Server change event
 #[derive(Debug, Clone)]
 pub enum ServerEvent {
     /// Add a new server
     Add(ServerConfig),
-    /// Update an existing server (by URL)
+    /// Update an existing server (by host:port)
     Update(ServerConfig),
-    /// Remove a server by URL
-    Remove(String),
+    /// Remove a server by host:port
+    Remove(String, u16),
 }
 
 /// Management API state
@@ -132,18 +132,24 @@ struct HealthResponse {
 
 #[derive(Debug, Serialize)]
 struct ServerInfo {
-    url: String,
+    host: String,
+    port: u16,
     permission: u8,
+    tls_enabled: bool,
     tls_verify: bool,
     connected: bool,
 }
 
 #[derive(Debug, Deserialize)]
 struct AddServerRequest {
-    url: String,
+    host: String,
+    #[serde(default = "default_grpc_port")]
+    port: u16,
     token: String,
     #[serde(default)]
     permission: u8,
+    #[serde(default)]
+    tls_enabled: bool,
     #[serde(default = "default_true")]
     tls_verify: bool,
 }
@@ -152,9 +158,15 @@ fn default_true() -> bool {
     true
 }
 
+fn default_grpc_port() -> u16 {
+    DEFAULT_GRPC_PORT
+}
+
 #[derive(Debug, Deserialize)]
 struct RemoveServerQuery {
-    url: String,
+    host: String,
+    #[serde(default = "default_grpc_port")]
+    port: u16,
 }
 
 #[derive(Debug, Serialize)]
@@ -196,8 +208,10 @@ async fn list_servers(State(state): State<Arc<ManagementState>>) -> Json<Vec<Ser
         .servers
         .iter()
         .map(|s| ServerInfo {
-            url: s.url.clone(),
+            host: s.host.clone(),
+            port: s.port,
             permission: s.permission,
+            tls_enabled: s.tls_enabled,
             tls_verify: s.tls_verify,
             connected: false, // TODO: Track actual connection state
         })
@@ -210,17 +224,6 @@ async fn add_server(
     State(state): State<Arc<ManagementState>>,
     Json(req): Json<AddServerRequest>,
 ) -> (StatusCode, Json<ApiResponse>) {
-    // Validate URL
-    if !req.url.starts_with("ws://") && !req.url.starts_with("wss://") {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiResponse {
-                success: false,
-                message: "URL must start with ws:// or wss://".to_string(),
-            }),
-        );
-    }
-
     // Validate permission
     if req.permission > 3 {
         return (
@@ -233,17 +236,18 @@ async fn add_server(
     }
 
     let server_config = ServerConfig {
-        url: req.url.clone(),
+        host: req.host.clone(),
+        port: req.port,
         token: req.token,
         permission: req.permission,
+        tls_enabled: req.tls_enabled,
         tls_verify: req.tls_verify,
-        protocol: None,
     };
 
     // Check if server already exists
     {
         let config = state.config.read().await;
-        if config.servers.iter().any(|s| s.url == req.url) {
+        if config.servers.iter().any(|s| s.host == req.host && s.port == req.port) {
             return (
                 StatusCode::CONFLICT,
                 Json(ApiResponse {
@@ -275,13 +279,13 @@ async fn add_server(
     // Notify about the new server
     let _ = state.event_tx.send(ServerEvent::Add(server_config));
 
-    info!("Added server: {}", req.url);
+    info!("Added server: {}:{}", req.host, req.port);
 
     (
         StatusCode::OK,
         Json(ApiResponse {
             success: true,
-            message: format!("Server {} added successfully", req.url),
+            message: format!("Server {}:{} added successfully", req.host, req.port),
         }),
     )
 }
@@ -291,17 +295,18 @@ async fn update_server(
     Json(req): Json<AddServerRequest>,
 ) -> (StatusCode, Json<ApiResponse>) {
     let server_config = ServerConfig {
-        url: req.url.clone(),
+        host: req.host.clone(),
+        port: req.port,
         token: req.token,
         permission: req.permission,
+        tls_enabled: req.tls_enabled,
         tls_verify: req.tls_verify,
-        protocol: None,
     };
 
     // Update server in config
     {
         let mut config = state.config.write().await;
-        let found = config.servers.iter_mut().find(|s| s.url == req.url);
+        let found = config.servers.iter_mut().find(|s| s.host == req.host && s.port == req.port);
 
         match found {
             Some(server) => {
@@ -334,13 +339,13 @@ async fn update_server(
     // Notify about the update
     let _ = state.event_tx.send(ServerEvent::Update(server_config));
 
-    info!("Updated server: {}", req.url);
+    info!("Updated server: {}:{}", req.host, req.port);
 
     (
         StatusCode::OK,
         Json(ApiResponse {
             success: true,
-            message: format!("Server {} updated successfully", req.url),
+            message: format!("Server {}:{} updated successfully", req.host, req.port),
         }),
     )
 }
@@ -353,7 +358,7 @@ async fn remove_server(
     {
         let mut config = state.config.write().await;
         let original_len = config.servers.len();
-        config.servers.retain(|s| s.url != query.url);
+        config.servers.retain(|s| !(s.host == query.host && s.port == query.port));
 
         if config.servers.len() == original_len {
             return (
@@ -391,15 +396,15 @@ async fn remove_server(
     }
 
     // Notify about the removal
-    let _ = state.event_tx.send(ServerEvent::Remove(query.url.clone()));
+    let _ = state.event_tx.send(ServerEvent::Remove(query.host.clone(), query.port));
 
-    info!("Removed server: {}", query.url);
+    info!("Removed server: {}:{}", query.host, query.port);
 
     (
         StatusCode::OK,
         Json(ApiResponse {
             success: true,
-            message: format!("Server {} removed successfully", query.url),
+            message: format!("Server {}:{} removed successfully", query.host, query.port),
         }),
     )
 }

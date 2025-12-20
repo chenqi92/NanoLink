@@ -39,7 +39,8 @@
 │  └───────────────────────────────┼───────────────────────────────────────┘  │
 └──────────────────────────────────┼──────────────────────────────────────────┘
                                    │
-                    WebSocket / gRPC + Protocol Buffers (TLS)
+                        gRPC + Protocol Buffers (TLS)
+                              端口: 39100
                                    │
          ┌─────────────────────────┼─────────────────────────┐
          ▼                         ▼                         ▼
@@ -48,7 +49,9 @@
 │   (集成 SDK)    │     │   (集成 SDK)    │     │   (集成 SDK)    │
 └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
          │                       │                       │
-         └───────────────────────┴───────────────────────┘
+         └───────────────────────┼───────────────────────┘
+                                 │
+                      WebSocket  │  端口: 9100
                                  │
                       ┌──────────▼──────────┐
                       │     Dashboard       │
@@ -175,21 +178,15 @@
 
 ### 通信协议
 
-NanoLink 支持两种通信协议，可根据场景选择：
+NanoLink 使用分层通信架构：
 
-| 协议 | 适用场景 | 特点 |
-|------|----------|------|
-| **WebSocket** | 浏览器 Dashboard、兼容性要求高 | 浏览器原生支持，JSON-friendly |
-| **gRPC** | 高性能 Agent 连接、服务间通信 | 双向流、高吞吐、低延迟 |
+| 协议 | 端口 | 用途 | 特点 |
+|------|------|------|------|
+| **gRPC** | 39100 | Agent ↔ Server 通信 | 高性能、双向流、类型安全 |
+| **WebSocket** | 9100 | Dashboard ↔ Server 通信 | 浏览器原生支持、实时更新 |
+| **HTTP API** | 8080 | REST 管理接口 | 标准 HTTP 调用 |
 
-**URL 格式：**
-- WebSocket: `ws://` / `wss://` (推荐使用 TLS)
-- gRPC: `grpc://` / `grpcs://` (推荐使用 TLS)
-
-**端口默认值：**
-- WebSocket: 9100
-- gRPC: 9200
-- HTTP API: 8080
+> **注意**: Agent 现在只使用 gRPC 协议连接到服务端。Dashboard 仍使用 WebSocket 进行实时通信。
 
 ### 安全机制
 
@@ -233,27 +230,24 @@ Agent 支持同时连接多个服务端，可以动态添加/删除/更新服务
 **添加新服务端:**
 ```bash
 # 使用安装脚本
-sudo ./install.sh --add-server --url "wss://second.example.com:9100" --token "token2"
+sudo ./install.sh --add-server --host "second.example.com" --port 39100 --token "token2"
 
 # 使用 Agent CLI
-nanolink-agent server add --url "wss://second.example.com:9100" --token "token2" --permission 1
+nanolink-agent server add --host "second.example.com" --port 39100 --token "token2" --permission 1
 
 # 使用管理 API (热更新)
 curl -X POST http://localhost:9101/api/servers \
   -H "Content-Type: application/json" \
-  -d '{"url":"wss://second.example.com:9100","token":"token2","permission":1}'
+  -d '{"host":"second.example.com","port":39100,"token":"token2","permission":1}'
 ```
 
 **删除服务端:**
 ```bash
-# 使用安装脚本
-sudo ./install.sh --remove-server --url "wss://old.example.com:9100"
-
 # 使用 Agent CLI
-nanolink-agent server remove --url "wss://old.example.com:9100"
+nanolink-agent server remove --host "old.example.com" --port 39100
 
 # 使用管理 API
-curl -X DELETE "http://localhost:9101/api/servers?url=wss://old.example.com:9100"
+curl -X DELETE "http://localhost:9101/api/servers?host=old.example.com&port=39100"
 ```
 
 **查看当前服务端:**
@@ -288,15 +282,12 @@ agent:
   max_reconnect_delay: 300
 
 servers:
-  # WebSocket 连接 (兼容浏览器 Dashboard)
-  - url: "wss://monitor.example.com:9100"
-    token: "your-auth-token"
-    permission: 0
-    tls_verify: true
-  # gRPC 连接 (高性能双向流)
-  - url: "grpcs://monitor.example.com:9200"
+  # gRPC 连接 (高性能、类型安全)
+  - host: monitor.example.com
+    port: 39100           # 默认 gRPC 端口
     token: "your-auth-token"
     permission: 2
+    tls_enabled: false    # 生产环境推荐使用 true
     tls_verify: true
 
 collector:
@@ -339,8 +330,9 @@ logging:
 
 ```java
 NanoLinkServer server = NanoLinkServer.builder()
-    .port(9100)
-    .enableDashboard(true)
+    .wsPort(9100)       // Dashboard WebSocket 端口
+    .grpcPort(39100)    // Agent gRPC 端口
+    .staticFilesPath("/path/to/dashboard")  // 可选：外部 Dashboard 路径
     .onAgentConnect(agent -> {
         log.info("Agent 连接: {} ({})", agent.getHostname(), agent.getOs());
     })
@@ -360,17 +352,18 @@ server.start();
 import "github.com/chenqi92/NanoLink/sdk/go/nanolink"
 
 server := nanolink.NewServer(nanolink.Config{
-    Port:            9100,
-    EnableDashboard: true,
+    WsPort:   9100,    // Dashboard WebSocket 端口
+    GrpcPort: 39100,   // Agent gRPC 端口
+    // StaticFilesPath: "/path/to/dashboard",  // 可选
 })
 
-server.OnAgentConnect(func(agent *nanolink.Agent) {
+server.OnAgentConnect(func(agent *nanolink.AgentConnection) {
     log.Printf("Agent 连接: %s (%s)", agent.Hostname, agent.OS)
 })
 
 server.OnMetrics(func(m *nanolink.Metrics) {
     log.Printf("CPU: %.1f%% | Memory: %.1f%%",
-        m.Cpu.UsagePercent, m.Memory.UsedPercent)
+        m.CPU.UsagePercent, m.Memory.UsedPercent)
 })
 
 server.Start()
@@ -386,7 +379,11 @@ pip install nanolink-sdk
 from nanolink import NanoLinkServer, ServerConfig
 
 async def main():
-    server = NanoLinkServer(ServerConfig(port=9100))
+    config = ServerConfig(
+        ws_port=9100,    # Dashboard WebSocket 端口
+        grpc_port=39100  # Agent gRPC 端口
+    )
+    server = NanoLinkServer(config)
 
     @server.on_agent_connect
     async def on_connect(agent):

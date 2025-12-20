@@ -92,12 +92,18 @@ impl Default for AgentConfig {
     }
 }
 
+/// Default gRPC port for NanoLink
+pub const DEFAULT_GRPC_PORT: u16 = 39100;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
-    /// Server URL
-    /// - WebSocket: ws:// or wss://
-    /// - gRPC: grpc:// or grpcs://
-    pub url: String,
+    /// Server hostname or IP address
+    /// Examples: "localhost", "192.168.1.100", "monitor.example.com"
+    pub host: String,
+
+    /// gRPC port (default: 39100)
+    #[serde(default = "default_grpc_port")]
+    pub port: u16,
 
     /// Authentication token
     pub token: String,
@@ -107,42 +113,33 @@ pub struct ServerConfig {
     #[serde(default)]
     pub permission: u8,
 
+    /// Enable TLS (grpcs://)
+    #[serde(default)]
+    pub tls_enabled: bool,
+
     /// Enable TLS certificate verification
     #[serde(default = "default_true")]
     pub tls_verify: bool,
-
-    /// Protocol type (auto-detected from URL if not specified)
-    /// "websocket" or "grpc"
-    #[serde(default)]
-    pub protocol: Option<String>,
 }
 
 impl ServerConfig {
-    /// Get the protocol type for this server
-    pub fn get_protocol(&self) -> Protocol {
-        if let Some(ref proto) = self.protocol {
-            match proto.to_lowercase().as_str() {
-                "grpc" => return Protocol::Grpc,
-                "websocket" | "ws" => return Protocol::WebSocket,
-                _ => {}
-            }
-        }
-
-        // Auto-detect from URL
-        if self.url.starts_with("grpc://") || self.url.starts_with("grpcs://") {
-            Protocol::Grpc
+    /// Get the gRPC connection URL
+    pub fn get_grpc_url(&self) -> String {
+        if self.tls_enabled {
+            format!("https://{}:{}", self.host, self.port)
         } else {
-            Protocol::WebSocket
+            format!("http://{}:{}", self.host, self.port)
         }
     }
 }
 
-/// Protocol type for server connection
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Protocol {
-    WebSocket,
-    Grpc,
+fn default_grpc_port() -> u16 {
+    DEFAULT_GRPC_PORT
 }
+
+// Protocol enum removed - gRPC only
+// WebSocket support has been removed from Agent
+// Server-side WebSocket is still available for Dashboard communication
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CollectorConfig {
@@ -360,11 +357,12 @@ impl Config {
         Self {
             agent: AgentConfig::default(),
             servers: vec![ServerConfig {
-                url: "wss://monitor.example.com:9100".to_string(),
+                host: "localhost".to_string(),
+                port: DEFAULT_GRPC_PORT,
                 token: "your_token_here".to_string(),
                 permission: 0,
+                tls_enabled: false,
                 tls_verify: true,
-                protocol: None,
             }],
             collector: CollectorConfig::default(),
             buffer: BufferConfig::default(),
@@ -410,8 +408,8 @@ impl Config {
         }
 
         for (i, server) in self.servers.iter().enumerate() {
-            if server.url.is_empty() {
-                anyhow::bail!("Server {} URL cannot be empty", i);
+            if server.host.is_empty() {
+                anyhow::bail!("Server {} host cannot be empty", i);
             }
             if server.token.is_empty() {
                 anyhow::bail!("Server {} token cannot be empty", i);
