@@ -8,6 +8,8 @@ from nanolink.metrics import (
     DiskMetrics,
     NetworkMetrics,
     GpuMetrics,
+    NpuMetrics,
+    UserSession,
     SystemInfo,
 )
 
@@ -248,3 +250,101 @@ class TestMetrics:
         metrics = Metrics.from_dict(data)
         assert len(metrics.load_average) == 3
         assert metrics.load_average[0] == 1.5
+
+    def test_from_dict_with_npus(self):
+        data = {
+            "timestamp": 1234567890,
+            "hostname": "test-server",
+            "npus": [
+                {
+                    "index": 0,
+                    "name": "Intel NPU",
+                    "vendor": "Intel",
+                    "usagePercent": 45.0,
+                    "memoryTotal": 4000000000,
+                    "memoryUsed": 2000000000,
+                    "temperatureCelsius": 55.0,
+                    "powerWatts": 15,
+                },
+            ],
+        }
+        metrics = Metrics.from_dict(data)
+        assert len(metrics.npus) == 1
+        assert metrics.npus[0].name == "Intel NPU"
+        assert metrics.npus[0].vendor == "Intel"
+        assert metrics.npus[0].usage_percent == 45.0
+
+    def test_from_dict_with_user_sessions(self):
+        data = {
+            "timestamp": 1234567890,
+            "hostname": "test-server",
+            "userSessions": [
+                {
+                    "username": "admin",
+                    "tty": "pts/0",
+                    "loginTime": 1234567800,
+                    "remoteHost": "192.168.1.100",
+                    "idleSeconds": 60,
+                    "sessionType": "ssh",
+                },
+            ],
+        }
+        metrics = Metrics.from_dict(data)
+        assert len(metrics.user_sessions) == 1
+        assert metrics.user_sessions[0].username == "admin"
+        assert metrics.user_sessions[0].session_type == "ssh"
+
+
+class TestNpuMetrics:
+    def test_default_values(self):
+        npu = NpuMetrics()
+        assert npu.index == 0
+        assert npu.name == ""
+        assert npu.vendor == ""
+        assert npu.usage_percent == 0.0
+
+    def test_memory_usage_percent(self):
+        npu = NpuMetrics(memory_total=4000000000, memory_used=2000000000)
+        assert npu.memory_usage_percent == 50.0
+
+    def test_memory_usage_percent_zero_total(self):
+        npu = NpuMetrics(memory_total=0, memory_used=100)
+        assert npu.memory_usage_percent == 0.0
+
+    def test_with_all_fields(self):
+        npu = NpuMetrics(
+            index=0,
+            name="Huawei Ascend 910B",
+            vendor="Huawei",
+            usage_percent=80.0,
+            memory_total=32000000000,
+            memory_used=24000000000,
+            temperature_celsius=65.0,
+            power_watts=300,
+            driver_version="23.0.1",
+        )
+        assert npu.name == "Huawei Ascend 910B"
+        assert npu.power_watts == 300
+
+
+class TestUserSession:
+    def test_default_values(self):
+        session = UserSession()
+        assert session.username == ""
+        assert session.tty == ""
+        assert session.login_time == 0
+        assert session.session_type == ""
+
+    def test_with_all_fields(self):
+        session = UserSession(
+            username="root",
+            tty="console",
+            login_time=1234567890,
+            remote_host="",
+            idle_seconds=120,
+            session_type="local",
+        )
+        assert session.username == "root"
+        assert session.tty == "console"
+        assert session.session_type == "local"
+
