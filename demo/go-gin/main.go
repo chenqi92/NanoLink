@@ -16,6 +16,8 @@ type MetricsService struct {
 	mu            sync.RWMutex
 	agents        map[string]*AgentInfo
 	latestMetrics map[string]*AgentMetrics
+	staticInfo    map[string]*nanolink.StaticInfo
+	periodicData  map[string]*nanolink.PeriodicData
 }
 
 // AgentInfo stores agent connection info
@@ -43,6 +45,8 @@ func NewMetricsService() *MetricsService {
 	return &MetricsService{
 		agents:        make(map[string]*AgentInfo),
 		latestMetrics: make(map[string]*AgentMetrics),
+		staticInfo:    make(map[string]*nanolink.StaticInfo),
+		periodicData:  make(map[string]*nanolink.PeriodicData),
 	}
 }
 
@@ -212,24 +216,52 @@ func (s *MetricsService) ProcessStaticInfo(staticInfo *nanolink.StaticInfo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Find agent by hostname
+	var agentID string
+	for id, agent := range s.agents {
+		if agent.Hostname == staticInfo.Hostname {
+			agentID = id
+			break
+		}
+	}
+	if agentID == "" {
+		agentID = staticInfo.Hostname
+	}
+
+	// Store static info
+	s.staticInfo[agentID] = staticInfo
+
 	log.Printf("Static info received from %s: OS=%s %s, Kernel=%s",
 		staticInfo.Hostname, staticInfo.OSName, staticInfo.OSVersion, staticInfo.KernelVersion)
 
 	// Update memory_total if available
 	if staticInfo.Memory != nil && staticInfo.Memory.TotalPhysical > 0 {
-		for id, agent := range s.agents {
-			if agent.Hostname == staticInfo.Hostname {
-				if existing, ok := s.latestMetrics[id]; ok {
-					existing.MemoryTotal = staticInfo.Memory.TotalPhysical
-				}
-				break
-			}
+		if existing, ok := s.latestMetrics[agentID]; ok {
+			existing.MemoryTotal = staticInfo.Memory.TotalPhysical
 		}
 	}
 }
 
 // ProcessPeriodic processes periodic data (disk usage, user sessions, etc.)
 func (s *MetricsService) ProcessPeriodic(periodic *nanolink.PeriodicData) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Find agent by hostname
+	var agentID string
+	for id, agent := range s.agents {
+		if agent.Hostname == periodic.Hostname {
+			agentID = id
+			break
+		}
+	}
+	if agentID == "" {
+		agentID = periodic.Hostname
+	}
+
+	// Store periodic data
+	s.periodicData[agentID] = periodic
+
 	diskCount := 0
 	if periodic.DiskUsage != nil {
 		diskCount = len(periodic.DiskUsage)
@@ -240,6 +272,20 @@ func (s *MetricsService) ProcessPeriodic(periodic *nanolink.PeriodicData) {
 	}
 	log.Printf("Periodic data received from %s: uptime=%ds, disks=%d, sessions=%d",
 		periodic.Hostname, periodic.UptimeSeconds, diskCount, sessionCount)
+}
+
+// GetStaticInfo returns static info for an agent
+func (s *MetricsService) GetStaticInfo(agentID string) *nanolink.StaticInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.staticInfo[agentID]
+}
+
+// GetPeriodicData returns periodic data for an agent
+func (s *MetricsService) GetPeriodicData(agentID string) *nanolink.PeriodicData {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.periodicData[agentID]
 }
 
 func main() {

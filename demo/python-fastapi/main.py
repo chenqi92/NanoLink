@@ -89,6 +89,9 @@ class MetricsService:
     def __init__(self):
         self.agents: Dict[str, AgentInfo] = {}
         self.latest_metrics: Dict[str, AgentMetrics] = {}
+        self.static_info: Dict[str, StaticInfo] = {}
+        self.periodic_data: Dict[str, PeriodicData] = {}
+        self._websocket_clients: List = []  # WebSocket clients for broadcasting
 
     def register_agent(self, agent: AgentConnection) -> None:
         """Register a new agent connection"""
@@ -202,6 +205,16 @@ class MetricsService:
 
     def process_static_info(self, static_info: StaticInfo) -> None:
         """Process static hardware info (received once on connect)"""
+        # Find agent by hostname
+        agent_id = static_info.hostname
+        for aid, agent in self.agents.items():
+            if agent.hostname == static_info.hostname:
+                agent_id = aid
+                break
+
+        # Store static info
+        self.static_info[agent_id] = static_info
+
         logger.info(
             f"Static info received from {static_info.hostname}: "
             f"OS={static_info.os_name} {static_info.os_version}, "
@@ -217,12 +230,80 @@ class MetricsService:
 
     def process_periodic(self, periodic: PeriodicData) -> None:
         """Process periodic data (disk usage, user sessions, etc.)"""
+        # Find agent by hostname
+        agent_id = periodic.hostname
+        for aid, agent in self.agents.items():
+            if agent.hostname == periodic.hostname:
+                agent_id = aid
+                break
+
+        # Store periodic data
+        self.periodic_data[agent_id] = periodic
+
         logger.debug(
             f"Periodic data received from {periodic.hostname}: "
             f"uptime={periodic.uptime_seconds}s, "
             f"disks={len(periodic.disk_usage) if periodic.disk_usage else 0}, "
             f"sessions={len(periodic.user_sessions) if periodic.user_sessions else 0}"
         )
+
+    def get_static_info(self, agent_id: str) -> Optional[StaticInfo]:
+        """Get static info for an agent"""
+        return self.static_info.get(agent_id)
+
+    def get_periodic_data(self, agent_id: str) -> Optional[PeriodicData]:
+        """Get periodic data for an agent"""
+        return self.periodic_data.get(agent_id)
+
+    def add_websocket_client(self, client) -> None:
+        """Add a WebSocket client for broadcasting"""
+        self._websocket_clients.append(client)
+
+    def remove_websocket_client(self, client) -> None:
+        """Remove a WebSocket client"""
+        if client in self._websocket_clients:
+            self._websocket_clients.remove(client)
+
+    async def broadcast_metrics(self, agent_id: str, metrics: AgentMetrics) -> None:
+        """Broadcast metrics update to all WebSocket clients"""
+        import json
+        message = json.dumps({
+            "type": "metrics",
+            "agentId": agent_id,
+            "metrics": {
+                "hostname": metrics.hostname,
+                "cpuUsage": metrics.cpu_usage,
+                "memoryUsage": metrics.memory_usage,
+                "memoryTotal": metrics.memory_total,
+                "memoryUsed": metrics.memory_used,
+                "timestamp": metrics.timestamp.isoformat()
+            }
+        })
+        for client in list(self._websocket_clients):
+            try:
+                await client.send(message)
+            except Exception:
+                self._websocket_clients.remove(client)
+
+    async def broadcast_agent_event(self, event_type: str, agent: AgentInfo) -> None:
+        """Broadcast agent connect/disconnect event"""
+        import json
+        message = json.dumps({
+            "type": event_type,
+            "agent": {
+                "agentId": agent.agent_id,
+                "hostname": agent.hostname,
+                "os": agent.os,
+                "arch": agent.arch,
+                "version": agent.version,
+                "connectedAt": agent.connected_at.isoformat()
+            }
+        })
+        for client in list(self._websocket_clients):
+            try:
+                await client.send(message)
+            except Exception:
+                self._websocket_clients.remove(client)
 
 
 # === Global instances ===

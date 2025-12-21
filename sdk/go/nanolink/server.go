@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"google.golang.org/grpc"
 )
 
 // Default ports
@@ -63,6 +65,8 @@ type Server struct {
 	onStaticInfo      func(*StaticInfo)
 	onPeriodicData    func(*PeriodicData)
 	httpServer        *http.Server
+	grpcServer        *grpc.Server
+	grpcServicer      *NanoLinkServicer
 }
 
 // NewServer creates a new NanoLink server
@@ -120,8 +124,13 @@ func (s *Server) OnPeriodicData(callback func(*PeriodicData)) {
 	s.onPeriodicData = callback
 }
 
-// Start starts the server
+// Start starts the server (WebSocket + gRPC)
 func (s *Server) Start() error {
+	// Start gRPC server for agent connections
+	if err := s.startGRPC(); err != nil {
+		return fmt.Errorf("failed to start gRPC server: %w", err)
+	}
+
 	mux := http.NewServeMux()
 
 	// WebSocket endpoint
@@ -146,7 +155,6 @@ func (s *Server) Start() error {
 	}
 
 	log.Printf("NanoLink Server started on port %d (WebSocket for Dashboard)", s.config.WsPort)
-	log.Printf("Agents should connect via gRPC on port %d", s.config.GrpcPort)
 	if s.config.StaticFilesPath != "" {
 		log.Printf("Dashboard available at http://localhost:%d/", s.config.WsPort)
 	}
@@ -157,8 +165,34 @@ func (s *Server) Start() error {
 	return s.httpServer.ListenAndServe()
 }
 
+// startGRPC starts the gRPC server
+func (s *Server) startGRPC() error {
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.config.GrpcPort))
+	if err != nil {
+		return err
+	}
+
+	s.grpcServicer = NewNanoLinkServicer(s)
+	s.grpcServer = CreateGRPCServer(s.grpcServicer)
+
+	go func() {
+		log.Printf("gRPC Server started on port %d (Agent connections)", s.config.GrpcPort)
+		if err := s.grpcServer.Serve(lis); err != nil {
+			log.Printf("gRPC server error: %v", err)
+		}
+	}()
+
+	return nil
+}
+
 // Stop stops the server
 func (s *Server) Stop() error {
+	// Stop gRPC server first
+	if s.grpcServer != nil {
+		s.grpcServer.GracefulStop()
+		log.Printf("gRPC server stopped")
+	}
+
 	// Close all agent connections
 	s.agentsMu.Lock()
 	for _, agent := range s.agents {

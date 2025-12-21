@@ -7,14 +7,23 @@ import json
 import logging
 import ssl
 import uuid
+import threading
+from concurrent import futures
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Optional, Awaitable
+from typing import Callable, Dict, Optional, Awaitable, Union
 
 import websockets
 from websockets.server import WebSocketServerProtocol, serve
 from aiohttp import web
+
+try:
+    import grpc
+    from .grpc_service import NanoLinkServicer, create_grpc_server
+    GRPC_AVAILABLE = True
+except ImportError:
+    GRPC_AVAILABLE = False
 
 from .connection import (
     AgentConnection,
@@ -80,6 +89,8 @@ class NanoLinkServer:
         self.config = config or ServerConfig()
         self._agents: Dict[str, AgentConnection] = {}
         self._websocket_server = None
+        self._grpc_server = None
+        self._grpc_servicer = None
         self._http_app = None
         self._http_runner = None
 
@@ -138,7 +149,7 @@ class NanoLinkServer:
         return None
 
     async def start(self) -> None:
-        """Start the server"""
+        """Start the server (WebSocket + gRPC)"""
         # Setup SSL if configured
         ssl_context = None
         if self.config.tls_cert_path and self.config.tls_key_path:
@@ -149,7 +160,7 @@ class NanoLinkServer:
             )
             logger.info("TLS enabled")
 
-        # Start WebSocket server
+        # Start WebSocket server for dashboard connections
         self._websocket_server = await serve(
             self._handle_websocket,
             self.config.host,
@@ -158,14 +169,101 @@ class NanoLinkServer:
         )
 
         logger.info(f"NanoLink Server started on port {self.config.ws_port} (WebSocket for Dashboard)")
-        logger.info(f"Agents should connect via gRPC on port {self.config.grpc_port}")
+
+        # Start gRPC server for agent connections
+        if GRPC_AVAILABLE:
+            self._start_grpc_server()
+            logger.info(f"gRPC Server started on port {self.config.grpc_port} (Agent connections)")
+        else:
+            logger.warning("gRPC not available. Install grpcio to enable agent connections via gRPC.")
 
         if self.config.static_files_path:
             logger.info(f"Dashboard available at http://localhost:{self.config.ws_port}/")
 
+    def _start_grpc_server(self) -> None:
+        """Start the gRPC server in a background thread"""
+        if not GRPC_AVAILABLE:
+            raise RuntimeError("gRPC is not available. Install grpcio and grpcio-tools.")
+
+        # Create callback wrappers that work with both sync and async
+        def sync_on_agent_connect(agent: AgentConnection) -> None:
+            if self._on_agent_connect:
+                self._agents[agent.agent_id] = agent
+                try:
+                    # Run async callback in event loop if possible
+                    loop = asyncio.get_running_loop()
+                    asyncio.run_coroutine_threadsafe(self._on_agent_connect(agent), loop)
+                except RuntimeError:
+                    # No event loop running, just register the agent
+                    pass
+
+        def sync_on_agent_disconnect(agent: AgentConnection) -> None:
+            if self._on_agent_disconnect:
+                self._agents.pop(agent.agent_id, None)
+                try:
+                    loop = asyncio.get_running_loop()
+                    asyncio.run_coroutine_threadsafe(self._on_agent_disconnect(agent), loop)
+                except RuntimeError:
+                    pass
+
+        def sync_on_metrics(metrics: Metrics) -> None:
+            if self._on_metrics:
+                try:
+                    loop = asyncio.get_running_loop()
+                    asyncio.run_coroutine_threadsafe(self._on_metrics(metrics), loop)
+                except RuntimeError:
+                    pass
+
+        def sync_on_realtime(realtime: RealtimeMetrics) -> None:
+            if self._on_realtime_metrics:
+                try:
+                    loop = asyncio.get_running_loop()
+                    asyncio.run_coroutine_threadsafe(self._on_realtime_metrics(realtime), loop)
+                except RuntimeError:
+                    pass
+
+        def sync_on_static(static_info: StaticInfo) -> None:
+            if self._on_static_info:
+                try:
+                    loop = asyncio.get_running_loop()
+                    asyncio.run_coroutine_threadsafe(self._on_static_info(static_info), loop)
+                except RuntimeError:
+                    pass
+
+        def sync_on_periodic(periodic: PeriodicData) -> None:
+            if self._on_periodic_data:
+                try:
+                    loop = asyncio.get_running_loop()
+                    asyncio.run_coroutine_threadsafe(self._on_periodic_data(periodic), loop)
+                except RuntimeError:
+                    pass
+
+        # Create the gRPC servicer with callback wrappers
+        self._grpc_servicer = NanoLinkServicer(
+            token_validator=self.config.token_validator,
+            on_agent_connect=sync_on_agent_connect,
+            on_agent_disconnect=sync_on_agent_disconnect,
+            on_metrics=sync_on_metrics,
+            on_realtime_metrics=sync_on_realtime,
+            on_static_info=sync_on_static,
+            on_periodic_data=sync_on_periodic,
+        )
+
+        # Create and start the gRPC server
+        self._grpc_server = create_grpc_server(
+            self._grpc_servicer,
+            port=self.config.grpc_port,
+        )
+        self._grpc_server.start()
+
     async def stop(self) -> None:
         """Stop the server"""
         logger.info("Stopping NanoLink Server...")
+
+        # Stop gRPC server first
+        if self._grpc_server:
+            self._grpc_server.stop(grace=5)
+            logger.info("gRPC server stopped")
 
         # Close all agent connections
         for agent in list(self._agents.values()):
@@ -186,6 +284,14 @@ class NanoLinkServer:
             await asyncio.Future()  # Run forever
         except asyncio.CancelledError:
             await self.stop()
+
+    @property
+    def grpc_agents(self) -> Dict[str, AgentConnection]:
+        """Get agents connected via gRPC"""
+        if self._grpc_servicer:
+            return self._grpc_servicer.agents
+        return {}
+
 
     async def _handle_websocket(self, websocket: WebSocketServerProtocol) -> None:
         """Handle incoming WebSocket connection"""
