@@ -90,6 +90,15 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
         log.debug("New metrics stream connection");
 
+        // Send initial response immediately to trigger HTTP/2 headers
+        // This allows tonic/rust clients to complete the stream_metrics() call
+        responseObserver.onNext(MetricsStreamResponse.newBuilder()
+                .setHeartbeatAck(HeartbeatAck.newBuilder()
+                        .setTimestamp(System.currentTimeMillis())
+                        .build())
+                .build());
+        log.debug("Sent initial heartbeat ack to establish stream");
+
         return new StreamObserver<MetricsStreamRequest>() {
             private AgentConnection agent = null;
             private String agentId = null;
@@ -171,11 +180,29 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                         // Handle static hardware info
                         io.nanolink.proto.StaticInfo protoStatic = request.getStaticInfo();
 
-                        // Register agent on first message if needed
-                        if (agent == null) {
-                            agent = findOrCreateAgentForStream(responseObserver, "static");
-                            if (agent != null) {
-                                agentId = agent.getAgentId();
+                        // Register agent from StaticInfo if not already registered
+                        if (agent == null && protoStatic.hasSystemInfo()) {
+                            String hostname = protoStatic.getSystemInfo().getHostname();
+                            if (hostname != null && !hostname.isEmpty()) {
+                                // Check if agent with same hostname already exists (reconnection case)
+                                AgentConnection existingAgent = server.getAgentByHostname(hostname);
+                                if (existingAgent != null) {
+                                    server.unregisterAgent(existingAgent);
+                                    log.info("Replacing stale agent connection for hostname: {}", hostname);
+                                }
+
+                                agentId = UUID.randomUUID().toString();
+                                agent = new AgentConnection(
+                                        agentId,
+                                        hostname,
+                                        protoStatic.getSystemInfo().getOsName(),
+                                        protoStatic.hasCpu() ? protoStatic.getCpu().getArchitecture() : "",
+                                        "0.2.1",
+                                        3 // Default permission
+                                );
+                                server.registerAgent(agent);
+                                streamAgents.put(responseObserver, agent);
+                                log.info("Agent registered from static info: {} ({})", hostname, agentId);
                             }
                         }
 

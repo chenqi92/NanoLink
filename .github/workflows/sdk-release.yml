@@ -174,7 +174,7 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           echo "🚀 Publishing to Maven Central with Central Publishing Plugin..."
-          mvn deploy -DskipTests \
+          mvn deploy -Pgpg -DskipTests \
             -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}"
 
       - name: Publish to GitHub Packages
@@ -184,8 +184,7 @@ jobs:
         run: |
           echo "🚀 Publishing to GitHub Packages..."
           mvn deploy -DskipTests \
-            -Dcentral.publishing.skip=true \
-            -Dgpg.skip=true \
+            -Dmaven.deploy.skip=false \
             -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/${{ github.repository }}
 
   # Build Go SDK
