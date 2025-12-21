@@ -35,7 +35,6 @@ impl DockerExecutor {
         }
     }
 
-
     /// List all containers
     pub async fn list_containers(&self) -> CommandResult {
         if let Err(e) = self.check_docker() {

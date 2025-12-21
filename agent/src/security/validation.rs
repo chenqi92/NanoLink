@@ -11,12 +11,20 @@ pub fn validate_container_name(name: &str) -> Result<(), String> {
     }
 
     // Check for dangerous shell metacharacters
-    const DANGEROUS_CHARS: &[char] = &[';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r', '\\', '"', '\''];
-    
+    const DANGEROUS_CHARS: &[char] = &[
+        ';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r', '\\', '"', '\'',
+    ];
+
     for c in name.chars() {
         if DANGEROUS_CHARS.contains(&c) {
-            warn!("[SECURITY] Blocked container name with dangerous character: {}", name);
-            return Err(format!("Container name contains forbidden character: '{}'", c));
+            warn!(
+                "[SECURITY] Blocked container name with dangerous character: {}",
+                name
+            );
+            return Err(format!(
+                "Container name contains forbidden character: '{}'",
+                c
+            ));
         }
     }
 
@@ -37,7 +45,10 @@ pub fn validate_container_name(name: &str) -> Result<(), String> {
 
     for c in name.chars() {
         if !c.is_ascii_alphanumeric() && c != '_' && c != '.' && c != '-' {
-            return Err(format!("Container name contains invalid character: '{}'", c));
+            return Err(format!(
+                "Container name contains invalid character: '{}'",
+                c
+            ));
         }
     }
 
@@ -52,12 +63,21 @@ pub fn validate_service_name(name: &str) -> Result<(), String> {
     }
 
     // Check for dangerous shell metacharacters
-    const DANGEROUS_CHARS: &[char] = &[';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r', '\\', '"', '\'', ' ', '\t'];
-    
+    const DANGEROUS_CHARS: &[char] = &[
+        ';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r', '\\', '"', '\'', ' ',
+        '\t',
+    ];
+
     for c in name.chars() {
         if DANGEROUS_CHARS.contains(&c) {
-            warn!("[SECURITY] Blocked service name with dangerous character: {}", name);
-            return Err(format!("Service name contains forbidden character: '{}'", c));
+            warn!(
+                "[SECURITY] Blocked service name with dangerous character: {}",
+                name
+            );
+            return Err(format!(
+                "Service name contains forbidden character: '{}'",
+                c
+            ));
         }
     }
 
@@ -78,12 +98,20 @@ pub fn validate_process_name(name: &str) -> Result<(), String> {
     }
 
     // Check for dangerous shell metacharacters
-    const DANGEROUS_CHARS: &[char] = &[';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r', '\\', '"', '\''];
-    
+    const DANGEROUS_CHARS: &[char] = &[
+        ';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r', '\\', '"', '\'',
+    ];
+
     for c in name.chars() {
         if DANGEROUS_CHARS.contains(&c) {
-            warn!("[SECURITY] Blocked process name with dangerous character: {}", name);
-            return Err(format!("Process name contains forbidden character: '{}'", c));
+            warn!(
+                "[SECURITY] Blocked process name with dangerous character: {}",
+                name
+            );
+            return Err(format!(
+                "Process name contains forbidden character: '{}'",
+                c
+            ));
         }
     }
 
@@ -98,7 +126,7 @@ pub fn validate_pid_killable(pid: u32) -> Result<(), String> {
     if pid == 0 {
         return Err("Cannot kill PID 0 (kernel scheduler)".to_string());
     }
-    
+
     if pid == 1 {
         return Err("Cannot kill PID 1 (init/systemd)".to_string());
     }
@@ -107,7 +135,10 @@ pub fn validate_pid_killable(pid: u32) -> Result<(), String> {
     // This is a conservative protection - users can still kill most processes
     if pid < 10 {
         warn!("[SECURITY] Blocked kill of low PID: {}", pid);
-        return Err(format!("Cannot kill PID {} (protected system process)", pid));
+        return Err(format!(
+            "Cannot kill PID {} (protected system process)",
+            pid
+        ));
     }
 
     Ok(())
@@ -123,7 +154,7 @@ mod tests {
         assert!(validate_container_name("my-container").is_ok());
         assert!(validate_container_name("my_container.1").is_ok());
         assert!(validate_container_name("abc123def456").is_ok()); // 12-char hex ID
-        
+
         assert!(validate_container_name("").is_err());
         assert!(validate_container_name("foo;rm -rf /").is_err());
         assert!(validate_container_name("foo|cat").is_err());
@@ -135,7 +166,7 @@ mod tests {
         assert!(validate_service_name("nginx").is_ok());
         assert!(validate_service_name("my-service").is_ok());
         assert!(validate_service_name("service@instance").is_ok());
-        
+
         assert!(validate_service_name("").is_err());
         assert!(validate_service_name("foo;id").is_err());
         assert!(validate_service_name("foo bar").is_err());

@@ -30,7 +30,10 @@ fn main() -> Result<()> {
     tonic_build::configure()
         .build_server(false) // Agent only needs client
         .build_client(true)
-        .compile(&[proto_path.to_str().unwrap()], &[proto_dir.to_str().unwrap()])?;
+        .compile(
+            &[proto_path.to_str().unwrap()],
+            &[proto_dir.to_str().unwrap()],
+        )?;
 
     Ok(())
 }

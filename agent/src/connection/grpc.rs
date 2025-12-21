@@ -224,10 +224,7 @@ impl GrpcClient {
     ///
     /// This method uses the LayeredCollector to send different types of metrics
     /// at different intervals (realtime, periodic, static).
-    pub async fn stream_layered_metrics<F, Fut>(
-        &mut self,
-        command_handler: F,
-    ) -> Result<()>
+    pub async fn stream_layered_metrics<F, Fut>(&mut self, command_handler: F) -> Result<()>
     where
         F: Fn(Command) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = CommandResult> + Send,

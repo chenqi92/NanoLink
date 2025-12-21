@@ -146,6 +146,15 @@ jobs:
         working-directory: sdk/python
         run: black --check . || true
 
+      - name: Regenerate proto files
+        working-directory: sdk/python
+        run: |
+          python -m grpc_tools.protoc \
+            --proto_path=../../proto \
+            --python_out=nanolink/proto \
+            --grpc_python_out=nanolink/proto \
+            ../../proto/nanolink.proto
+
       - name: Run tests
         working-directory: sdk/python
         run: pytest tests/ -v

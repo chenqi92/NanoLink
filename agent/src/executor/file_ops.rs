@@ -29,10 +29,7 @@ impl FileExecutor {
         if self.config.security.path_traversal_protection {
             let path_str_normalized = path_str.replace('\\', "/");
             if path_str_normalized.contains("..") {
-                warn!(
-                    "[AUDIT] Path traversal attempt blocked: {}",
-                    path_str
-                );
+                warn!("[AUDIT] Path traversal attempt blocked: {}", path_str);
                 return Err("Path traversal detected: '..' is not allowed".to_string());
             }
         }
@@ -56,7 +53,10 @@ impl FileExecutor {
                         .map_err(|e| format!("Failed to resolve parent path: {}", e))?
                         .join(path.file_name().ok_or("Invalid filename")?)
                 } else {
-                    return Err(format!("Parent directory does not exist: {}", parent.display()));
+                    return Err(format!(
+                        "Parent directory does not exist: {}",
+                        parent.display()
+                    ));
                 }
             } else {
                 return Err("Invalid path".to_string());
@@ -74,7 +74,10 @@ impl FileExecutor {
                         "[AUDIT] Access to denied path blocked: {} (matched pattern: {})",
                         canonical_str, denied
                     );
-                    return Err(format!("Access denied: path matches blocked pattern '{}'", denied));
+                    return Err(format!(
+                        "Access denied: path matches blocked pattern '{}'",
+                        denied
+                    ));
                 }
             }
             // Also check prefix match for directory paths
@@ -83,7 +86,10 @@ impl FileExecutor {
                     "[AUDIT] Access to denied path blocked: {} (prefix: {})",
                     canonical_str, denied
                 );
-                return Err(format!("Access denied: path is within restricted directory '{}'", denied));
+                return Err(format!(
+                    "Access denied: path is within restricted directory '{}'",
+                    denied
+                ));
             }
         }
 
@@ -104,10 +110,7 @@ impl FileExecutor {
             });
 
             if !is_allowed {
-                warn!(
-                    "[AUDIT] Path not in allowed list: {}",
-                    canonical_str
-                );
+                warn!("[AUDIT] Path not in allowed list: {}", canonical_str);
                 return Err("Path not in allowed list".to_string());
             }
         }
@@ -141,7 +144,11 @@ impl FileExecutor {
             return Self::error_result(format!("File not found: {}", validated_path.display()));
         }
 
-        info!("[AUDIT] FileTail: {} (last {} lines)", validated_path.display(), lines);
+        info!(
+            "[AUDIT] FileTail: {} (last {} lines)",
+            validated_path.display(),
+            lines
+        );
 
         match File::open(&validated_path) {
             Ok(file) => {
@@ -172,7 +179,7 @@ impl FileExecutor {
 
     /// Download a file (read full content)
     pub async fn download_file(&self, path: &str) -> CommandResult {
-        // Validate path first  
+        // Validate path first
         let validated_path = match self.validate_path(path) {
             Ok(p) => p,
             Err(e) => return Self::error_result(e),
@@ -255,7 +262,10 @@ impl FileExecutor {
         if let Some(parent) = validated_path.parent() {
             if !parent.exists() {
                 if let Err(e) = fs::create_dir_all(parent) {
-                    return Self::error_result(format!("Failed to create parent directories: {}", e));
+                    return Self::error_result(format!(
+                        "Failed to create parent directories: {}",
+                        e
+                    ));
                 }
             }
         }
@@ -270,7 +280,11 @@ impl FileExecutor {
             Ok(_) => CommandResult {
                 command_id: String::new(),
                 success: true,
-                output: format!("Written {} bytes to {}", content.len(), validated_path.display()),
+                output: format!(
+                    "Written {} bytes to {}",
+                    content.len(),
+                    validated_path.display()
+                ),
                 error: String::new(),
                 file_content: vec![],
                 processes: vec![],
@@ -294,7 +308,11 @@ impl FileExecutor {
 
         info!("[AUDIT] FileTruncate: {}", validated_path.display());
 
-        match OpenOptions::new().write(true).truncate(true).open(&validated_path) {
+        match OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&validated_path)
+        {
             Ok(_) => CommandResult {
                 command_id: String::new(),
                 success: true,

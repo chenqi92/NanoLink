@@ -87,39 +87,31 @@ impl ConnectionManager {
                             let stream_result = if config.collector.enable_layered_metrics {
                                 info!("Using layered metrics stream");
                                 // Create MessageHandler with all executors and permission checker
-                                let message_handler = std::sync::Arc::new(
-                                    MessageHandler::new(
-                                        config.clone(),
-                                        buffer.clone(),
-                                        auth.permission_level as u8,
-                                    )
-                                );
-                                
+                                let message_handler = std::sync::Arc::new(MessageHandler::new(
+                                    config.clone(),
+                                    buffer.clone(),
+                                    auth.permission_level as u8,
+                                ));
+
                                 client
                                     .stream_layered_metrics(move |cmd| {
                                         let handler = message_handler.clone();
-                                        async move {
-                                            handler.handle_command(cmd).await
-                                        }
+                                        async move { handler.handle_command(cmd).await }
                                     })
                                     .await
                             } else {
                                 info!("Using legacy metrics stream");
                                 // Create MessageHandler with all executors and permission checker
-                                let message_handler = std::sync::Arc::new(
-                                    MessageHandler::new(
-                                        config.clone(),
-                                        buffer.clone(),
-                                        auth.permission_level as u8,
-                                    )
-                                );
-                                
+                                let message_handler = std::sync::Arc::new(MessageHandler::new(
+                                    config.clone(),
+                                    buffer.clone(),
+                                    auth.permission_level as u8,
+                                ));
+
                                 client
                                     .stream_metrics(buffer.clone(), move |cmd| {
                                         let handler = message_handler.clone();
-                                        async move {
-                                            handler.handle_command(cmd).await
-                                        }
+                                        async move { handler.handle_command(cmd).await }
                                     })
                                     .await
                             };

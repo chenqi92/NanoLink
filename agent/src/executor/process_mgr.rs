@@ -71,7 +71,10 @@ impl ProcessExecutor {
             return Self::error_result(e);
         }
 
-        info!("[AUDIT] ProcessKill: name '{}' (signal: {})", target, signal);
+        info!(
+            "[AUDIT] ProcessKill: name '{}' (signal: {})",
+            target, signal
+        );
         // Otherwise kill by name
         self.kill_by_name(target, signal).await
     }
