@@ -55,6 +55,7 @@ sdk/go/proto/
 # =========================
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 *~
