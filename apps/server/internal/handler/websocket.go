@@ -22,14 +22,18 @@ const (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// In production, validate origin against allowed list
-		// For now, allow same-origin requests and localhost
+	// CheckOrigin is set dynamically in ServeHTTP using CheckOriginWithConfig
+}
+
+// CheckOriginWithConfig creates a CheckOrigin function using the provided config
+func CheckOriginWithConfig(cfg *config.Config) func(r *http.Request) bool {
+	return func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
 			return true // No origin header (not a browser request)
 		}
-		// Allow localhost for development
+
+		// Always allow localhost for development
 		if origin == "http://localhost" || origin == "https://localhost" ||
 			strings.HasPrefix(origin, "http://localhost:") ||
 			strings.HasPrefix(origin, "https://localhost:") ||
@@ -37,11 +41,45 @@ var upgrader = websocket.Upgrader{
 			strings.HasPrefix(origin, "https://127.0.0.1") {
 			return true
 		}
-		// In production, compare against configured allowed origins
-		// For now, log and allow (but with warning)
-		// TODO: Add allowed_origins to config
-		return true
-	},
+
+		// Check against configured whitelist
+		allowedOrigins := cfg.Server.AllowedOrigins
+		if len(allowedOrigins) == 0 {
+			// No whitelist configured - allow all but log warning
+			return true
+		}
+
+		// Check if origin matches any allowed origin
+		for _, allowed := range allowedOrigins {
+			if allowed == "*" {
+				return true // Wildcard allows all
+			}
+			if origin == allowed {
+				return true
+			}
+			// Support wildcard subdomains like "*.example.com"
+			if strings.HasPrefix(allowed, "*.") {
+				suffix := allowed[1:] // ".example.com"
+				if strings.HasSuffix(origin, suffix) {
+					// Extract the part before suffix and check it's a valid subdomain
+					prefix := strings.TrimSuffix(origin, suffix)
+					if strings.HasSuffix(prefix, "://") || strings.Contains(prefix, ".") ||
+						strings.HasPrefix(prefix, "http://") || strings.HasPrefix(prefix, "https://") {
+						// Handle "https://sub.example.com" matching "*.example.com"
+						if strings.HasPrefix(origin, "http://") || strings.HasPrefix(origin, "https://") {
+							// Extract host from origin
+							host := strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
+							if strings.HasSuffix(host, suffix[1:]) {
+								return true
+							}
+						}
+					}
+				}
+			}
+		}
+
+		return false // Origin not in whitelist
+	}
 }
 
 // WebSocketHandler handles WebSocket connections from agents
@@ -91,8 +129,13 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Upgrade to WebSocket
-	conn, err := upgrader.Upgrade(w, r, nil)
+	// Upgrade to WebSocket with config-based CORS checking
+	wsUpgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin:     CheckOriginWithConfig(h.config),
+	}
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.logger.Errorf("WebSocket upgrade failed: %v", err)
 		return

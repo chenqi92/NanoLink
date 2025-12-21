@@ -23,12 +23,13 @@ type Config struct {
 
 // ServerConfig holds server configuration
 type ServerConfig struct {
-	HTTPPort int    `mapstructure:"http_port"`
-	WSPort   int    `mapstructure:"ws_port"`
-	GRPCPort int    `mapstructure:"grpc_port"`
-	Mode     string `mapstructure:"mode"`
-	TLSCert  string `mapstructure:"tls_cert"`
-	TLSKey   string `mapstructure:"tls_key"`
+	HTTPPort       int      `mapstructure:"http_port"`
+	WSPort         int      `mapstructure:"ws_port"`
+	GRPCPort       int      `mapstructure:"grpc_port"`
+	Mode           string   `mapstructure:"mode"`
+	TLSCert        string   `mapstructure:"tls_cert"`
+	TLSKey         string   `mapstructure:"tls_key"`
+	AllowedOrigins []string `mapstructure:"allowed_origins"` // CORS whitelist for WebSocket connections
 }
 
 // AuthConfig holds authentication configuration
