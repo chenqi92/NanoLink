@@ -88,12 +88,22 @@ export function useWebSocket() {
       try {
         const response = await fetch('/api/metrics')
         const metricsMap = await response.json()
-        // metricsMap is { agentId: metrics }
+        // Create a new object to trigger Vue reactivity
+        const updatedAgents = { ...agents.value }
+        let hasUpdates = false
         Object.entries(metricsMap).forEach(([agentId, metrics]) => {
-          if (agents.value[agentId]) {
-            agents.value[agentId].lastMetrics = transformMetrics(metrics)
+          if (updatedAgents[agentId]) {
+            updatedAgents[agentId] = {
+              ...updatedAgents[agentId],
+              lastMetrics: transformMetrics(metrics)
+            }
+            hasUpdates = true
           }
         })
+        // Only update if we have changes to avoid unnecessary reactivity
+        if (hasUpdates) {
+          agents.value = updatedAgents
+        }
       } catch (error) {
         console.error('Failed to fetch metrics:', error)
       }

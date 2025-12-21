@@ -8,16 +8,19 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let proto_file = Path::new("../sdk/protocol/nanolink.proto");
+    // Use CARGO_MANIFEST_DIR for reliable path resolution
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let proto_path = Path::new(&manifest_dir).join("../sdk/protocol/nanolink.proto");
+    let proto_dir = Path::new(&manifest_dir).join("../sdk/protocol");
 
     // Tell cargo to rerun if proto file changes
-    println!("cargo:rerun-if-changed=../sdk/protocol/nanolink.proto");
-    println!("cargo:rerun-if-changed=../sdk/protocol/");
+    println!("cargo:rerun-if-changed={}", proto_path.display());
+    println!("cargo:rerun-if-changed={}", proto_dir.display());
 
-    if !proto_file.exists() {
+    if !proto_path.exists() {
         println!(
             "cargo:warning=Proto file not found at {:?}, skipping protobuf generation",
-            proto_file
+            proto_path
         );
         return Ok(());
     }
@@ -27,7 +30,7 @@ fn main() -> Result<()> {
     tonic_build::configure()
         .build_server(false) // Agent only needs client
         .build_client(true)
-        .compile(&["../sdk/protocol/nanolink.proto"], &["../sdk/protocol/"])?;
+        .compile(&[proto_path.to_str().unwrap()], &[proto_dir.to_str().unwrap()])?;
 
     Ok(())
 }
