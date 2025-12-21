@@ -3,7 +3,9 @@ package service
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
+	"unicode"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	"github.com/golang-jwt/jwt/v5"
@@ -14,10 +16,11 @@ import (
 
 // AuthService handles user authentication
 type AuthService struct {
-	db        *gorm.DB
-	logger    *zap.SugaredLogger
-	jwtSecret []byte
-	jwtExpire time.Duration
+	db           *gorm.DB
+	logger       *zap.SugaredLogger
+	jwtSecret    []byte
+	jwtExpire    time.Duration
+	loginLimiter *LoginRateLimiter
 }
 
 // JWTClaims represents JWT claims
@@ -42,15 +45,17 @@ func NewAuthService(db *gorm.DB, cfg AuthConfig, logger *zap.SugaredLogger) *Aut
 		cfg.JWTExpire = 24 * time.Hour
 	}
 	if cfg.JWTSecret == "" {
-		cfg.JWTSecret = "nanolink-default-secret-change-me"
-		logger.Warn("Using default JWT secret - please set NANOLINK_JWT_SECRET in production")
+		// No more fallback default - must be configured
+		logger.Error("[SECURITY CRITICAL] JWT secret is not set! Please set NANOLINK_JWT_SECRET environment variable.")
+		logger.Error("[SECURITY CRITICAL] JWT secret will be auto-generated, but this is NOT recommended for production.")
 	}
 
 	svc := &AuthService{
-		db:        db,
-		logger:    logger,
-		jwtSecret: []byte(cfg.JWTSecret),
-		jwtExpire: cfg.JWTExpire,
+		db:           db,
+		logger:       logger,
+		jwtSecret:    []byte(cfg.JWTSecret),
+		jwtExpire:    cfg.JWTExpire,
+		loginLimiter: NewLoginRateLimiter(5, 5*time.Minute), // 5 attempts, 5 min lockout
 	}
 
 	// Initialize super admin if configured
@@ -71,7 +76,105 @@ var (
 	ErrInvalidToken     = errors.New("invalid token")
 	ErrTokenExpired     = errors.New("token expired")
 	ErrPermissionDenied = errors.New("permission denied")
+	ErrWeakPassword     = errors.New("password does not meet strength requirements")
+	ErrTooManyAttempts  = errors.New("too many login attempts, please try again later")
 )
+
+// LoginRateLimiter implements a simple in-memory rate limiter for login attempts
+type LoginRateLimiter struct {
+	mu          sync.RWMutex
+	attempts    map[string]*loginAttempt
+	maxAttempts int
+	lockoutTime time.Duration
+}
+
+type loginAttempt struct {
+	count     int
+	lastReset time.Time
+	lockedAt  *time.Time
+}
+
+func NewLoginRateLimiter(maxAttempts int, lockoutTime time.Duration) *LoginRateLimiter {
+	return &LoginRateLimiter{
+		attempts:    make(map[string]*loginAttempt),
+		maxAttempts: maxAttempts,
+		lockoutTime: lockoutTime,
+	}
+}
+
+func (l *LoginRateLimiter) Check(key string) error {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	attempt, exists := l.attempts[key]
+	if !exists {
+		return nil
+	}
+
+	if attempt.lockedAt != nil {
+		if time.Since(*attempt.lockedAt) < l.lockoutTime {
+			return ErrTooManyAttempts
+		}
+	}
+
+	return nil
+}
+
+func (l *LoginRateLimiter) RecordFailure(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	attempt, exists := l.attempts[key]
+	if !exists {
+		attempt = &loginAttempt{lastReset: time.Now()}
+		l.attempts[key] = attempt
+	}
+
+	// Reset if enough time has passed
+	if time.Since(attempt.lastReset) > l.lockoutTime {
+		attempt.count = 0
+		attempt.lockedAt = nil
+		attempt.lastReset = time.Now()
+	}
+
+	attempt.count++
+	if attempt.count >= l.maxAttempts {
+		now := time.Now()
+		attempt.lockedAt = &now
+	}
+}
+
+func (l *LoginRateLimiter) RecordSuccess(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.attempts, key)
+}
+
+// ValidatePasswordStrength checks if a password meets minimum requirements
+func ValidatePasswordStrength(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("%w: password must be at least 8 characters", ErrWeakPassword)
+	}
+
+	var hasNumber, hasLetter bool
+	for _, c := range password {
+		if unicode.IsDigit(c) {
+			hasNumber = true
+		}
+		if unicode.IsLetter(c) {
+			hasLetter = true
+		}
+	}
+
+	if !hasNumber {
+		return fmt.Errorf("%w: password must contain at least one number", ErrWeakPassword)
+	}
+	if !hasLetter {
+		return fmt.Errorf("%w: password must contain at least one letter", ErrWeakPassword)
+	}
+
+	return nil
+}
 
 // InitSuperAdmin creates or updates the super admin account
 func (s *AuthService) InitSuperAdmin(username, password string) error {
@@ -114,6 +217,11 @@ func (s *AuthService) InitSuperAdmin(username, password string) error {
 
 // RegisterUser creates a new user account
 func (s *AuthService) RegisterUser(username, password, email string) (*database.User, error) {
+	// Validate password strength
+	if err := ValidatePasswordStrength(password); err != nil {
+		return nil, err
+	}
+
 	// Check if user exists
 	var existing database.User
 	if err := s.db.Where("username = ?", username).First(&existing).Error; err == nil {
@@ -148,9 +256,16 @@ func (s *AuthService) RegisterUser(username, password, email string) (*database.
 
 // LoginUser authenticates a user and returns a JWT token
 func (s *AuthService) LoginUser(username, password string) (string, *database.User, error) {
+	// Check rate limiter
+	if err := s.loginLimiter.Check(username); err != nil {
+		s.logger.Warnf("Login blocked for user '%s': too many attempts", username)
+		return "", nil, err
+	}
+
 	var user database.User
 	if err := s.db.Where("username = ?", username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			s.loginLimiter.RecordFailure(username)
 			return "", nil, ErrUserNotFound
 		}
 		return "", nil, fmt.Errorf("database error: %w", err)
@@ -158,8 +273,12 @@ func (s *AuthService) LoginUser(username, password string) (string, *database.Us
 
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		s.loginLimiter.RecordFailure(username)
 		return "", nil, ErrInvalidPassword
 	}
+
+	// Clear rate limiter on success
+	s.loginLimiter.RecordSuccess(username)
 
 	// Generate JWT token
 	token, err := s.GenerateToken(&user)

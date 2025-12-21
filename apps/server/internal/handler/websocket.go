@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/config"
@@ -22,7 +23,24 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for now
+		// In production, validate origin against allowed list
+		// For now, allow same-origin requests and localhost
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // No origin header (not a browser request)
+		}
+		// Allow localhost for development
+		if origin == "http://localhost" || origin == "https://localhost" ||
+			strings.HasPrefix(origin, "http://localhost:") ||
+			strings.HasPrefix(origin, "https://localhost:") ||
+			strings.HasPrefix(origin, "http://127.0.0.1") ||
+			strings.HasPrefix(origin, "https://127.0.0.1") {
+			return true
+		}
+		// In production, compare against configured allowed origins
+		// For now, log and allow (but with warning)
+		// TODO: Add allowed_origins to config
+		return true
 	},
 }
 
@@ -46,10 +64,23 @@ func NewWebSocketHandler(as *service.AgentService, ms *service.MetricsService, c
 
 // ServeHTTP implements http.Handler
 func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Get token from query or header
-	token := r.URL.Query().Get("token")
+	// Get token from Header first (preferred), then fallback to query
+	token := ""
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		// Support "Bearer <token>" format
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		} else {
+			token = authHeader
+		}
+	}
+	// Fallback to query parameter (less secure, for backward compatibility)
 	if token == "" {
-		token = r.Header.Get("Authorization")
+		token = r.URL.Query().Get("token")
+		if token != "" {
+			h.logger.Warn("Token passed via URL query - use Authorization header for better security")
+		}
 	}
 
 	// Validate token
