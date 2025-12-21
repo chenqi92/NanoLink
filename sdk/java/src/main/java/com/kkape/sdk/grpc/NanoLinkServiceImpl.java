@@ -7,6 +7,7 @@ import com.kkape.sdk.model.Metrics;
 import com.kkape.sdk.model.PeriodicData;
 import com.kkape.sdk.model.RealtimeMetrics;
 import com.kkape.sdk.model.StaticInfo;
+import com.kkape.sdk.util.SanitizeUtils;
 import io.grpc.stub.StreamObserver;
 import io.nanolink.proto.*;
 import org.slf4j.Logger;
@@ -111,7 +112,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
                         // Register agent on first metrics if not already
                         if (agent == null) {
-                            String hostname = protoMetrics.getHostname();
+                            String hostname = SanitizeUtils.sanitizeHostname(protoMetrics.getHostname());
 
                             // Check if agent with same hostname already exists (reconnection case)
                             AgentConnection existingAgent = server.getAgentByHostname(hostname);
@@ -186,7 +187,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
                         // Register agent from StaticInfo if not already registered
                         if (agent == null && protoStatic.hasSystemInfo()) {
-                            String hostname = protoStatic.getSystemInfo().getHostname();
+                            String hostname = SanitizeUtils.sanitizeHostname(protoStatic.getSystemInfo().getHostname());
                             if (hostname != null && !hostname.isEmpty()) {
                                 // Check if agent with same hostname already exists (reconnection case)
                                 AgentConnection existingAgent = server.getAgentByHostname(hostname);

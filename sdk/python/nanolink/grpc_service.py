@@ -12,7 +12,8 @@ from typing import Callable, Dict, Iterator, Optional, Any
 import grpc
 
 from .proto import nanolink_pb2, nanolink_pb2_grpc
-from .connection import AgentConnection, ValidationResult, TokenValidator
+from .connection import AgentConnection, ValidationResult, TokenValidator, PermissionLevel
+from .sanitize import sanitize_hostname
 from .metrics import (
     Metrics, RealtimeMetrics, StaticInfo, PeriodicData,
     CpuMetrics, MemoryMetrics, DiskMetrics, NetworkMetrics,
@@ -172,7 +173,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 
                         # Register agent from first metrics
                         if agent is None:
-                            hostname = proto_metrics.hostname
+                            hostname = sanitize_hostname(proto_metrics.hostname)
 
                             # Check for existing agent
                             existing = self.get_agent_by_hostname(hostname)
@@ -193,10 +194,11 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                                 os=os_name,
                                 arch=arch,
                                 version="0.2.0",
-                                permission_level=3,
+                                permission_level=PermissionLevel.READ_ONLY,  # Default to READ_ONLY for unauthenticated
                                 connected_at=datetime.now(),
                                 last_heartbeat=datetime.now(),
                             )
+                            logger.warning(f"Agent {hostname} registered via stream without authentication - using READ_ONLY permission")
                             self._register_agent(agent, context)
 
                         # Convert and handle metrics
@@ -245,7 +247,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 
                         # Register agent from static info if not registered
                         if agent is None and proto_static.HasField('system_info'):
-                            hostname = proto_static.system_info.hostname
+                            hostname = sanitize_hostname(proto_static.system_info.hostname)
                             if hostname:
                                 existing = self.get_agent_by_hostname(hostname)
                                 if existing:
@@ -261,10 +263,11 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                                     os=os_name,
                                     arch=arch,
                                     version="0.2.1",
-                                    permission_level=3,
+                                    permission_level=PermissionLevel.READ_ONLY,  # Default to READ_ONLY for unauthenticated
                                     connected_at=datetime.now(),
                                     last_heartbeat=datetime.now(),
                                 )
+                                logger.warning(f"Agent {hostname} registered via static info without authentication - using READ_ONLY permission")
                                 self._register_agent(agent, context)
 
                         if agent:

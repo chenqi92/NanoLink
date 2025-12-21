@@ -18,6 +18,14 @@ from .metrics import Metrics
 logger = logging.getLogger(__name__)
 
 
+class PermissionLevel:
+    """Permission levels for agent connections"""
+    READ_ONLY = 0
+    BASIC_WRITE = 1
+    SERVICE_CONTROL = 2
+    SYSTEM_ADMIN = 3
+
+
 @dataclass
 class AgentInfo:
     """Agent information received during authentication"""

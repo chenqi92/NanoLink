@@ -126,7 +126,7 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 
 			// Register agent from first metrics
 			if agent == nil {
-				hostname := protoMetrics.Hostname
+				hostname := SanitizeHostname(protoMetrics.Hostname)
 
 				// Check for existing agent
 				existing := s.server.GetAgentByHostname(hostname)
@@ -196,7 +196,7 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 
 			// Register agent from static info if not already registered
 			if agent == nil && protoStatic.SystemInfo != nil {
-				hostname := protoStatic.SystemInfo.Hostname
+				hostname := SanitizeHostname(protoStatic.SystemInfo.Hostname)
 				if hostname != "" {
 					existing := s.server.GetAgentByHostname(hostname)
 					if existing != nil {
@@ -325,7 +325,8 @@ func CreateGRPCServer(servicer *NanoLinkServicer) *grpc.Server {
 			MinTime:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
-		grpc.MaxRecvMsgSize(16*1024*1024), // 16MB
+		grpc.MaxRecvMsgSize(16*1024*1024), // 16MB max receive message size
+		grpc.MaxSendMsgSize(16*1024*1024), // 16MB max send message size
 	)
 	pb.RegisterNanoLinkServiceServer(server, servicer)
 	return server
