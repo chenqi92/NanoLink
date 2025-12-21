@@ -145,6 +145,9 @@ type MetricsService struct {
 	maxHistory int
 	mu         sync.RWMutex
 	logger     *zap.SugaredLogger
+
+	// Broadcast callback for real-time push to dashboard clients
+	broadcastCallback func(agentID string, metrics interface{})
 }
 
 // NewMetricsService creates a new metrics service
@@ -178,7 +181,20 @@ func (s *MetricsService) StoreMetrics(agentID string, data *MetricsData) {
 		// Remove oldest entry
 		history = history[1:]
 	}
+
+	// Broadcast to dashboard clients if callback is set
+	if s.broadcastCallback != nil {
+		go s.broadcastCallback(agentID, data)
+	}
+
 	s.history[agentID] = append(history, data)
+}
+
+// SetBroadcastCallback sets the callback for broadcasting metrics to dashboard clients
+func (s *MetricsService) SetBroadcastCallback(callback func(agentID string, metrics interface{})) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.broadcastCallback = callback
 }
 
 // GetCurrentMetrics returns current metrics for an agent

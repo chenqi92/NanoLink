@@ -216,10 +216,20 @@ func main() {
 	shellHandler := handler.NewShellHandler(sugar, authService, grpcServer)
 	router.GET("/ws/shell/:id", shellHandler.HandleShellWS)
 
+	// Register dashboard WebSocket handler for real-time metrics push
+	dashboardWSHandler := handler.NewDashboardWSHandler(sugar, authService, agentService, metricsService)
+	router.GET("/ws/dashboard", dashboardWSHandler.HandleDashboardWS)
+
+	// Set broadcast callback in metrics service for real-time push
+	metricsService.SetBroadcastCallback(func(agentID string, metrics interface{}) {
+		dashboardWSHandler.BroadcastMetrics(agentID, metrics)
+	})
+
 	sugar.Infof("NanoLink Server started successfully")
 	sugar.Infof("  Dashboard: http://localhost:%d/dashboard", cfg.Server.HTTPPort)
 	sugar.Infof("  API: http://localhost:%d/api", cfg.Server.HTTPPort)
-	sugar.Infof("  WebSocket: ws://localhost:%d", cfg.Server.WSPort)
+	sugar.Infof("  Dashboard WS: ws://localhost:%d/ws/dashboard", cfg.Server.HTTPPort)
+	sugar.Infof("  Agent WS: ws://localhost:%d", cfg.Server.WSPort)
 	sugar.Infof("  gRPC: grpc://localhost:%d", cfg.Server.GRPCPort)
 
 	// Wait for shutdown signal

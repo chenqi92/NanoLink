@@ -1,6 +1,10 @@
-import { useState, useEffect, useCallback } from "react"
-import { agentsApi, metricsApi, type Agent, type Metrics, type Summary } from "@/lib/api"
+import { useState, useEffect, useCallback, useRef } from "react"
+import { agentsApi, metricsApi, type Agent, type Metrics, type Summary, api } from "@/lib/api"
+import { useWebSocket, type WebSocketStatus } from "./use-websocket"
 
+/**
+ * Hook for real-time agent and metrics data using WebSocket with HTTP fallback
+ */
 export function useAgents() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [metrics, setMetrics] = useState<Record<string, Metrics>>({})
@@ -13,7 +17,61 @@ export function useAgents() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [connectionMode, setConnectionMode] = useState<'websocket' | 'polling'>('websocket')
 
+  // Get token for WebSocket auth
+  const token = api.getToken()
+
+  // Track if initial data received via WebSocket
+  const wsDataReceived = useRef(false)
+
+  // WebSocket handlers
+  const handleAgents = useCallback((newAgents: Agent[]) => {
+    setAgents(newAgents)
+    setLoading(false)
+    wsDataReceived.current = true
+  }, [])
+
+  const handleMetrics = useCallback((newMetrics: Record<string, Metrics>) => {
+    setMetrics(prev => ({ ...prev, ...newMetrics }))
+  }, [])
+
+  const handleAgentUpdate = useCallback((agentId: string, agent: Agent) => {
+    setAgents(prev => {
+      const index = prev.findIndex(a => a.id === agentId)
+      if (index >= 0) {
+        const updated = [...prev]
+        updated[index] = agent
+        return updated
+      }
+      return [...prev, agent]
+    })
+  }, [])
+
+  const handleAgentOffline = useCallback((agentId: string) => {
+    setAgents(prev => prev.filter(a => a.id !== agentId))
+    setMetrics(prev => {
+      const updated = { ...prev }
+      delete updated[agentId]
+      return updated
+    })
+  }, [])
+
+  const handleSummary = useCallback((newSummary: Summary) => {
+    setSummary(newSummary)
+  }, [])
+
+  // Use WebSocket for real-time updates
+  const { status: wsStatus } = useWebSocket({
+    token,
+    onAgents: handleAgents,
+    onMetrics: handleMetrics,
+    onAgentUpdate: handleAgentUpdate,
+    onAgentOffline: handleAgentOffline,
+    onSummary: handleSummary,
+  })
+
+  // Fallback to polling if WebSocket fails or disconnects
   const fetchData = useCallback(async () => {
     try {
       const [agentsData, metricsData, summaryData] = await Promise.all([
@@ -32,13 +90,39 @@ export function useAgents() {
     }
   }, [])
 
+  // Handle WebSocket status changes
   useEffect(() => {
-    fetchData()
-    const interval = setInterval(fetchData, 2000)
-    return () => clearInterval(interval)
-  }, [fetchData])
+    if (wsStatus === 'connected') {
+      setConnectionMode('websocket')
+      setError(null)
+    } else if (wsStatus === 'error' || wsStatus === 'disconnected') {
+      // Fall back to polling if WebSocket is not available
+      if (!wsDataReceived.current) {
+        setConnectionMode('polling')
+        fetchData()
+      }
+    }
+  }, [wsStatus, fetchData])
 
-  return { agents, metrics, summary, loading, error, refresh: fetchData }
+  // Polling fallback
+  useEffect(() => {
+    if (connectionMode === 'polling') {
+      fetchData()
+      const interval = setInterval(fetchData, 2000)
+      return () => clearInterval(interval)
+    }
+  }, [connectionMode, fetchData])
+
+  return { 
+    agents, 
+    metrics, 
+    summary, 
+    loading, 
+    error, 
+    refresh: fetchData,
+    wsStatus,
+    connectionMode,
+  }
 }
 
 export function useAgent(agentId: string) {
