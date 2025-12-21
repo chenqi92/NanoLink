@@ -32,8 +32,9 @@ export function useMetricsHistory() {
     const memoryUsage = metrics.memory?.total && metrics.memory?.used
       ? (metrics.memory.used / metrics.memory.total) * 100
       : 0
-    const networkRx = metrics.networks?.[0]?.rxBytesPerSec || 0
-    const networkTx = metrics.networks?.[0]?.txBytesPerSec || 0
+    // Sum all network interfaces traffic
+    const networkRx = (metrics.networks || []).reduce((sum, n) => sum + (n.rxBytesPerSec || 0), 0)
+    const networkTx = (metrics.networks || []).reduce((sum, n) => sum + (n.txBytesPerSec || 0), 0)
 
     setHistory(prev => {
       const agentHistory = prev[agentId] || []

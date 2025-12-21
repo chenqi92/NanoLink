@@ -65,7 +65,14 @@ export function OverviewPanel({ agent, metricsHistory = [] }: OverviewPanelProps
   const memUsage = metrics.memory.total > 0 ? (metrics.memory.used / metrics.memory.total) * 100 : 0
   const mainDisk = metrics.disks[0]
   const diskUsage = mainDisk ? mainDisk.usagePercent : 0
-  const network = metrics.networks[0]
+  
+  // Calculate total network traffic across all interfaces
+  const totalRx = metrics.networks.reduce((sum, n) => sum + (n.rxBytesPerSec || 0), 0)
+  const totalTx = metrics.networks.reduce((sum, n) => sum + (n.txBytesPerSec || 0), 0)
+  // Filter out loopback and virtual interfaces for the main display
+  const physicalNetworks = metrics.networks.filter(n => 
+    n.interfaceType !== 'loopback' && n.interfaceType !== 'virtual' && n.isUp
+  )
 
   return (
     <div className="space-y-6">
@@ -115,10 +122,63 @@ export function OverviewPanel({ agent, metricsHistory = [] }: OverviewPanelProps
         <MetricCard
           title="Network"
           icon={<Network className="w-4 h-4" />}
-          value={network ? formatBytes(network.rxBytesPerSec) + '/s' : '--'}
-          subValue={network ? `↑ ${formatBytes(network.txBytesPerSec)}/s` : '--'}
+          value={formatBytes(totalRx) + '/s'}
+          subValue={`↑ ${formatBytes(totalTx)}/s`}
         />
       </div>
+
+      {/* Network Interfaces */}
+      {physicalNetworks.length > 0 && (
+        <Card className="glass">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Network className="w-4 h-4" />
+              Network Interfaces ({physicalNetworks.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {physicalNetworks.map((net, i) => (
+                <div key={i} className="p-3 rounded-lg bg-secondary/50">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className={cn(
+                        "w-2 h-2 rounded-full",
+                        net.isUp ? "bg-emerald-500" : "bg-red-500"
+                      )} />
+                      <span className="font-medium text-sm">{net.interface}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{net.interfaceType}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-muted-foreground text-xs">↓ Download</p>
+                      <p className="font-medium">{formatBytes(net.rxBytesPerSec)}/s</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">↑ Upload</p>
+                      <p className="font-medium">{formatBytes(net.txBytesPerSec)}/s</p>
+                    </div>
+                  </div>
+                  {net.ipAddresses && net.ipAddresses.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-border">
+                      <p className="text-xs text-muted-foreground truncate" title={net.ipAddresses.join(', ')}>
+                        {net.ipAddresses[0]}
+                        {net.ipAddresses.length > 1 && ` +${net.ipAddresses.length - 1}`}
+                      </p>
+                    </div>
+                  )}
+                  {net.speedMbps > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Link: {net.speedMbps >= 1000 ? `${net.speedMbps / 1000} Gbps` : `${net.speedMbps} Mbps`}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* System Info */}
       {metrics.systemInfo && (
