@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -17,13 +18,13 @@ var DB *gorm.DB
 
 // Config holds database configuration
 type Config struct {
-	Type     string // "sqlite" or "postgres"
+	Type     string // "sqlite", "mysql", or "postgres"
 	Path     string // SQLite file path
-	Host     string // PostgreSQL host
-	Port     int    // PostgreSQL port
-	Database string // PostgreSQL database name
-	Username string // PostgreSQL username
-	Password string // PostgreSQL password
+	Host     string // MySQL/PostgreSQL host
+	Port     int    // MySQL/PostgreSQL port
+	Database string // MySQL/PostgreSQL database name
+	Username string // MySQL/PostgreSQL username
+	Password string // MySQL/PostgreSQL password
 }
 
 // Initialize initializes the database connection
@@ -31,6 +32,12 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 	var dialector gorm.Dialector
 
 	switch cfg.Type {
+	case "mysql":
+		dsn := fmt.Sprintf(
+			"%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+			cfg.Username, cfg.Password, cfg.Host, cfg.Port, cfg.Database,
+		)
+		dialector = mysql.Open(dsn)
 	case "postgres":
 		dsn := fmt.Sprintf(
 			"host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=Asia/Shanghai",
@@ -48,7 +55,7 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		}
 		dialector = sqlite.Open(cfg.Path)
 	default:
-		return fmt.Errorf("unsupported database type: %s", cfg.Type)
+		return fmt.Errorf("unsupported database type: %s (supported: sqlite, mysql, postgres)", cfg.Type)
 	}
 
 	// Configure GORM logger

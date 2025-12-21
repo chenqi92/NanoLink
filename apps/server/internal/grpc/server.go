@@ -52,6 +52,9 @@ type Server struct {
 	agentEventSubscribers []chan *pb.AgentEvent
 	metricsSubscribers    map[string][]chan *pb.Metrics
 	subscribersMu         sync.RWMutex
+
+	// Command result handler for shell sessions
+	commandResultHandler func(agentID, commandID, output string, success bool)
 }
 
 // NewServer creates a new gRPC server (without auth interceptor for backward compatibility)
@@ -142,6 +145,11 @@ func (s *Server) Stop() {
 	if s.grpcServer != nil {
 		s.grpcServer.GracefulStop()
 	}
+}
+
+// SetCommandResultHandler sets the callback for handling command results from agents
+func (s *Server) SetCommandResultHandler(handler func(agentID, commandID, output string, success bool)) {
+	s.commandResultHandler = handler
 }
 
 // ============== NanoLinkService Implementation ==============
@@ -360,7 +368,14 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 	case *pb.MetricsStreamRequest_CommandResult:
 		s.logger.Infof("Command result from %s: %s (success=%v)",
 			agent.Hostname, req.CommandResult.CommandId, req.CommandResult.Success)
-		// TODO: Handle command result (store or forward to waiting clients)
+		// Forward command result to shell session handler
+		if s.commandResultHandler != nil {
+			output := req.CommandResult.Output
+			if !req.CommandResult.Success && req.CommandResult.Error != "" {
+				output = req.CommandResult.Error
+			}
+			s.commandResultHandler(agent.AgentID, req.CommandResult.CommandId, output, req.CommandResult.Success)
+		}
 	}
 }
 

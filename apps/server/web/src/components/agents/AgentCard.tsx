@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next"
 import { 
   Cpu, MemoryStick, HardDrive, Network, Thermometer, 
-  Terminal, ChevronDown, ChevronUp, Users, Info
+  Terminal, ChevronDown, ChevronUp, Users, Info, BarChart3
 } from "lucide-react"
 import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,9 +19,10 @@ interface AgentCardProps {
   agent: Agent
   metrics?: Metrics
   onOpenShell?: (agentId: string) => void
+  onViewMetrics?: (agentId: string) => void
 }
 
-export function AgentCard({ agent, metrics, onOpenShell }: AgentCardProps) {
+export function AgentCard({ agent, metrics, onOpenShell, onViewMetrics }: AgentCardProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
 
@@ -45,6 +46,12 @@ export function AgentCard({ agent, metrics, onOpenShell }: AgentCardProps) {
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="secondary">v{agent.version}</Badge>
+            {onViewMetrics && (
+              <Button size="sm" variant="outline" onClick={() => onViewMetrics(agent.id)}>
+                <BarChart3 className="mr-1 h-4 w-4" />
+                {t("agent.viewMetrics")}
+              </Button>
+            )}
             {onOpenShell && (
               <Button size="sm" variant="outline" onClick={() => onOpenShell(agent.id)}>
                 <Terminal className="mr-1 h-4 w-4" />

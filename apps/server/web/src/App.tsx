@@ -13,6 +13,7 @@ import { AgentCard } from "@/components/agents/AgentCard"
 import { ShellDialog } from "@/components/shell/ShellDialog"
 import { UserManagement } from "@/components/admin/UserManagement"
 import { GroupManagement } from "@/components/admin/GroupManagement"
+import { AgentMetricsView } from "@/components/charts/AgentMetricsView"
 
 type View = "dashboard" | "users" | "groups" | "permissions" | "settings"
 
@@ -23,6 +24,7 @@ function App() {
   const { theme } = useTheme() // Initialize theme
   const [currentView, setCurrentView] = useState<View>("dashboard")
   const [shellAgent, setShellAgent] = useState<{ id: string; name: string } | null>(null)
+  const [metricsAgent, setMetricsAgent] = useState<{ id: string; name: string } | null>(null)
 
   // Show loading
   if (authLoading) {
@@ -62,6 +64,13 @@ function App() {
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
           </div>
+        ) : metricsAgent ? (
+          /* Agent Metrics Detail View */
+          <AgentMetricsView
+            agentId={metricsAgent.id}
+            agentName={metricsAgent.name}
+            onBack={() => setMetricsAgent(null)}
+          />
         ) : currentView === "dashboard" ? (
           <>
             <SummaryCards
@@ -89,6 +98,7 @@ function App() {
                     agent={agent}
                     metrics={metrics[agent.id]}
                     onOpenShell={(id) => setShellAgent({ id, name: agent.hostname })}
+                    onViewMetrics={(id) => setMetricsAgent({ id, name: agent.hostname })}
                   />
                 ))}
               </div>

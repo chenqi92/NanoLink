@@ -221,6 +221,11 @@ func main() {
 	shellHandler := handler.NewShellHandler(sugar, authService, grpcServer)
 	router.GET("/ws/shell/:id", shellHandler.HandleShellWS)
 
+	// Connect gRPC command results to shell WebSocket sessions
+	grpcServer.SetCommandResultHandler(func(agentID, commandID, output string, success bool) {
+		shellHandler.SendOutputToSession(agentID, commandID, output)
+	})
+
 	// Register dashboard WebSocket handler for real-time metrics push
 	dashboardWSHandler := handler.NewDashboardWSHandler(sugar, authService, agentService, metricsService)
 	router.GET("/ws/dashboard", dashboardWSHandler.HandleDashboardWS)

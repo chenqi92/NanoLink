@@ -11,6 +11,7 @@ type Config struct {
 	Storage    StorageConfig    `mapstructure:"storage"`
 	Metrics    MetricsConfig    `mapstructure:"metrics"`
 	Database   DatabaseConfig   `mapstructure:"database"`
+	TimeSeries TimeSeriesConfig `mapstructure:"timeseries"`
 	JWT        JWTConfig        `mapstructure:"jwt"`
 	SuperAdmin SuperAdminConfig `mapstructure:"superadmin"`
 }
@@ -66,6 +67,20 @@ type DatabaseConfig struct {
 	Password string `mapstructure:"password"` // PostgreSQL password
 }
 
+// TimeSeriesConfig holds time-series storage configuration
+type TimeSeriesConfig struct {
+	Type          string `mapstructure:"type"`     // "memory", "influxdb", "timescaledb"
+	URL           string `mapstructure:"url"`      // Connection URL
+	Token         string `mapstructure:"token"`    // InfluxDB token
+	Org           string `mapstructure:"org"`      // InfluxDB organization
+	Bucket        string `mapstructure:"bucket"`   // InfluxDB bucket
+	Database      string `mapstructure:"database"` // TimescaleDB database name
+	Username      string `mapstructure:"username"`
+	Password      string `mapstructure:"password"`
+	RetentionDays int    `mapstructure:"retention_days"` // Data retention (0 = unlimited)
+	MaxEntries    int    `mapstructure:"max_entries"`    // Max entries per agent (memory)
+}
+
 // JWTConfig holds JWT configuration
 type JWTConfig struct {
 	Secret     string `mapstructure:"secret"`
@@ -102,6 +117,11 @@ func Default() *Config {
 		Database: DatabaseConfig{
 			Type: "sqlite",
 			Path: "./data/nanolink.db",
+		},
+		TimeSeries: TimeSeriesConfig{
+			Type:          "memory",
+			RetentionDays: 7,
+			MaxEntries:    600,
 		},
 		JWT: JWTConfig{
 			Secret:     "",

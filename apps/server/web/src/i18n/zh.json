@@ -43,7 +43,8 @@
     "version": "版本",
     "connectedAt": "连接时间",
     "lastHeartbeat": "最后心跳",
-    "openShell": "打开终端"
+    "openShell": "打开终端",
+    "viewMetrics": "查看指标"
   },
   "metrics": {
     "cpu": "CPU",
@@ -66,7 +67,13 @@
     "total": "总计",
     "used": "已用",
     "available": "可用",
-    "free": "空闲"
+    "free": "空闲",
+    "historicalData": "历史数据",
+    "cpuUsage": "CPU 使用率",
+    "memoryUsage": "内存使用率",
+    "networkIO": "网络 I/O",
+    "diskIO": "磁盘 I/O",
+    "anomalyDetected": "检测到异常"
   },
   "system": {
     "info": "系统信息",

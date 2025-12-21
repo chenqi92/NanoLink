@@ -43,7 +43,8 @@
     "version": "Version",
     "connectedAt": "Connected At",
     "lastHeartbeat": "Last Heartbeat",
-    "openShell": "Open Shell"
+    "openShell": "Open Shell",
+    "viewMetrics": "View Metrics"
   },
   "metrics": {
     "cpu": "CPU",
@@ -66,7 +67,13 @@
     "total": "Total",
     "used": "Used",
     "available": "Available",
-    "free": "Free"
+    "free": "Free",
+    "historicalData": "Historical Data",
+    "cpuUsage": "CPU Usage",
+    "memoryUsage": "Memory Usage",
+    "networkIO": "Network I/O",
+    "diskIO": "Disk I/O",
+    "anomalyDetected": "Anomaly Detected"
   },
   "system": {
     "info": "System Info",

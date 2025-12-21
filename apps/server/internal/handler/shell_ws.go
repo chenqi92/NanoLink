@@ -99,6 +99,10 @@ func (h *ShellHandler) HandleShellWS(c *gin.Context) {
 		createdAt: time.Now(),
 	}
 
+	// Register session for receiving agent output
+	h.addSession(agentID, session)
+	defer h.removeSession(agentID, session)
+
 	h.logger.Infof("Shell session started: user=%s agent=%s", claims.Username, agentID)
 
 	// Handle the session
@@ -143,10 +147,7 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 				continue
 			}
 
-			// For now, echo back the command (real implementation would wait for agent response)
-			// In a full implementation, we'd track the command ID and route the response back
-			h.sendOutput(session.conn, "$ "+msg.Data+"\r\n")
-			h.sendOutput(session.conn, "Command sent to agent. Response pending...\r\n")
+			// Echo command prompt (actual output will come from agent via gRPC callback)
 
 		case "resize":
 			// Handle terminal resize - could be forwarded to agent
