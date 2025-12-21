@@ -172,6 +172,9 @@ func main() {
 		})
 	}
 
+	// Shell WebSocket endpoint (needs gRPC server reference, so created after)
+	// Will be registered after gRPC server is created
+
 	// Start HTTP server
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.HTTPPort),
@@ -208,6 +211,10 @@ func main() {
 			sugar.Fatalf("gRPC server error: %v", err)
 		}
 	}()
+
+	// Register shell WebSocket handler (after gRPC server is available)
+	shellHandler := handler.NewShellHandler(sugar, authService, grpcServer)
+	router.GET("/ws/shell/:id", shellHandler.HandleShellWS)
 
 	sugar.Infof("NanoLink Server started successfully")
 	sugar.Infof("  Dashboard: http://localhost:%d/dashboard", cfg.Server.HTTPPort)

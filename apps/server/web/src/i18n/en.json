@@ -1,0 +1,118 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "back": "Back",
+    "confirm": "Confirm",
+    "search": "Search",
+    "noData": "No data"
+  },
+  "auth": {
+    "login": "Sign In",
+    "register": "Create Account",
+    "logout": "Sign Out",
+    "username": "Username",
+    "password": "Password",
+    "email": "Email",
+    "emailOptional": "Email (optional)",
+    "forgotPassword": "Forgot password?",
+    "noAccount": "Don't have an account?",
+    "hasAccount": "Already have an account?",
+    "signUp": "Sign Up",
+    "signIn": "Sign In",
+    "loginFailed": "Login failed",
+    "registerFailed": "Registration failed"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "connectedAgents": "Connected Agents",
+    "avgCpu": "Avg CPU Usage",
+    "avgMemory": "Avg Memory Usage",
+    "noAgents": "No agents connected",
+    "noAgentsDesc": "Agents will appear here when they connect"
+  },
+  "agent": {
+    "hostname": "Hostname",
+    "os": "Operating System",
+    "arch": "Architecture",
+    "version": "Version",
+    "connectedAt": "Connected At",
+    "lastHeartbeat": "Last Heartbeat",
+    "openShell": "Open Shell"
+  },
+  "metrics": {
+    "cpu": "CPU",
+    "memory": "Memory",
+    "disk": "Disk",
+    "disks": "Disks",
+    "network": "Network",
+    "networks": "Networks",
+    "gpu": "GPU",
+    "gpus": "GPUs",
+    "npu": "NPU",
+    "npus": "NPUs",
+    "usage": "Usage",
+    "temperature": "Temperature",
+    "power": "Power",
+    "download": "Download",
+    "upload": "Upload",
+    "read": "Read",
+    "write": "Write",
+    "total": "Total",
+    "used": "Used",
+    "available": "Available",
+    "free": "Free"
+  },
+  "system": {
+    "info": "System Info",
+    "osName": "OS Name",
+    "osVersion": "OS Version",
+    "kernel": "Kernel",
+    "hostname": "Hostname",
+    "uptime": "Uptime",
+    "bootTime": "Boot Time",
+    "motherboard": "Motherboard",
+    "bios": "BIOS",
+    "systemModel": "System Model",
+    "vendor": "Vendor"
+  },
+  "sessions": {
+    "title": "User Sessions",
+    "user": "User",
+    "tty": "TTY",
+    "loginTime": "Login Time",
+    "remoteHost": "Remote Host",
+    "idle": "Idle",
+    "type": "Type"
+  },
+  "shell": {
+    "title": "Terminal",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "connecting": "Connecting...",
+    "connectionFailed": "Connection failed"
+  },
+  "admin": {
+    "users": "Users",
+    "groups": "Groups",
+    "permissions": "Permissions",
+    "settings": "Settings",
+    "userManagement": "User Management",
+    "groupManagement": "Group Management",
+    "permissionManagement": "Permission Management"
+  },
+  "header": {
+    "dashboard": "Dashboard",
+    "agents": "Agents",
+    "admin": "Admin",
+    "theme": "Theme",
+    "language": "Language"
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "error": "错误",
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "edit": "编辑",
+    "create": "创建",
+    "back": "返回",
+    "confirm": "确认",
+    "search": "搜索",
+    "noData": "暂无数据"
+  },
+  "auth": {
+    "login": "登录",
+    "register": "注册",
+    "logout": "退出登录",
+    "username": "用户名",
+    "password": "密码",
+    "email": "邮箱",
+    "emailOptional": "邮箱 (可选)",
+    "forgotPassword": "忘记密码?",
+    "noAccount": "还没有账号?",
+    "hasAccount": "已有账号?",
+    "signUp": "注册",
+    "signIn": "登录",
+    "loginFailed": "登录失败",
+    "registerFailed": "注册失败"
+  },
+  "dashboard": {
+    "title": "控制台",
+    "connectedAgents": "已连接代理",
+    "avgCpu": "平均 CPU 使用率",
+    "avgMemory": "平均内存使用率",
+    "noAgents": "暂无代理连接",
+    "noAgentsDesc": "代理连接后将显示在这里"
+  },
+  "agent": {
+    "hostname": "主机名",
+    "os": "操作系统",
+    "arch": "架构",
+    "version": "版本",
+    "connectedAt": "连接时间",
+    "lastHeartbeat": "最后心跳",
+    "openShell": "打开终端"
+  },
+  "metrics": {
+    "cpu": "CPU",
+    "memory": "内存",
+    "disk": "磁盘",
+    "disks": "磁盘",
+    "network": "网络",
+    "networks": "网络",
+    "gpu": "GPU",
+    "gpus": "显卡",
+    "npu": "NPU",
+    "npus": "AI加速器",
+    "usage": "使用率",
+    "temperature": "温度",
+    "power": "功率",
+    "download": "下载",
+    "upload": "上传",
+    "read": "读取",
+    "write": "写入",
+    "total": "总计",
+    "used": "已用",
+    "available": "可用",
+    "free": "空闲"
+  },
+  "system": {
+    "info": "系统信息",
+    "osName": "操作系统",
+    "osVersion": "系统版本",
+    "kernel": "内核版本",
+    "hostname": "主机名",
+    "uptime": "运行时间",
+    "bootTime": "启动时间",
+    "motherboard": "主板",
+    "bios": "BIOS",
+    "systemModel": "系统型号",
+    "vendor": "厂商"
+  },
+  "sessions": {
+    "title": "用户会话",
+    "user": "用户",
+    "tty": "终端",
+    "loginTime": "登录时间",
+    "remoteHost": "远程主机",
+    "idle": "空闲时间",
+    "type": "类型"
+  },
+  "shell": {
+    "title": "终端",
+    "connect": "连接",
+    "disconnect": "断开",
+    "connected": "已连接",
+    "disconnected": "已断开",
+    "connecting": "连接中...",
+    "connectionFailed": "连接失败"
+  },
+  "admin": {
+    "users": "用户",
+    "groups": "分组",
+    "permissions": "权限",
+    "settings": "设置",
+    "userManagement": "用户管理",
+    "groupManagement": "分组管理",
+    "permissionManagement": "权限管理"
+  },
+  "header": {
+    "dashboard": "控制台",
+    "agents": "代理",
+    "admin": "管理",
+    "theme": "主题",
+    "language": "语言"
+  }
+}
