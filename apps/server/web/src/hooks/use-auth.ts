@@ -55,6 +55,7 @@ export function useAuth() {
 
   return {
     ...state,
+    token: api.getToken(),
     login,
     register,
     logout,

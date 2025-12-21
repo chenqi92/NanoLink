@@ -1,22 +1,35 @@
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useRef, useCallback, useState } from "react"
 import { Terminal as XTerm } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
 import "@xterm/xterm/css/xterm.css"
-import { useTheme } from "@/hooks/use-theme"
 import { api } from "@/lib/api"
+import { getThemeById } from "./TerminalThemes"
+import { loadTerminalSettings, type TerminalSettings } from "./TerminalSettings"
 
 interface TerminalProps {
   agentId: string
+  settings?: TerminalSettings
   onDisconnect?: () => void
 }
 
-export function Terminal({ agentId, onDisconnect }: TerminalProps) {
+const fontFamilies: Record<string, string> = {
+  "JetBrains Mono": '"JetBrains Mono", ui-monospace, monospace',
+  "Fira Code": '"Fira Code", ui-monospace, monospace',
+  "Source Code Pro": '"Source Code Pro", ui-monospace, monospace',
+  Consolas: "Consolas, ui-monospace, monospace",
+  Monaco: "Monaco, ui-monospace, monospace",
+  System: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+}
+
+export function Terminal({ agentId, settings: propSettings, onDisconnect }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-  const { resolvedTheme } = useTheme()
+  
+  const [settings] = useState<TerminalSettings>(() => propSettings || loadTerminalSettings())
+  const theme = getThemeById(settings.themeId)
 
   const connect = useCallback(() => {
     const token = api.getToken()
@@ -60,24 +73,12 @@ export function Terminal({ agentId, onDisconnect }: TerminalProps) {
     if (!terminalRef.current) return
 
     const term = new XTerm({
-      cursorBlink: true,
-      cursorStyle: "block",
-      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-      fontSize: 14,
+      cursorBlink: settings.cursorBlink,
+      cursorStyle: settings.cursorStyle,
+      fontFamily: fontFamilies[settings.fontFamily] || fontFamilies.System,
+      fontSize: settings.fontSize,
       lineHeight: 1.2,
-      theme: resolvedTheme === "dark" ? {
-        background: "#09090b",
-        foreground: "#fafafa",
-        cursor: "#fafafa",
-        cursorAccent: "#09090b",
-        selectionBackground: "#3b82f680",
-      } : {
-        background: "#ffffff",
-        foreground: "#09090b",
-        cursor: "#09090b",
-        cursorAccent: "#ffffff",
-        selectionBackground: "#3b82f680",
-      },
+      theme: theme.theme,
     })
 
     const fitAddon = new FitAddon()
@@ -103,11 +104,13 @@ export function Terminal({ agentId, onDisconnect }: TerminalProps) {
     const handleResize = () => {
       fitAddon.fit()
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: "resize",
-          cols: term.cols,
-          rows: term.rows,
-        }))
+        wsRef.current.send(
+          JSON.stringify({
+            type: "resize",
+            cols: term.cols,
+            rows: term.rows,
+          })
+        )
       }
     }
 
@@ -127,32 +130,30 @@ export function Terminal({ agentId, onDisconnect }: TerminalProps) {
       wsRef.current?.close()
       term.dispose()
     }
-  }, [agentId, resolvedTheme, connect])
+  }, [agentId, settings, theme, connect])
 
-  // Update theme when it changes
+  // Update terminal options when settings change
   useEffect(() => {
     if (!xtermRef.current) return
-    
-    xtermRef.current.options.theme = resolvedTheme === "dark" ? {
-      background: "#09090b",
-      foreground: "#fafafa",
-      cursor: "#fafafa",
-      cursorAccent: "#09090b",
-      selectionBackground: "#3b82f680",
-    } : {
-      background: "#ffffff",
-      foreground: "#09090b",
-      cursor: "#09090b",
-      cursorAccent: "#ffffff",
-      selectionBackground: "#3b82f680",
-    }
-  }, [resolvedTheme])
+
+    xtermRef.current.options.theme = theme.theme
+    xtermRef.current.options.cursorBlink = settings.cursorBlink
+    xtermRef.current.options.cursorStyle = settings.cursorStyle
+    xtermRef.current.options.fontSize = settings.fontSize
+    xtermRef.current.options.fontFamily =
+      fontFamilies[settings.fontFamily] || fontFamilies.System
+
+    fitAddonRef.current?.fit()
+  }, [settings, theme])
 
   return (
-    <div 
-      ref={terminalRef} 
+    <div
+      ref={terminalRef}
       className="h-full w-full rounded-lg overflow-hidden border border-[var(--color-border)]"
-      style={{ padding: "8px", backgroundColor: resolvedTheme === "dark" ? "#09090b" : "#ffffff" }}
+      style={{
+        padding: "8px",
+        backgroundColor: theme.theme.background,
+      }}
     />
   )
 }

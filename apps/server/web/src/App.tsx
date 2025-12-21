@@ -11,6 +11,8 @@ import { Header } from "@/components/layout/Header"
 import { SummaryCards } from "@/components/dashboard/SummaryCards"
 import { AgentCard } from "@/components/agents/AgentCard"
 import { ShellDialog } from "@/components/shell/ShellDialog"
+import { UserManagement } from "@/components/admin/UserManagement"
+import { GroupManagement } from "@/components/admin/GroupManagement"
 
 type View = "dashboard" | "users" | "groups" | "permissions" | "settings"
 
@@ -93,15 +95,9 @@ function App() {
             )}
           </>
         ) : currentView === "users" ? (
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-6">
-            <h2 className="text-xl font-semibold mb-4">{t("admin.userManagement")}</h2>
-            <p className="text-[var(--color-muted-foreground)]">User management coming soon...</p>
-          </div>
+          <UserManagement />
         ) : currentView === "groups" ? (
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-6">
-            <h2 className="text-xl font-semibold mb-4">{t("admin.groupManagement")}</h2>
-            <p className="text-[var(--color-muted-foreground)]">Group management coming soon...</p>
-          </div>
+          <GroupManagement />
         ) : null}
       </main>
 

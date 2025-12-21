@@ -133,9 +133,14 @@ func main() {
 			admin := protected.Group("")
 			admin.Use(handler.RequireSuperAdmin())
 			{
-				// User management
-				admin.GET("/users", authHandler.ListUsers)
-				admin.DELETE("/users/:id", authHandler.DeleteUser)
+				// User management (full CRUD)
+				userHandler := handler.NewUserHandler(database.GetDB(), sugar, authService, groupService)
+				admin.GET("/users", userHandler.ListUsers)
+				admin.GET("/users/:id", userHandler.GetUser)
+				admin.POST("/users", userHandler.CreateUser)
+				admin.PUT("/users/:id", userHandler.UpdateUser)
+				admin.DELETE("/users/:id", userHandler.DeleteUser)
+				admin.PUT("/users/:id/password", userHandler.ChangePassword)
 
 				// Group management
 				admin.POST("/groups", groupHandler.CreateGroup)

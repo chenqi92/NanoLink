@@ -282,3 +282,30 @@ func (s *AuthService) UpdatePassword(userID uint, newPassword string) error {
 
 	return nil
 }
+
+// Register is an alias for RegisterUser
+func (s *AuthService) Register(username, password, email string) (*database.User, error) {
+	return s.RegisterUser(username, password, email)
+}
+
+// VerifyPassword verifies a user's password
+func (s *AuthService) VerifyPassword(userID uint, password string) error {
+	var user database.User
+	if err := s.db.First(&user, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrUserNotFound
+		}
+		return fmt.Errorf("database error: %w", err)
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		return ErrInvalidPassword
+	}
+
+	return nil
+}
+
+// ChangePassword is an alias for UpdatePassword
+func (s *AuthService) ChangePassword(userID uint, newPassword string) error {
+	return s.UpdatePassword(userID, newPassword)
+}
