@@ -96,11 +96,15 @@ impl GrpcClient {
     }
 
     /// Start bidirectional streaming for metrics and commands
-    pub async fn stream_metrics(
+    pub async fn stream_metrics<F, Fut>(
         &mut self,
         buffer: Arc<RingBuffer>,
-        mut command_handler: impl FnMut(Command) -> CommandResult + Send + 'static,
-    ) -> Result<()> {
+        command_handler: F,
+    ) -> Result<()>
+    where
+        F: Fn(Command) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = CommandResult> + Send,
+    {
         // Create channel for sending requests
         let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(100);
         let request_stream = ReceiverStream::new(rx);
@@ -159,7 +163,7 @@ impl GrpcClient {
             match response.response {
                 Some(metrics_stream_response::Response::Command(cmd)) => {
                     info!("Received command: {:?}", cmd.r#type);
-                    let result = command_handler(cmd);
+                    let result = command_handler(cmd).await;
 
                     // Send command result back
                     let request = MetricsStreamRequest {
@@ -220,10 +224,14 @@ impl GrpcClient {
     ///
     /// This method uses the LayeredCollector to send different types of metrics
     /// at different intervals (realtime, periodic, static).
-    pub async fn stream_layered_metrics(
+    pub async fn stream_layered_metrics<F, Fut>(
         &mut self,
-        mut command_handler: impl FnMut(Command) -> CommandResult + Send + 'static,
-    ) -> Result<()> {
+        command_handler: F,
+    ) -> Result<()>
+    where
+        F: Fn(Command) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = CommandResult> + Send,
+    {
         // Create channel for sending requests
         let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(100);
         let request_stream = ReceiverStream::new(rx);
@@ -312,7 +320,7 @@ impl GrpcClient {
             match response.response {
                 Some(metrics_stream_response::Response::Command(cmd)) => {
                     info!("Received command: {:?}", cmd.r#type);
-                    let result = command_handler(cmd);
+                    let result = command_handler(cmd).await;
 
                     // Send command result back
                     let request = MetricsStreamRequest {

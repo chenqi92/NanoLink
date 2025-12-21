@@ -86,31 +86,151 @@ impl ConnectionManager {
                             // Start streaming metrics based on config
                             let stream_result = if config.collector.enable_layered_metrics {
                                 info!("Using layered metrics stream");
+                                // Create shell executor and permission checker for command handling
+                                let shell_executor = std::sync::Arc::new(crate::executor::ShellExecutor::new(config.clone()));
+                                let permission_checker = std::sync::Arc::new(crate::security::PermissionChecker::new(config.clone()));
+                                let permission_level = auth.permission_level as u8;
+                                let server_token = server.token.clone();
+                                
                                 client
-                                    .stream_layered_metrics(|cmd| {
-                                        crate::proto::CommandResult {
-                                            command_id: cmd.command_id,
-                                            success: true,
-                                            output: "Command received via gRPC".to_string(),
-                                            error: String::new(),
-                                            file_content: vec![],
-                                            processes: vec![],
-                                            containers: vec![],
+                                    .stream_layered_metrics(move |cmd| {
+                                        let executor = shell_executor.clone();
+                                        let checker = permission_checker.clone();
+                                        let perm_level = permission_level;
+                                        let token = server_token.clone();
+                                        async move {
+                                            match crate::proto::CommandType::try_from(cmd.r#type) {
+                                                Ok(cmd_type) => {
+                                                    // Permission check BEFORE execution - critical security gate
+                                                    if !checker.check_permission(cmd_type, perm_level) {
+                                                        warn!(
+                                                            "Permission denied for command {:?} (required: {}, have: {})",
+                                                            cmd_type,
+                                                            checker.required_level(cmd_type),
+                                                            perm_level
+                                                        );
+                                                        return crate::proto::CommandResult {
+                                                            command_id: cmd.command_id,
+                                                            success: false,
+                                                            output: String::new(),
+                                                            error: format!(
+                                                                "Permission denied. Required level: {}, your level: {}",
+                                                                checker.required_level(cmd_type),
+                                                                perm_level
+                                                            ),
+                                                            file_content: vec![],
+                                                            processes: vec![],
+                                                            containers: vec![],
+                                                        };
+                                                    }
+                                                    
+                                                    // Execute command after permission check passes
+                                                    match cmd_type {
+                                                        crate::proto::CommandType::ShellExecute => {
+                                                            let mut result = executor.execute(&cmd.target, &token).await;
+                                                            result.command_id = cmd.command_id;
+                                                            result
+                                                        }
+                                                        _ => {
+                                                            crate::proto::CommandResult {
+                                                                command_id: cmd.command_id,
+                                                                success: false,
+                                                                output: String::new(),
+                                                                error: format!("Unsupported command type: {:?}", cmd_type),
+                                                                file_content: vec![],
+                                                                processes: vec![],
+                                                                containers: vec![],
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                Err(_) => {
+                                                    crate::proto::CommandResult {
+                                                        command_id: cmd.command_id,
+                                                        success: false,
+                                                        output: String::new(),
+                                                        error: format!("Unknown command type: {}", cmd.r#type),
+                                                        file_content: vec![],
+                                                        processes: vec![],
+                                                        containers: vec![],
+                                                    }
+                                                }
+                                            }
                                         }
                                     })
                                     .await
                             } else {
                                 info!("Using legacy metrics stream");
+                                // Create shell executor and permission checker for command handling
+                                let shell_executor = std::sync::Arc::new(crate::executor::ShellExecutor::new(config.clone()));
+                                let permission_checker = std::sync::Arc::new(crate::security::PermissionChecker::new(config.clone()));
+                                let permission_level = auth.permission_level as u8;
+                                let server_token = server.token.clone();
+                                
                                 client
-                                    .stream_metrics(buffer.clone(), |cmd| {
-                                        crate::proto::CommandResult {
-                                            command_id: cmd.command_id,
-                                            success: true,
-                                            output: "Command received via gRPC".to_string(),
-                                            error: String::new(),
-                                            file_content: vec![],
-                                            processes: vec![],
-                                            containers: vec![],
+                                    .stream_metrics(buffer.clone(), move |cmd| {
+                                        let executor = shell_executor.clone();
+                                        let checker = permission_checker.clone();
+                                        let perm_level = permission_level;
+                                        let token = server_token.clone();
+                                        async move {
+                                            match crate::proto::CommandType::try_from(cmd.r#type) {
+                                                Ok(cmd_type) => {
+                                                    // Permission check BEFORE execution - critical security gate
+                                                    if !checker.check_permission(cmd_type, perm_level) {
+                                                        warn!(
+                                                            "Permission denied for command {:?} (required: {}, have: {})",
+                                                            cmd_type,
+                                                            checker.required_level(cmd_type),
+                                                            perm_level
+                                                        );
+                                                        return crate::proto::CommandResult {
+                                                            command_id: cmd.command_id,
+                                                            success: false,
+                                                            output: String::new(),
+                                                            error: format!(
+                                                                "Permission denied. Required level: {}, your level: {}",
+                                                                checker.required_level(cmd_type),
+                                                                perm_level
+                                                            ),
+                                                            file_content: vec![],
+                                                            processes: vec![],
+                                                            containers: vec![],
+                                                        };
+                                                    }
+                                                    
+                                                    // Execute command after permission check passes
+                                                    match cmd_type {
+                                                        crate::proto::CommandType::ShellExecute => {
+                                                            let mut result = executor.execute(&cmd.target, &token).await;
+                                                            result.command_id = cmd.command_id;
+                                                            result
+                                                        }
+                                                        _ => {
+                                                            crate::proto::CommandResult {
+                                                                command_id: cmd.command_id,
+                                                                success: false,
+                                                                output: String::new(),
+                                                                error: format!("Unsupported command type: {:?}", cmd_type),
+                                                                file_content: vec![],
+                                                                processes: vec![],
+                                                                containers: vec![],
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                Err(_) => {
+                                                    crate::proto::CommandResult {
+                                                        command_id: cmd.command_id,
+                                                        success: false,
+                                                        output: String::new(),
+                                                        error: format!("Unknown command type: {}", cmd.r#type),
+                                                        file_content: vec![],
+                                                        processes: vec![],
+                                                        containers: vec![],
+                                                    }
+                                                }
+                                            }
                                         }
                                     })
                                     .await
