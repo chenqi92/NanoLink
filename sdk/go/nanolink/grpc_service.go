@@ -151,10 +151,11 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 					OS:              osName,
 					Arch:            arch,
 					Version:         "0.2.0",
-					PermissionLevel: PermissionSystemAdmin,
+					PermissionLevel: PermissionReadOnly, // Default to READ_ONLY for unauthenticated streams
 					ConnectedAt:     time.Now(),
 					LastHeartbeat:   time.Now(),
 				}
+				log.Printf("WARNING: Agent %s registered via stream without authentication - using READ_ONLY permission", hostname)
 				s.server.registerAgent(agent)
 				s.mu.Lock()
 				s.streamAgents[stream] = agent
@@ -214,10 +215,11 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 						OS:              protoStatic.SystemInfo.OsName,
 						Arch:            arch,
 						Version:         "0.2.1",
-						PermissionLevel: PermissionSystemAdmin,
+						PermissionLevel: PermissionReadOnly, // Default to READ_ONLY for unauthenticated streams
 						ConnectedAt:     time.Now(),
 						LastHeartbeat:   time.Now(),
 					}
+					log.Printf("WARNING: Agent %s registered via static info without authentication - using READ_ONLY permission", hostname)
 					s.server.registerAgent(agent)
 					s.mu.Lock()
 					s.streamAgents[stream] = agent

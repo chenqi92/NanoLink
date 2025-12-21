@@ -128,8 +128,12 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                                     protoMetrics.hasSystemInfo() ? protoMetrics.getSystemInfo().getOsName() : "",
                                     protoMetrics.hasCpu() ? protoMetrics.getCpu().getArchitecture() : "",
                                     "0.2.0",
-                                    3 // Default permission
+                                    TokenValidator.PermissionLevel.READ_ONLY // Default to READ_ONLY for unauthenticated
+                                                                             // streams
                             );
+                            log.warn(
+                                    "Agent {} registered via stream without authentication - using READ_ONLY permission",
+                                    hostname);
                             server.registerAgent(agent);
                             streamAgents.put(responseObserver, agent);
                             log.info("Agent registered from metrics stream: {} ({})",
@@ -198,8 +202,12 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                                         protoStatic.getSystemInfo().getOsName(),
                                         protoStatic.hasCpu() ? protoStatic.getCpu().getArchitecture() : "",
                                         "0.2.1",
-                                        3 // Default permission
+                                        TokenValidator.PermissionLevel.READ_ONLY // Default to READ_ONLY for
+                                                                                 // unauthenticated streams
                                 );
+                                log.warn(
+                                        "Agent {} registered via static info without authentication - using READ_ONLY permission",
+                                        hostname);
                                 server.registerAgent(agent);
                                 streamAgents.put(responseObserver, agent);
                                 log.info("Agent registered from static info: {} ({})", hostname, agentId);
@@ -783,17 +791,16 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
      * Send a data request to a specific agent.
      * Used to request static info, disk usage, etc. on demand.
      *
-     * @param agentId   The agent ID to send the request to
+     * @param agentId     The agent ID to send the request to
      * @param requestType The type of data to request
-     * @param target    Optional target (e.g., specific device name)
+     * @param target      Optional target (e.g., specific device name)
      * @return true if the request was sent successfully
      */
     public boolean sendDataRequest(String agentId, DataRequestType requestType, String target) {
         for (Map.Entry<StreamObserver<?>, AgentConnection> entry : streamAgents.entrySet()) {
             if (entry.getValue().getAgentId().equals(agentId)) {
                 @SuppressWarnings("unchecked")
-                StreamObserver<MetricsStreamResponse> observer =
-                        (StreamObserver<MetricsStreamResponse>) entry.getKey();
+                StreamObserver<MetricsStreamResponse> observer = (StreamObserver<MetricsStreamResponse>) entry.getKey();
 
                 io.nanolink.proto.DataRequest.Builder builder = io.nanolink.proto.DataRequest.newBuilder()
                         .setRequestType(requestType);
@@ -827,8 +834,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
         for (Map.Entry<StreamObserver<?>, AgentConnection> entry : streamAgents.entrySet()) {
             @SuppressWarnings("unchecked")
-            StreamObserver<MetricsStreamResponse> observer =
-                    (StreamObserver<MetricsStreamResponse>) entry.getKey();
+            StreamObserver<MetricsStreamResponse> observer = (StreamObserver<MetricsStreamResponse>) entry.getKey();
             observer.onNext(response);
         }
         log.info("Broadcast data request {} to {} agents", requestType, streamAgents.size());
