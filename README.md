@@ -4,24 +4,24 @@
 [![Release](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[English](README_EN.md) | 中文
+English | [中文](README_CN.md)
 
-**NanoLink** 是一个轻量级、跨平台的服务器监控系统，包含 Agent、SDK、Dashboard 和独立应用程序。
+**NanoLink** is a lightweight, cross-platform server monitoring system that includes Agent, SDK, Dashboard, and standalone applications.
 
-## 核心组件
+## Core Components
 
-| 组件 | 描述 | 技术栈 |
-|------|------|--------|
-| [Agent](./agent) | 部署在目标服务器的监控代理 | Rust |
-| [SDK](./sdk) | 嵌入现有服务的客户端库 | Java / Go / Python |
-| [Dashboard](./dashboard) | Web 可视化面板 | Vue 3 + TailwindCSS |
-| [Apps](./apps) | 独立部署的完整应用 | Go + Tauri |
+| Component | Description | Tech Stack |
+|-----------|-------------|------------|
+| [Agent](./agent) | Monitoring agent deployed on target servers | Rust |
+| [SDK](./sdk) | Client libraries for embedding in existing services | Java / Go / Python |
+| [Dashboard](./dashboard) | Web visualization panel | Vue 3 + TailwindCSS |
+| [Apps](./apps) | Standalone deployable applications | Go + Tauri |
 
-## 系统架构
+## System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              目标服务器                                      │
+│                              Target Server                                   │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                         NanoLink Agent (Rust)                          │  │
 │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐          │  │
@@ -30,28 +30,28 @@
 │  │       └───────────┴───────────┴───────────┴───────────┘               │  │
 │  │                               │                                        │  │
 │  │                    ┌──────────▼──────────┐                             │  │
-│  │                    │     Ring Buffer     │  ← 10分钟离线数据缓存        │  │
+│  │                    │     Ring Buffer     │  ← 10min offline data cache │  │
 │  │                    └──────────┬──────────┘                             │  │
 │  │                               │                                        │  │
 │  │                    ┌──────────▼──────────┐                             │  │
-│  │                    │   Connection Mgr    │  ← 多服务端连接 + 自动重连    │  │
+│  │                    │   Connection Mgr    │  ← Multi-server + auto reconnect │
 │  │                    └──────────┬──────────┘                             │  │
 │  └───────────────────────────────┼───────────────────────────────────────┘  │
 └──────────────────────────────────┼──────────────────────────────────────────┘
                                    │
                         gRPC + Protocol Buffers (TLS)
-                              端口: 39100
+                              Port: 39100
                                    │
          ┌─────────────────────────┼─────────────────────────┐
          ▼                         ▼                         ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Java 服务     │     │    Go 服务      │     │  Python 服务    │
-│   (集成 SDK)    │     │   (集成 SDK)    │     │   (集成 SDK)    │
+│  Java Service   │     │   Go Service    │     │ Python Service  │
+│   (with SDK)    │     │   (with SDK)    │     │   (with SDK)    │
 └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
          │                       │                       │
          └───────────────────────┼───────────────────────┘
                                  │
-                      WebSocket  │  端口: 9100
+                      WebSocket  │  Port: 9100
                                  │
                       ┌──────────▼──────────┐
                       │     Dashboard       │
@@ -59,7 +59,7 @@
                       └─────────────────────┘
 ```
 
-### 独立应用架构
+### Standalone Application Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -69,7 +69,7 @@
 │  │  Linux Server   │  │ Windows Desktop │  │  macOS Desktop  │  │
 │  │   (Go + Web)    │  │    (Tauri)      │  │    (Tauri)      │  │
 │  │                 │  │                 │  │                 │  │
-│  │  Docker 部署    │  │   原生桌面应用   │  │   原生桌面应用   │  │
+│  │  Docker Deploy  │  │  Native Desktop │  │  Native Desktop │  │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
 │           └────────────────────┴────────────────────┘           │
 │                                │                                 │
@@ -80,141 +80,141 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## 功能特性
+## Features
 
-### Agent 功能
+### Agent Features
 
-| 功能 | 描述 |
-|------|------|
-| 硬件监控 | CPU、内存、磁盘、网络、GPU 全面采集 |
-| 断线缓存 | Ring Buffer 存储 10 分钟数据，重连后补发 |
-| 多服务端 | 支持同时连接多个服务端，不同权限级别 |
-| 自动重连 | 指数退避重连策略，最大延迟可配置 |
-| 命令执行 | 进程管理、服务控制、文件操作、Docker 操作 |
-| 跨平台 | Linux、macOS、Windows 全平台支持 |
+| Feature | Description |
+|---------|-------------|
+| Hardware Monitoring | Comprehensive CPU, memory, disk, network, GPU collection |
+| Offline Buffering | Ring Buffer stores 10 minutes of data, syncs after reconnect |
+| Multi-Server | Connect to multiple servers simultaneously with different permission levels |
+| Auto Reconnect | Exponential backoff reconnection with configurable max delay |
+| Command Execution | Process management, service control, file operations, Docker operations |
+| Cross-Platform | Full support for Linux, macOS, Windows |
 
-### 监控指标
+### Monitoring Metrics
 
 <details>
 <summary><b>CPU</b></summary>
 
-- 总使用率、每核使用率、负载均衡
-- 型号、厂商 (Intel/AMD/Apple)
-- 当前频率、最大频率、基础频率
-- 物理核心数、逻辑核心数
-- 架构 (x86_64/aarch64)
-- 温度 (Linux/macOS)
-- L1/L2/L3 缓存大小
+- Total usage, per-core usage, load average
+- Model, vendor (Intel/AMD/Apple)
+- Current frequency, max frequency, base frequency
+- Physical cores, logical cores
+- Architecture (x86_64/aarch64)
+- Temperature (Linux/macOS)
+- L1/L2/L3 cache sizes
 
 </details>
 
 <details>
-<summary><b>内存</b></summary>
+<summary><b>Memory</b></summary>
 
-- 总量、已用、可用、使用率
-- Swap 总量、已用
-- 缓存、缓冲区 (Linux)
-- 内存类型 (DDR4/DDR5)
-- 内存速度 (MHz)
-
-</details>
-
-<details>
-<summary><b>磁盘</b></summary>
-
-- 挂载点、设备名、文件系统类型
-- 总容量、已用、可用
-- 读写速率 (bytes/s)、IOPS
-- 型号、序列号、厂商
-- 类型 (SSD/HDD/NVMe)
-- 温度、S.M.A.R.T. 健康状态
+- Total, used, available, usage percentage
+- Swap total, swap used
+- Cached, buffers (Linux)
+- Memory type (DDR4/DDR5)
+- Memory speed (MHz)
 
 </details>
 
 <details>
-<summary><b>网络</b></summary>
+<summary><b>Disk</b></summary>
 
-- 接口名、类型 (物理/虚拟)
-- 收发速率 (bytes/s)、数据包/秒
-- MAC 地址、IPv4/IPv6 地址
-- 链路速度、MTU
-- 连接状态
+- Mount point, device name, filesystem type
+- Total capacity, used, available
+- Read/write rates (bytes/s), IOPS
+- Model, serial number, vendor
+- Type (SSD/HDD/NVMe)
+- Temperature, S.M.A.R.T. health status
+
+</details>
+
+<details>
+<summary><b>Network</b></summary>
+
+- Interface name, type (physical/virtual)
+- RX/TX rates (bytes/s), packets/sec
+- MAC address, IPv4/IPv6 addresses
+- Link speed, MTU
+- Connection status
 
 </details>
 
 <details>
 <summary><b>GPU (NVIDIA/AMD/Intel)</b></summary>
 
-- 型号、厂商、驱动版本
-- GPU 使用率、显存使用量
-- 温度、风扇转速
-- 功耗、功耗限制
-- 核心频率、显存频率
-- PCIe 信息 (代数、带宽)
-- 编码器/解码器使用率
+- Model, vendor, driver version
+- GPU utilization, VRAM usage
+- Temperature, fan speed
+- Power draw, power limit
+- Core clock, memory clock
+- PCIe info (generation, bandwidth)
+- Encoder/decoder utilization
 
 </details>
 
 <details>
-<summary><b>系统信息</b></summary>
+<summary><b>System Info</b></summary>
 
-- 操作系统名称、版本
-- 内核版本
-- 主机名
-- 启动时间、运行时间
-- 主板型号、厂商
-- BIOS 版本
+- OS name, version
+- Kernel version
+- Hostname
+- Boot time, uptime
+- Motherboard model, vendor
+- BIOS version
 
 </details>
 
-### 权限等级
+### Permission Levels
 
-| 等级 | 名称 | 可执行操作 |
-|------|------|-----------|
-| 0 | READ_ONLY | 读取监控数据、查看进程列表、查看日志 |
-| 1 | BASIC_WRITE | 下载日志文件、清理临时文件、上传文件 |
-| 2 | SERVICE_CONTROL | 重启服务、重启 Docker 容器、杀死进程 |
-| 3 | SYSTEM_ADMIN | 重启服务器、执行 Shell 命令 (需 SuperToken) |
+| Level | Name | Allowed Operations |
+|-------|------|-------------------|
+| 0 | READ_ONLY | Read metrics, view process list, view logs |
+| 1 | BASIC_WRITE | Download log files, clear temp files, upload files |
+| 2 | SERVICE_CONTROL | Restart services, Docker containers, kill processes |
+| 3 | SYSTEM_ADMIN | System reboot, execute shell commands (requires SuperToken) |
 
-### 通信协议
+### Communication Protocols
 
-NanoLink 使用分层通信架构：
+NanoLink uses a layered communication architecture:
 
-| 协议 | 端口 | 用途 | 特点 |
-|------|------|------|------|
-| **gRPC** | 39100 | Agent ↔ Server 通信 | 高性能、双向流、类型安全 |
-| **WebSocket** | 9100 | Dashboard ↔ Server 通信 | 浏览器原生支持、实时更新 |
-| **HTTP API** | 8080 | REST 管理接口 | 标准 HTTP 调用 |
+| Protocol | Port | Purpose | Features |
+|----------|------|---------|----------|
+| **gRPC** | 39100 | Agent ↔ Server communication | High performance, bidirectional streaming, type-safe |
+| **WebSocket** | 9100 | Dashboard ↔ Server communication | Native browser support, real-time updates |
+| **HTTP API** | 8080 | REST management interface | Standard HTTP calls |
 
-> **注意**: Agent 现在只使用 gRPC 协议连接到服务端。Dashboard 仍使用 WebSocket 进行实时通信。
+> **Note**: Agents now use gRPC exclusively for server connections. Dashboard still uses WebSocket for real-time communication.
 
-### 安全机制
+### Security Mechanisms
 
-| 机制 | 描述 |
-|------|------|
-| TLS 加密 | 所有通信 (WebSocket/gRPC) 强制 TLS |
-| Token 认证 | 每个连接使用独立 Token |
-| 命令白名单 | 只允许执行预定义的命令模式 |
-| 命令黑名单 | 危险命令始终被阻止 |
-| SuperToken | Shell 命令需要独立的超级令牌 |
-| 审计日志 | 记录所有命令执行到本地文件 |
-| 速率限制 | 防止命令洪水攻击 |
+| Mechanism | Description |
+|-----------|-------------|
+| TLS Encryption | All communication (WebSocket/gRPC) enforces TLS |
+| Token Authentication | Each connection uses an independent token |
+| Command Whitelist | Only predefined command patterns allowed |
+| Command Blacklist | Dangerous commands are always blocked |
+| SuperToken | Shell commands require a separate super token |
+| Audit Log | All command executions logged to local file |
+| Rate Limiting | Prevents command flood attacks |
 
-## 快速开始
+## Quick Start
 
-### 一键安装 Agent
+### One-Click Agent Installation
 
-**Linux/macOS (交互式):**
+**Linux/macOS (Interactive):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash
 ```
 
-**Windows (PowerShell 管理员):**
+**Windows (PowerShell Admin):**
 ```powershell
 irm https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.ps1 | iex
 ```
 
-**静默安装 (自动化部署):**
+**Silent Installation (Automated Deployment):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash -s -- \
   --silent \
@@ -223,71 +223,71 @@ curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/script
   --permission 2
 ```
 
-### 多服务端管理
+### Multi-Server Management
 
-Agent 支持同时连接多个服务端，可以动态添加/删除/更新服务端配置。
+Agent supports connecting to multiple servers simultaneously with dynamic add/remove/update of server configurations.
 
-**添加新服务端:**
+**Add a new server:**
 ```bash
-# 使用安装脚本
+# Using install script
 sudo ./install.sh --add-server --host "second.example.com" --port 39100 --token "token2"
 
-# 使用 Agent CLI
+# Using Agent CLI
 nanolink-agent server add --host "second.example.com" --port 39100 --token "token2" --permission 1
 
-# 使用管理 API (热更新)
+# Using Management API (hot-reload)
 curl -X POST http://localhost:9101/api/servers \
   -H "Content-Type: application/json" \
   -d '{"host":"second.example.com","port":39100,"token":"token2","permission":1}'
 ```
 
-**删除服务端:**
+**Remove a server:**
 ```bash
-# 使用 Agent CLI
+# Using Agent CLI
 nanolink-agent server remove --host "old.example.com" --port 39100
 
-# 使用管理 API
+# Using Management API
 curl -X DELETE "http://localhost:9101/api/servers?host=old.example.com&port=39100"
 ```
 
-**查看当前服务端:**
+**List configured servers:**
 ```bash
 nanolink-agent server list
 ```
 
-### 使用 Docker 部署服务端
+### Deploy Server with Docker
 
 ```bash
-# 使用 docker-compose
+# Using docker-compose
 cd apps/docker
 docker-compose up -d
 
-# 或直接运行
+# Or run directly
 docker run -d \
   -p 8080:8080 \
   -p 9100:9100 \
   ghcr.io/chenqi92/nanolink-server:latest
 ```
 
-访问 Dashboard: http://localhost:8080/dashboard
+Access Dashboard: http://localhost:8080/dashboard
 
-### Agent 配置
+### Agent Configuration
 
 ```yaml
 # /etc/nanolink/nanolink.yaml
 agent:
-  hostname: ""  # 留空自动检测
+  hostname: ""  # Leave empty for auto-detection
   heartbeat_interval: 30
   reconnect_delay: 5
   max_reconnect_delay: 300
 
 servers:
-  # gRPC 连接 (高性能、类型安全)
+  # gRPC connection (high-performance, type-safe)
   - host: monitor.example.com
-    port: 39100           # 默认 gRPC 端口
+    port: 39100           # Default gRPC port
     token: "your-auth-token"
     permission: 2
-    tls_enabled: false    # 生产环境推荐使用 true
+    tls_enabled: false    # Recommended: true for production
     tls_verify: true
 
 collector:
@@ -297,7 +297,7 @@ collector:
   enable_per_core_cpu: true
 
 buffer:
-  capacity: 600  # 10分钟 (1秒采样)
+  capacity: 600  # 10 minutes (1s sampling)
 
 shell:
   enabled: false
@@ -316,7 +316,7 @@ logging:
   audit_file: "/var/log/nanolink/audit.log"
 ```
 
-## SDK 集成
+## SDK Integration
 
 ### Java SDK
 
@@ -324,17 +324,17 @@ logging:
 <dependency>
     <groupId>com.kkape</groupId>
     <artifactId>nanolink-sdk</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.3</version>
 </dependency>
 ```
 
 ```java
 NanoLinkServer server = NanoLinkServer.builder()
-    .wsPort(9100)       // Dashboard WebSocket 端口
-    .grpcPort(39100)    // Agent gRPC 端口
-    .staticFilesPath("/path/to/dashboard")  // 可选：外部 Dashboard 路径
+    .wsPort(9100)       // Dashboard WebSocket port
+    .grpcPort(39100)    // Agent gRPC port
+    .staticFilesPath("/path/to/dashboard")  // Optional: external Dashboard path
     .onAgentConnect(agent -> {
-        log.info("Agent 连接: {} ({})", agent.getHostname(), agent.getOs());
+        log.info("Agent connected: {} ({})", agent.getHostname(), agent.getOs());
     })
     .onMetrics(metrics -> {
         log.info("CPU: {:.1f}% | Memory: {:.1f}%",
@@ -352,13 +352,13 @@ server.start();
 import "github.com/chenqi92/NanoLink/sdk/go/nanolink"
 
 server := nanolink.NewServer(nanolink.Config{
-    WsPort:   9100,    // Dashboard WebSocket 端口
-    GrpcPort: 39100,   // Agent gRPC 端口
-    // StaticFilesPath: "/path/to/dashboard",  // 可选
+    WsPort:   9100,    // Dashboard WebSocket port
+    GrpcPort: 39100,   // Agent gRPC port
+    // StaticFilesPath: "/path/to/dashboard",  // Optional
 })
 
 server.OnAgentConnect(func(agent *nanolink.AgentConnection) {
-    log.Printf("Agent 连接: %s (%s)", agent.Hostname, agent.OS)
+    log.Printf("Agent connected: %s (%s)", agent.Hostname, agent.OS)
 })
 
 server.OnMetrics(func(m *nanolink.Metrics) {
@@ -380,14 +380,14 @@ from nanolink import NanoLinkServer, ServerConfig
 
 async def main():
     config = ServerConfig(
-        ws_port=9100,    # Dashboard WebSocket 端口
-        grpc_port=39100  # Agent gRPC 端口
+        ws_port=9100,    # Dashboard WebSocket port
+        grpc_port=39100  # Agent gRPC port
     )
     server = NanoLinkServer(config)
 
     @server.on_agent_connect
     async def on_connect(agent):
-        print(f"Agent 连接: {agent.hostname} ({agent.os})")
+        print(f"Agent connected: {agent.hostname} ({agent.os})")
 
     @server.on_metrics
     async def on_metrics(metrics):
@@ -398,28 +398,28 @@ async def main():
 asyncio.run(main())
 ```
 
-## 项目结构
+## Project Structure
 
 ```
 NanoLink/
 ├── agent/                      # Rust Agent
 │   ├── src/
-│   │   ├── collector/          # 数据采集器
+│   │   ├── collector/          # Data collectors
 │   │   │   ├── cpu.rs
 │   │   │   ├── memory.rs
 │   │   │   ├── disk.rs
 │   │   │   ├── network.rs
 │   │   │   └── gpu.rs
-│   │   ├── connection/         # WebSocket/gRPC 客户端
-│   │   ├── executor/           # 命令执行器
+│   │   ├── connection/         # WebSocket/gRPC client
+│   │   ├── executor/           # Command executors
 │   │   ├── buffer/             # Ring Buffer
-│   │   ├── security/           # 权限系统
-│   │   └── platform/           # 平台特定代码
-│   ├── scripts/                # 安装/卸载脚本
-│   └── systemd/                # Linux 服务配置
+│   │   ├── security/           # Permission system
+│   │   └── platform/           # Platform-specific code
+│   ├── scripts/                # Install/uninstall scripts
+│   └── systemd/                # Linux service config
 │
-├── sdk/                        # 多语言 SDK
-│   ├── protocol/               # Protocol Buffers 定义
+├── sdk/                        # Multi-language SDKs
+│   ├── protocol/               # Protocol Buffers definitions
 │   │   └── nanolink.proto
 │   ├── java/                   # Java SDK (Maven)
 │   ├── go/                     # Go SDK (Module)
@@ -427,48 +427,48 @@ NanoLink/
 │
 ├── dashboard/                  # Web Dashboard
 │   ├── src/
-│   │   ├── components/         # Vue 组件
-│   │   └── composables/        # WebSocket 组合式函数
+│   │   ├── components/         # Vue components
+│   │   └── composables/        # WebSocket composables
 │   └── package.json
 │
-├── apps/                       # 独立应用程序
-│   ├── server/                 # Go Web 服务端
-│   │   ├── cmd/                # 入口
-│   │   ├── internal/           # 内部模块
-│   │   │   ├── grpc/           # gRPC 服务端
-│   │   │   ├── handler/        # HTTP/WebSocket 处理器
-│   │   │   └── proto/          # 生成的 Proto 代码
-│   │   └── web/                # 嵌入式 Dashboard
-│   ├── desktop/                # Tauri 桌面应用
-│   │   ├── src/                # Vue 前端
-│   │   └── src-tauri/          # Rust 后端
-│   └── docker/                 # Docker 配置
+├── apps/                       # Standalone Applications
+│   ├── server/                 # Go Web server
+│   │   ├── cmd/                # Entry point
+│   │   ├── internal/           # Internal modules
+│   │   │   ├── grpc/           # gRPC server
+│   │   │   ├── handler/        # HTTP/WebSocket handlers
+│   │   │   └── proto/          # Generated Proto code
+│   │   └── web/                # Embedded Dashboard
+│   ├── desktop/                # Tauri desktop app
+│   │   ├── src/                # Vue frontend
+│   │   └── src-tauri/          # Rust backend
+│   └── docker/                 # Docker configuration
 │       ├── Dockerfile
 │       ├── docker-compose.yml
 │       └── docker-compose.build.yml
 │
-├── demo/                       # 集成示例
-│   └── spring-boot/            # Spring Boot 示例
+├── demo/                       # Integration examples
+│   └── spring-boot/            # Spring Boot example
 │
-├── scripts/                    # 工具脚本
-│   ├── bump-version.sh         # 版本更新 (Linux/macOS)
-│   └── bump-version.ps1        # 版本更新 (Windows)
+├── scripts/                    # Utility scripts
+│   ├── bump-version.sh         # Version update (Linux/macOS)
+│   └── bump-version.ps1        # Version update (Windows)
 │
 └── .github/workflows/          # CI/CD
-    ├── test.yml                # 测试
-    ├── release.yml             # Agent 发布
-    ├── sdk-release.yml         # SDK 发布
-    └── apps-release.yml        # 应用发布
+    ├── test.yml                # Tests
+    ├── release.yml             # Agent release
+    ├── sdk-release.yml         # SDK release
+    └── apps-release.yml        # Apps release
 ```
 
-## 构建
+## Building
 
 ### Agent (Rust)
 
 ```bash
 cd agent
 cargo build --release
-# 输出: target/release/nanolink-agent
+# Output: target/release/nanolink-agent
 ```
 
 ### SDK
@@ -491,26 +491,26 @@ cd dashboard
 npm install && npm run build
 ```
 
-### 独立应用
+### Standalone Applications
 
 ```bash
 # Linux Server (Docker)
 cd apps/docker && docker-compose build
 
-# Desktop (需要 Rust + Node.js)
+# Desktop (requires Rust + Node.js)
 cd apps/desktop && npm install && npm run tauri build
 ```
 
-## 服务管理
+## Service Management
 
 ### Linux (systemd)
 
 ```bash
-sudo systemctl start nanolink-agent    # 启动
-sudo systemctl stop nanolink-agent     # 停止
-sudo systemctl restart nanolink-agent  # 重启
-sudo systemctl status nanolink-agent   # 状态
-sudo journalctl -u nanolink-agent -f   # 日志
+sudo systemctl start nanolink-agent    # Start
+sudo systemctl stop nanolink-agent     # Stop
+sudo systemctl restart nanolink-agent  # Restart
+sudo systemctl status nanolink-agent   # Status
+sudo journalctl -u nanolink-agent -f   # Logs
 ```
 
 ### macOS (launchd)
@@ -532,23 +532,23 @@ Get-Service NanoLinkAgent
 
 ## CI/CD
 
-| 工作流 | 触发条件 | 产物 |
-|--------|----------|------|
-| Test | PR / Push | 测试报告 |
-| Release Agent | Tag `v*` | 多平台二进制 |
+| Workflow | Trigger | Artifacts |
+|----------|---------|-----------|
+| Test | PR / Push | Test reports |
+| Release Agent | Tag `v*` | Multi-platform binaries |
 | SDK Release | Tag `sdk-v*` | Maven / PyPI / GitHub |
-| Apps Release | Tag `app-v*` | Docker 镜像 / 安装包 |
+| Apps Release | Tag `app-v*` | Docker images / Installers |
 
-## 许可证
+## License
 
-MIT License - 详见 [LICENSE](LICENSE)
+MIT License - See [LICENSE](LICENSE)
 
-## 贡献
+## Contributing
 
-欢迎提交 Issue 和 Pull Request！
+Issues and Pull Requests are welcome!
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/xxx`)
-3. 提交更改 (`git commit -m 'Add xxx'`)
-4. 推送分支 (`git push origin feature/xxx`)
-5. 创建 Pull Request
+1. Fork this repository
+2. Create a feature branch (`git checkout -b feature/xxx`)
+3. Commit your changes (`git commit -m 'Add xxx'`)
+4. Push the branch (`git push origin feature/xxx`)
+5. Create a Pull Request

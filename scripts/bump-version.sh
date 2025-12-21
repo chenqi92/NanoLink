@@ -120,6 +120,10 @@ main() {
     update_file "demo/spring-boot/pom.xml" "$CURRENT_VERSION" "$NEW_VERSION"
     update_file "scripts/version.json" "$CURRENT_VERSION" "$NEW_VERSION"
     
+    # Update README files (Chinese and English)
+    update_file "README.md" "$CURRENT_VERSION" "$NEW_VERSION"
+    update_file "README_CN.md" "$CURRENT_VERSION" "$NEW_VERSION"
+    
     # Update root VERSION file (triggers auto-release)
     echo "$NEW_VERSION" > "$ROOT_DIR/VERSION"
     success "Updated: VERSION"

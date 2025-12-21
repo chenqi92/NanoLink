@@ -116,12 +116,19 @@ function Main {
         "apps/server/web/package.json",
         "apps/desktop/pubspec.yaml",
         "demo/spring-boot/pom.xml",
-        "scripts/version.json"
+        "scripts/version.json",
+        "README.md",
+        "README_CN.md"
     )
 
     foreach ($file in $files) {
         Update-FileVersion -RelativePath $file -OldVersion $CurrentVersion -NewVersion $NewVersion
     }
+
+    # Update root VERSION file (triggers auto-release)
+    $versionFilePath = Join-Path $RootDir "VERSION"
+    $NewVersion | Set-Content $versionFilePath -NoNewline -Encoding UTF8
+    Write-Success "Updated: VERSION"
 
     Write-Host ""
     Write-Success "Version bumped from $CurrentVersion to $NewVersion"
