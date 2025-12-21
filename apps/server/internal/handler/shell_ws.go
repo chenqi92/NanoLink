@@ -188,6 +188,34 @@ func (h *ShellHandler) SendOutputToSession(agentID, commandID, output string) {
 	})
 }
 
+// addSession adds a shell session to the sessions map
+func (h *ShellHandler) addSession(agentID string, session *shellSession) {
+	value, _ := h.sessions.LoadOrStore(agentID, []*shellSession{})
+	sessions := value.([]*shellSession)
+	sessions = append(sessions, session)
+	h.sessions.Store(agentID, sessions)
+}
+
+// removeSession removes a shell session from the sessions map
+func (h *ShellHandler) removeSession(agentID string, session *shellSession) {
+	value, ok := h.sessions.Load(agentID)
+	if !ok {
+		return
+	}
+	sessions := value.([]*shellSession)
+	filtered := make([]*shellSession, 0, len(sessions))
+	for _, s := range sessions {
+		if s != session {
+			filtered = append(filtered, s)
+		}
+	}
+	if len(filtered) > 0 {
+		h.sessions.Store(agentID, filtered)
+	} else {
+		h.sessions.Delete(agentID)
+	}
+}
+
 func generateCommandID() string {
 	return time.Now().Format("20060102150405.000000")
 }

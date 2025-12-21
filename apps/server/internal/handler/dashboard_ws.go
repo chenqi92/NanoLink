@@ -40,6 +40,7 @@ type dashboardClient struct {
 	username      string
 	send          chan []byte
 	subscriptions map[string]bool // agentIDs subscribed to
+	closed        bool            // true if channel is closed
 	mu            sync.Mutex
 }
 
@@ -151,6 +152,10 @@ func (h *DashboardWSHandler) unregisterClient(client *dashboardClient) {
 	h.clientsMu.Lock()
 	if _, ok := h.clients[client]; ok {
 		delete(h.clients, client)
+		// Set closed flag before closing channel to prevent panic
+		client.mu.Lock()
+		client.closed = true
+		client.mu.Unlock()
 		close(client.send)
 	}
 	h.clientsMu.Unlock()
@@ -188,6 +193,13 @@ func (h *DashboardWSHandler) sendToClient(client *dashboardClient, msg *Dashboar
 		h.logger.Errorf("Failed to marshal message: %v", err)
 		return
 	}
+
+	client.mu.Lock()
+	if client.closed {
+		client.mu.Unlock()
+		return
+	}
+	client.mu.Unlock()
 
 	select {
 	case client.send <- data:
