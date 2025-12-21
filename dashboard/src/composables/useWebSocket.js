@@ -1,45 +1,57 @@
-import { ref, reactive } from 'vue'
+import { ref } from 'vue'
 
 const connected = ref(false)
 const agents = ref({})
 const selectedAgent = ref(null)
 let ws = null
 let reconnectTimer = null
+let initialFetchDone = false
 
 export function useWebSocket() {
   const connect = () => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/ws`
 
-    console.log('Connecting to WebSocket:', wsUrl)
+    console.log('[WebSocket] Connecting to:', wsUrl)
 
     ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
-      console.log('WebSocket connected')
+      console.log('[WebSocket] Connected')
       connected.value = true
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
         reconnectTimer = null
       }
+
+      // Fetch initial data once connected
+      if (!initialFetchDone) {
+        fetchInitialData()
+        initialFetchDone = true
+      }
     }
 
     ws.onclose = () => {
-      console.log('WebSocket disconnected')
+      console.log('[WebSocket] Disconnected')
       connected.value = false
       scheduleReconnect()
     }
 
     ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
+      console.error('[WebSocket] Error:', error)
     }
 
     ws.onmessage = (event) => {
       handleMessage(event.data)
     }
 
-    // Also poll API for agents
-    pollAgents()
+    // Fetch initial data even if WebSocket fails
+    setTimeout(() => {
+      if (!initialFetchDone) {
+        fetchInitialData()
+        initialFetchDone = true
+      }
+    }, 1000)
   }
 
   const scheduleReconnect = () => {
@@ -50,71 +62,116 @@ export function useWebSocket() {
     }, 3000)
   }
 
-  const handleMessage = async (data) => {
-    // Handle binary protobuf messages
-    if (data instanceof Blob) {
-      const buffer = await data.arrayBuffer()
-      // Parse protobuf (simplified)
-      // In production, use proper protobuf parsing
+  const handleMessage = (data) => {
+    try {
+      const message = JSON.parse(data)
+      console.log('[WebSocket] Received:', message.type)
+
+      switch (message.type) {
+        case 'metrics':
+          handleMetricsUpdate(message.agentId, message.metrics)
+          break
+        case 'agent_connect':
+          handleAgentConnect(message.agent)
+          break
+        case 'agent_disconnect':
+          handleAgentDisconnect(message.agent)
+          break
+        default:
+          console.warn('[WebSocket] Unknown message type:', message.type)
+      }
+    } catch (error) {
+      console.error('[WebSocket] Failed to parse message:', error)
     }
   }
 
-  const pollAgents = () => {
-    const fetchAgents = async () => {
-      try {
-        const response = await fetch('/api/agents')
-        const data = await response.json()
-        if (data.agents) {
-          const newAgents = {}
-          data.agents.forEach(agent => {
-            newAgents[agent.agentId] = {
-              ...agent,
-              lastMetrics: agents.value[agent.agentId]?.lastMetrics || null
-            }
-          })
-          agents.value = newAgents
-
-          // Auto-select first agent if none selected
-          if (!selectedAgent.value && data.agents.length > 0) {
-            selectedAgent.value = data.agents[0].agentId
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch agents:', error)
-      }
+  const handleMetricsUpdate = (agentId, metrics) => {
+    if (!agents.value[agentId]) {
+      console.warn('[WebSocket] Received metrics for unknown agent:', agentId)
+      return
     }
 
-    const fetchMetrics = async () => {
-      try {
-        const response = await fetch('/api/metrics')
-        const metricsMap = await response.json()
-        // Create a new object to trigger Vue reactivity
-        const updatedAgents = { ...agents.value }
-        let hasUpdates = false
-        Object.entries(metricsMap).forEach(([agentId, metrics]) => {
-          if (updatedAgents[agentId]) {
-            updatedAgents[agentId] = {
-              ...updatedAgents[agentId],
-              lastMetrics: transformMetrics(metrics)
-            }
-            hasUpdates = true
+    // Update agent metrics
+    const updatedAgents = { ...agents.value }
+    updatedAgents[agentId] = {
+      ...updatedAgents[agentId],
+      lastMetrics: transformMetrics(metrics)
+    }
+    agents.value = updatedAgents
+  }
+
+  const handleAgentConnect = (agent) => {
+    console.log('[WebSocket] Agent connected:', agent.hostname)
+    const updatedAgents = { ...agents.value }
+    updatedAgents[agent.agentId] = {
+      ...agent,
+      lastMetrics: null
+    }
+    agents.value = updatedAgents
+
+    // Auto-select if first agent
+    if (!selectedAgent.value) {
+      selectedAgent.value = agent.agentId
+    }
+  }
+
+  const handleAgentDisconnect = (agent) => {
+    console.log('[WebSocket] Agent disconnected:', agent.hostname)
+    const updatedAgents = { ...agents.value }
+    delete updatedAgents[agent.agentId]
+    agents.value = updatedAgents
+
+    // Deselect if this was the selected agent
+    if (selectedAgent.value === agent.agentId) {
+      const remaining = Object.keys(agents.value)
+      selectedAgent.value = remaining.length > 0 ? remaining[0] : null
+    }
+  }
+
+  const fetchInitialData = async () => {
+    console.log('[WebSocket] Fetching initial data...')
+
+    try {
+      // Fetch agents
+      const agentsResponse = await fetch('/api/agents')
+      const agentsData = await agentsResponse.json()
+
+      if (agentsData.agents) {
+        const newAgents = {}
+        agentsData.agents.forEach(agent => {
+          newAgents[agent.agentId] = {
+            ...agent,
+            lastMetrics: null
           }
         })
-        // Only update if we have changes to avoid unnecessary reactivity
-        if (hasUpdates) {
-          agents.value = updatedAgents
+        agents.value = newAgents
+
+        // Auto-select first agent
+        if (!selectedAgent.value && agentsData.agents.length > 0) {
+          selectedAgent.value = agentsData.agents[0].agentId
+          console.log('[WebSocket] Auto-selected agent:', selectedAgent.value)
         }
-      } catch (error) {
-        console.error('Failed to fetch metrics:', error)
       }
+
+      // Fetch initial metrics
+      const metricsResponse = await fetch('/api/metrics')
+      const metricsMap = await metricsResponse.json()
+
+      const updatedAgents = { ...agents.value }
+      Object.entries(metricsMap).forEach(([agentId, metrics]) => {
+        if (updatedAgents[agentId]) {
+          updatedAgents[agentId] = {
+            ...updatedAgents[agentId],
+            lastMetrics: transformMetrics(metrics)
+          }
+        }
+      })
+      agents.value = updatedAgents
+
+      console.log('[WebSocket] Initial data loaded:', Object.keys(agents.value).length, 'agents')
+    } catch (error) {
+      console.error('[WebSocket] Failed to fetch initial data:', error)
     }
-
-    fetchAgents()
-    setInterval(fetchAgents, 5000)
-
-    // Fetch real metrics from API
-    fetchMetrics()
-    setInterval(fetchMetrics, 2000)
   }
 
   // Transform API metrics to dashboard format with complete data
@@ -235,42 +292,8 @@ export function useWebSocket() {
     }
   }
 
-  const generateDemoMetrics = () => ({
-    timestamp: Date.now(),
-    cpu: {
-      usagePercent: 15 + Math.random() * 40,
-      coreCount: 8,
-      perCoreUsage: Array(8).fill(0).map(() => Math.random() * 100)
-    },
-    memory: {
-      total: 16 * 1024 * 1024 * 1024,
-      used: (6 + Math.random() * 4) * 1024 * 1024 * 1024,
-      available: 8 * 1024 * 1024 * 1024,
-      swapTotal: 8 * 1024 * 1024 * 1024,
-      swapUsed: Math.random() * 1024 * 1024 * 1024
-    },
-    disks: [{
-      mountPoint: '/',
-      device: '/dev/sda1',
-      fsType: 'ext4',
-      total: 500 * 1024 * 1024 * 1024,
-      used: (150 + Math.random() * 50) * 1024 * 1024 * 1024,
-      available: 300 * 1024 * 1024 * 1024,
-      readBytesPerSec: Math.random() * 50 * 1024 * 1024,
-      writeBytesPerSec: Math.random() * 30 * 1024 * 1024
-    }],
-    networks: [{
-      interface: 'eth0',
-      rxBytesPerSec: Math.random() * 10 * 1024 * 1024,
-      txBytesPerSec: Math.random() * 5 * 1024 * 1024,
-      rxPacketsPerSec: Math.random() * 10000,
-      txPacketsPerSec: Math.random() * 5000,
-      isUp: true
-    }],
-    loadAverage: [1.5 + Math.random(), 1.2 + Math.random(), 0.8 + Math.random()]
-  })
-
   const selectAgent = (agentId) => {
+    console.log('[WebSocket] selectAgent:', agentId)
     selectedAgent.value = agentId
   }
 

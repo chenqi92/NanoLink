@@ -47,7 +47,7 @@ watch(() => props.metrics, (newMetrics) => {
       memHistory.value.shift()
     }
   }
-}, { immediate: true })
+}, { immediate: true, deep: true })
 
 const chartData = computed(() => ({
   labels: Array(cpuHistory.value.length).fill(''),

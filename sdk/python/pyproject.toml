@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.8"
 authors = [
-    {name = "chenqi92", email = "chq19920301@163.com"}
+    {name = "chenqi92", email = "hi@kkape.com"}
 ]
 keywords = ["monitoring", "metrics", "agent", "websocket", "kkape"]
 classifiers = [

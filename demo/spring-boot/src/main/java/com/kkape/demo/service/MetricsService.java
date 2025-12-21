@@ -7,14 +7,13 @@ import com.kkape.sdk.model.RealtimeMetrics;
 import com.kkape.sdk.model.StaticInfo;
 import com.kkape.demo.model.AgentInfo;
 import com.kkape.demo.model.AgentMetrics;
+import com.kkape.demo.websocket.MetricsWebSocketHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -29,6 +28,8 @@ public class MetricsService {
 
     private static final Logger log = LoggerFactory.getLogger(MetricsService.class);
 
+    private final MetricsWebSocketHandler webSocketHandler;
+
     // Store agent info
     private final Map<String, AgentInfo> agents = new ConcurrentHashMap<>();
 
@@ -40,6 +41,10 @@ public class MetricsService {
 
     // Store latest periodic data per agent (disk usage, sessions)
     private final Map<String, PeriodicData> periodicDataMap = new ConcurrentHashMap<>();
+
+    public MetricsService(MetricsWebSocketHandler webSocketHandler) {
+        this.webSocketHandler = webSocketHandler;
+    }
 
     /**
      * Register a new agent connection
@@ -54,15 +59,23 @@ public class MetricsService {
                 Instant.now());
         agents.put(agent.getAgentId(), info);
         log.debug("Registered agent: {}", info);
+
+        // Broadcast agent connect event
+        webSocketHandler.broadcastAgentConnect(info);
     }
 
     /**
      * Unregister an agent
      */
     public void unregisterAgent(AgentConnection agent) {
-        agents.remove(agent.getAgentId());
+        AgentInfo info = agents.remove(agent.getAgentId());
         latestMetrics.remove(agent.getAgentId());
         log.debug("Unregistered agent: {}", agent.getHostname());
+
+        // Broadcast agent disconnect event
+        if (info != null) {
+            webSocketHandler.broadcastAgentDisconnect(info);
+        }
     }
 
     /**
@@ -176,15 +189,18 @@ public class MetricsService {
 
         // Update existing metrics with realtime data
         AgentMetrics existing = latestMetrics.get(agentId);
+        AgentMetrics updated;
         if (existing != null) {
             // Merge realtime data into existing metrics
-            AgentMetrics updated = AgentMetrics.mergeRealtime(existing, realtime);
-            latestMetrics.put(agentId, updated);
+            updated = AgentMetrics.mergeRealtime(existing, realtime);
         } else {
             // Create new metrics from realtime data
-            AgentMetrics newMetrics = AgentMetrics.fromRealtime(realtime);
-            latestMetrics.put(agentId, newMetrics);
+            updated = AgentMetrics.fromRealtime(realtime);
         }
+        latestMetrics.put(agentId, updated);
+
+        // Broadcast metrics to WebSocket clients
+        webSocketHandler.broadcastMetrics(agentId, updated);
 
         if (log.isTraceEnabled()) {
             log.trace("Realtime from {}: CPU={:.1f}%", hostname, realtime.getCpuUsagePercent());
