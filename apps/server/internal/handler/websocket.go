@@ -91,7 +91,7 @@ type Message struct {
 
 // AuthPayload represents authentication data
 type AuthPayload struct {
-	Token   string `json:"token"`
+	Token string `json:"token"`
 	service.AgentInfo
 }
 
@@ -101,7 +101,8 @@ type MetricsPayload struct {
 	Memory   service.MemData    `json:"memory"`
 	Disks    []service.DiskData `json:"disks"`
 	Networks []service.NetData  `json:"networks"`
-	GPU      *service.GPUData   `json:"gpu,omitempty"`
+	GPUs     []service.GPUData  `json:"gpus,omitempty"`
+	NPUs     []service.NPUData  `json:"npus,omitempty"`
 }
 
 func (h *WebSocketHandler) handleConnection(conn *websocket.Conn, permission int) {
@@ -180,7 +181,8 @@ func (h *WebSocketHandler) handleMessage(agent *service.Agent, msg Message) {
 			Memory:   payload.Memory,
 			Disks:    payload.Disks,
 			Networks: payload.Networks,
-			GPU:      payload.GPU,
+			GPUs:     payload.GPUs,
+			NPUs:     payload.NPUs,
 		}
 		h.metricsService.StoreMetrics(agent.ID, metrics)
 

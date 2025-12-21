@@ -266,6 +266,30 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 		// Notify metrics subscribers
 		s.notifyMetrics(agent.AgentID, req.Metrics)
 
+	case *pb.MetricsStreamRequest_Realtime:
+		agent.LastMetricsAt = time.Now()
+		// Merge realtime data into current metrics
+		s.metricsService.MergeRealtimeMetrics(agent.AgentID, convertRealtimeMetrics(req.Realtime))
+		// Notify subscribers with updated metrics
+		if current := s.metricsService.GetCurrentMetrics(agent.AgentID); current != nil {
+			s.notifyMetrics(agent.AgentID, convertServiceMetrics(current))
+		}
+
+	case *pb.MetricsStreamRequest_StaticInfo:
+		// Merge static info into current metrics
+		s.metricsService.MergeStaticInfo(agent.AgentID, convertStaticInfo(req.StaticInfo))
+		// Update agent info from static info
+		if req.StaticInfo.SystemInfo != nil {
+			if agent.Hostname == "" {
+				agent.Hostname = req.StaticInfo.SystemInfo.Hostname
+			}
+			agent.OS = req.StaticInfo.SystemInfo.OsName
+		}
+
+	case *pb.MetricsStreamRequest_Periodic:
+		// Merge periodic data into current metrics
+		s.metricsService.MergePeriodicData(agent.AgentID, convertPeriodicData(req.Periodic))
+
 	case *pb.MetricsStreamRequest_Heartbeat:
 		// Send heartbeat acknowledgment
 		ack := &pb.MetricsStreamResponse{
@@ -597,45 +621,141 @@ func convertProtoMetrics(m *pb.Metrics) *service.MetricsData {
 		return nil
 	}
 
-	metrics := &service.MetricsData{}
+	metrics := &service.MetricsData{
+		LoadAverage: m.LoadAverage,
+	}
 
 	if m.Cpu != nil {
 		metrics.CPU = service.CPUData{
-			UsagePercent: m.Cpu.UsagePercent,
-			CoreCount:    int(m.Cpu.CoreCount),
-			PerCoreUsage: m.Cpu.PerCoreUsage,
-			LoadAverage:  m.LoadAverage,
+			UsagePercent:  m.Cpu.UsagePercent,
+			CoreCount:     int(m.Cpu.CoreCount),
+			PerCoreUsage:  m.Cpu.PerCoreUsage,
+			LoadAverage:   m.LoadAverage,
+			Model:         m.Cpu.Model,
+			Vendor:        m.Cpu.Vendor,
+			FrequencyMhz:  m.Cpu.FrequencyMhz,
+			FrequencyMax:  m.Cpu.FrequencyMaxMhz,
+			PhysicalCores: int(m.Cpu.PhysicalCores),
+			LogicalCores:  int(m.Cpu.LogicalCores),
+			Architecture:  m.Cpu.Architecture,
+			Temperature:   m.Cpu.Temperature,
 		}
 	}
 
 	if m.Memory != nil {
 		metrics.Memory = service.MemData{
-			Total:     m.Memory.Total,
-			Used:      m.Memory.Used,
-			Available: m.Memory.Available,
-			SwapTotal: m.Memory.SwapTotal,
-			SwapUsed:  m.Memory.SwapUsed,
+			Total:          m.Memory.Total,
+			Used:           m.Memory.Used,
+			Available:      m.Memory.Available,
+			SwapTotal:      m.Memory.SwapTotal,
+			SwapUsed:       m.Memory.SwapUsed,
+			Cached:         m.Memory.Cached,
+			Buffers:        m.Memory.Buffers,
+			MemoryType:     m.Memory.MemoryType,
+			MemorySpeedMhz: m.Memory.MemorySpeedMhz,
 		}
 	}
 
 	for _, d := range m.Disks {
+		usagePercent := 0.0
+		if d.Total > 0 {
+			usagePercent = float64(d.Used) / float64(d.Total) * 100
+		}
 		metrics.Disks = append(metrics.Disks, service.DiskData{
 			MountPoint:   d.MountPoint,
+			Device:       d.Device,
+			FsType:       d.FsType,
 			Total:        d.Total,
 			Used:         d.Used,
+			Available:    d.Available,
+			UsagePercent: usagePercent,
 			ReadBytesPS:  d.ReadBytesSec,
 			WriteBytesPS: d.WriteBytesSec,
+			Model:        d.Model,
+			Serial:       d.Serial,
+			DiskType:     d.DiskType,
+			ReadIops:     d.ReadIops,
+			WriteIops:    d.WriteIops,
+			Temperature:  d.Temperature,
+			HealthStatus: d.HealthStatus,
 		})
 	}
 
 	for _, n := range m.Networks {
 		metrics.Networks = append(metrics.Networks, service.NetData{
-			Interface:   n.Interface,
-			RxBytesPS:   n.RxBytesSec,
-			TxBytesPS:   n.TxBytesSec,
-			RxPacketsPS: n.RxPacketsSec,
-			TxPacketsPS: n.TxPacketsSec,
+			Interface:     n.Interface,
+			RxBytesPS:     n.RxBytesSec,
+			TxBytesPS:     n.TxBytesSec,
+			RxPacketsPS:   n.RxPacketsSec,
+			TxPacketsPS:   n.TxPacketsSec,
+			IsUp:          n.IsUp,
+			MacAddress:    n.MacAddress,
+			IpAddresses:   n.IpAddresses,
+			SpeedMbps:     n.SpeedMbps,
+			InterfaceType: n.InterfaceType,
 		})
+	}
+
+	for _, g := range m.Gpus {
+		metrics.GPUs = append(metrics.GPUs, service.GPUData{
+			Index:           int(g.Index),
+			Name:            g.Name,
+			Vendor:          g.Vendor,
+			UsagePercent:    g.UsagePercent,
+			MemoryTotal:     g.MemoryTotal,
+			MemoryUsed:      g.MemoryUsed,
+			Temperature:     g.Temperature,
+			FanSpeedPercent: int(g.FanSpeedPercent),
+			PowerWatts:      int(g.PowerWatts),
+			PowerLimitWatts: int(g.PowerLimitWatts),
+			ClockCoreMhz:    g.ClockCoreMhz,
+			ClockMemoryMhz:  g.ClockMemoryMhz,
+			DriverVersion:   g.DriverVersion,
+			PcieGeneration:  g.PcieGeneration,
+			EncoderUsage:    g.EncoderUsage,
+			DecoderUsage:    g.DecoderUsage,
+		})
+	}
+
+	for _, n := range m.Npus {
+		metrics.NPUs = append(metrics.NPUs, service.NPUData{
+			Index:         int(n.Index),
+			Name:          n.Name,
+			Vendor:        n.Vendor,
+			UsagePercent:  n.UsagePercent,
+			MemoryTotal:   n.MemoryTotal,
+			MemoryUsed:    n.MemoryUsed,
+			Temperature:   n.Temperature,
+			PowerWatts:    int(n.PowerWatts),
+			DriverVersion: n.DriverVersion,
+		})
+	}
+
+	for _, u := range m.UserSessions {
+		metrics.UserSessions = append(metrics.UserSessions, service.UserSession{
+			Username:    u.Username,
+			Tty:         u.Tty,
+			LoginTime:   int64(u.LoginTime),
+			RemoteHost:  u.RemoteHost,
+			IdleSeconds: int64(u.IdleSeconds),
+			SessionType: u.SessionType,
+		})
+	}
+
+	if m.SystemInfo != nil {
+		metrics.SystemInfo = &service.SystemInfo{
+			OsName:            m.SystemInfo.OsName,
+			OsVersion:         m.SystemInfo.OsVersion,
+			KernelVersion:     m.SystemInfo.KernelVersion,
+			Hostname:          m.SystemInfo.Hostname,
+			BootTime:          int64(m.SystemInfo.BootTime),
+			UptimeSeconds:     int64(m.SystemInfo.UptimeSeconds),
+			MotherboardModel:  m.SystemInfo.MotherboardModel,
+			MotherboardVendor: m.SystemInfo.MotherboardVendor,
+			BiosVersion:       m.SystemInfo.BiosVersion,
+			SystemModel:       m.SystemInfo.SystemModel,
+			SystemVendor:      m.SystemInfo.SystemVendor,
+		}
 	}
 
 	return metrics
@@ -649,42 +769,364 @@ func convertServiceMetrics(m *service.MetricsData) *pb.Metrics {
 	metrics := &pb.Metrics{
 		Timestamp:   uint64(m.Timestamp.UnixMilli()),
 		Hostname:    m.AgentID,
-		LoadAverage: m.CPU.LoadAverage,
+		LoadAverage: m.LoadAverage,
 	}
 
 	metrics.Cpu = &pb.CpuMetrics{
-		UsagePercent: m.CPU.UsagePercent,
-		CoreCount:    uint32(m.CPU.CoreCount),
-		PerCoreUsage: m.CPU.PerCoreUsage,
+		UsagePercent:    m.CPU.UsagePercent,
+		CoreCount:       uint32(m.CPU.CoreCount),
+		PerCoreUsage:    m.CPU.PerCoreUsage,
+		Model:           m.CPU.Model,
+		Vendor:          m.CPU.Vendor,
+		FrequencyMhz:    m.CPU.FrequencyMhz,
+		FrequencyMaxMhz: m.CPU.FrequencyMax,
+		PhysicalCores:   uint32(m.CPU.PhysicalCores),
+		LogicalCores:    uint32(m.CPU.LogicalCores),
+		Architecture:    m.CPU.Architecture,
+		Temperature:     m.CPU.Temperature,
 	}
 
 	metrics.Memory = &pb.MemoryMetrics{
-		Total:     m.Memory.Total,
-		Used:      m.Memory.Used,
-		Available: m.Memory.Available,
-		SwapTotal: m.Memory.SwapTotal,
-		SwapUsed:  m.Memory.SwapUsed,
+		Total:          m.Memory.Total,
+		Used:           m.Memory.Used,
+		Available:      m.Memory.Available,
+		SwapTotal:      m.Memory.SwapTotal,
+		SwapUsed:       m.Memory.SwapUsed,
+		Cached:         m.Memory.Cached,
+		Buffers:        m.Memory.Buffers,
+		MemoryType:     m.Memory.MemoryType,
+		MemorySpeedMhz: m.Memory.MemorySpeedMhz,
 	}
 
 	for _, d := range m.Disks {
 		metrics.Disks = append(metrics.Disks, &pb.DiskMetrics{
 			MountPoint:    d.MountPoint,
+			Device:        d.Device,
+			FsType:        d.FsType,
 			Total:         d.Total,
 			Used:          d.Used,
+			Available:     d.Available,
 			ReadBytesSec:  d.ReadBytesPS,
 			WriteBytesSec: d.WriteBytesPS,
+			Model:         d.Model,
+			Serial:        d.Serial,
+			DiskType:      d.DiskType,
+			ReadIops:      d.ReadIops,
+			WriteIops:     d.WriteIops,
+			Temperature:   d.Temperature,
+			HealthStatus:  d.HealthStatus,
 		})
 	}
 
 	for _, n := range m.Networks {
 		metrics.Networks = append(metrics.Networks, &pb.NetworkMetrics{
-			Interface:    n.Interface,
-			RxBytesSec:   n.RxBytesPS,
-			TxBytesSec:   n.TxBytesPS,
-			RxPacketsSec: n.RxPacketsPS,
-			TxPacketsSec: n.TxPacketsPS,
+			Interface:     n.Interface,
+			RxBytesSec:    n.RxBytesPS,
+			TxBytesSec:    n.TxBytesPS,
+			RxPacketsSec:  n.RxPacketsPS,
+			TxPacketsSec:  n.TxPacketsPS,
+			IsUp:          n.IsUp,
+			MacAddress:    n.MacAddress,
+			IpAddresses:   n.IpAddresses,
+			SpeedMbps:     n.SpeedMbps,
+			InterfaceType: n.InterfaceType,
 		})
 	}
 
+	for _, g := range m.GPUs {
+		metrics.Gpus = append(metrics.Gpus, &pb.GpuMetrics{
+			Index:           uint32(g.Index),
+			Name:            g.Name,
+			Vendor:          g.Vendor,
+			UsagePercent:    g.UsagePercent,
+			MemoryTotal:     g.MemoryTotal,
+			MemoryUsed:      g.MemoryUsed,
+			Temperature:     g.Temperature,
+			FanSpeedPercent: uint32(g.FanSpeedPercent),
+			PowerWatts:      uint32(g.PowerWatts),
+			PowerLimitWatts: uint32(g.PowerLimitWatts),
+			ClockCoreMhz:    g.ClockCoreMhz,
+			ClockMemoryMhz:  g.ClockMemoryMhz,
+			DriverVersion:   g.DriverVersion,
+			PcieGeneration:  g.PcieGeneration,
+			EncoderUsage:    g.EncoderUsage,
+			DecoderUsage:    g.DecoderUsage,
+		})
+	}
+
+	for _, n := range m.NPUs {
+		metrics.Npus = append(metrics.Npus, &pb.NpuMetrics{
+			Index:         uint32(n.Index),
+			Name:          n.Name,
+			Vendor:        n.Vendor,
+			UsagePercent:  n.UsagePercent,
+			MemoryTotal:   n.MemoryTotal,
+			MemoryUsed:    n.MemoryUsed,
+			Temperature:   n.Temperature,
+			PowerWatts:    uint32(n.PowerWatts),
+			DriverVersion: n.DriverVersion,
+		})
+	}
+
+	for _, u := range m.UserSessions {
+		metrics.UserSessions = append(metrics.UserSessions, &pb.UserSession{
+			Username:    u.Username,
+			Tty:         u.Tty,
+			LoginTime:   uint64(u.LoginTime),
+			RemoteHost:  u.RemoteHost,
+			IdleSeconds: uint64(u.IdleSeconds),
+			SessionType: u.SessionType,
+		})
+	}
+
+	if m.SystemInfo != nil {
+		metrics.SystemInfo = &pb.SystemInfo{
+			OsName:            m.SystemInfo.OsName,
+			OsVersion:         m.SystemInfo.OsVersion,
+			KernelVersion:     m.SystemInfo.KernelVersion,
+			Hostname:          m.SystemInfo.Hostname,
+			BootTime:          uint64(m.SystemInfo.BootTime),
+			UptimeSeconds:     uint64(m.SystemInfo.UptimeSeconds),
+			MotherboardModel:  m.SystemInfo.MotherboardModel,
+			MotherboardVendor: m.SystemInfo.MotherboardVendor,
+			BiosVersion:       m.SystemInfo.BiosVersion,
+			SystemModel:       m.SystemInfo.SystemModel,
+			SystemVendor:      m.SystemInfo.SystemVendor,
+		}
+	}
+
 	return metrics
+}
+
+// RealtimeData holds realtime metrics for merging
+type RealtimeData struct {
+	CPUUsage     float64
+	CPUPerCore   []float64
+	CPUTemp      float64
+	CPUFrequency uint64
+	MemoryUsed   uint64
+	MemoryCached uint64
+	SwapUsed     uint64
+	DiskIO       []service.DiskData
+	NetworkIO    []service.NetData
+	LoadAverage  []float64
+	GPUUsage     []service.GPUData
+	NPUUsage     []service.NPUData
+}
+
+func convertRealtimeMetrics(r *pb.RealtimeMetrics) *RealtimeData {
+	if r == nil {
+		return nil
+	}
+
+	data := &RealtimeData{
+		CPUUsage:     r.CpuUsagePercent,
+		CPUPerCore:   r.CpuPerCore,
+		CPUTemp:      r.CpuTemperature,
+		CPUFrequency: r.CpuFrequencyMhz,
+		MemoryUsed:   r.MemoryUsed,
+		MemoryCached: r.MemoryCached,
+		SwapUsed:     r.SwapUsed,
+		LoadAverage:  r.LoadAverage,
+	}
+
+	for _, d := range r.DiskIo {
+		data.DiskIO = append(data.DiskIO, service.DiskData{
+			Device:       d.Device,
+			ReadBytesPS:  d.ReadBytesSec,
+			WriteBytesPS: d.WriteBytesSec,
+			ReadIops:     d.ReadIops,
+			WriteIops:    d.WriteIops,
+		})
+	}
+
+	for _, n := range r.NetworkIo {
+		data.NetworkIO = append(data.NetworkIO, service.NetData{
+			Interface:   n.Interface,
+			RxBytesPS:   n.RxBytesSec,
+			TxBytesPS:   n.TxBytesSec,
+			RxPacketsPS: n.RxPacketsSec,
+			TxPacketsPS: n.TxPacketsSec,
+			IsUp:        n.IsUp,
+		})
+	}
+
+	for _, g := range r.GpuUsage {
+		data.GPUUsage = append(data.GPUUsage, service.GPUData{
+			Index:        int(g.Index),
+			UsagePercent: g.UsagePercent,
+			MemoryUsed:   g.MemoryUsed,
+			Temperature:  g.Temperature,
+			PowerWatts:   int(g.PowerWatts),
+			ClockCoreMhz: g.ClockCoreMhz,
+			EncoderUsage: g.EncoderUsage,
+			DecoderUsage: g.DecoderUsage,
+		})
+	}
+
+	for _, n := range r.NpuUsage {
+		data.NPUUsage = append(data.NPUUsage, service.NPUData{
+			Index:        int(n.Index),
+			UsagePercent: n.UsagePercent,
+			MemoryUsed:   n.MemoryUsed,
+			Temperature:  n.Temperature,
+			PowerWatts:   int(n.PowerWatts),
+		})
+	}
+
+	return data
+}
+
+// StaticData holds static hardware info for merging
+type StaticData struct {
+	CPU        *service.CPUData
+	Memory     *service.MemData
+	Disks      []service.DiskData
+	Networks   []service.NetData
+	GPUs       []service.GPUData
+	NPUs       []service.NPUData
+	SystemInfo *service.SystemInfo
+}
+
+func convertStaticInfo(s *pb.StaticInfo) *StaticData {
+	if s == nil {
+		return nil
+	}
+
+	data := &StaticData{}
+
+	if s.Cpu != nil {
+		data.CPU = &service.CPUData{
+			Model:         s.Cpu.Model,
+			Vendor:        s.Cpu.Vendor,
+			PhysicalCores: int(s.Cpu.PhysicalCores),
+			LogicalCores:  int(s.Cpu.LogicalCores),
+			Architecture:  s.Cpu.Architecture,
+			FrequencyMax:  s.Cpu.FrequencyMaxMhz,
+		}
+	}
+
+	if s.Memory != nil {
+		data.Memory = &service.MemData{
+			Total:          s.Memory.Total,
+			SwapTotal:      s.Memory.SwapTotal,
+			MemoryType:     s.Memory.MemoryType,
+			MemorySpeedMhz: s.Memory.MemorySpeedMhz,
+		}
+	}
+
+	for _, d := range s.Disks {
+		data.Disks = append(data.Disks, service.DiskData{
+			Device:       d.Device,
+			MountPoint:   d.MountPoint,
+			FsType:       d.FsType,
+			Model:        d.Model,
+			Serial:       d.Serial,
+			DiskType:     d.DiskType,
+			Total:        d.TotalBytes,
+			HealthStatus: d.HealthStatus,
+		})
+	}
+
+	for _, n := range s.Networks {
+		data.Networks = append(data.Networks, service.NetData{
+			Interface:     n.Interface,
+			MacAddress:    n.MacAddress,
+			IpAddresses:   n.IpAddresses,
+			SpeedMbps:     n.SpeedMbps,
+			InterfaceType: n.InterfaceType,
+		})
+	}
+
+	for _, g := range s.Gpus {
+		data.GPUs = append(data.GPUs, service.GPUData{
+			Index:           int(g.Index),
+			Name:            g.Name,
+			Vendor:          g.Vendor,
+			MemoryTotal:     g.MemoryTotal,
+			DriverVersion:   g.DriverVersion,
+			PcieGeneration:  g.PcieGeneration,
+			PowerLimitWatts: int(g.PowerLimitWatts),
+		})
+	}
+
+	for _, n := range s.Npus {
+		data.NPUs = append(data.NPUs, service.NPUData{
+			Index:         int(n.Index),
+			Name:          n.Name,
+			Vendor:        n.Vendor,
+			MemoryTotal:   n.MemoryTotal,
+			DriverVersion: n.DriverVersion,
+		})
+	}
+
+	if s.SystemInfo != nil {
+		data.SystemInfo = &service.SystemInfo{
+			OsName:            s.SystemInfo.OsName,
+			OsVersion:         s.SystemInfo.OsVersion,
+			KernelVersion:     s.SystemInfo.KernelVersion,
+			Hostname:          s.SystemInfo.Hostname,
+			BootTime:          int64(s.SystemInfo.BootTime),
+			UptimeSeconds:     int64(s.SystemInfo.UptimeSeconds),
+			MotherboardModel:  s.SystemInfo.MotherboardModel,
+			MotherboardVendor: s.SystemInfo.MotherboardVendor,
+			BiosVersion:       s.SystemInfo.BiosVersion,
+			SystemModel:       s.SystemInfo.SystemModel,
+			SystemVendor:      s.SystemInfo.SystemVendor,
+		}
+	}
+
+	return data
+}
+
+// PeriodicData holds periodic data for merging
+type PeriodicData struct {
+	DiskUsage      []service.DiskData
+	UserSessions   []service.UserSession
+	NetworkUpdates []service.NetData
+}
+
+func convertPeriodicData(p *pb.PeriodicData) *PeriodicData {
+	if p == nil {
+		return nil
+	}
+
+	data := &PeriodicData{}
+
+	for _, d := range p.DiskUsage {
+		usagePercent := 0.0
+		if d.Total > 0 {
+			usagePercent = float64(d.Used) / float64(d.Total) * 100
+		}
+		data.DiskUsage = append(data.DiskUsage, service.DiskData{
+			Device:       d.Device,
+			MountPoint:   d.MountPoint,
+			Total:        d.Total,
+			Used:         d.Used,
+			Available:    d.Available,
+			UsagePercent: usagePercent,
+			Temperature:  d.Temperature,
+		})
+	}
+
+	for _, u := range p.UserSessions {
+		data.UserSessions = append(data.UserSessions, service.UserSession{
+			Username:    u.Username,
+			Tty:         u.Tty,
+			LoginTime:   int64(u.LoginTime),
+			RemoteHost:  u.RemoteHost,
+			IdleSeconds: int64(u.IdleSeconds),
+			SessionType: u.SessionType,
+		})
+	}
+
+	for _, n := range p.NetworkUpdates {
+		data.NetworkUpdates = append(data.NetworkUpdates, service.NetData{
+			Interface:   n.Interface,
+			IpAddresses: n.IpAddresses,
+			IsUp:        n.IsUp,
+		})
+	}
+
+	return data
 }
