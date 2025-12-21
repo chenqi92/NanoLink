@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/models.dart';
+import '../theme/app_theme.dart';
 
-/// Chip widget displaying server connection status
+/// Chip widget displaying a server connection status
 class ServerChip extends StatelessWidget {
   final ServerConnection server;
   final VoidCallback? onDelete;
@@ -14,63 +15,66 @@ class ServerChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isConnected = server.isConnected;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF374151),
+        color: theme.cardTheme.color,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: server.isConnected 
-              ? Colors.green.withValues(alpha: 0.5)
-              : Colors.grey.withValues(alpha: 0.3),
+          color: isConnected 
+              ? AppTheme.successGreen.withValues(alpha: 0.5)
+              : (theme.dividerTheme.color ?? Colors.grey),
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Connection status indicator
           Container(
             width: 8,
             height: 8,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: server.isConnected ? Colors.green : Colors.red,
+              color: isConnected ? AppTheme.successGreen : AppTheme.errorRed,
+              boxShadow: isConnected
+                  ? [
+                      BoxShadow(
+                        color: AppTheme.successGreen.withValues(alpha: 0.4),
+                        blurRadius: 6,
+                      ),
+                    ]
+                  : null,
             ),
           ),
           const SizedBox(width: 8),
+          
+          // Server name
           Text(
             server.name,
-            style: const TextStyle(fontSize: 13),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(width: 4),
-          Text(
-            '(${_extractHost(server.url)})',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.grey.shade500,
-            ),
-          ),
-          if (onDelete != null) ...[
-            const SizedBox(width: 8),
-            InkWell(
-              onTap: onDelete,
-              borderRadius: BorderRadius.circular(12),
-              child: const Padding(
-                padding: EdgeInsets.all(2),
-                child: Icon(Icons.close, size: 14, color: Colors.grey),
+          
+          // Delete button
+          if (onDelete != null)
+            IconButton(
+              icon: Icon(
+                Icons.close,
+                size: 16,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
               ),
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              padding: EdgeInsets.zero,
+              onPressed: onDelete,
+              tooltip: 'Remove server',
             ),
-          ],
         ],
       ),
     );
-  }
-
-  String _extractHost(String url) {
-    try {
-      final uri = Uri.parse(url);
-      return uri.host + (uri.port != 80 && uri.port != 443 ? ':${uri.port}' : '');
-    } catch (e) {
-      return url;
-    }
   }
 }

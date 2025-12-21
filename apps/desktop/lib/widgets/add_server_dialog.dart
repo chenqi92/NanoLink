@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
+import '../theme/app_theme.dart';
 
 /// Dialog for adding a new server connection
 class AddServerDialog extends StatefulWidget {
@@ -38,9 +39,7 @@ class _AddServerDialogState extends State<AddServerDialog> {
     final success = await provider.addServer(
       name: _nameController.text.trim(),
       url: _urlController.text.trim(),
-      token: _tokenController.text.trim().isNotEmpty
-          ? _tokenController.text.trim()
-          : null,
+      token: _tokenController.text.trim().isEmpty ? null : _tokenController.text.trim(),
     );
 
     if (!mounted) return;
@@ -50,83 +49,129 @@ class _AddServerDialogState extends State<AddServerDialog> {
     } else {
       setState(() {
         _isLoading = false;
-        _error = 'Failed to connect to server. Please check the URL and try again.';
+        _error = 'Failed to connect. Please check the URL and token.';
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return AlertDialog(
-      title: const Text('Add Server'),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryBlue.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.dns, color: AppTheme.primaryBlue, size: 20),
+          ),
+          const SizedBox(width: 12),
+          const Text('Add Server'),
+        ],
+      ),
       content: SizedBox(
         width: 400,
         child: Form(
           key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (_error != null)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: Colors.red, fontSize: 13),
-                        ),
-                      ),
-                    ],
-                  ),
+              // Name field
+              Text(
+                'Server Name',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
+              ),
+              const SizedBox(height: 6),
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                  labelText: 'Server Name',
-                  hintText: 'My Server',
+                  hintText: 'e.g., Production Server',
+                  prefixIcon: Icon(Icons.label_outline, size: 20),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return 'Please enter a server name';
+                    return 'Please enter a name';
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 16),
+
+              // URL field
+              Text(
+                'Server URL',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(height: 6),
               TextFormField(
                 controller: _urlController,
                 decoration: const InputDecoration(
-                  labelText: 'Server URL',
-                  hintText: 'http://localhost:8080',
+                  hintText: 'e.g., http://192.168.1.100:8080',
+                  prefixIcon: Icon(Icons.link, size: 20),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Please enter the server URL';
                   }
-                  if (!value.startsWith('http://') && !value.startsWith('https://')) {
-                    return 'URL must start with http:// or https://';
+                  final uri = Uri.tryParse(value.trim());
+                  if (uri == null || !uri.hasScheme) {
+                    return 'Please enter a valid URL (e.g., http://...)';
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 16),
+
+              // Token field
+              Text(
+                'Auth Token (optional)',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(height: 6),
               TextFormField(
                 controller: _tokenController,
                 decoration: const InputDecoration(
-                  labelText: 'JWT Token (optional)',
-                  hintText: 'Enter your authentication token',
+                  hintText: 'JWT token for authentication',
+                  prefixIcon: Icon(Icons.key_outlined, size: 20),
                 ),
                 obscureText: true,
               ),
+
+              // Error message
+              if (_error != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.errorRed.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: AppTheme.errorRed, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: TextStyle(color: AppTheme.errorRed, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -142,7 +187,7 @@ class _AddServerDialogState extends State<AddServerDialog> {
               ? const SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 )
               : const Text('Connect'),
         ),
