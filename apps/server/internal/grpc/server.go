@@ -170,6 +170,8 @@ func (s *Server) Authenticate(ctx context.Context, req *pb.AuthRequest) (*pb.Aut
 
 // StreamMetrics handles bidirectional streaming for metrics and commands
 func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) error {
+	s.logger.Info("StreamMetrics: New connection started")
+
 	// Generate agent ID for this connection
 	agentID := uuid.New().String()
 
@@ -179,25 +181,59 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		stream:      stream,
 		commandChan: make(chan *pb.Command, 10),
 	}
-
-	// Wait for first message to get agent info
-	firstMsg, err := stream.Recv()
-	if err != nil {
+	// Send immediate HeartbeatAck to prevent client-side timeout
+	// (Some clients have RPC timeout that kills the stream if no response is received)
+	initAck := &pb.MetricsStreamResponse{
+		Response: &pb.MetricsStreamResponse_HeartbeatAck{
+			HeartbeatAck: &pb.HeartbeatAck{
+				Timestamp: uint64(time.Now().UnixMilli()),
+			},
+		},
+	}
+	if err := stream.Send(initAck); err != nil {
+		s.logger.Errorf("StreamMetrics: Failed to send initial ack: %v", err)
 		return err
 	}
+	s.logger.Info("StreamMetrics: Sent initial heartbeat ack")
 
-	// Extract hostname from first metrics message
-	if metrics := firstMsg.GetMetrics(); metrics != nil {
-		agent.Hostname = metrics.Hostname
-		if metrics.SystemInfo != nil {
-			agent.OS = metrics.SystemInfo.OsName
+	// Wait for first message to get agent info
+	s.logger.Info("StreamMetrics: Waiting for first message...")
+	firstMsg, err := stream.Recv()
+	if err != nil {
+		s.logger.Errorf("StreamMetrics: Error receiving first message: %v", err)
+		return err
+	}
+	s.logger.Infof("StreamMetrics: Received first message type: %T", firstMsg.GetRequest())
+
+	// Extract agent info from first message (can be Metrics, StaticInfo, or Realtime)
+	switch req := firstMsg.GetRequest().(type) {
+	case *pb.MetricsStreamRequest_Metrics:
+		agent.Hostname = req.Metrics.Hostname
+		if req.Metrics.SystemInfo != nil {
+			agent.OS = req.Metrics.SystemInfo.OsName
 		}
+	case *pb.MetricsStreamRequest_StaticInfo:
+		if req.StaticInfo.SystemInfo != nil {
+			agent.Hostname = req.StaticInfo.SystemInfo.Hostname
+			agent.OS = req.StaticInfo.SystemInfo.OsName
+		}
+	case *pb.MetricsStreamRequest_Realtime:
+		// Realtime doesn't contain hostname, just continue
+		// Agent info will be filled in when we get a Metrics or StaticInfo message
 	}
 
-	// Register agent
+	// Register agent in gRPC server's internal map
 	s.agentsMu.Lock()
 	s.agents[agentID] = agent
 	s.agentsMu.Unlock()
+
+	// Also register to AgentService so it appears in dashboard API
+	s.agentService.RegisterGrpcAgent(agentID, service.AgentInfo{
+		Hostname: agent.Hostname,
+		OS:       agent.OS,
+		Arch:     agent.Arch,
+		Version:  agent.Version,
+	}, int(agent.PermissionLevel))
 
 	s.logger.Infof("gRPC agent connected: %s (%s)", agent.Hostname, agentID)
 
@@ -209,6 +245,9 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		s.agentsMu.Lock()
 		delete(s.agents, agentID)
 		s.agentsMu.Unlock()
+
+		// Unregister from AgentService
+		s.agentService.UnregisterAgent(agentID)
 
 		close(agent.commandChan)
 
@@ -258,6 +297,15 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 		// Update hostname if not set
 		if agent.Hostname == "" {
 			agent.Hostname = req.Metrics.Hostname
+			osName := ""
+			if req.Metrics.SystemInfo != nil {
+				osName = req.Metrics.SystemInfo.OsName
+			}
+			// Also update AgentService entry so dashboard shows correct info
+			s.agentService.UpdateAgent(agent.AgentID, service.AgentInfo{
+				Hostname: agent.Hostname,
+				OS:       osName,
+			})
 		}
 
 		// Forward to metrics service (convert proto to service format)
@@ -284,6 +332,12 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 				agent.Hostname = req.StaticInfo.SystemInfo.Hostname
 			}
 			agent.OS = req.StaticInfo.SystemInfo.OsName
+
+			// Also update AgentService entry so dashboard shows correct info
+			s.agentService.UpdateAgent(agent.AgentID, service.AgentInfo{
+				Hostname: agent.Hostname,
+				OS:       agent.OS,
+			})
 		}
 
 	case *pb.MetricsStreamRequest_Periodic:
@@ -312,8 +366,33 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 
 // ReportMetrics handles one-time metrics report
 func (s *Server) ReportMetrics(ctx context.Context, metrics *pb.Metrics) (*pb.MetricsAck, error) {
+	// Use hostname as agent ID for unary RPC
+	agentID := metrics.Hostname
+	if agentID == "" {
+		agentID = "unknown-" + uuid.New().String()[:8]
+	}
+
+	// Register/update agent in AgentService so it shows in dashboard
+	if existing := s.agentService.GetAgent(agentID); existing == nil {
+		// Register new agent
+		osName := ""
+		arch := ""
+		if metrics.SystemInfo != nil {
+			osName = metrics.SystemInfo.OsName
+		}
+		s.agentService.RegisterGrpcAgent(agentID, service.AgentInfo{
+			Hostname: metrics.Hostname,
+			OS:       osName,
+			Arch:     arch,
+		}, 3) // Default to system admin permission
+		s.logger.Infof("Agent registered via ReportMetrics: %s", metrics.Hostname)
+	} else {
+		// Update heartbeat for existing agent
+		s.agentService.UpdateHeartbeat(agentID)
+	}
+
 	// Record metrics
-	s.metricsService.StoreMetrics(metrics.Hostname, convertProtoMetrics(metrics))
+	s.metricsService.StoreMetrics(agentID, convertProtoMetrics(metrics))
 
 	return &pb.MetricsAck{
 		Success:   true,

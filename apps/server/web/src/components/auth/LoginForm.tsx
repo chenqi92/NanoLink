@@ -112,7 +112,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={t("auth.password")}
                   required
-                  minLength={6}
+                  minLength={4}
                   autoComplete={mode === "login" ? "current-password" : "new-password"}
                 />
               </div>

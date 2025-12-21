@@ -38,8 +38,9 @@ impl GrpcClient {
 
         let mut endpoint = Endpoint::from_shared(url.clone())
             .context("Invalid server URL")?
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(10))
+            // Note: Don't set .timeout() here - it kills streaming RPCs
+            // Use connect_timeout for connection establishment instead
+            .connect_timeout(Duration::from_secs(30))
             .tcp_keepalive(Some(Duration::from_secs(30)));
 
         // Configure TLS if enabled

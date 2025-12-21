@@ -67,6 +67,52 @@ func (s *AgentService) RegisterAgent(conn *websocket.Conn, info AgentInfo, permi
 	return agent
 }
 
+// RegisterGrpcAgent registers a gRPC agent (without WebSocket connection)
+func (s *AgentService) RegisterGrpcAgent(agentID string, info AgentInfo, permission int) *Agent {
+	agent := &Agent{
+		ID:              agentID,
+		Hostname:        info.Hostname,
+		OS:              info.OS,
+		Arch:            info.Arch,
+		Version:         info.Version,
+		PermissionLevel: permission,
+		ConnectedAt:     time.Now(),
+		LastHeartbeat:   time.Now(),
+		conn:            nil, // gRPC agents don't have WebSocket connection
+		send:            nil, // gRPC agents don't use this channel
+	}
+
+	s.mu.Lock()
+	s.agents[agentID] = agent
+	s.mu.Unlock()
+
+	s.logger.Infof("gRPC Agent registered: %s (%s) - %s/%s", agent.Hostname, agentID, agent.OS, agent.Arch)
+
+	return agent
+}
+
+// UpdateAgent updates an existing agent's info
+func (s *AgentService) UpdateAgent(agentID string, info AgentInfo) {
+	s.mu.Lock()
+	agent, exists := s.agents[agentID]
+	if exists {
+		if info.Hostname != "" {
+			agent.Hostname = info.Hostname
+		}
+		if info.OS != "" {
+			agent.OS = info.OS
+		}
+		if info.Arch != "" {
+			agent.Arch = info.Arch
+		}
+		if info.Version != "" {
+			agent.Version = info.Version
+		}
+		agent.LastHeartbeat = time.Now()
+	}
+	s.mu.Unlock()
+}
+
 // UnregisterAgent removes an agent
 func (s *AgentService) UnregisterAgent(agentID string) {
 	s.mu.Lock()
@@ -79,7 +125,9 @@ func (s *AgentService) UnregisterAgent(agentID string) {
 	if exists {
 		agent.mu.Lock()
 		agent.closed = true
-		close(agent.send)
+		if agent.send != nil {
+			close(agent.send)
+		}
 		agent.mu.Unlock()
 		s.logger.Infof("Agent unregistered: %s (%s)", agent.Hostname, agent.ID)
 	}

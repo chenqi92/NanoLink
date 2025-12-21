@@ -16,7 +16,7 @@ type View = "dashboard" | "users" | "groups" | "permissions" | "settings"
 
 function App() {
   const { t } = useTranslation()
-  const { user, isAuthenticated, loading: authLoading, logout } = useAuth()
+  const { user, isAuthenticated, loading: authLoading, logout, initAuth } = useAuth()
   const { agents, metrics, summary, loading: dataLoading, error } = useAgents()
   const { theme } = useTheme() // Initialize theme
   const [currentView, setCurrentView] = useState<View>("dashboard")
@@ -36,7 +36,7 @@ function App() {
 
   // Show login
   if (!isAuthenticated) {
-    return <LoginForm onSuccess={() => {}} />
+    return <LoginForm onSuccess={() => initAuth()} />
   }
 
   return (

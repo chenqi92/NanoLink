@@ -46,7 +46,7 @@ class ApiClient {
 
     if (response.status === 401) {
       this.setToken(null)
-      window.location.href = "/"
+      // Don't redirect - let the auth hooks handle this
       throw { error: "Authentication required", status: 401 } as ApiError
     }
 

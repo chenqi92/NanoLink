@@ -38,8 +38,40 @@ export function useWebSocket({
 }: UseWebSocketOptions) {
   const [status, setStatus] = useState<WebSocketStatus>('disconnected')
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
-  const pingIntervalRef = useRef<ReturnType<typeof setInterval>>()
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  
+  // Store callbacks in refs to avoid dependency changes
+  const onAgentsRef = useRef(onAgents)
+  const onMetricsRef = useRef(onMetrics)
+  const onAgentUpdateRef = useRef(onAgentUpdate)
+  const onAgentOfflineRef = useRef(onAgentOffline)
+  const onSummaryRef = useRef(onSummary)
+  
+  // Update refs when callbacks change
+  useEffect(() => {
+    onAgentsRef.current = onAgents
+    onMetricsRef.current = onMetrics
+    onAgentUpdateRef.current = onAgentUpdate
+    onAgentOfflineRef.current = onAgentOffline
+    onSummaryRef.current = onSummary
+  }, [onAgents, onMetrics, onAgentUpdate, onAgentOffline, onSummary])
+
+  const disconnect = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current)
+      pingIntervalRef.current = null
+    }
+    if (wsRef.current) {
+      wsRef.current.close(1000, 'User disconnect')
+      wsRef.current = null
+    }
+    setStatus('disconnected')
+  }, [])
 
   const connect = useCallback(() => {
     if (!token) {
@@ -59,6 +91,7 @@ export function useWebSocket({
     const host = window.location.host
     const wsUrl = `${protocol}//${host}/ws/dashboard?token=${encodeURIComponent(token)}`
 
+    console.log('[WS] Connecting to:', wsUrl)
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
@@ -80,43 +113,43 @@ export function useWebSocket({
 
         switch (msg.type) {
           case 'agents':
-            if (onAgents && Array.isArray(msg.data)) {
-              onAgents(msg.data as Agent[])
+            if (onAgentsRef.current && Array.isArray(msg.data)) {
+              onAgentsRef.current(msg.data as Agent[])
             }
             break
 
           case 'metrics':
-            if (onMetrics && typeof msg.data === 'object' && msg.data !== null) {
+            if (onMetricsRef.current && typeof msg.data === 'object' && msg.data !== null) {
               // Handle both full metrics update and single-agent update
               const data = msg.data as Record<string, unknown>
               if ('agentId' in data && 'metrics' in data) {
                 // Single agent metrics update
                 const agentId = data.agentId as string
                 const metrics = data.metrics as Metrics
-                onMetrics({ [agentId]: metrics })
+                onMetricsRef.current({ [agentId]: metrics })
               } else {
                 // Full metrics update
-                onMetrics(data as Record<string, Metrics>)
+                onMetricsRef.current(data as Record<string, Metrics>)
               }
             }
             break
 
           case 'agent_update':
-            if (onAgentUpdate && typeof msg.data === 'object' && msg.data !== null) {
+            if (onAgentUpdateRef.current && typeof msg.data === 'object' && msg.data !== null) {
               const agent = msg.data as Agent
-              onAgentUpdate(agent.id, agent)
+              onAgentUpdateRef.current(agent.id, agent)
             }
             break
 
           case 'agent_offline':
-            if (onAgentOffline && typeof msg.data === 'string') {
-              onAgentOffline(msg.data)
+            if (onAgentOfflineRef.current && typeof msg.data === 'string') {
+              onAgentOfflineRef.current(msg.data)
             }
             break
 
           case 'summary':
-            if (onSummary && typeof msg.data === 'object') {
-              onSummary(msg.data as Summary)
+            if (onSummaryRef.current && typeof msg.data === 'object') {
+              onSummaryRef.current(msg.data as Summary)
             }
             break
 
@@ -141,6 +174,7 @@ export function useWebSocket({
       // Clear ping interval
       if (pingIntervalRef.current) {
         clearInterval(pingIntervalRef.current)
+        pingIntervalRef.current = null
       }
 
       // Attempt to reconnect if not intentionally closed
@@ -151,21 +185,7 @@ export function useWebSocket({
         }, reconnectInterval)
       }
     }
-  }, [token, onAgents, onMetrics, onAgentUpdate, onAgentOffline, onSummary, reconnectInterval])
-
-  const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-    }
-    if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current)
-    }
-    if (wsRef.current) {
-      wsRef.current.close(1000, 'User disconnect')
-      wsRef.current = null
-    }
-    setStatus('disconnected')
-  }, [])
+  }, [token, reconnectInterval]) // Only depend on token and reconnectInterval
 
   // Connect when token changes
   useEffect(() => {
@@ -178,7 +198,7 @@ export function useWebSocket({
     return () => {
       disconnect()
     }
-  }, [token, connect, disconnect])
+  }, [token]) // Only depend on token, not connect/disconnect
 
   return {
     status,
