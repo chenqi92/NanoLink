@@ -43,6 +43,9 @@ func main() {
 		cfg = config.Default()
 	}
 
+	// Perform security validations
+	cfg.ValidateAndSecure()
+
 	// Initialize database
 	dbCfg := database.Config{
 		Type:     cfg.Database.Type,

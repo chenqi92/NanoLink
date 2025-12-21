@@ -1,6 +1,8 @@
 use std::process::Command;
+use tracing::info;
 
 use crate::proto::CommandResult;
+use crate::security::validation::validate_service_name;
 
 /// Service management executor
 pub struct ServiceExecutor;
@@ -9,6 +11,19 @@ impl ServiceExecutor {
     /// Create a new service executor
     pub fn new() -> Self {
         Self
+    }
+
+    /// Helper to create an error CommandResult
+    fn error_result(error: String) -> CommandResult {
+        CommandResult {
+            command_id: String::new(),
+            success: false,
+            output: String::new(),
+            error,
+            file_content: vec![],
+            processes: vec![],
+            containers: vec![],
+        }
     }
 
     /// Start a service
@@ -41,6 +56,12 @@ impl ServiceExecutor {
         service_name: &str,
         action: ServiceAction,
     ) -> CommandResult {
+        // Validate service name to prevent command injection
+        if let Err(e) = validate_service_name(service_name) {
+            return Self::error_result(e);
+        }
+
+        info!("[AUDIT] Service {:?}: {}", action, service_name);
         #[cfg(target_os = "linux")]
         {
             self.execute_systemctl(service_name, action)
@@ -201,6 +222,7 @@ impl Default for ServiceExecutor {
 }
 
 /// Service action types
+#[derive(Debug)]
 enum ServiceAction {
     Start,
     Stop,

@@ -30,6 +30,10 @@ pub struct Config {
     /// Management API settings
     #[serde(default)]
     pub management: ManagementConfig,
+
+    /// Security settings
+    #[serde(default)]
+    pub security: SecurityConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -324,6 +328,54 @@ impl Default for LoggingConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityConfig {
+    /// Allowed paths for file operations (empty = all paths allowed)
+    /// Paths are checked after canonicalization
+    #[serde(default)]
+    pub allowed_paths: Vec<String>,
+
+    /// Denied paths (always blocked, checked before allowed_paths)
+    /// Default includes sensitive system directories
+    #[serde(default = "default_denied_paths")]
+    pub denied_paths: Vec<String>,
+
+    /// Enable path traversal protection (detect and block '..' in paths)
+    #[serde(default = "default_true")]
+    pub path_traversal_protection: bool,
+
+    /// Maximum file size for download/upload operations (in bytes)
+    #[serde(default = "default_max_file_size")]
+    pub max_file_size: u64,
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            allowed_paths: Vec::new(),
+            denied_paths: default_denied_paths(),
+            path_traversal_protection: true,
+            max_file_size: default_max_file_size(),
+        }
+    }
+}
+
+fn default_denied_paths() -> Vec<String> {
+    vec![
+        "/etc/shadow".to_string(),
+        "/etc/passwd".to_string(),
+        "/etc/sudoers".to_string(),
+        "/root/.ssh".to_string(),
+        "/home/*/.ssh".to_string(),
+        "/etc/ssh".to_string(),
+        "C:\\Windows\\System32\\config".to_string(),
+    ]
+}
+
+fn default_max_file_size() -> u64 {
+    50 * 1024 * 1024 // 50MB
+}
+
 // Default value functions
 fn default_heartbeat_interval() -> u64 {
     30
@@ -452,6 +504,7 @@ impl Config {
             },
             logging: LoggingConfig::default(),
             management: ManagementConfig::default(),
+            security: SecurityConfig::default(),
         }
     }
 

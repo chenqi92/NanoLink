@@ -1,6 +1,11 @@
 package config
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
+	"log"
+
 	"github.com/spf13/viper"
 )
 
@@ -176,14 +181,37 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+// ValidateAndSecure performs security validations and auto-generates missing secrets
+func (c *Config) ValidateAndSecure() {
+	// Auto-generate JWT secret if not set
+	if c.JWT.Secret == "" {
+		secret := make([]byte, 32)
+		if _, err := rand.Read(secret); err != nil {
+			log.Fatalf("Failed to generate JWT secret: %v", err)
+		}
+		c.JWT.Secret = hex.EncodeToString(secret)
+		log.Println("[SECURITY WARNING] JWT secret auto-generated. Set NANOLINK_JWT_SECRET for production.")
+	}
+
+	// Warn if auth is disabled
+	if !c.Auth.Enabled {
+		log.Println("[SECURITY WARNING] Authentication is DISABLED. All agents have full access (permission level 3).")
+		log.Println("[SECURITY WARNING] Set 'auth.enabled: true' in config for production use.")
+	}
+}
+
 // ValidateToken validates a token and returns permission level
+// Uses timing-safe comparison to prevent timing attacks
 func (c *Config) ValidateToken(token string) (bool, int) {
 	if !c.Auth.Enabled {
+		log.Println("[SECURITY] Auth disabled, granting full access")
 		return true, 3 // Full access when auth disabled
 	}
 
+	tokenBytes := []byte(token)
 	for _, t := range c.Auth.Tokens {
-		if t.Token == token {
+		// Use constant-time comparison to prevent timing attacks
+		if subtle.ConstantTimeCompare([]byte(t.Token), tokenBytes) == 1 {
 			return true, t.Permission
 		}
 	}

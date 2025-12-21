@@ -1,6 +1,8 @@
 use std::process::Command;
+use tracing::info;
 
 use crate::proto::{CommandResult, ContainerInfo};
+use crate::security::validation::validate_container_name;
 
 /// Docker operations executor
 pub struct DockerExecutor;
@@ -19,6 +21,20 @@ impl DockerExecutor {
             Err(e) => Err(format!("Docker not available: {}", e)),
         }
     }
+
+    /// Helper to create an error CommandResult
+    fn error_result(error: String) -> CommandResult {
+        CommandResult {
+            command_id: String::new(),
+            success: false,
+            output: String::new(),
+            error,
+            file_content: vec![],
+            processes: vec![],
+            containers: vec![],
+        }
+    }
+
 
     /// List all containers
     pub async fn list_containers(&self) -> CommandResult {
@@ -110,17 +126,16 @@ impl DockerExecutor {
 
     /// Get container logs
     pub async fn container_logs(&self, container: &str, lines: usize) -> CommandResult {
-        if let Err(e) = self.check_docker() {
-            return CommandResult {
-                command_id: String::new(),
-                success: false,
-                output: String::new(),
-                error: e,
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-            };
+        // Validate container name/ID
+        if let Err(e) = validate_container_name(container) {
+            return Self::error_result(e);
         }
+
+        if let Err(e) = self.check_docker() {
+            return Self::error_result(e);
+        }
+
+        info!("[AUDIT] DockerLogs: {} (last {} lines)", container, lines);
 
         match Command::new("docker")
             .args(["logs", "--tail", &lines.to_string(), container])
@@ -162,17 +177,16 @@ impl DockerExecutor {
 
     /// Execute a docker command
     async fn execute_docker_command(&self, action: &str, container: &str) -> CommandResult {
-        if let Err(e) = self.check_docker() {
-            return CommandResult {
-                command_id: String::new(),
-                success: false,
-                output: String::new(),
-                error: e,
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-            };
+        // Validate container name/ID
+        if let Err(e) = validate_container_name(container) {
+            return Self::error_result(e);
         }
+
+        if let Err(e) = self.check_docker() {
+            return Self::error_result(e);
+        }
+
+        info!("[AUDIT] Docker {}: {}", action, container);
 
         match Command::new("docker").args([action, container]).output() {
             Ok(output) => CommandResult {

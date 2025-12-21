@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use sysinfo::System;
+use tracing::info;
 
 use crate::proto::{CommandResult, ProcessInfo};
+use crate::security::validation::{validate_pid_killable, validate_process_name};
 
 /// Process management executor
 pub struct ProcessExecutor {
@@ -56,11 +58,35 @@ impl ProcessExecutor {
 
         // Try to parse as PID first
         if let Ok(pid) = target.parse::<u32>() {
+            // Validate PID is not a protected system process
+            if let Err(e) = validate_pid_killable(pid) {
+                return Self::error_result(e);
+            }
+            info!("[AUDIT] ProcessKill: PID {} (signal: {})", pid, signal);
             return self.kill_by_pid(pid, signal).await;
         }
 
+        // Validate process name
+        if let Err(e) = validate_process_name(target) {
+            return Self::error_result(e);
+        }
+
+        info!("[AUDIT] ProcessKill: name '{}' (signal: {})", target, signal);
         // Otherwise kill by name
         self.kill_by_name(target, signal).await
+    }
+
+    /// Helper to create an error CommandResult
+    fn error_result(error: String) -> CommandResult {
+        CommandResult {
+            command_id: String::new(),
+            success: false,
+            output: String::new(),
+            error,
+            file_content: vec![],
+            processes: vec![],
+            containers: vec![],
+        }
     }
 
     /// Kill process by PID

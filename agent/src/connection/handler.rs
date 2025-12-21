@@ -32,7 +32,7 @@ impl MessageHandler {
             permission_checker: PermissionChecker::new(config.clone()),
             process_executor: ProcessExecutor::new(),
             service_executor: ServiceExecutor::new(),
-            file_executor: FileExecutor::new(),
+            file_executor: FileExecutor::new(config.clone()),
             docker_executor: DockerExecutor::new(),
             shell_executor: ShellExecutor::new(config),
         }
