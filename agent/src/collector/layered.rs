@@ -139,8 +139,7 @@ impl LayeredCollector {
         tx: mpsc::Sender<LayeredMetricsMessage>,
         mut request_rx: mpsc::Receiver<DataRequest>,
     ) {
-        let realtime_interval =
-            Duration::from_millis(self.config.collector.realtime_interval_ms);
+        let realtime_interval = Duration::from_millis(self.config.collector.realtime_interval_ms);
         let mut ticker = time::interval(realtime_interval);
 
         info!(
@@ -153,7 +152,11 @@ impl LayeredCollector {
         // Send initial static info and full metrics
         if self.config.collector.send_initial_full {
             if let Ok(static_info) = self.collect_static_info() {
-                if tx.send(LayeredMetricsMessage::Static(static_info)).await.is_err() {
+                if tx
+                    .send(LayeredMetricsMessage::Static(static_info))
+                    .await
+                    .is_err()
+                {
                     error!("Failed to send initial static info");
                     return;
                 }
@@ -161,7 +164,11 @@ impl LayeredCollector {
 
             // Also send initial full metrics
             if let Ok(full_metrics) = self.collect_full_metrics(true) {
-                if tx.send(LayeredMetricsMessage::Full(full_metrics)).await.is_err() {
+                if tx
+                    .send(LayeredMetricsMessage::Full(full_metrics))
+                    .await
+                    .is_err()
+                {
                     error!("Failed to send initial full metrics");
                     return;
                 }
@@ -207,7 +214,9 @@ impl LayeredCollector {
             .as_millis() as u64;
 
         // CPU static info
-        let cpu_info = self.cpu_collector.collect(&self.system, &self.config.collector);
+        let cpu_info = self
+            .cpu_collector
+            .collect(&self.system, &self.config.collector);
         let cpu_static = CpuStaticInfo {
             model: cpu_info.model,
             vendor: cpu_info.vendor,
@@ -231,7 +240,9 @@ impl LayeredCollector {
         };
 
         // Disk static info
-        let disk_metrics = self.disk_collector.collect(&self.disks, &self.config.collector);
+        let disk_metrics = self
+            .disk_collector
+            .collect(&self.disks, &self.config.collector);
         let disks_static: Vec<DiskStaticInfo> = disk_metrics
             .into_iter()
             .map(|d| DiskStaticInfo {
@@ -247,7 +258,9 @@ impl LayeredCollector {
             .collect();
 
         // Network static info
-        let net_metrics = self.network_collector.collect(&self.networks, &self.config.collector);
+        let net_metrics = self
+            .network_collector
+            .collect(&self.networks, &self.config.collector);
         let networks_static: Vec<NetworkStaticInfo> = net_metrics
             .into_iter()
             .map(|n| {
@@ -331,13 +344,17 @@ impl LayeredCollector {
             .as_millis() as u64;
 
         // CPU realtime
-        let cpu = self.cpu_collector.collect(&self.system, &self.config.collector);
+        let cpu = self
+            .cpu_collector
+            .collect(&self.system, &self.config.collector);
 
         // Memory realtime
         let mem = self.memory_collector.collect(&self.system);
 
         // Disk IO (not usage)
-        let disk_metrics = self.disk_collector.collect(&self.disks, &self.config.collector);
+        let disk_metrics = self
+            .disk_collector
+            .collect(&self.disks, &self.config.collector);
         let disk_io: Vec<DiskIo> = disk_metrics
             .into_iter()
             .map(|d| DiskIo {
@@ -350,7 +367,9 @@ impl LayeredCollector {
             .collect();
 
         // Network IO (not addresses)
-        let net_metrics = self.network_collector.collect(&self.networks, &self.config.collector);
+        let net_metrics = self
+            .network_collector
+            .collect(&self.networks, &self.config.collector);
         let network_io: Vec<NetworkIo> = net_metrics
             .into_iter()
             .map(|n| NetworkIo {
@@ -429,7 +448,9 @@ impl LayeredCollector {
             self.last_periodic_disk = now;
             self.disks.refresh();
 
-            let disk_metrics = self.disk_collector.collect(&self.disks, &self.config.collector);
+            let disk_metrics = self
+                .disk_collector
+                .collect(&self.disks, &self.config.collector);
             periodic.disk_usage = disk_metrics
                 .into_iter()
                 .map(|d| DiskUsage {
@@ -442,7 +463,10 @@ impl LayeredCollector {
                 })
                 .collect();
             has_data = true;
-            debug!("Collected periodic disk usage: {} disks", periodic.disk_usage.len());
+            debug!(
+                "Collected periodic disk usage: {} disks",
+                periodic.disk_usage.len()
+            );
         }
 
         // Check session interval
@@ -463,7 +487,10 @@ impl LayeredCollector {
                 })
                 .collect();
             has_data = true;
-            debug!("Collected periodic user sessions: {} sessions", periodic.user_sessions.len());
+            debug!(
+                "Collected periodic user sessions: {} sessions",
+                periodic.user_sessions.len()
+            );
         }
 
         // Check IP address changes
@@ -472,11 +499,14 @@ impl LayeredCollector {
             self.last_periodic_ip_check = now;
             self.networks.refresh();
 
-            let net_metrics = self.network_collector.collect(&self.networks, &self.config.collector);
+            let net_metrics = self
+                .network_collector
+                .collect(&self.networks, &self.config.collector);
 
             // Check for IP changes
             for net in &net_metrics {
-                let cached = self.cached_ip_addresses
+                let cached = self
+                    .cached_ip_addresses
                     .iter()
                     .find(|(iface, _)| iface == &net.interface);
 
@@ -501,7 +531,10 @@ impl LayeredCollector {
                     .map(|n| (n.interface.clone(), n.ip_addresses.clone()))
                     .collect();
                 has_data = true;
-                debug!("Detected IP changes on {} interfaces", periodic.network_updates.len());
+                debug!(
+                    "Detected IP changes on {} interfaces",
+                    periodic.network_updates.len()
+                );
             }
         }
 
@@ -517,7 +550,10 @@ impl LayeredCollector {
     }
 
     /// Collect full metrics (all data)
-    pub fn collect_full_metrics(&mut self, is_initial: bool) -> anyhow::Result<crate::proto::Metrics> {
+    pub fn collect_full_metrics(
+        &mut self,
+        is_initial: bool,
+    ) -> anyhow::Result<crate::proto::Metrics> {
         self.system.refresh_all();
         self.disks.refresh();
         self.networks.refresh();
@@ -527,10 +563,16 @@ impl LayeredCollector {
             .as_millis() as u64;
 
         // Collect all metrics
-        let cpu = self.cpu_collector.collect(&self.system, &self.config.collector);
+        let cpu = self
+            .cpu_collector
+            .collect(&self.system, &self.config.collector);
         let memory = self.memory_collector.collect(&self.system);
-        let disks = self.disk_collector.collect(&self.disks, &self.config.collector);
-        let networks = self.network_collector.collect(&self.networks, &self.config.collector);
+        let disks = self
+            .disk_collector
+            .collect(&self.disks, &self.config.collector);
+        let networks = self
+            .network_collector
+            .collect(&self.networks, &self.config.collector);
         let gpu_metrics = self.gpu_collector.collect();
         let npu_metrics = self.npu_collector.collect();
         let sessions = self.session_collector.collect();
@@ -621,7 +663,9 @@ impl LayeredCollector {
             }
             DataRequest::DiskUsage => {
                 self.disks.refresh();
-                let disk_metrics = self.disk_collector.collect(&self.disks, &self.config.collector);
+                let disk_metrics = self
+                    .disk_collector
+                    .collect(&self.disks, &self.config.collector);
                 let disk_usage: Vec<DiskUsage> = disk_metrics
                     .into_iter()
                     .map(|d| DiskUsage {
