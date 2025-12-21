@@ -24,18 +24,33 @@ servers:
 
 # Metrics collection settings
 collector:
-  cpu_interval_ms: 1000       # CPU/Memory collection interval
-  disk_interval_ms: 3000      # Disk I/O collection interval
-  network_interval_ms: 1000   # Network collection interval
-  process_interval_ms: 5000   # Process list interval
-  disk_space_interval_ms: 30000
+  # Realtime metrics interval (CPU/Memory/IO) in milliseconds
+  # Default: 5000 (5 seconds) - balance between responsiveness and resource usage
+  realtime_interval_ms: 5000
+  
+  # Disk space usage interval in milliseconds
+  disk_usage_interval_ms: 30000   # 30 seconds
+  
+  # User sessions check interval
+  session_interval_ms: 60000      # 1 minute
+  
+  # IP address check interval  
+  ip_check_interval_ms: 60000     # 1 minute
+  
+  # S.M.A.R.T health check interval
+  health_check_interval_ms: 300000  # 5 minutes
+  
+  # Feature flags
   enable_disk_io: true
   enable_network: true
   enable_per_core_cpu: true
+  enable_layered_metrics: true   # Separate realtime/periodic/static data
 
-# Ring buffer settings
+# Ring buffer settings (for offline data caching)
 buffer:
-  capacity: 600  # Cache 10 minutes of data at 1-second interval
+  # Number of metrics to cache when disconnected
+  # At 5-second interval: 720 = 1 hour of data
+  capacity: 720
 
 # Shell command execution (DANGEROUS - disabled by default)
 shell:

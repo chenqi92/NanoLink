@@ -233,7 +233,7 @@ impl Default for CollectorConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BufferConfig {
     /// Ring buffer capacity (number of metrics to cache)
-    /// Default: 600 (10 minutes at 1 second interval)
+    /// Default: 720 (1 hour at 5-second interval)
     #[serde(default = "default_buffer_capacity")]
     pub capacity: usize,
 }
@@ -350,7 +350,7 @@ fn default_disk_space_interval() -> u64 {
     30000
 }
 fn default_realtime_interval() -> u64 {
-    1000 // 1 second for realtime metrics
+    5000 // 5 seconds for realtime metrics (balance between responsiveness and resource usage)
 }
 fn default_disk_usage_interval() -> u64 {
     30000 // 30 seconds for disk usage
@@ -365,7 +365,7 @@ fn default_health_check_interval() -> u64 {
     300000 // 5 minutes for S.M.A.R.T health
 }
 fn default_buffer_capacity() -> usize {
-    600
+    720 // 1 hour at 5-second interval
 }
 fn default_shell_timeout() -> u64 {
     30
