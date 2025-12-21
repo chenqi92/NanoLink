@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { useMetricsHistory } from '@/hooks/useMetricsHistory'
 import { AgentCard } from '@/components/cards/AgentCard'
 import { OverviewPanel } from '@/components/cards/OverviewPanel'
 import { Badge } from '@/components/ui/badge'
@@ -6,9 +8,26 @@ import { Cpu, Server } from 'lucide-react'
 
 export default function App() {
   const { agents, selectedAgentId, selectAgent, connected } = useWebSocket()
+  const { addMetricsPoint, getHistory } = useMetricsHistory()
   
   const agentList = Object.values(agents)
   const currentAgent = selectedAgentId ? agents[selectedAgentId] : null
+
+  // Track metrics history for all agents
+  useEffect(() => {
+    agentList.forEach(agent => {
+      if (agent.lastMetrics) {
+        addMetricsPoint(agent.agentId, {
+          cpu: agent.lastMetrics.cpu,
+          memory: agent.lastMetrics.memory,
+          networks: agent.lastMetrics.networks,
+          timestamp: agent.lastMetrics.timestamp,
+        })
+      }
+    })
+  }, [agentList, addMetricsPoint])
+
+  const metricsHistory = selectedAgentId ? getHistory(selectedAgentId) : []
 
   return (
     <div className="min-h-screen bg-background">
@@ -66,7 +85,7 @@ export default function App() {
                 <h2 className="text-lg font-semibold mb-4">
                   {currentAgent.hostname} — Real-time Metrics
                 </h2>
-                <OverviewPanel agent={currentAgent} />
+                <OverviewPanel agent={currentAgent} metricsHistory={metricsHistory} />
               </div>
             )}
           </>

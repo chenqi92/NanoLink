@@ -21,7 +21,7 @@ const (
 
 // Server configuration
 type Config struct {
-	WsPort          int // WebSocket port for dashboard (default: 9100)
+	WsPort          int // WebSocket/HTTP port for agent connections and API (default: 9100)
 	GrpcPort        int // gRPC port for agents (default: 39100)
 	TLSCert         string
 	TLSKey          string
@@ -124,7 +124,7 @@ func (s *Server) OnPeriodicData(callback func(*PeriodicData)) {
 	s.onPeriodicData = callback
 }
 
-// Start starts the server (WebSocket + gRPC)
+// Start starts the server (WebSocket for agents + gRPC for agents + HTTP API)
 func (s *Server) Start() error {
 	// Start gRPC server for agent connections
 	if err := s.startGRPC(); err != nil {
@@ -133,7 +133,7 @@ func (s *Server) Start() error {
 
 	mux := http.NewServeMux()
 
-	// WebSocket endpoint
+	// WebSocket endpoint for agent connections (protobuf protocol)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 
 	// API endpoints
@@ -154,7 +154,7 @@ func (s *Server) Start() error {
 		Handler: mux,
 	}
 
-	log.Printf("NanoLink Server started on port %d (WebSocket for Dashboard)", s.config.WsPort)
+	log.Printf("NanoLink Server started on port %d (WebSocket for Agent + HTTP API)", s.config.WsPort)
 	if s.config.StaticFilesPath != "" {
 		log.Printf("Dashboard available at http://localhost:%d/", s.config.WsPort)
 	}
@@ -348,15 +348,23 @@ func (s *Server) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 // handleInfoPage serves a simple info page when no static files are configured
 func (s *Server) handleInfoPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(`<!DOCTYPE html>
+	fmt.Fprintf(w, `<!DOCTYPE html>
 <html>
 <head><title>NanoLink Server</title></head>
 <body style="font-family:sans-serif;padding:40px;background:#0f172a;color:#e2e8f0">
 <h1>NanoLink Server</h1>
-<p>The server is running. WebSocket endpoint: <code>/ws</code></p>
-<p>To use a dashboard, configure StaticFilesPath or use the demo projects.</p>
-<p><a href="/api/health" style="color:#3b82f6">Health Check API</a></p>
-<p><a href="/api/agents" style="color:#3b82f6">Connected Agents API</a></p>
+<p>The server is running.</p>
+<p><b>Agent Endpoints:</b></p>
+<ul>
+<li>WebSocket: <code>/ws</code> (protobuf protocol for agent connections)</li>
+<li>gRPC: port %d</li>
+</ul>
+<p><b>API Endpoints:</b></p>
+<ul>
+<li><a href="/api/health" style="color:#3b82f6">Health Check</a></li>
+<li><a href="/api/agents" style="color:#3b82f6">Connected Agents</a></li>
+</ul>
+<p><i>For dashboard, use the demo projects or implement your own frontend.</i></p>
 </body>
-</html>`))
+</html>`, s.config.GrpcPort)
 }

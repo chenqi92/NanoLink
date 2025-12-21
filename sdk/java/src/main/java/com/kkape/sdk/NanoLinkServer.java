@@ -34,16 +34,20 @@ import java.util.function.Consumer;
  * interface.
  * 
  * <p>
- * Note: Dashboard functionality has been removed from the SDK.
- * Use the dashboard from the demo projects or implement your own frontend.
+ * Note: Dashboard functionality should be implemented separately (e.g., in
+ * Spring Boot).
+ * The SDK provides callbacks and API endpoints for integration.
  * </p>
  * 
  * <p>
  * Architecture:
  * </p>
  * <ul>
- * <li>Agent connections: gRPC (port 39100 by default)</li>
- * <li>Dashboard connections: WebSocket (port 9100 by default)</li>
+ * <li>Agent connections via gRPC (port 39100 by default) - recommended</li>
+ * <li>Agent connections via WebSocket (port 9100 by default) - alternative
+ * protocol</li>
+ * <li>HTTP API endpoints (/api/agents, /api/health) for querying agent
+ * state</li>
  * </ul>
  */
 public class NanoLinkServer {
@@ -120,7 +124,7 @@ public class NanoLinkServer {
                 .childOption(ChannelOption.SO_KEEPALIVE, true);
 
         serverChannel = bootstrap.bind(config.getWsPort()).sync().channel();
-        log.info("NanoLink Server started on port {} (WebSocket for Dashboard)", config.getWsPort());
+        log.info("NanoLink Server started on port {} (WebSocket for Agent connections + HTTP API)", config.getWsPort());
 
         // Start gRPC server for agent connections with keepalive settings
         grpcServer = ServerBuilder.forPort(config.getGrpcPort())
@@ -339,7 +343,13 @@ public class NanoLinkServer {
         private String staticFilesPath;
 
         /**
-         * Set the WebSocket port for dashboard connections (default: 9100)
+         * Set the WebSocket/HTTP port for agent connections and API (default: 9100)
+         * <p>
+         * This port serves:
+         * <ul>
+         * <li>WebSocket endpoint (/ws) for agent connections using protobuf</li>
+         * <li>HTTP API endpoints (/api/agents, /api/health)</li>
+         * </ul>
          */
         public Builder wsPort(int port) {
             config.setWsPort(port);

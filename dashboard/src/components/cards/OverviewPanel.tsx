@@ -3,6 +3,7 @@ import { Progress } from '@/components/ui/progress'
 import { cn, formatBytes, formatPercentage, formatUptime } from '@/lib/utils'
 import type { Agent } from '@/types/metrics'
 import { Cpu, MemoryStick, HardDrive, Network, Thermometer, Activity } from 'lucide-react'
+import { CpuMemoryChart, NetworkChart } from '@/components/charts/RealtimeCharts'
 
 interface MetricCardProps {
   title: string
@@ -37,11 +38,20 @@ function MetricCard({ title, icon, value, subValue, progress, progressColor, chi
   )
 }
 
-interface OverviewPanelProps {
-  agent: Agent
+interface MetricsHistoryPoint {
+  timestamp: number
+  cpuUsage: number
+  memoryUsage: number
+  networkRx: number
+  networkTx: number
 }
 
-export function OverviewPanel({ agent }: OverviewPanelProps) {
+interface OverviewPanelProps {
+  agent: Agent
+  metricsHistory?: MetricsHistoryPoint[]
+}
+
+export function OverviewPanel({ agent, metricsHistory = [] }: OverviewPanelProps) {
   const metrics = agent.lastMetrics
   if (!metrics) {
     return (
@@ -59,6 +69,14 @@ export function OverviewPanel({ agent }: OverviewPanelProps) {
 
   return (
     <div className="space-y-6">
+      {/* Real-time Charts */}
+      {metricsHistory.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <CpuMemoryChart data={metricsHistory} />
+          <NetworkChart data={metricsHistory} />
+        </div>
+      )}
+
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard

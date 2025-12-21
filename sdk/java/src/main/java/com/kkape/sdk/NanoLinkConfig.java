@@ -7,7 +7,7 @@ public class NanoLinkConfig {
     /** Default gRPC port for agent connections */
     public static final int DEFAULT_GRPC_PORT = 39100;
 
-    /** Default WebSocket port for dashboard connections */
+    /** Default WebSocket/HTTP port for agent connections and API */
     public static final int DEFAULT_WS_PORT = 9100;
 
     private int grpcPort = DEFAULT_GRPC_PORT;

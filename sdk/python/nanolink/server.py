@@ -50,12 +50,14 @@ class ServerConfig:
     Server configuration
     
     Attributes:
-        ws_port: WebSocket port for dashboard connections (default: 9100)
+        ws_port: WebSocket/HTTP port for agent connections and API (default: 9100)
+                 - WebSocket endpoint /ws for agent connections (protobuf)
+                 - HTTP API endpoints (/api/agents, /api/health)
         grpc_port: gRPC port for agent connections (default: 39100)
         host: Host to bind to
         tls_cert_path: Path to TLS certificate
         tls_key_path: Path to TLS key
-        static_files_path: Optional path to dashboard static files
+        static_files_path: Optional path to static files
         token_validator: Token validation function
     """
     ws_port: int = DEFAULT_WS_PORT
@@ -149,7 +151,7 @@ class NanoLinkServer:
         return None
 
     async def start(self) -> None:
-        """Start the server (WebSocket + gRPC)"""
+        """Start the server (WebSocket for agents + gRPC for agents + HTTP API)"""
         # Setup SSL if configured
         ssl_context = None
         if self.config.tls_cert_path and self.config.tls_key_path:
@@ -160,7 +162,7 @@ class NanoLinkServer:
             )
             logger.info("TLS enabled")
 
-        # Start WebSocket server for dashboard connections
+        # Start WebSocket server for agent connections (protobuf protocol)
         self._websocket_server = await serve(
             self._handle_websocket,
             self.config.host,
@@ -168,7 +170,7 @@ class NanoLinkServer:
             ssl=ssl_context,
         )
 
-        logger.info(f"NanoLink Server started on port {self.config.ws_port} (WebSocket for Dashboard)")
+        logger.info(f"NanoLink Server started on port {self.config.ws_port} (WebSocket for Agent + HTTP API)")
 
         # Start gRPC server for agent connections
         if GRPC_AVAILABLE:
@@ -294,7 +296,7 @@ class NanoLinkServer:
 
 
     async def _handle_websocket(self, websocket: WebSocketServerProtocol) -> None:
-        """Handle incoming WebSocket connection"""
+        """Handle incoming WebSocket connection from agent"""
         agent: Optional[AgentConnection] = None
 
         try:
@@ -454,8 +456,8 @@ async def create_server(
     Create and start a NanoLink server with simple configuration
 
     Args:
-        ws_port: WebSocket server port for dashboard (default: 9100)
-        grpc_port: gRPC port for agents (default: 39100)
+        ws_port: WebSocket/HTTP port for agent connections and API (default: 9100)
+        grpc_port: gRPC port for agent connections (default: 39100)
         on_metrics: Callback for full metrics
         on_realtime_metrics: Callback for realtime metrics (CPU, memory usage)
         on_static_info: Callback for static hardware info
