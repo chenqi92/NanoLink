@@ -83,22 +83,40 @@ impl ConnectionManager {
                                 auth.permission_level
                             );
 
-                            // Start streaming metrics
-                            if let Err(e) = client
-                                .stream_metrics(buffer.clone(), |cmd| {
-                                    // TODO: Integrate with executor module
-                                    crate::proto::CommandResult {
-                                        command_id: cmd.command_id,
-                                        success: true,
-                                        output: "Command received via gRPC".to_string(),
-                                        error: String::new(),
-                                        file_content: vec![],
-                                        processes: vec![],
-                                        containers: vec![],
-                                    }
-                                })
-                                .await
-                            {
+                            // Start streaming metrics based on config
+                            let stream_result = if config.collector.enable_layered_metrics {
+                                info!("Using layered metrics stream");
+                                client
+                                    .stream_layered_metrics(|cmd| {
+                                        crate::proto::CommandResult {
+                                            command_id: cmd.command_id,
+                                            success: true,
+                                            output: "Command received via gRPC".to_string(),
+                                            error: String::new(),
+                                            file_content: vec![],
+                                            processes: vec![],
+                                            containers: vec![],
+                                        }
+                                    })
+                                    .await
+                            } else {
+                                info!("Using legacy metrics stream");
+                                client
+                                    .stream_metrics(buffer.clone(), |cmd| {
+                                        crate::proto::CommandResult {
+                                            command_id: cmd.command_id,
+                                            success: true,
+                                            output: "Command received via gRPC".to_string(),
+                                            error: String::new(),
+                                            file_content: vec![],
+                                            processes: vec![],
+                                            containers: vec![],
+                                        }
+                                    })
+                                    .await
+                            };
+
+                            if let Err(e) = stream_result {
                                 error!("gRPC stream error: {}", e);
                             }
                         }

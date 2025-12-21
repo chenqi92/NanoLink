@@ -640,11 +640,7 @@ impl LayeredCollector {
             system_info: Some(system_info),
             user_sessions,
             npus,
-            metrics_type: if is_initial {
-                MetricsType::MetricsFull as i32
-            } else {
-                MetricsType::MetricsFull as i32
-            },
+            metrics_type: MetricsType::MetricsFull as i32,
             is_initial,
         })
     }
