@@ -66,8 +66,14 @@ impl GrpcClient {
 
     /// Authenticate with the server
     pub async fn authenticate(&mut self) -> Result<AuthResponse> {
+        // Resolve token (supports environment variables and file references)
+        let resolved_token = self
+            .server_config
+            .resolve_token()
+            .map_err(|e| anyhow::anyhow!("Token resolution failed: {}", e))?;
+
         let request = Request::new(AuthRequest {
-            token: self.server_config.token.clone(),
+            token: resolved_token,
             hostname: self.config.get_hostname(),
             agent_version: env!("CARGO_PKG_VERSION").to_string(),
             os: std::env::consts::OS.to_string(),

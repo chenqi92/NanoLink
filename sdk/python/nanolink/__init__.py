@@ -1,10 +1,10 @@
-"""
+﻿"""
 NanoLink SDK - Python SDK for NanoLink monitoring system
 
 A lightweight, cross-platform server monitoring agent system.
 """
 
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 
 from .server import NanoLinkServer, ServerConfig
 from .connection import AgentConnection
