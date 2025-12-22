@@ -229,12 +229,12 @@ For faster downloads in mainland China, use R2 mirror:
 
 **Linux/macOS:**
 ```bash
-curl -fsSL https://agent.download.kkape.com/releases/v0.2.6/install-r2.sh | sudo bash
+curl -fsSL https://agent.download.kkape.com/releases/v0.2.6/install.sh | sudo bash
 ```
 
 **Windows (PowerShell Admin):**
 ```powershell
-irm https://agent.download.kkape.com/releases/v0.2.6/install-r2.ps1 | iex
+irm https://agent.download.kkape.com/releases/v0.2.6/install.ps1 | iex
 ```
 
 <details>
