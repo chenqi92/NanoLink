@@ -26,23 +26,19 @@ on:
         description: "Test Apps (Dashboard)"
         type: boolean
         default: true
-      # 发布选项
-      release_on_success:
-        description: "Release if tests pass"
+      # 发布选项 (勾选任意一个即启用发布模式)
+      release_agent:
+        description: "Release Agent (check to enable)"
         type: boolean
         default: false
-      release_agent:
-        description: "Release Agent (if release enabled)"
-        type: boolean
-        default: true
       release_sdk:
-        description: "Release SDK (if release enabled)"
+        description: "Release SDK (check to enable)"
         type: boolean
-        default: true
+        default: false
       release_apps:
-        description: "Release Apps (if release enabled)"
+        description: "Release Apps (check to enable)"
         type: boolean
-        default: true
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -79,9 +75,25 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
             echo "📦 Release mode: Tag push detected"
+          # PR 模式：永不发布
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            echo "🔍 PR mode: Test only, no release"
           else
-            echo "is_release=${{ github.event.inputs.release_on_success || 'false' }}" >> $GITHUB_OUTPUT
-            echo "🔧 Manual/PR mode"
+            # 手动模式：如果勾选了任意 release_xxx，则启用发布模式
+            RELEASE_AGENT="${{ github.event.inputs.release_agent }}"
+            RELEASE_SDK="${{ github.event.inputs.release_sdk }}"
+            RELEASE_APPS="${{ github.event.inputs.release_apps }}"
+            
+            if [[ "$RELEASE_AGENT" == "true" ]] || \
+               [[ "$RELEASE_SDK" == "true" ]] || \
+               [[ "$RELEASE_APPS" == "true" ]]; then
+              echo "is_release=true" >> $GITHUB_OUTPUT
+              echo "🚀 Release mode: Manual release enabled"
+            else
+              echo "is_release=false" >> $GITHUB_OUTPUT
+              echo "🔧 Test only mode"
+            fi
           fi
 
       - name: Get version
