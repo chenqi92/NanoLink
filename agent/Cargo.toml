@@ -1,6 +1,6 @@
-﻿[package]
+[package]
 name = "nanolink-agent"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 authors = ["NanoLink Team"]
 description = "Lightweight server monitoring agent"

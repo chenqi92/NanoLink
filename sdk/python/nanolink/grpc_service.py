@@ -179,7 +179,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                             if self.require_authentication:
                                 logger.warning("SECURITY: Rejecting unauthenticated metrics stream (require_authentication=True)")
                                 yield nanolink_pb2.MetricsStreamResponse(
-                                    config_update=nanolink_pb2.ConfigUpdate(
+                                    config_update=nanolink_pb2.ServerConfig(
                                         message="Authentication required. Please use Authenticate RPC before streaming metrics."
                                     )
                                 )

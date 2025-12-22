@@ -57,7 +57,7 @@ pub struct ManagementConfig {
 impl Default for ManagementConfig {
     fn default() -> Self {
         Self {
-            enabled: false,  // 默认禁用
+            enabled: false, // 默认禁用
             port: default_management_port(),
             bind_address: default_bind_address(),
             api_token: None,
@@ -70,7 +70,7 @@ fn default_management_port() -> u16 {
 }
 
 fn default_bind_address() -> String {
-    "127.0.0.1".to_string()  // 仅绑定本地回环地址
+    "127.0.0.1".to_string() // 仅绑定本地回环地址
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

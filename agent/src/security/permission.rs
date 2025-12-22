@@ -95,7 +95,10 @@ impl PermissionChecker {
                 "[SECURITY] Dangerous pattern detected in command: {}",
                 command
             );
-            return Err(format!("Command blocked: dangerous pattern detected ({})", pattern));
+            return Err(format!(
+                "Command blocked: dangerous pattern detected ({})",
+                pattern
+            ));
         }
 
         // P0-2: 检测命令注入
@@ -131,10 +134,10 @@ impl PermissionChecker {
     /// 规范化命令字符串，移除可能用于绕过检测的字符
     fn normalize_command(command: &str) -> String {
         command
-            .replace('\\', "")      // 移除反斜杠转义
-            .replace('\'', "")      // 移除单引号
-            .replace('"', "")       // 移除双引号
-            .split_whitespace()     // 规范化空格
+            .replace('\\', "") // 移除反斜杠转义
+            .replace('\'', "") // 移除单引号
+            .replace('"', "") // 移除双引号
+            .split_whitespace() // 规范化空格
             .collect::<Vec<_>>()
             .join(" ")
     }
@@ -148,21 +151,21 @@ impl PermissionChecker {
                 (Regex::new(r"\bmkfs\b").unwrap(), "mkfs"),
                 (Regex::new(r"\bdd\s+if=").unwrap(), "dd"),
                 (Regex::new(r">\s*/dev/(sd|hd|nvme|vd)").unwrap(), "write to device"),
-                
+
                 // 权限提升
                 (Regex::new(r"\bchmod\s+[0-7]*777").unwrap(), "chmod 777"),
                 (Regex::new(r"\bchown\s+root").unwrap(), "chown root"),
-                
+
                 // 网络后门/反向shell
                 (Regex::new(r"\bnc\s+-[el]").unwrap(), "netcat listener/exec"),
                 (Regex::new(r"\bbash\s+-i\s+>&").unwrap(), "bash reverse shell"),
                 (Regex::new(r"/dev/tcp/").unwrap(), "bash network redirection"),
                 (Regex::new(r"python.*-c.*socket").unwrap(), "python socket"),
                 (Regex::new(r"perl.*-e.*socket").unwrap(), "perl socket"),
-                
+
                 // 敏感文件访问
                 (Regex::new(r"\bcat\s+.*/(etc/(shadow|sudoers)|\.ssh/)").unwrap(), "sensitive file read"),
-                
+
                 // Fork炸弹和相关
                 (Regex::new(r":\s*\(\s*\)\s*\{").unwrap(), "fork bomb pattern"),
                 (Regex::new(r"\bwhile\s+true\s*;?\s*do").unwrap(), "infinite loop"),

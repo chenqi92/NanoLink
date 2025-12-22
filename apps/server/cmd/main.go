@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"context"
@@ -23,7 +23,7 @@ import (
 
 var (
 	configFile = flag.String("config", "config.yaml", "Configuration file path")
-	version    = "0.2.4"
+	version    = "0.2.5"
 )
 
 func main() {

@@ -69,7 +69,7 @@ export function CpuMemoryChart({ data }: RealtimeChartProps) {
                 }}
                 labelStyle={{ color: '#94a3b8' }}
                 formatter={(value, name) => [
-                  `${(value ?? 0).toFixed(1)}%`,
+                  `${Number(value ?? 0).toFixed(1)}%`,
                   name === 'cpu' ? 'CPU' : 'Memory',
                 ]}
               />
@@ -146,7 +146,7 @@ export function NetworkChart({ data }: RealtimeChartProps) {
                 }}
                 labelStyle={{ color: '#94a3b8' }}
                 formatter={(value, name) => [
-                  `${formatBytes(value ?? 0)}/s`,
+                  `${formatBytes(Number(value ?? 0))}/s`,
                   name === 'rx' ? 'Download' : 'Upload',
                 ]}
               />

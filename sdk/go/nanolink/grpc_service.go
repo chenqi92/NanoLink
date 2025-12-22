@@ -133,7 +133,7 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 					// Send error response before closing
 					stream.Send(&pb.MetricsStreamResponse{
 						Response: &pb.MetricsStreamResponse_ConfigUpdate{
-							ConfigUpdate: &pb.ConfigUpdate{
+							ConfigUpdate: &pb.ServerConfig{
 								Message: "Authentication required. Please use Authenticate RPC before streaming metrics.",
 							},
 						},
