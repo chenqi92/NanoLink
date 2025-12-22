@@ -1,4 +1,4 @@
-﻿name: desktop
+name: desktop
 description: "NanoLink Desktop - Multi-server agent monitoring"
 publish_to: 'none'
 version: 0.2.6

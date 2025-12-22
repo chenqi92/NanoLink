@@ -1,4 +1,4 @@
-﻿mod buffer;
+mod buffer;
 mod collector;
 mod config;
 mod connection;

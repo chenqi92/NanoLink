@@ -1,4 +1,4 @@
-﻿"""
+"""
 NanoLink SDK - Python SDK for NanoLink monitoring system
 
 A lightweight, cross-platform server monitoring agent system.
@@ -16,7 +16,6 @@ from .metrics import (
     NetworkMetrics,
     GpuMetrics,
     SystemInfo,
-    # Layered metrics
     RealtimeMetrics,
     StaticInfo,
     PeriodicData,
@@ -26,14 +25,10 @@ from .metrics import (
 from .command import Command, CommandType, CommandResult
 
 __all__ = [
-    # Version
     "__version__",
-    # Server
     "NanoLinkServer",
     "ServerConfig",
-    # Connection
     "AgentConnection",
-    # Metrics
     "Metrics",
     "CpuMetrics",
     "MemoryMetrics",
@@ -41,13 +36,11 @@ __all__ = [
     "NetworkMetrics",
     "GpuMetrics",
     "SystemInfo",
-    # Layered metrics
     "RealtimeMetrics",
     "StaticInfo",
     "PeriodicData",
     "MetricsType",
     "DataRequestType",
-    # Commands
     "Command",
     "CommandType",
     "CommandResult",
