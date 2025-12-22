@@ -223,6 +223,33 @@ curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/script
   --permission 2
 ```
 
+### Cloudflare R2 Mirror (China Optimized) ☁️
+
+For faster downloads in mainland China, use R2 mirror:
+
+**Linux/macOS:**
+```bash
+curl -fsSL https://agent.download.kkape.com/releases/v0.2.6/install-r2.sh | sudo bash
+```
+
+**Windows (PowerShell Admin):**
+```powershell
+irm https://agent.download.kkape.com/releases/v0.2.6/install-r2.ps1 | iex
+```
+
+<details>
+<summary><b>Direct Agent Downloads (R2 Mirror)</b></summary>
+
+| Platform | Architecture | Download |
+|----------|--------------|----------|
+| Linux | x86_64 | [nanolink-agent-linux-x86_64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-linux-x86_64) |
+| Linux | ARM64 | [nanolink-agent-linux-aarch64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-linux-aarch64) |
+| macOS | Intel | [nanolink-agent-macos-x86_64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-macos-x86_64) |
+| macOS | Apple Silicon | [nanolink-agent-macos-aarch64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-macos-aarch64) |
+| Windows | x64 | [nanolink-agent-windows-x86_64.exe](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-windows-x86_64.exe) |
+
+</details>
+
 ### Multi-Server Management
 
 Agent supports connecting to multiple servers simultaneously with dynamic add/remove/update of server configurations.

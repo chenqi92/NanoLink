@@ -1,0 +1,458 @@
+name: Upload to Cloudflare R2
+
+on:
+  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（例如：0.1.0，不需要 v 前缀）'
+        required: true
+        type: string
+      # 安装脚本
+      upload_install_scripts:
+        description: '上传安装脚本 (install.sh, install.ps1)'
+        required: false
+        type: boolean
+        default: true
+      # Agent 二进制文件
+      upload_agent_linux_x64:
+        description: '上传 Agent Linux x86_64'
+        required: false
+        type: boolean
+        default: true
+      upload_agent_linux_arm64:
+        description: '上传 Agent Linux ARM64'
+        required: false
+        type: boolean
+        default: true
+      upload_agent_macos_x64:
+        description: '上传 Agent macOS Intel (x86_64)'
+        required: false
+        type: boolean
+        default: true
+      upload_agent_macos_arm64:
+        description: '上传 Agent macOS Apple Silicon (ARM64)'
+        required: false
+        type: boolean
+        default: true
+      upload_agent_windows_x64:
+        description: '上传 Agent Windows x64'
+        required: false
+        type: boolean
+        default: true
+      # 其他选项
+      update_release_notes:
+        description: '更新 Release 说明（添加 R2 下载链接）'
+        required: false
+        type: boolean
+        default: true
+
+  # 支持被其他 workflow 调用
+  workflow_call:
+    inputs:
+      version:
+        description: '版本号（例如：0.1.0，不需要 v 前缀）'
+        required: true
+        type: string
+      # 安装脚本
+      upload_install_scripts:
+        description: '上传安装脚本 (install.sh, install.ps1)'
+        required: false
+        type: boolean
+        default: true
+      # Agent 二进制文件
+      upload_agent_linux_x64:
+        description: '上传 Agent Linux x86_64'
+        required: false
+        type: boolean
+        default: true
+      upload_agent_linux_arm64:
+        description: '上传 Agent Linux ARM64'
+        required: false
+        type: boolean
+        default: true
+      upload_agent_macos_x64:
+        description: '上传 Agent macOS Intel (x86_64)'
+        required: false
+        type: boolean
+        default: true
+      upload_agent_macos_arm64:
+        description: '上传 Agent macOS Apple Silicon (ARM64)'
+        required: false
+        type: boolean
+        default: true
+      upload_agent_windows_x64:
+        description: '上传 Agent Windows x64'
+        required: false
+        type: boolean
+        default: true
+      # 其他选项
+      update_release_notes:
+        description: '更新 Release 说明（添加 R2 下载链接）'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  upload-to-r2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify AWS CLI
+        run: |
+          echo "📦 Verifying AWS CLI installation..."
+          aws --version
+          echo "✅ AWS CLI is ready"
+
+      - name: Configure AWS CLI for Cloudflare R2
+        run: |
+          echo "🔧 Configuring AWS CLI for Cloudflare R2..."
+          aws configure set aws_access_key_id ${{ secrets.R2_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          aws configure set default.region auto
+          echo "✅ AWS CLI configured"
+
+      - name: Prepare upload directory
+        run: |
+          echo "📁 Creating upload directory..."
+          mkdir -p ./r2-upload
+          echo "✅ Upload directory created"
+
+      - name: Copy and create R2 install scripts
+        if: inputs.upload_install_scripts == true
+        run: |
+          echo "📜 Copying and creating R2 install scripts..."
+          VERSION="${{ inputs.version }}"
+          R2_DOWNLOAD_URL="https://agent.download.kkape.com"
+          
+          # Copy original install.sh
+          if [ -f "agent/scripts/install.sh" ]; then
+            cp agent/scripts/install.sh ./r2-upload/
+            echo "✅ Copied install.sh"
+            
+            # Create R2 version with modified download URL
+            # Replace GitHub download URL with R2 URL
+            sed -e "s|https://github.com/\${GITHUB_REPO}/releases/latest/download/\${BINARY_NAME}-\${OS}-\${ARCH}|${R2_DOWNLOAD_URL}/releases/v${VERSION}/\${BINARY_NAME}-\${OS}-\${ARCH}|g" \
+                -e "s|https://github.com/chenqi92/NanoLink/releases/latest/download/|${R2_DOWNLOAD_URL}/releases/v${VERSION}/|g" \
+                agent/scripts/install.sh > ./r2-upload/install-r2.sh
+            chmod +x ./r2-upload/install-r2.sh
+            echo "✅ Created install-r2.sh with R2 download URL"
+          else
+            echo "⚠️ install.sh not found"
+          fi
+          
+          # Copy original install.ps1
+          if [ -f "agent/scripts/install.ps1" ]; then
+            cp agent/scripts/install.ps1 ./r2-upload/
+            echo "✅ Copied install.ps1"
+            
+            # Create R2 version with modified download URL
+            # Replace GitHub download URL with R2 URL
+            sed -e "s|https://github.com/\$Script:GitHubRepo/releases/latest/download/nanolink-agent-windows-\$arch.exe|${R2_DOWNLOAD_URL}/releases/v${VERSION}/nanolink-agent-windows-\$arch.exe|g" \
+                -e "s|https://github.com/chenqi92/NanoLink/releases/latest/download/|${R2_DOWNLOAD_URL}/releases/v${VERSION}/|g" \
+                agent/scripts/install.ps1 > ./r2-upload/install-r2.ps1
+            echo "✅ Created install-r2.ps1 with R2 download URL"
+          else
+            echo "⚠️ install.ps1 not found"
+          fi
+          
+          # Copy uninstall scripts (no modification needed)
+          if [ -f "agent/scripts/uninstall.sh" ]; then
+            cp agent/scripts/uninstall.sh ./r2-upload/
+            echo "✅ Copied uninstall.sh"
+          fi
+          
+          if [ -f "agent/scripts/uninstall.ps1" ]; then
+            cp agent/scripts/uninstall.ps1 ./r2-upload/
+            echo "✅ Copied uninstall.ps1"
+          fi
+          
+          # Show diff for verification
+          echo ""
+          echo "📋 Verify install-r2.sh download URL change:"
+          grep -n "download_url=" ./r2-upload/install-r2.sh || true
+          echo ""
+          echo "📋 Verify install-r2.ps1 download URL change:"
+          grep -n "downloadUrl = " ./r2-upload/install-r2.ps1 || true
+
+      - name: Download agent binaries from GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          echo "📥 Downloading agent binaries from GitHub Release..."
+          VERSION="${{ inputs.version }}"
+          
+          cd ./r2-upload
+          
+          # Linux x86_64
+          if [[ "${{ inputs.upload_agent_linux_x64 }}" == "true" ]]; then
+            echo "📦 Downloading Agent Linux x86_64..."
+            gh release download "v${VERSION}" \
+              --pattern "nanolink-agent-linux-x86_64" \
+              --repo ${{ github.repository }} || echo "⚠️ Agent Linux x86_64 not found"
+          fi
+          
+          # Linux ARM64
+          if [[ "${{ inputs.upload_agent_linux_arm64 }}" == "true" ]]; then
+            echo "📦 Downloading Agent Linux ARM64..."
+            gh release download "v${VERSION}" \
+              --pattern "nanolink-agent-linux-aarch64" \
+              --repo ${{ github.repository }} || echo "⚠️ Agent Linux ARM64 not found"
+          fi
+          
+          # macOS Intel (x86_64)
+          if [[ "${{ inputs.upload_agent_macos_x64 }}" == "true" ]]; then
+            echo "📦 Downloading Agent macOS Intel..."
+            gh release download "v${VERSION}" \
+              --pattern "nanolink-agent-macos-x86_64" \
+              --repo ${{ github.repository }} || echo "⚠️ Agent macOS Intel not found"
+          fi
+          
+          # macOS Apple Silicon (ARM64)
+          if [[ "${{ inputs.upload_agent_macos_arm64 }}" == "true" ]]; then
+            echo "📦 Downloading Agent macOS Apple Silicon..."
+            gh release download "v${VERSION}" \
+              --pattern "nanolink-agent-macos-aarch64" \
+              --repo ${{ github.repository }} || echo "⚠️ Agent macOS Apple Silicon not found"
+          fi
+          
+          # Windows x64
+          if [[ "${{ inputs.upload_agent_windows_x64 }}" == "true" ]]; then
+            echo "📦 Downloading Agent Windows x64..."
+            gh release download "v${VERSION}" \
+              --pattern "nanolink-agent-windows-x86_64.exe" \
+              --repo ${{ github.repository }} || echo "⚠️ Agent Windows x64 not found"
+          fi
+          
+          # List downloaded files
+          echo "📋 Downloaded files:"
+          ls -lh
+          
+          cd ..
+
+      - name: Upload to Cloudflare R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          echo "☁️ Uploading files to Cloudflare R2..."
+          VERSION="${{ inputs.version }}"
+          
+          # Debug info
+          echo "📋 Debug info:"
+          echo "   R2_ENDPOINT: ${R2_ENDPOINT}"
+          echo "   R2_BUCKET: ${R2_BUCKET}"
+          echo "   VERSION: ${VERSION}"
+          
+          # Check if there are files to upload
+          if [ -z "$(ls -A ./r2-upload 2>/dev/null)" ]; then
+            echo "⚠️ No files to upload"
+            exit 0
+          fi
+          
+          echo "📂 Files to upload:"
+          ls -la ./r2-upload/
+          
+          # Upload all files to R2
+          UPLOAD_COUNT=0
+          FAILED_COUNT=0
+          for file in ./r2-upload/*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              filesize=$(du -h "$file" | cut -f1)
+              echo "📤 Uploading: $filename ($filesize)"
+              
+              # Upload to R2, path format: releases/v{version}/{filename}
+              if aws s3 cp "$file" \
+                "s3://${R2_BUCKET}/releases/v${VERSION}/${filename}" \
+                --endpoint-url "${R2_ENDPOINT}"; then
+                echo "✅ Successfully uploaded: $filename"
+                UPLOAD_COUNT=$((UPLOAD_COUNT + 1))
+              else
+                echo "❌ Failed to upload: $filename"
+                FAILED_COUNT=$((FAILED_COUNT + 1))
+              fi
+            fi
+          done
+          
+          echo "🎉 Upload completed! Total files uploaded: $UPLOAD_COUNT, Failed: $FAILED_COUNT"
+          
+          if [ $FAILED_COUNT -gt 0 ]; then
+            echo "⚠️ Some files failed to upload. Please check the logs above."
+          fi
+
+      - name: Generate download URLs and update Release notes
+        if: inputs.update_release_notes == true
+        env:
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔗 Generating download URLs..."
+          VERSION="${{ inputs.version }}"
+          
+          # Debug info
+          echo "📋 Debug info:"
+          echo "   R2_PUBLIC_URL: ${R2_PUBLIC_URL}"
+          echo "   R2_BUCKET: ${R2_BUCKET}"
+          echo "   VERSION: ${VERSION}"
+          
+          # Check if there are files
+          if [ -z "$(ls -A ./r2-upload 2>/dev/null)" ]; then
+            echo "⚠️ No files to generate URLs for"
+            exit 0
+          fi
+          
+          # Build base URL
+          if [ -n "${R2_PUBLIC_URL}" ]; then
+            R2_PUBLIC_URL="${R2_PUBLIC_URL%/}"
+            if [[ "${R2_PUBLIC_URL}" =~ ^https?:// ]]; then
+              base_url="${R2_PUBLIC_URL}"
+            else
+              base_url="https://${R2_PUBLIC_URL}"
+            fi
+          else
+            base_url="https://${R2_BUCKET}.r2.dev"
+          fi
+          
+          echo "📋 Base URL: ${base_url}"
+          
+          # Generate R2 URLs markdown
+          echo "## ☁️ Cloudflare R2 下载链接（国内访问优化）" > r2-urls.md
+          echo "" >> r2-urls.md
+          echo "以下文件已上传到 Cloudflare R2，提供更快的国内访问速度：" >> r2-urls.md
+          echo "" >> r2-urls.md
+          
+          # Quick Install section (R2 optimized)
+          echo "### 🚀 快速安装（推荐国内用户使用）" >> r2-urls.md
+          echo "" >> r2-urls.md
+          echo "**Linux/macOS:**" >> r2-urls.md
+          echo '```bash' >> r2-urls.md
+          echo "curl -fsSL ${base_url}/releases/v${VERSION}/install-r2.sh | sudo bash" >> r2-urls.md
+          echo '```' >> r2-urls.md
+          echo "" >> r2-urls.md
+          echo "**Windows (PowerShell 管理员):**" >> r2-urls.md
+          echo '```powershell' >> r2-urls.md
+          echo "irm ${base_url}/releases/v${VERSION}/install-r2.ps1 | iex" >> r2-urls.md
+          echo '```' >> r2-urls.md
+          echo "" >> r2-urls.md
+          
+          # Separate install scripts and agent binaries
+          echo "### 📜 安装脚本" >> r2-urls.md
+          echo "" >> r2-urls.md
+          echo "| 脚本 | 说明 | 下载链接 |" >> r2-urls.md
+          echo "|------|------|----------|" >> r2-urls.md
+          
+          # R2 install scripts first (recommended)
+          for file in ./r2-upload/install-r2.*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              filesize=$(du -h "$file" | cut -f1)
+              url="${base_url}/releases/v${VERSION}/${filename}"
+              if [[ "$filename" == *.sh ]]; then
+                echo "| **${filename}** | R2优化版 (Linux/macOS) 🌟推荐 | [下载](${url}) (${filesize}) |" >> r2-urls.md
+              else
+                echo "| **${filename}** | R2优化版 (Windows) 🌟推荐 | [下载](${url}) (${filesize}) |" >> r2-urls.md
+              fi
+            fi
+          done
+          
+          # Original install scripts
+          for file in ./r2-upload/install.sh ./r2-upload/install.ps1; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              filesize=$(du -h "$file" | cut -f1)
+              url="${base_url}/releases/v${VERSION}/${filename}"
+              if [[ "$filename" == *.sh ]]; then
+                echo "| ${filename} | GitHub版 (Linux/macOS) | [下载](${url}) (${filesize}) |" >> r2-urls.md
+              else
+                echo "| ${filename} | GitHub版 (Windows) | [下载](${url}) (${filesize}) |" >> r2-urls.md
+              fi
+            fi
+          done
+          
+          # Uninstall scripts
+          for file in ./r2-upload/uninstall.*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              filesize=$(du -h "$file" | cut -f1)
+              url="${base_url}/releases/v${VERSION}/${filename}"
+              if [[ "$filename" == *.sh ]]; then
+                echo "| ${filename} | 卸载脚本 (Linux/macOS) | [下载](${url}) (${filesize}) |" >> r2-urls.md
+              else
+                echo "| ${filename} | 卸载脚本 (Windows) | [下载](${url}) (${filesize}) |" >> r2-urls.md
+              fi
+            fi
+          done
+          
+          echo "" >> r2-urls.md
+          echo "### 🔧 Agent 二进制文件" >> r2-urls.md
+          echo "" >> r2-urls.md
+          echo "| 平台 | 架构 | 下载链接 |" >> r2-urls.md
+          echo "|------|------|----------|" >> r2-urls.md
+          
+          for file in ./r2-upload/nanolink-agent-*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              filesize=$(du -h "$file" | cut -f1)
+              url="${base_url}/releases/v${VERSION}/${filename}"
+              
+              # Determine platform and architecture
+              case "$filename" in
+                *linux-x86_64*)
+                  platform="Linux"; arch="x86_64"
+                  ;;
+                *linux-aarch64*)
+                  platform="Linux"; arch="ARM64"
+                  ;;
+                *macos-x86_64*)
+                  platform="macOS"; arch="Intel (x86_64)"
+                  ;;
+                *macos-aarch64*)
+                  platform="macOS"; arch="Apple Silicon (ARM64)"
+                  ;;
+                *windows-x86_64*)
+                  platform="Windows"; arch="x64"
+                  ;;
+                *)
+                  platform="Unknown"; arch="Unknown"
+                  ;;
+              esac
+              
+              echo "| ${platform} | ${arch} | [${filename}](${url}) (${filesize}) |" >> r2-urls.md
+            fi
+          done
+          
+          echo "" >> r2-urls.md
+          echo "---" >> r2-urls.md
+          echo "" >> r2-urls.md
+          
+          echo "📄 Generated r2-urls.md content:"
+          cat r2-urls.md
+          
+          # Get current Release notes
+          CURRENT_NOTES=$(gh release view "v${VERSION}" --json body -q .body --repo ${{ github.repository }})
+          
+          # Check if R2 links already exist
+          if echo "$CURRENT_NOTES" | grep -q "Cloudflare R2"; then
+            echo "⚠️ Release notes already contain R2 links, skipping update"
+          else
+            # Append R2 links to existing notes
+            {
+              echo "$CURRENT_NOTES"
+              echo ""
+              cat r2-urls.md
+            } > combined-notes.md
+            
+            # Update Release notes
+            gh release edit "v${VERSION}" \
+              --notes-file combined-notes.md \
+              --repo ${{ github.repository }}
+            
+            echo "✅ Release notes updated with R2 download links"
+          fi

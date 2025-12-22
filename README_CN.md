@@ -223,6 +223,33 @@ curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/script
   --permission 2
 ```
 
+### Cloudflare R2 镜像（国内加速）☁️
+
+国内用户推荐使用 R2 镜像源，下载速度更快：
+
+**Linux/macOS:**
+```bash
+curl -fsSL https://agent.download.kkape.com/releases/v0.2.6/install-r2.sh | sudo bash
+```
+
+**Windows (PowerShell 管理员):**
+```powershell
+irm https://agent.download.kkape.com/releases/v0.2.6/install-r2.ps1 | iex
+```
+
+<details>
+<summary><b>Agent 直接下载 (R2 镜像)</b></summary>
+
+| 平台 | 架构 | 下载链接 |
+|------|------|----------|
+| Linux | x86_64 | [nanolink-agent-linux-x86_64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-linux-x86_64) |
+| Linux | ARM64 | [nanolink-agent-linux-aarch64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-linux-aarch64) |
+| macOS | Intel | [nanolink-agent-macos-x86_64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-macos-x86_64) |
+| macOS | Apple Silicon | [nanolink-agent-macos-aarch64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-macos-aarch64) |
+| Windows | x64 | [nanolink-agent-windows-x86_64.exe](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-windows-x86_64.exe) |
+
+</details>
+
 ### 多服务端管理
 
 Agent 支持同时连接多个服务端，可以动态添加/删除/更新服务端配置。

@@ -281,6 +281,17 @@ jobs:
             go get github.com/chenqi92/NanoLink/sdk/go@${{ needs.prepare.outputs.tag }}
             ```
 
+            ### ☁️ R2 Mirror (China Optimized)
+
+            **Agent Install Script (Faster in China):**
+            ```bash
+            # Linux/macOS
+            curl -fsSL https://agent.download.kkape.com/releases/${{ needs.prepare.outputs.tag }}/install-r2.sh | sudo bash
+
+            # Windows (PowerShell Admin)
+            irm https://agent.download.kkape.com/releases/${{ needs.prepare.outputs.tag }}/install-r2.ps1 | iex
+            ```
+
             ---
             See [CHANGELOG.md](https://github.com/chenqi92/NanoLink/blob/main/CHANGELOG.md) for details.
           files: release/*
@@ -288,3 +299,13 @@ jobs:
           prerelease: ${{ contains(needs.prepare.outputs.version, 'alpha') || contains(needs.prepare.outputs.version, 'beta') || contains(needs.prepare.outputs.version, 'rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Upload to Cloudflare R2 for faster access in China
+  upload-r2:
+    name: Upload to R2
+    needs: [prepare, release]
+    if: ${{ needs.release.result == 'success' }}
+    uses: ./.github/workflows/upload-to-r2.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+    secrets: inherit
