@@ -174,7 +174,7 @@ impl GpuCollector {
         #[cfg(target_os = "linux")]
         {
             use std::collections::HashMap;
-            
+
             let mut gpus = Vec::new();
 
             // Get GPU list
