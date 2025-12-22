@@ -35,18 +35,9 @@ permissions:
   id-token: write
 
 jobs:
-  # Run tests first (skip if called from test.yml with tests already passed)
-  run-tests:
-    name: Run Tests
-    if: ${{ !inputs.skip_tests }}
-    uses: ./.github/workflows/test.yml
-    secrets: inherit
-
   # Read version from VERSION file or input
   prepare:
     name: Prepare Release
-    needs: run-tests
-    if: ${{ always() && (needs.run-tests.result == 'success' || needs.run-tests.result == 'skipped') }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -71,6 +62,7 @@ jobs:
           if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
             echo "::warning::Tag v${{ steps.version.outputs.version }} already exists"
           fi
+
 
   # Build Java SDK
   build-java-sdk:

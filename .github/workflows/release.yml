@@ -21,18 +21,9 @@ permissions:
   contents: write
 
 jobs:
-  # Run tests first (skip if called from test.yml with tests already passed)
-  run-tests:
-    name: Run Tests
-    if: ${{ !inputs.skip_tests }}
-    uses: ./.github/workflows/test.yml
-    secrets: inherit
-
   # Get version info
   prepare:
     name: Prepare
-    needs: run-tests
-    if: ${{ always() && (needs.run-tests.result == 'success' || needs.run-tests.result == 'skipped') }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -53,6 +44,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Version: $VERSION, Tag: $TAG"
+
 
   build-agent:
     name: Build Agent (${{ matrix.name }})

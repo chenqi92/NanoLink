@@ -1,23 +1,34 @@
 name: Test
 
+# 独立的测试工作流
+# 用于 PR 检查和手动触发测试
+# 注意：ci.yml 是新的统一入口，包含测试和发布功能
+
 on:
   pull_request:
     branches: [main]
-  workflow_dispatch:  # Allow manual trigger
-  
-  # Allow other workflows to call this
-  workflow_call:
-    outputs:
-      success:
-        description: "Whether all tests passed"
-        value: ${{ jobs.test-summary.outputs.success }}
+  workflow_dispatch:
+    inputs:
+      test_agent:
+        description: "Test Agent"
+        type: boolean
+        default: true
+      test_sdk:
+        description: "Test SDK"
+        type: boolean
+        default: true
+      test_apps:
+        description: "Test Apps"
+        type: boolean
+        default: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   test-agent:
-    name: Test Agent
+    name: Test Agent (${{ matrix.os }})
+    if: github.event.inputs.test_agent != 'false'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -74,6 +85,7 @@ jobs:
 
   test-java-sdk:
     name: Test Java SDK
+    if: github.event.inputs.test_sdk != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -92,6 +104,7 @@ jobs:
 
   test-go-sdk:
     name: Test Go SDK
+    if: github.event.inputs.test_sdk != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -118,7 +131,8 @@ jobs:
         run: go test ./...
 
   test-python-sdk:
-    name: Test Python SDK
+    name: Test Python SDK (${{ matrix.python-version }})
+    if: github.event.inputs.test_sdk != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -162,6 +176,7 @@ jobs:
 
   test-dashboard:
     name: Test Dashboard
+    if: github.event.inputs.test_apps != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -184,32 +199,78 @@ jobs:
         working-directory: dashboard
         run: npm run build
 
-  # Summary job for workflow_call output
+  # Summary job
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
     needs: [test-agent, test-java-sdk, test-go-sdk, test-python-sdk, test-dashboard]
     if: always()
-    outputs:
-      success: ${{ steps.check.outputs.success }}
     steps:
       - name: Check test results
-        id: check
         run: |
-          if [[ "${{ needs.test-agent.result }}" == "success" && \
-                "${{ needs.test-java-sdk.result }}" == "success" && \
-                "${{ needs.test-go-sdk.result }}" == "success" && \
-                "${{ needs.test-python-sdk.result }}" == "success" && \
-                "${{ needs.test-dashboard.result }}" == "success" ]]; then
-            echo "success=true" >> $GITHUB_OUTPUT
-            echo "✅ All tests passed!"
+          echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          # Agent
+          if [[ "${{ needs.test-agent.result }}" == "success" ]]; then
+            echo "| Agent | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.test-agent.result }}" == "skipped" ]]; then
+            echo "| Agent | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "success=false" >> $GITHUB_OUTPUT
-            echo "❌ Some tests failed"
-            echo "Agent: ${{ needs.test-agent.result }}"
-            echo "Java SDK: ${{ needs.test-java-sdk.result }}"
-            echo "Go SDK: ${{ needs.test-go-sdk.result }}"
-            echo "Python SDK: ${{ needs.test-python-sdk.result }}"
-            echo "Dashboard: ${{ needs.test-dashboard.result }}"
+            echo "| Agent | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Java SDK
+          if [[ "${{ needs.test-java-sdk.result }}" == "success" ]]; then
+            echo "| Java SDK | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.test-java-sdk.result }}" == "skipped" ]]; then
+            echo "| Java SDK | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Java SDK | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Go SDK
+          if [[ "${{ needs.test-go-sdk.result }}" == "success" ]]; then
+            echo "| Go SDK | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.test-go-sdk.result }}" == "skipped" ]]; then
+            echo "| Go SDK | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Go SDK | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Python SDK
+          if [[ "${{ needs.test-python-sdk.result }}" == "success" ]]; then
+            echo "| Python SDK | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.test-python-sdk.result }}" == "skipped" ]]; then
+            echo "| Python SDK | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Python SDK | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Dashboard
+          if [[ "${{ needs.test-dashboard.result }}" == "success" ]]; then
+            echo "| Dashboard | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.test-dashboard.result }}" == "skipped" ]]; then
+            echo "| Dashboard | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Dashboard | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Overall result
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          FAILED=false
+          if [[ "${{ needs.test-agent.result }}" == "failure" ]]; then FAILED=true; fi
+          if [[ "${{ needs.test-java-sdk.result }}" == "failure" ]]; then FAILED=true; fi
+          if [[ "${{ needs.test-go-sdk.result }}" == "failure" ]]; then FAILED=true; fi
+          if [[ "${{ needs.test-python-sdk.result }}" == "failure" ]]; then FAILED=true; fi
+          if [[ "${{ needs.test-dashboard.result }}" == "failure" ]]; then FAILED=true; fi
+          
+          if [[ "$FAILED" == "true" ]]; then
+            echo "❌ **Some tests failed**" >> $GITHUB_STEP_SUMMARY
             exit 1
+          else
+            echo "✅ **All tests passed**" >> $GITHUB_STEP_SUMMARY
           fi

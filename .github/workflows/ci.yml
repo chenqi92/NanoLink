@@ -1,0 +1,540 @@
+name: CI/CD Pipeline
+
+# 统一的 CI/CD 入口
+# - Tag Push / VERSION 变更：全部测试 + 全部发布
+# - PR：全部测试，不发布
+# - 手动：选择组件测试 + 选择是否发布 + 选择发布组件
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      # 测试选项
+      test_agent:
+        description: "Test Agent"
+        type: boolean
+        default: true
+      test_sdk:
+        description: "Test SDK (Java/Go/Python)"
+        type: boolean
+        default: true
+      test_apps:
+        description: "Test Apps (Dashboard)"
+        type: boolean
+        default: true
+      # 发布选项
+      release_on_success:
+        description: "Release if tests pass"
+        type: boolean
+        default: false
+      release_agent:
+        description: "Release Agent (if release enabled)"
+        type: boolean
+        default: true
+      release_sdk:
+        description: "Release SDK (if release enabled)"
+        type: boolean
+        default: true
+      release_apps:
+        description: "Release Apps (if release enabled)"
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  # ============================================================
+  # Setup: 确定运行模式和配置
+  # ============================================================
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.mode.outputs.is_release }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      test_agent: ${{ steps.config.outputs.test_agent }}
+      test_sdk: ${{ steps.config.outputs.test_sdk }}
+      test_apps: ${{ steps.config.outputs.test_apps }}
+      release_agent: ${{ steps.config.outputs.release_agent }}
+      release_sdk: ${{ steps.config.outputs.release_sdk }}
+      release_apps: ${{ steps.config.outputs.release_apps }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine mode
+        id: mode
+        run: |
+          # Tag push = 自动发布模式
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+            echo "📦 Release mode: Tag push detected"
+          else
+            echo "is_release=${{ github.event.inputs.release_on_success || 'false' }}" >> $GITHUB_OUTPUT
+            echo "🔧 Manual/PR mode"
+          fi
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION=$(cat VERSION | tr -d '[:space:]')
+            TAG="v$VERSION"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION, Tag: $TAG"
+
+      - name: Configure what to test/release
+        id: config
+        run: |
+          # Tag push 模式：全部测试和发布
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "test_agent=true" >> $GITHUB_OUTPUT
+            echo "test_sdk=true" >> $GITHUB_OUTPUT
+            echo "test_apps=true" >> $GITHUB_OUTPUT
+            echo "release_agent=true" >> $GITHUB_OUTPUT
+            echo "release_sdk=true" >> $GITHUB_OUTPUT
+            echo "release_apps=true" >> $GITHUB_OUTPUT
+            echo "🚀 Auto release mode: All components will be tested and released"
+          # PR 模式：全部测试，不发布
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "test_agent=true" >> $GITHUB_OUTPUT
+            echo "test_sdk=true" >> $GITHUB_OUTPUT
+            echo "test_apps=true" >> $GITHUB_OUTPUT
+            echo "release_agent=false" >> $GITHUB_OUTPUT
+            echo "release_sdk=false" >> $GITHUB_OUTPUT
+            echo "release_apps=false" >> $GITHUB_OUTPUT
+            echo "🔍 PR mode: All components will be tested, no release"
+          # 手动模式：使用输入参数
+          else
+            echo "test_agent=${{ github.event.inputs.test_agent || 'true' }}" >> $GITHUB_OUTPUT
+            echo "test_sdk=${{ github.event.inputs.test_sdk || 'true' }}" >> $GITHUB_OUTPUT
+            echo "test_apps=${{ github.event.inputs.test_apps || 'true' }}" >> $GITHUB_OUTPUT
+            echo "release_agent=${{ github.event.inputs.release_agent || 'true' }}" >> $GITHUB_OUTPUT
+            echo "release_sdk=${{ github.event.inputs.release_sdk || 'true' }}" >> $GITHUB_OUTPUT
+            echo "release_apps=${{ github.event.inputs.release_apps || 'true' }}" >> $GITHUB_OUTPUT
+            echo "🖱️ Manual mode: Using input parameters"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## Configuration Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ steps.version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release Mode | ${{ steps.mode.outputs.is_release }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Agent | ${{ steps.config.outputs.test_agent }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test SDK | ${{ steps.config.outputs.test_sdk }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Apps | ${{ steps.config.outputs.test_apps }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release Agent | ${{ steps.config.outputs.release_agent }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release SDK | ${{ steps.config.outputs.release_sdk }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release Apps | ${{ steps.config.outputs.release_apps }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================================
+  # Test: Agent
+  # ============================================================
+  test-agent:
+    name: Test Agent (${{ matrix.os }})
+    needs: setup
+    if: needs.setup.outputs.test_agent == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - name: Install protoc (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            agent/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        working-directory: agent
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        working-directory: agent
+        run: cargo clippy -- -D warnings -A clippy::large_enum_variant -A clippy::field_reassign_with_default -A clippy::manual_clamp -A clippy::lines_filter_map_ok -A clippy::empty_line_after_doc_comments -A clippy::collapsible_if -A dead_code -A unused_imports -A unused_variables -A unused_assignments
+
+      - name: Run tests
+        working-directory: agent
+        run: cargo test --verbose
+
+      - name: Build
+        working-directory: agent
+        run: cargo build --release
+
+  # Agent 测试汇总
+  test-agent-summary:
+    name: Agent Test Summary
+    needs: [setup, test-agent]
+    if: always() && needs.setup.outputs.test_agent == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      success: ${{ steps.check.outputs.success }}
+    steps:
+      - name: Check results
+        id: check
+        run: |
+          if [[ "${{ needs.test-agent.result }}" == "success" ]]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "✅ Agent tests passed"
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "❌ Agent tests failed: ${{ needs.test-agent.result }}"
+          fi
+
+  # ============================================================
+  # Test: Java SDK
+  # ============================================================
+  test-java-sdk:
+    name: Test Java SDK
+    needs: setup
+    if: needs.setup.outputs.test_sdk == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "11"
+          cache: "maven"
+
+      - name: Build and test
+        working-directory: sdk/java
+        run: mvn clean verify
+
+  # ============================================================
+  # Test: Go SDK
+  # ============================================================
+  test-go-sdk:
+    name: Test Go SDK
+    needs: setup
+    if: needs.setup.outputs.test_sdk == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+
+      - name: Verify and download dependencies
+        working-directory: sdk/go
+        run: |
+          go mod tidy
+          go mod download
+
+      - name: Build
+        working-directory: sdk/go
+        run: go build ./...
+
+      - name: Test
+        working-directory: sdk/go
+        run: go test ./...
+
+  # ============================================================
+  # Test: Python SDK
+  # ============================================================
+  test-python-sdk:
+    name: Test Python SDK (${{ matrix.python-version }})
+    needs: setup
+    if: needs.setup.outputs.test_sdk == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: sdk/python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint with ruff
+        working-directory: sdk/python
+        run: ruff check . || true
+
+      - name: Check formatting with black
+        working-directory: sdk/python
+        run: black --check . || true
+
+      - name: Regenerate proto files
+        working-directory: sdk/python
+        run: |
+          python -m grpc_tools.protoc \
+            --proto_path=../protocol \
+            --python_out=nanolink/proto \
+            --grpc_python_out=nanolink/proto \
+            ../protocol/nanolink.proto
+
+      - name: Run tests
+        working-directory: sdk/python
+        run: pytest tests/ -v
+
+  # SDK 测试汇总
+  test-sdk-summary:
+    name: SDK Test Summary
+    needs: [setup, test-java-sdk, test-go-sdk, test-python-sdk]
+    if: always() && needs.setup.outputs.test_sdk == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      success: ${{ steps.check.outputs.success }}
+    steps:
+      - name: Check results
+        id: check
+        run: |
+          if [[ "${{ needs.test-java-sdk.result }}" == "success" && \
+                "${{ needs.test-go-sdk.result }}" == "success" && \
+                "${{ needs.test-python-sdk.result }}" == "success" ]]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "✅ All SDK tests passed"
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "❌ SDK tests failed"
+            echo "  Java: ${{ needs.test-java-sdk.result }}"
+            echo "  Go: ${{ needs.test-go-sdk.result }}"
+            echo "  Python: ${{ needs.test-python-sdk.result }}"
+          fi
+
+  # ============================================================
+  # Test: Apps (Dashboard)
+  # ============================================================
+  test-apps:
+    name: Test Dashboard
+    needs: setup
+    if: needs.setup.outputs.test_apps == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: dashboard
+        run: npm install
+
+      - name: Lint
+        working-directory: dashboard
+        run: npm run lint || true
+
+      - name: Build
+        working-directory: dashboard
+        run: npm run build
+
+  # Apps 测试汇总
+  test-apps-summary:
+    name: Apps Test Summary
+    needs: [setup, test-apps]
+    if: always() && needs.setup.outputs.test_apps == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      success: ${{ steps.check.outputs.success }}
+    steps:
+      - name: Check results
+        id: check
+        run: |
+          if [[ "${{ needs.test-apps.result }}" == "success" ]]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "✅ Apps tests passed"
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "❌ Apps tests failed: ${{ needs.test-apps.result }}"
+          fi
+
+  # ============================================================
+  # Release: Agent
+  # ============================================================
+  release-agent:
+    name: Release Agent
+    needs: [setup, test-agent-summary]
+    if: |
+      always() &&
+      needs.setup.outputs.is_release == 'true' &&
+      needs.setup.outputs.release_agent == 'true' &&
+      (needs.test-agent-summary.outputs.success == 'true' || needs.setup.outputs.test_agent != 'true')
+    uses: ./.github/workflows/release.yml
+    with:
+      skip_tests: true
+    secrets: inherit
+
+  # ============================================================
+  # Release: SDK
+  # ============================================================
+  release-sdk:
+    name: Release SDK
+    needs: [setup, test-sdk-summary]
+    if: |
+      always() &&
+      needs.setup.outputs.is_release == 'true' &&
+      needs.setup.outputs.release_sdk == 'true' &&
+      (needs.test-sdk-summary.outputs.success == 'true' || needs.setup.outputs.test_sdk != 'true')
+    uses: ./.github/workflows/sdk-release.yml
+    with:
+      skip_tests: true
+    secrets: inherit
+
+  # ============================================================
+  # Release: Apps
+  # ============================================================
+  release-apps:
+    name: Release Apps
+    needs: [setup, test-apps-summary]
+    if: |
+      always() &&
+      needs.setup.outputs.is_release == 'true' &&
+      needs.setup.outputs.release_apps == 'true' &&
+      (needs.test-apps-summary.outputs.success == 'true' || needs.setup.outputs.test_apps != 'true')
+    uses: ./.github/workflows/apps-release.yml
+    with:
+      skip_tests: true
+    secrets: inherit
+
+  # ============================================================
+  # Final Summary
+  # ============================================================
+  summary:
+    name: Pipeline Summary
+    needs: [setup, test-agent-summary, test-sdk-summary, test-apps-summary, release-agent, release-sdk, release-apps]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 🚀 CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.setup.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Release Mode:** ${{ needs.setup.outputs.is_release }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.setup.outputs.test_agent }}" == "true" ]]; then
+            if [[ "${{ needs.test-agent-summary.outputs.success }}" == "true" ]]; then
+              echo "| Agent | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Agent | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| Agent | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ needs.setup.outputs.test_sdk }}" == "true" ]]; then
+            if [[ "${{ needs.test-sdk-summary.outputs.success }}" == "true" ]]; then
+              echo "| SDK | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| SDK | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| SDK | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ needs.setup.outputs.test_apps }}" == "true" ]]; then
+            if [[ "${{ needs.test-apps-summary.outputs.success }}" == "true" ]]; then
+              echo "| Apps | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Apps | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| Apps | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ needs.setup.outputs.is_release }}" == "true" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Release Results" >> $GITHUB_STEP_SUMMARY
+            echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+            
+            if [[ "${{ needs.setup.outputs.release_agent }}" == "true" ]]; then
+              if [[ "${{ needs.release-agent.result }}" == "success" ]]; then
+                echo "| Agent | ✅ Released |" >> $GITHUB_STEP_SUMMARY
+              elif [[ "${{ needs.release-agent.result }}" == "skipped" ]]; then
+                echo "| Agent | ⏭️ Skipped (test failed) |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| Agent | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+            
+            if [[ "${{ needs.setup.outputs.release_sdk }}" == "true" ]]; then
+              if [[ "${{ needs.release-sdk.result }}" == "success" ]]; then
+                echo "| SDK | ✅ Released |" >> $GITHUB_STEP_SUMMARY
+              elif [[ "${{ needs.release-sdk.result }}" == "skipped" ]]; then
+                echo "| SDK | ⏭️ Skipped (test failed) |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| SDK | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+            
+            if [[ "${{ needs.setup.outputs.release_apps }}" == "true" ]]; then
+              if [[ "${{ needs.release-apps.result }}" == "success" ]]; then
+                echo "| Apps | ✅ Released |" >> $GITHUB_STEP_SUMMARY
+              elif [[ "${{ needs.release-apps.result }}" == "skipped" ]]; then
+                echo "| Apps | ⏭️ Skipped (test failed) |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| Apps | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          fi

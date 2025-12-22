@@ -24,22 +24,14 @@ permissions:
   packages: write
 
 jobs:
-  # Run tests first (skip if called from test.yml with tests already passed)
-  run-tests:
-    name: Run Tests
-    if: ${{ !inputs.skip_tests }}
-    uses: ./.github/workflows/test.yml
-    secrets: inherit
-
   # Build and push Docker image for Linux
   docker:
     name: Build Docker Image
-    needs: run-tests
-    if: ${{ always() && (needs.run-tests.result == 'success' || needs.run-tests.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+
 
     steps:
       - name: Checkout
