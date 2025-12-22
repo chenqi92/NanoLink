@@ -218,7 +218,7 @@ irm https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/insta
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash -s -- \
   --silent \
-  --url "wss://monitor.example.com:9100" \
+  --url "monitor.example.com:39100" \
   --token "your_token" \
   --permission 2
 ```
@@ -249,6 +249,261 @@ irm https://agent.download.kkape.com/newest/install.ps1 | iex
 | Windows | x64 | [nanolink-agent-windows-x86_64.exe](https://agent.download.kkape.com/newest/nanolink-agent-windows-x86_64.exe) |
 
 </details>
+
+---
+
+## Installation Guide (Interactive Mode)
+
+When running the install script interactively, you'll be prompted for several configuration options:
+
+### Step 1: Server Address
+
+```
+Server address (e.g., monitor.example.com:39100): 
+```
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| `host:port` | `api.example.com:39100` | Full format with custom port |
+| `host` | `api.example.com` | Uses default port 39100 |
+
+> **Note:** This is the gRPC endpoint of your NanoLink Server, not a web URL.
+
+### Step 2: Authentication Token
+
+```
+Authentication Token: 
+```
+
+This token is used to authenticate the Agent with the Server.
+
+| Where to get it | Description |
+|-----------------|-------------|
+| Server config `auth.tokens[].token` | Configured in server's `config.yaml` |
+| Admin Dashboard | Generated through the management interface |
+
+> **Important:** If `auth.enabled: false` on the server, any token value will be accepted.
+
+### Step 3: Permission Level
+
+```
+Permission Level
+  1) Read Only (monitoring only)
+  2) Read + Process Control
+  3) Read + Process + Limited Shell
+  4) Full Access (all operations)
+Select [1-4]: 
+```
+
+| Level | Name | Allowed Operations |
+|-------|------|------------------- |
+| **0** (Option 1) | READ_ONLY | Read metrics, view processes, view logs |
+| **1** (Option 2) | BASIC_WRITE | + Download files, clear temp, upload files |
+| **2** (Option 3) | SERVICE_CONTROL | + Restart services, Docker, kill processes |
+| **3** (Option 4) | SYSTEM_ADMIN | + System reboot, shell commands (requires SuperToken) |
+
+### Step 4: TLS Configuration
+
+```
+Enable TLS? [y/N]: 
+```
+
+| Choice | When to use |
+|--------|-------------|
+| **N** (No) | Server is **not** configured with HTTPS/TLS (most common for self-hosted) |
+| **Y** (Yes) | Server uses TLS certificate (Let's Encrypt, etc.) |
+
+If you select Yes:
+
+```
+Verify TLS certificate? [Y/n]: 
+```
+
+| Choice | When to use |
+|--------|-------------|
+| **Y** (Yes) | Production: Server has a valid, trusted certificate |
+| **N** (No) | Testing only: Self-signed certificate (security warning) |
+
+> **⚠️ Common Mistake:** If your server doesn't have TLS configured but you enable TLS on the agent, the connection will fail with "Cannot reach server".
+
+### Step 5: Connection Test
+
+```
+Test server connection before installing? [Y/n]: 
+```
+
+Tests TCP connectivity to the server. If the test fails:
+- Check if the server is running
+- Verify firewall/security group allows port 39100
+- Confirm TLS settings match between Agent and Server
+
+### Step 6: Hostname Configuration
+
+```
+Use system hostname (server-name)? [Y/n]: 
+```
+
+| Choice | Result |
+|--------|--------|
+| **Y** | Uses auto-detected hostname (e.g., `ubuntu-server`) |
+| **N** | Enter a custom display name for this agent |
+
+Custom hostnames are useful for identifying servers:
+```
+Custom hostname: prod-web-01
+```
+
+### Step 7: Shell Commands (if permission ≥ 2)
+
+```
+Enable shell command execution? (requires super token) [y/N]: 
+```
+
+| Choice | Description |
+|--------|-------------|
+| **N** | Disable shell access (safer) |
+| **Y** | Enable shell, requires a **separate** SuperToken |
+
+If enabled:
+```
+Shell Super Token (different from auth token): 
+```
+
+> **Security:** The Shell SuperToken is different from the Authentication Token. This adds an extra layer of protection for dangerous operations.
+
+---
+
+## Token Types Explained
+
+NanoLink uses **two different types of tokens** for different purposes:
+
+| Token Type | Purpose | Where Configured |
+|------------|---------|------------------|
+| **Authentication Token** | Agent ↔ Server connection auth | Agent: `servers[].token`<br>Server: `auth.tokens[].token` |
+| **API Token** | Local Management API access | Agent: `management.api_token` |
+| **Shell SuperToken** | Shell command execution | Agent: `shell.super_token` |
+
+### Authentication Flow
+
+```
+Agent                                Server
+  │                                    │
+  │  Connect with token="xxx"          │
+  ├───────────────────────────────────►│
+  │                                    │
+  │  Server checks auth.tokens[]       │
+  │  ◄─────────────────────────────────┤
+  │  Returns: permission level         │
+  │                                    │
+```
+
+### Server Configuration Example
+
+```yaml
+# Server config.yaml
+auth:
+  enabled: true
+  tokens:
+    - token: "prod-agent-token-1"
+      permission: 2
+      name: "Production Servers"
+    
+    - token: "dev-agent-token"
+      permission: 3
+      name: "Dev Environment"
+```
+
+---
+
+## Silent Installation Parameters
+
+For automated/scripted deployments:
+
+```bash
+curl -fsSL URL | sudo bash -s -- [OPTIONS]
+```
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `--silent` | Non-interactive mode | `--silent` |
+| `--url` | Server address (host:port) | `--url "api.example.com:39100"` |
+| `--token` | Authentication token | `--token "your_token"` |
+| `--permission` | Permission level (0-3) | `--permission 2` |
+| `--no-tls` | Disable TLS | `--no-tls` |
+| `--hostname` | Custom hostname | `--hostname "prod-01"` |
+| `--shell-enabled` | Enable shell | `--shell-enabled` |
+| `--shell-token` | Shell SuperToken | `--shell-token "super_secret"` |
+| `--lang` | Language (en/zh) | `--lang zh` |
+
+**Examples:**
+
+```bash
+# Minimal installation (TLS disabled)
+curl -fsSL URL | sudo bash -s -- --silent \
+  --url "192.168.1.100:39100" \
+  --token "my_token" \
+  --no-tls
+
+# Full production setup (TLS enabled)
+curl -fsSL URL | sudo bash -s -- --silent \
+  --url "monitor.example.com:39100" \
+  --token "prod_token" \
+  --permission 2 \
+  --hostname "web-server-01"
+
+# With shell access enabled
+curl -fsSL URL | sudo bash -s -- --silent \
+  --url "monitor.example.com:39100" \
+  --token "admin_token" \
+  --permission 3 \
+  --shell-enabled \
+  --shell-token "super_admin_token"
+```
+
+---
+
+## Troubleshooting Installation
+
+### "Cannot reach server"
+
+| Cause | Solution |
+|-------|----------|
+| TLS mismatch | If server has no TLS, select `Enable TLS? [y/N]: N` |
+| Firewall | Open port 39100 (or your custom port) |
+| Server not running | Start NanoLink Server first |
+| Wrong port | Verify gRPC port (default: 39100) |
+
+### "Management API token not set"
+
+The agent config has `management.enabled: true` but no `api_token`:
+
+```bash
+# Fix: Edit config
+sudo nano /etc/nanolink/nanolink.yaml
+
+# Change this:
+management:
+  enabled: false  # Disable if not needed
+  # OR set a token:
+  # enabled: true
+  # api_token: "your_local_api_token"
+
+# Restart
+sudo systemctl restart nanolink-agent
+```
+
+### View Agent Logs
+
+```bash
+# Linux
+sudo journalctl -u nanolink-agent -f
+
+# macOS
+tail -f /var/log/nanolink/agent.log
+
+# Windows (PowerShell)
+Get-Content "C:\ProgramData\NanoLink\logs\agent.log" -Wait
+```
 
 ### Multi-Server Management
 

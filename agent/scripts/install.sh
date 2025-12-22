@@ -1040,7 +1040,7 @@ $([ "$SHELL_ENABLED" = "true" ] && echo "  super_token: \"${SHELL_TOKEN}\"")
     - pattern: "shutdown"
 
 management:
-  enabled: true
+  enabled: false
   port: 9101
 
 logging:

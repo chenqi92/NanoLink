@@ -218,7 +218,7 @@ irm https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/insta
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash -s -- \
   --silent \
-  --url "wss://monitor.example.com:9100" \
+  --url "monitor.example.com:39100" \
   --token "your_token" \
   --permission 2
 ```
@@ -249,6 +249,261 @@ irm https://agent.download.kkape.com/newest/install.ps1 | iex
 | Windows | x64 | [nanolink-agent-windows-x86_64.exe](https://agent.download.kkape.com/newest/nanolink-agent-windows-x86_64.exe) |
 
 </details>
+
+---
+
+## 安装脚本详解（交互模式）
+
+运行安装脚本时，会依次提示以下配置选项：
+
+### 第一步：服务器地址
+
+```
+Server address (e.g., monitor.example.com:39100): 
+```
+
+| 格式 | 示例 | 说明 |
+|------|------|------|
+| `主机:端口` | `api.example.com:39100` | 完整格式，自定义端口 |
+| `主机` | `api.example.com` | 使用默认端口 39100 |
+
+> **注意:** 这是 NanoLink Server 的 gRPC 端点，不是 Web 地址。
+
+### 第二步：认证令牌
+
+```
+Authentication Token: 
+```
+
+用于 Agent 向服务端验证身份的令牌。
+
+| 来源 | 说明 |
+|------|------|
+| 服务端配置 `auth.tokens[].token` | 在服务端 `config.yaml` 中配置 |
+| 管理后台 | 通过 Dashboard 界面生成 |
+
+> **提示:** 如果服务端 `auth.enabled: false`，任何令牌值都会被接受。
+
+### 第三步：权限级别
+
+```
+Permission Level
+  1) Read Only (monitoring only)
+  2) Read + Process Control
+  3) Read + Process + Limited Shell
+  4) Full Access (all operations)
+Select [1-4]: 
+```
+
+| 级别 | 名称 | 可执行操作 |
+|------|------|-----------|
+| **0** (选项 1) | 只读 | 读取监控数据、查看进程、查看日志 |
+| **1** (选项 2) | 基础写入 | + 下载文件、清理临时文件、上传文件 |
+| **2** (选项 3) | 服务控制 | + 重启服务、Docker 容器、杀死进程 |
+| **3** (选项 4) | 系统管理员 | + 重启服务器、执行 Shell 命令（需 SuperToken） |
+
+### 第四步：TLS 配置
+
+```
+Enable TLS? [y/N]: 
+```
+
+| 选择 | 适用场景 |
+|------|----------|
+| **N** (否) | 服务端**未配置** HTTPS/TLS（自建服务器常见） |
+| **Y** (是) | 服务端使用 TLS 证书（Let's Encrypt 等） |
+
+如果选择是：
+
+```
+Verify TLS certificate? [Y/n]: 
+```
+
+| 选择 | 适用场景 |
+|------|----------|
+| **Y** (是) | 生产环境：服务端有有效的受信任证书 |
+| **N** (否) | 仅测试：自签名证书（会有安全警告） |
+
+> **⚠️ 常见错误:** 如果服务端没有配置 TLS，但 Agent 启用了 TLS，连接会失败并提示 "Cannot reach server"。
+
+### 第五步：连接测试
+
+```
+Test server connection before installing? [Y/n]: 
+```
+
+测试到服务端的 TCP 连接。如果测试失败：
+- 检查服务端是否运行
+- 确认防火墙/安全组允许 39100 端口
+- 确认 TLS 设置与服务端一致
+
+### 第六步：主机名配置
+
+```
+Use system hostname (服务器名)? [Y/n]: 
+```
+
+| 选择 | 结果 |
+|------|------|
+| **Y** | 使用自动检测的主机名（如 `ubuntu-server`） |
+| **N** | 输入自定义的显示名称 |
+
+自定义主机名有助于识别服务器：
+```
+Custom hostname: prod-web-01
+```
+
+### 第七步：Shell 命令（权限 ≥ 2 时显示）
+
+```
+Enable shell command execution? (requires super token) [y/N]: 
+```
+
+| 选择 | 说明 |
+|------|------|
+| **N** | 禁用 Shell 访问（更安全） |
+| **Y** | 启用 Shell，需要**独立的** SuperToken |
+
+如果启用：
+```
+Shell Super Token (different from auth token): 
+```
+
+> **安全提示:** Shell SuperToken 与认证令牌不同，这为危险操作增加了额外的安全层。
+
+---
+
+## Token 类型说明
+
+NanoLink 使用**多种不同类型的 Token**，用途各不相同：
+
+| Token 类型 | 用途 | 配置位置 |
+|------------|------|----------|
+| **认证令牌 (Authentication Token)** | Agent ↔ Server 连接认证 | Agent: `servers[].token`<br>Server: `auth.tokens[].token` |
+| **API 令牌 (API Token)** | 本地管理 API 访问 | Agent: `management.api_token` |
+| **Shell 超级令牌 (Shell SuperToken)** | Shell 命令执行 | Agent: `shell.super_token` |
+
+### 认证流程
+
+```
+Agent                                Server
+  │                                    │
+  │  携带 token="xxx" 连接              │
+  ├───────────────────────────────────►│
+  │                                    │
+  │  Server 验证 auth.tokens[]          │
+  │  ◄─────────────────────────────────┤
+  │  返回：权限级别                     │
+  │                                    │
+```
+
+### 服务端配置示例
+
+```yaml
+# Server config.yaml
+auth:
+  enabled: true
+  tokens:
+    - token: "prod-agent-token-1"
+      permission: 2
+      name: "生产服务器"
+    
+    - token: "dev-agent-token"
+      permission: 3
+      name: "开发环境"
+```
+
+---
+
+## 静默安装参数
+
+用于自动化/脚本化部署：
+
+```bash
+curl -fsSL URL | sudo bash -s -- [参数]
+```
+
+| 参数 | 说明 | 示例 |
+|------|------|------|
+| `--silent` | 非交互模式 | `--silent` |
+| `--url` | 服务器地址 (host:port) | `--url "api.example.com:39100"` |
+| `--token` | 认证令牌 | `--token "your_token"` |
+| `--permission` | 权限级别 (0-3) | `--permission 2` |
+| `--no-tls` | 禁用 TLS | `--no-tls` |
+| `--hostname` | 自定义主机名 | `--hostname "prod-01"` |
+| `--shell-enabled` | 启用 Shell | `--shell-enabled` |
+| `--shell-token` | Shell SuperToken | `--shell-token "super_secret"` |
+| `--lang` | 语言 (en/zh) | `--lang zh` |
+
+**示例：**
+
+```bash
+# 最小化安装（禁用 TLS）
+curl -fsSL URL | sudo bash -s -- --silent \
+  --url "192.168.1.100:39100" \
+  --token "my_token" \
+  --no-tls
+
+# 生产环境完整配置（启用 TLS）
+curl -fsSL URL | sudo bash -s -- --silent \
+  --url "monitor.example.com:39100" \
+  --token "prod_token" \
+  --permission 2 \
+  --hostname "web-server-01"
+
+# 启用 Shell 访问
+curl -fsSL URL | sudo bash -s -- --silent \
+  --url "monitor.example.com:39100" \
+  --token "admin_token" \
+  --permission 3 \
+  --shell-enabled \
+  --shell-token "super_admin_token"
+```
+
+---
+
+## 安装问题排查
+
+### "Cannot reach server" 无法连接服务器
+
+| 原因 | 解决方案 |
+|------|----------|
+| TLS 不匹配 | 如果服务端没有 TLS，选择 `Enable TLS? [y/N]: N` |
+| 防火墙 | 开放 39100 端口（或你的自定义端口） |
+| 服务端未运行 | 先启动 NanoLink Server |
+| 端口错误 | 确认 gRPC 端口（默认：39100） |
+
+### "Management API token not set" 管理 API 令牌未设置
+
+Agent 配置中 `management.enabled: true` 但未设置 `api_token`：
+
+```bash
+# 修复：编辑配置文件
+sudo nano /etc/nanolink/nanolink.yaml
+
+# 修改为：
+management:
+  enabled: false  # 如果不需要，直接禁用
+  # 或者设置 token：
+  # enabled: true
+  # api_token: "your_local_api_token"
+
+# 重启服务
+sudo systemctl restart nanolink-agent
+```
+
+### 查看 Agent 日志
+
+```bash
+# Linux
+sudo journalctl -u nanolink-agent -f
+
+# macOS
+tail -f /var/log/nanolink/agent.log
+
+# Windows (PowerShell)
+Get-Content "C:\ProgramData\NanoLink\logs\agent.log" -Wait
+```
 
 ### 多服务端管理
 
