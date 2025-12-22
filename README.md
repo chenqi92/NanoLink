@@ -1,4 +1,4 @@
-# NanoLink
+﻿# NanoLink
 
 [![Test](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml)
 [![Release](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml)
@@ -324,7 +324,7 @@ logging:
 <dependency>
     <groupId>com.kkape</groupId>
     <artifactId>nanolink-sdk</artifactId>
-    <version>0.2.3</version>
+    <version>0.2.4</version>
 </dependency>
 ```
 
