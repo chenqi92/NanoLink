@@ -29,12 +29,27 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
     private final NanoLinkServer server;
     private final TokenValidator tokenValidator;
 
+    // P0-3: 可选的强制认证模式，默认为false
+    private final boolean requireAuthentication;
+
     // Map of authenticated streams to their agent connections
     private final Map<StreamObserver<?>, AgentConnection> streamAgents = new ConcurrentHashMap<>();
 
     public NanoLinkServiceImpl(NanoLinkServer server, TokenValidator tokenValidator) {
+        this(server, tokenValidator, false);
+    }
+
+    /**
+     * Constructor with optional authentication requirement.
+     *
+     * @param server               The NanoLink server instance
+     * @param tokenValidator       Token validator for authentication
+     * @param requireAuthentication If true, rejects unauthenticated stream connections
+     */
+    public NanoLinkServiceImpl(NanoLinkServer server, TokenValidator tokenValidator, boolean requireAuthentication) {
         this.server = server;
         this.tokenValidator = tokenValidator;
+        this.requireAuthentication = requireAuthentication;
     }
 
     @Override
@@ -112,6 +127,21 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
                         // Register agent on first metrics if not already
                         if (agent == null) {
+                            // P0-3: 强制认证模式检查
+                            if (requireAuthentication) {
+                                log.warn("SECURITY: Rejecting unauthenticated metrics stream (requireAuthentication=true)");
+                                responseObserver.onNext(MetricsStreamResponse.newBuilder()
+                                        .setConfigUpdate(ConfigUpdate.newBuilder()
+                                                .setMessage("Authentication required. Please use Authenticate RPC before streaming metrics.")
+                                                .build())
+                                        .build());
+                                responseObserver.onError(
+                                        io.grpc.Status.UNAUTHENTICATED
+                                                .withDescription("Authentication required: use Authenticate RPC before streaming metrics")
+                                                .asRuntimeException());
+                                return;
+                            }
+
                             String hostname = SanitizeUtils.sanitizeHostname(protoMetrics.getHostname());
 
                             // Check if agent with same hostname already exists (reconnection case)

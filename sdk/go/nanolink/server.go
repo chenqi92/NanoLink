@@ -27,6 +27,12 @@ type Config struct {
 	TLSKey          string
 	StaticFilesPath string // Optional path to dashboard static files
 	TokenValidator  TokenValidator
+
+	// Security options
+	// RequireAuthentication if true, rejects unauthenticated agent connections
+	// When false (default), agents can connect via metrics stream without explicit auth
+	// but will have ReadOnly permission level
+	RequireAuthentication bool
 }
 
 // Token validation result

@@ -38,33 +38,39 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManagementConfig {
-    /// Enable management API
-    #[serde(default = "default_management_enabled")]
+    /// Enable management API (默认禁用以提高安全性)
+    #[serde(default)]
     pub enabled: bool,
 
-    /// Port to listen on (localhost only)
+    /// Port to listen on
     #[serde(default = "default_management_port")]
     pub port: u16,
 
-    /// API token for authentication (optional)
+    /// Bind address (默认仅localhost以限制访问)
+    #[serde(default = "default_bind_address")]
+    pub bind_address: String,
+
+    /// API token for authentication (启用时必须设置)
     pub api_token: Option<String>,
 }
 
 impl Default for ManagementConfig {
     fn default() -> Self {
         Self {
-            enabled: default_management_enabled(),
+            enabled: false,  // 默认禁用
             port: default_management_port(),
+            bind_address: default_bind_address(),
             api_token: None,
         }
     }
 }
 
-fn default_management_enabled() -> bool {
-    true
-}
 fn default_management_port() -> u16 {
     9101
+}
+
+fn default_bind_address() -> String {
+    "127.0.0.1".to_string()  // 仅绑定本地回环地址
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,7 +115,10 @@ pub struct ServerConfig {
     #[serde(default = "default_grpc_port")]
     pub port: u16,
 
-    /// Authentication token
+    /// Authentication token. Supports multiple formats:
+    /// 1. Direct value: "my_token"
+    /// 2. Environment variable reference: "${ENV_VAR_NAME}"
+    /// 3. File reference: "file:///path/to/token"
     pub token: String,
 
     /// Permission level for this connection
@@ -134,6 +143,35 @@ impl ServerConfig {
         } else {
             format!("http://{}:{}", self.host, self.port)
         }
+    }
+
+    /// Resolve token value, supporting environment variables and file references
+    /// Returns the actual token value, or an error if resolution fails
+    pub fn resolve_token(&self) -> Result<String, String> {
+        let token = &self.token;
+
+        // Environment variable format: ${VAR_NAME}
+        if token.starts_with("${") && token.ends_with("}") {
+            let var_name = &token[2..token.len() - 1];
+            return std::env::var(var_name).map_err(|_| {
+                format!(
+                    "Environment variable '{}' not found. \
+                    Make sure it is set before starting the agent.",
+                    var_name
+                )
+            });
+        }
+
+        // File reference format: file:///path/to/token
+        if token.starts_with("file://") {
+            let path = &token[7..];
+            return std::fs::read_to_string(path)
+                .map(|s| s.trim().to_string())
+                .map_err(|e| format!("Failed to read token file '{}': {}", path, e));
+        }
+
+        // Direct value
+        Ok(token.clone())
     }
 }
 
@@ -434,11 +472,35 @@ fn default_audit_file() -> String {
 
 fn default_blacklist() -> Vec<String> {
     vec![
+        // 破坏性命令
         "rm -rf".to_string(),
         "mkfs".to_string(),
         "> /dev".to_string(),
         "dd if=".to_string(),
         ":(){:|:&};:".to_string(), // fork bomb
+        "shred".to_string(),
+        "wipefs".to_string(),
+        // 敏感文件操作
+        "> /etc/passwd".to_string(),
+        "> /etc/shadow".to_string(),
+        "chmod 777 /".to_string(),
+        // 远程执行/后门
+        "curl |".to_string(),
+        "wget |".to_string(),
+        "| sh".to_string(),
+        "| bash".to_string(),
+        "/dev/tcp/".to_string(),
+        "nc -e".to_string(),
+        "nc -l".to_string(),
+        // 脚本执行
+        "python -c".to_string(),
+        "perl -e".to_string(),
+        "ruby -e".to_string(),
+        "base64 -d |".to_string(),
+        // 权限提升
+        "sudo ".to_string(),
+        " su ".to_string(),
+        " su\n".to_string(),
     ]
 }
 
@@ -528,6 +590,30 @@ impl Config {
 
         if self.shell.enabled && self.shell.super_token.is_none() {
             anyhow::bail!("Shell is enabled but super_token is not set");
+        }
+
+        // P1-2: 检查危险的通配符配置
+        for pattern in &self.shell.whitelist {
+            if pattern.pattern == "*" {
+                tracing::warn!(
+                    "[SECURITY WARNING] Shell whitelist contains '*' pattern - this allows ALL commands!"
+                );
+                // 除非显式允许，否则拒绝通配符
+                if std::env::var("NANOLINK_ALLOW_WILDCARD").is_err() {
+                    anyhow::bail!(
+                        "Wildcard '*' in whitelist is not allowed for security reasons. \
+                        Set NANOLINK_ALLOW_WILDCARD=1 environment variable to override."
+                    );
+                }
+            }
+        }
+
+        // P1-3: 管理API启用时必须设置token
+        if self.management.enabled && self.management.api_token.is_none() {
+            anyhow::bail!(
+                "Management API is enabled but api_token is not set. \
+                This is a security risk - please configure an api_token."
+            );
         }
 
         Ok(())

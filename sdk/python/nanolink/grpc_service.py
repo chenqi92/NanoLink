@@ -38,6 +38,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         on_realtime_metrics: Optional[Callable[[RealtimeMetrics], None]] = None,
         on_static_info: Optional[Callable[[StaticInfo], None]] = None,
         on_periodic_data: Optional[Callable[[PeriodicData], None]] = None,
+        require_authentication: bool = False,  # P0-3: 可选强制认证
     ):
         self.token_validator = token_validator
         self.on_agent_connect = on_agent_connect
@@ -46,6 +47,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         self.on_realtime_metrics = on_realtime_metrics
         self.on_static_info = on_static_info
         self.on_periodic_data = on_periodic_data
+        self.require_authentication = require_authentication  # P0-3
 
         # Map of context to agent connection
         self._agents: Dict[str, AgentConnection] = {}
@@ -173,6 +175,18 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 
                         # Register agent from first metrics
                         if agent is None:
+                            # P0-3: 强制认证模式检查
+                            if self.require_authentication:
+                                logger.warning("SECURITY: Rejecting unauthenticated metrics stream (require_authentication=True)")
+                                yield nanolink_pb2.MetricsStreamResponse(
+                                    config_update=nanolink_pb2.ConfigUpdate(
+                                        message="Authentication required. Please use Authenticate RPC before streaming metrics."
+                                    )
+                                )
+                                context.abort(grpc.StatusCode.UNAUTHENTICATED, 
+                                            "Authentication required: use Authenticate RPC before streaming metrics")
+                                return
+
                             hostname = sanitize_hostname(proto_metrics.hostname)
 
                             # Check for existing agent

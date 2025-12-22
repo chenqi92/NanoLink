@@ -1,6 +1,16 @@
 use std::sync::Arc;
 
+use subtle::ConstantTimeEq;
+
 use crate::config::Config;
+
+/// 常量时间字符串比较，防止时序攻击
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.ct_eq(b).into()
+}
 
 /// Permission levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -45,10 +55,11 @@ impl Authenticator {
     }
 
     /// Validate a token and return the permission level
+    /// Uses constant-time comparison to prevent timing attacks
     pub fn validate_token(&self, token: &str) -> Option<PermissionLevel> {
-        // Find matching server config
+        // Find matching server config using constant-time comparison
         for server in &self.config.servers {
-            if server.token == token {
+            if constant_time_eq(server.token.as_bytes(), token.as_bytes()) {
                 return Some(PermissionLevel::from(server.permission));
             }
         }
@@ -61,11 +72,12 @@ impl Authenticator {
             return false;
         }
 
+        // Use constant-time comparison to prevent timing attacks
         self.config
             .shell
             .super_token
             .as_ref()
-            .map(|t| t == super_token)
+            .map(|t| constant_time_eq(t.as_bytes(), super_token.as_bytes()))
             .unwrap_or(false)
     }
 }

@@ -1,7 +1,20 @@
 use std::sync::Arc;
 
+use lazy_static::lazy_static;
+use regex::Regex;
+use subtle::ConstantTimeEq;
+use tracing::warn;
+
 use crate::config::Config;
 use crate::proto::CommandType;
+
+/// 常量时间字符串比较，防止时序攻击
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.ct_eq(b).into()
+}
 
 /// Permission checker for commands
 pub struct PermissionChecker {
@@ -53,29 +66,47 @@ impl PermissionChecker {
         }
     }
 
-    /// Check if a shell command is allowed
+    /// Check if a shell command is allowed (P0-2 增强版本)
     pub fn check_shell_command(&self, command: &str, super_token: &str) -> Result<(), String> {
         // Check if shell is enabled
         if !self.config.shell.enabled {
             return Err("Shell commands are disabled".to_string());
         }
 
-        // Validate super token
+        // Validate super token using constant-time comparison
         let valid_token = self
             .config
             .shell
             .super_token
             .as_ref()
-            .map(|t| t == super_token)
+            .map(|t| constant_time_eq(t.as_bytes(), super_token.as_bytes()))
             .unwrap_or(false);
 
         if !valid_token {
             return Err("Invalid super token".to_string());
         }
 
-        // Check blacklist first
+        // P0-2: 规范化命令字符串
+        let normalized = Self::normalize_command(command);
+
+        // P0-2: 检测危险模式 (正则表达式)
+        if let Some(pattern) = Self::contains_dangerous_pattern(&normalized) {
+            warn!(
+                "[SECURITY] Dangerous pattern detected in command: {}",
+                command
+            );
+            return Err(format!("Command blocked: dangerous pattern detected ({})", pattern));
+        }
+
+        // P0-2: 检测命令注入
+        if Self::detect_command_injection(command) {
+            warn!("[SECURITY] Command injection attempt: {}", command);
+            return Err("Command blocked: potential command injection detected".to_string());
+        }
+
+        // Check blacklist (both original and normalized)
         for pattern in &self.config.shell.blacklist {
-            if command.contains(pattern) {
+            if command.contains(pattern) || normalized.contains(pattern) {
                 return Err(format!("Command contains blacklisted pattern: {}", pattern));
             }
         }
@@ -95,6 +126,96 @@ impl PermissionChecker {
         }
 
         Ok(())
+    }
+
+    /// 规范化命令字符串，移除可能用于绕过检测的字符
+    fn normalize_command(command: &str) -> String {
+        command
+            .replace('\\', "")      // 移除反斜杠转义
+            .replace('\'', "")      // 移除单引号
+            .replace('"', "")       // 移除双引号
+            .split_whitespace()     // 规范化空格
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// 使用正则表达式检测危险模式，返回匹配的模式名称
+    fn contains_dangerous_pattern(command: &str) -> Option<&'static str> {
+        lazy_static! {
+            static ref DANGEROUS_PATTERNS: Vec<(Regex, &'static str)> = vec![
+                // 破坏性命令
+                (Regex::new(r"\brm\s+(-[rfv]+\s+)*[/\*]").unwrap(), "rm with root/wildcard"),
+                (Regex::new(r"\bmkfs\b").unwrap(), "mkfs"),
+                (Regex::new(r"\bdd\s+if=").unwrap(), "dd"),
+                (Regex::new(r">\s*/dev/(sd|hd|nvme|vd)").unwrap(), "write to device"),
+                
+                // 权限提升
+                (Regex::new(r"\bchmod\s+[0-7]*777").unwrap(), "chmod 777"),
+                (Regex::new(r"\bchown\s+root").unwrap(), "chown root"),
+                
+                // 网络后门/反向shell
+                (Regex::new(r"\bnc\s+-[el]").unwrap(), "netcat listener/exec"),
+                (Regex::new(r"\bbash\s+-i\s+>&").unwrap(), "bash reverse shell"),
+                (Regex::new(r"/dev/tcp/").unwrap(), "bash network redirection"),
+                (Regex::new(r"python.*-c.*socket").unwrap(), "python socket"),
+                (Regex::new(r"perl.*-e.*socket").unwrap(), "perl socket"),
+                
+                // 敏感文件访问
+                (Regex::new(r"\bcat\s+.*/(etc/(shadow|sudoers)|\.ssh/)").unwrap(), "sensitive file read"),
+                
+                // Fork炸弹和相关
+                (Regex::new(r":\s*\(\s*\)\s*\{").unwrap(), "fork bomb pattern"),
+                (Regex::new(r"\bwhile\s+true\s*;?\s*do").unwrap(), "infinite loop"),
+                (Regex::new(r"\bfor\s*\(\s*;\s*;\s*\)").unwrap(), "infinite for loop"),
+            ];
+        }
+
+        for (regex, name) in DANGEROUS_PATTERNS.iter() {
+            if regex.is_match(command) {
+                return Some(name);
+            }
+        }
+        None
+    }
+
+    /// 检测命令注入尝试
+    fn detect_command_injection(command: &str) -> bool {
+        // 命令替换 $(...) 或 `...`
+        if command.contains("$(") || command.contains('`') {
+            return true;
+        }
+
+        // 管道到危险解释器
+        if command.contains('|') {
+            let parts: Vec<&str> = command.split('|').collect();
+            for part in parts.iter().skip(1) {
+                let trimmed = part.trim();
+                if trimmed.starts_with("sh")
+                    || trimmed.starts_with("bash")
+                    || trimmed.starts_with("python")
+                    || trimmed.starts_with("perl")
+                    || trimmed.starts_with("ruby")
+                    || trimmed.starts_with("node")
+                    || trimmed.starts_with("php")
+                {
+                    return true;
+                }
+            }
+        }
+
+        // base64编码执行
+        if command.contains("base64") && (command.contains("-d") || command.contains("--decode")) {
+            if command.contains('|') {
+                return true;
+            }
+        }
+
+        // eval执行
+        if command.contains("eval ") || command.contains("eval\t") {
+            return true;
+        }
+
+        false
     }
 
     /// Check if a command matches a pattern (supports * wildcard)
