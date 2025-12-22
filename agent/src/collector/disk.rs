@@ -432,9 +432,20 @@ impl DiskCollector {
             let mount_point = disk.mount_point().to_string_lossy().to_string();
             let device = disk.name().to_string_lossy().to_string();
             let fs_type = disk.file_system().to_string_lossy().to_string();
+
+            // Filter out virtual/pseudo filesystems
+            if Self::should_skip_filesystem(&mount_point, &device, &fs_type) {
+                continue;
+            }
+
             let total = disk.total_space();
             let available = disk.available_space();
             let used = total.saturating_sub(available);
+
+            // Skip empty/zero-sized filesystems
+            if total == 0 {
+                continue;
+            }
 
             // Extract base device name for hardware info lookup
             let base_device = device
@@ -498,6 +509,85 @@ impl DiskCollector {
         self.prev_time = Some(now);
 
         metrics
+    }
+
+    /// Check if a filesystem should be skipped (virtual/pseudo filesystems)
+    fn should_skip_filesystem(mount_point: &str, device: &str, fs_type: &str) -> bool {
+        // Skip by filesystem type (virtual/pseudo filesystems)
+        let virtual_fs_types = [
+            "tmpfs",
+            "devtmpfs",
+            "sysfs",
+            "proc",
+            "devpts",
+            "cgroup",
+            "cgroup2",
+            "securityfs",
+            "debugfs",
+            "tracefs",
+            "configfs",
+            "fusectl",
+            "hugetlbfs",
+            "mqueue",
+            "binfmt_misc",
+            "autofs",
+            "pstore",
+            "efivarfs",
+            "rpc_pipefs",
+            "nsfs",
+            "overlay",       // Docker overlay filesystem
+            "squashfs",      // Snap packages
+            "fuse.snapfuse", // Snap FUSE mounts
+            "fuse.portal",   // XDG portals
+        ];
+
+        if virtual_fs_types.iter().any(|&t| fs_type == t) {
+            return true;
+        }
+
+        // Skip by mount point patterns
+        let skip_mount_patterns = [
+            "/var/lib/docker/",      // Docker volumes/overlays
+            "/var/lib/containers/",  // Podman containers
+            "/var/lib/kubelet/",     // Kubernetes volumes
+            "/run/",                 // Runtime data
+            "/dev/",                 // Device files (except /dev/shm which has tmpfs)
+            "/sys/",                 // Sysfs virtual filesystem
+            "/proc/",                // Procfs
+            "/snap/",                // Snap package mounts
+            "/var/snap/",            // Snap data (when mounted separately)
+        ];
+
+        if skip_mount_patterns
+            .iter()
+            .any(|&p| mount_point.starts_with(p))
+        {
+            return true;
+        }
+
+        // Skip specific mount points
+        let skip_exact_mounts = [
+            "/dev/shm", // Shared memory (tmpfs)
+            "/dev/pts", // Pseudo terminals
+        ];
+
+        if skip_exact_mounts.iter().any(|&m| mount_point == m) {
+            return true;
+        }
+
+        // Skip loop devices (typically snap packages)
+        if device.starts_with("/dev/loop") {
+            return true;
+        }
+
+        // Skip by device patterns
+        let skip_device_patterns = ["overlay", "shm", "nsfs"];
+
+        if skip_device_patterns.iter().any(|&p| device.contains(p)) {
+            return true;
+        }
+
+        false
     }
 }
 
