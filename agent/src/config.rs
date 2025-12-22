@@ -163,8 +163,7 @@ impl ServerConfig {
         }
 
         // File reference format: file:///path/to/token
-        if token.starts_with("file://") {
-            let path = &token[7..];
+        if let Some(path) = token.strip_prefix("file://") {
             return std::fs::read_to_string(path)
                 .map(|s| s.trim().to_string())
                 .map_err(|e| format!("Failed to read token file '{}': {}", path, e));

@@ -1,4 +1,4 @@
-﻿"""
+"""
 NanoLink SDK - Python SDK for NanoLink monitoring system
 
 A lightweight, cross-platform server monitoring agent system.

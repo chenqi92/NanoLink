@@ -134,9 +134,7 @@ impl PermissionChecker {
     /// 规范化命令字符串，移除可能用于绕过检测的字符
     fn normalize_command(command: &str) -> String {
         command
-            .replace('\\', "") // 移除反斜杠转义
-            .replace('\'', "") // 移除单引号
-            .replace('"', "") // 移除双引号
+            .replace(['\\', '\'', '"'], "") // 移除反斜杠、单引号、双引号
             .split_whitespace() // 规范化空格
             .collect::<Vec<_>>()
             .join(" ")
