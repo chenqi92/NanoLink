@@ -67,6 +67,20 @@
       "pattern": "<version>.*</version><!-- DEMO_VERSION -->",
       "replacement": "<version>{{VERSION}}</version><!-- DEMO_VERSION -->",
       "type": "regex"
+    },
+    {
+      "path": "agent/scripts/install.sh",
+      "pattern": "VERSION=\".*\"",
+      "replacement": "VERSION=\"{{VERSION}}\"",
+      "type": "regex",
+      "description": "Agent install script (bash)"
+    },
+    {
+      "path": "agent/scripts/install.ps1",
+      "pattern": "\\$Script:VERSION = \".*\"",
+      "replacement": "$Script:VERSION = \"{{VERSION}}\"",
+      "type": "regex",
+      "description": "Agent install script (PowerShell)"
     }
   ]
 }

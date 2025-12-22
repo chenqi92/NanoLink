@@ -3,7 +3,7 @@
 # Example: .\bump-version.ps1 0.2.0
 
 param(
-    [Parameter(Position=0)]
+    [Parameter(Position = 0)]
     [string]$NewVersion
 )
 
@@ -56,7 +56,8 @@ function Update-FileVersion {
             # Preserve line endings
             $newContent | Set-Content $FullPath -NoNewline -Encoding UTF8
             Write-Success "Updated: $RelativePath"
-        } else {
+        }
+        else {
             Write-Warn "No changes in: $RelativePath"
         }
     }
@@ -117,6 +118,8 @@ function Main {
         "apps/desktop/pubspec.yaml",
         "demo/spring-boot/pom.xml",
         "scripts/version.json",
+        "agent/scripts/install.sh",
+        "agent/scripts/install.ps1",
         "README.md",
         "README_CN.md"
     )

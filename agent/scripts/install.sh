@@ -13,7 +13,7 @@ set -e
 # =============================================================================
 # Configuration
 # =============================================================================
-VERSION="0.1.0"
+VERSION="0.2.6"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/nanolink"
 LOG_DIR="/var/log/nanolink"
@@ -384,7 +384,9 @@ $([ -n "$HOSTNAME_OVERRIDE" ] && echo "  hostname: \"$HOSTNAME_OVERRIDE\"")
   max_reconnect_delay: 300
 
 servers:
-  - url: "${SERVER_URL}"
+  - host: "$(echo "$SERVER_URL" | sed -E 's|^wss?://||' | cut -d':' -f1 | cut -d'/' -f1)"
+    port: $(echo "$SERVER_URL" | sed -E 's|^wss?://||' | grep -oE ':[0-9]+' | cut -d':' -f2 || echo 9100)
+    tls_enabled: $(echo "$SERVER_URL" | grep -q '^wss://' && echo 'true' || echo 'false')
     token: "${TOKEN}"
     permission: ${PERMISSION}
     tls_verify: ${TLS_VERIFY}

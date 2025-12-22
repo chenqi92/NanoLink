@@ -61,7 +61,7 @@ $ErrorActionPreference = "Stop"
 # =============================================================================
 # Configuration
 # =============================================================================
-$Script:VERSION = "0.1.0"
+$Script:VERSION = "0.2.6"
 $Script:ServiceName = "NanoLinkAgent"
 $Script:ServiceDisplayName = "NanoLink Monitoring Agent"
 $Script:InstallDir = "C:\Program Files\NanoLink"
@@ -116,7 +116,8 @@ function Read-PromptValue {
             $value = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
                 [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureValue)
             )
-        } else {
+        }
+        else {
             $value = Read-Host -Prompt $displayPrompt
         }
 
@@ -255,7 +256,8 @@ function Test-ServerConnection {
         if ($wait -and $tcpClient.Connected) {
             $tcpClient.Close()
             Write-Success "Server is reachable!"
-        } else {
+        }
+        else {
             $tcpClient.Close()
             Write-Warn "Cannot reach server at ${host_}:$port"
             if (-not (Read-YesNo -Prompt "Continue anyway?" -Default $false)) {
@@ -339,13 +341,15 @@ function New-Configuration {
     # Generate config
     $hostnameSection = if ($Script:HostnameOverride) {
         "  hostname: `"$($Script:HostnameOverride)`""
-    } else {
+    }
+    else {
         "  # hostname: `"custom-hostname`""
     }
 
     $shellTokenSection = if ($Script:ShellEnabled) {
         "  super_token: `"$($Script:ShellSuperToken)`""
-    } else {
+    }
+    else {
         "  # super_token: `"your_super_token`""
     }
 
@@ -360,7 +364,9 @@ $hostnameSection
   max_reconnect_delay: 300
 
 servers:
-  - url: "$Script:ServerUrl"
+  - host: "$([System.Uri]::new($Script:ServerUrl).Host)"
+    port: $(if (([System.Uri]::new($Script:ServerUrl)).Port -gt 0) { ([System.Uri]::new($Script:ServerUrl)).Port } else { 39100 })
+    tls_enabled: $($Script:ServerUrl -match '^wss://' ? 'true' : 'false')
     token: "$Script:AuthToken"
     permission: $Script:PermissionLevel
     tls_verify: $($Script:TlsVerify.ToString().ToLower())
@@ -419,11 +425,11 @@ function Install-Service {
 
     # Create the service
     $params = @{
-        Name = $Script:ServiceName
+        Name           = $Script:ServiceName
         BinaryPathName = "`"$binaryPath`" -c `"$configPath`""
-        DisplayName = $Script:ServiceDisplayName
-        Description = "NanoLink lightweight server monitoring agent"
-        StartupType = "Automatic"
+        DisplayName    = $Script:ServiceDisplayName
+        Description    = "NanoLink lightweight server monitoring agent"
+        StartupType    = "Automatic"
     }
 
     New-Service @params | Out-Null
@@ -450,7 +456,8 @@ function Start-InstalledService {
     $service = Get-Service -Name $Script:ServiceName
     if ($service.Status -eq "Running") {
         Write-Success "Service started successfully!"
-    } else {
+    }
+    else {
         Write-Err "Service failed to start"
         Write-Host ""
         Write-Host "Check logs at: $Script:LogDir" -ForegroundColor Yellow
@@ -463,10 +470,10 @@ function Test-Installation {
     Write-Step "Verifying Installation"
 
     $checks = @{
-        "Binary installed" = Test-Path (Join-Path $Script:InstallDir $Script:BinaryName)
+        "Binary installed"     = Test-Path (Join-Path $Script:InstallDir $Script:BinaryName)
         "Configuration exists" = Test-Path (Join-Path $Script:ConfigDir "nanolink.yaml")
-        "Service installed" = $null -ne (Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue)
-        "Service running" = (Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue).Status -eq "Running"
+        "Service installed"    = $null -ne (Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue)
+        "Service running"      = (Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue).Status -eq "Running"
     }
 
     $passed = 0
@@ -474,7 +481,8 @@ function Test-Installation {
         if ($check.Value) {
             Write-Host "  ✓ $($check.Key)" -ForegroundColor Green
             $passed++
-        } else {
+        }
+        else {
             Write-Host "  ✗ $($check.Key)" -ForegroundColor Red
         }
     }
@@ -482,7 +490,8 @@ function Test-Installation {
     Write-Host ""
     if ($passed -eq $checks.Count) {
         Write-Success "All checks passed!"
-    } else {
+    }
+    else {
         Write-Warn "$passed/$($checks.Count) checks passed"
     }
 }
@@ -554,8 +563,8 @@ function Add-ServerToConfig {
     # Try to notify via management API
     try {
         $body = @{
-            url = $Url
-            token = $Token
+            url        = $Url
+            token      = $Token
             permission = $Permission
             tls_verify = -not $NoTlsVerify
         } | ConvertTo-Json
@@ -564,7 +573,8 @@ function Add-ServerToConfig {
         if ($response.success) {
             Write-Success "Server added via management API (hot-reload)"
         }
-    } catch {
+    }
+    catch {
         Write-Info "Restart the agent to apply changes: Restart-Service $Script:ServiceName"
     }
 }
@@ -603,7 +613,8 @@ function Remove-ServerFromConfig {
         if ($response.success) {
             Write-Success "Server removed via management API (hot-reload)"
         }
-    } catch {
+    }
+    catch {
         Write-Info "Restart the agent to apply changes: Restart-Service $Script:ServiceName"
     }
 }
@@ -628,7 +639,8 @@ function Get-ConfigFromServer {
         Write-Success "Configuration fetched successfully"
         Write-Info "  URL: $Script:ServerUrl"
         Write-Info "  Permission: $Script:PermissionLevel"
-    } catch {
+    }
+    catch {
         Write-Err "Failed to fetch configuration: $_"
         exit 1
     }
@@ -717,7 +729,8 @@ function Main {
                 Write-Err "Silent mode requires -Url and -Token parameters"
                 exit 1
             }
-        } else {
+        }
+        else {
             $Script:ServerUrl = $Url
             $Script:AuthToken = $Token
             $Script:PermissionLevel = $Permission
@@ -726,7 +739,8 @@ function Main {
             $Script:ShellEnabled = $ShellEnabled.IsPresent
             $Script:ShellSuperToken = $ShellToken
         }
-    } else {
+    }
+    else {
         Write-Banner
     }
 

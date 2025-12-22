@@ -119,6 +119,8 @@ main() {
     update_file "apps/desktop/pubspec.yaml" "$CURRENT_VERSION" "$NEW_VERSION"
     update_file "demo/spring-boot/pom.xml" "$CURRENT_VERSION" "$NEW_VERSION"
     update_file "scripts/version.json" "$CURRENT_VERSION" "$NEW_VERSION"
+    update_file "agent/scripts/install.sh" "$CURRENT_VERSION" "$NEW_VERSION"
+    update_file "agent/scripts/install.ps1" "$CURRENT_VERSION" "$NEW_VERSION"
     
     # Update README files (Chinese and English)
     update_file "README.md" "$CURRENT_VERSION" "$NEW_VERSION"
