@@ -1,15 +1,18 @@
 name: Release Agent
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       version:
         description: "Version to release (e.g., 0.1.0)"
         required: true
         type: string
+  workflow_call:
+    inputs:
+      skip_tests:
+        description: "Skip tests (already run by caller)"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,16 +21,18 @@ permissions:
   contents: write
 
 jobs:
-  # Run tests first - all other jobs depend on this
+  # Run tests first (skip if called from test.yml with tests already passed)
   run-tests:
     name: Run Tests
+    if: ${{ !inputs.skip_tests }}
     uses: ./.github/workflows/test.yml
     secrets: inherit
 
-  # Get version info (only runs if tests pass)
+  # Get version info
   prepare:
     name: Prepare
     needs: run-tests
+    if: ${{ always() && (needs.run-tests.result == 'success' || needs.run-tests.result == 'skipped') }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}

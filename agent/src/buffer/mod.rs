@@ -108,6 +108,7 @@ mod tests {
             system_info: None,
             is_initial: false,
             metrics_type: 0,
+            user_sessions: vec![],
         }
     }
 

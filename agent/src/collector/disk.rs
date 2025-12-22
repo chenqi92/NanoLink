@@ -343,6 +343,7 @@ impl DiskCollector {
     }
 
     /// Get disk temperature using smartctl (if available)
+    #[allow(unused_variables)]
     fn get_disk_temperature(device: &str) -> f64 {
         #[cfg(target_os = "linux")]
         {
@@ -392,6 +393,7 @@ impl DiskCollector {
     }
 
     /// Get S.M.A.R.T. health status
+    #[allow(unused_variables)]
     fn get_smart_health(device: &str) -> String {
         #[cfg(target_os = "linux")]
         {

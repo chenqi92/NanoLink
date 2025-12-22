@@ -256,6 +256,21 @@ jobs:
           echo "📂 Files to upload:"
           ls -la ./r2-upload/
           
+          # Delete existing files before uploading (to ensure clean state)
+          echo "🗑️ Deleting existing files from R2 (if any)..."
+          DELETED_COUNT=0
+          for file in ./r2-upload/*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "   Deleting: newest/${filename}"
+              if aws s3 rm "s3://${R2_BUCKET}/newest/${filename}" \
+                --endpoint-url "${R2_ENDPOINT}" 2>/dev/null; then
+                DELETED_COUNT=$((DELETED_COUNT + 1))
+              fi
+            fi
+          done
+          echo "✅ Deleted ${DELETED_COUNT} existing files"
+          
           # Upload all files to R2 (newest/ path - always latest)
           UPLOAD_COUNT=0
           FAILED_COUNT=0

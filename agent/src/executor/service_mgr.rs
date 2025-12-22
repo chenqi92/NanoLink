@@ -121,7 +121,7 @@ impl ServiceExecutor {
             ServiceAction::Stop => ("launchctl", vec!["unload", "-w", service_name]),
             ServiceAction::Restart => {
                 // macOS doesn't have native restart, do stop then start
-                let stop_result = Command::new("launchctl")
+                let _stop_result = Command::new("launchctl")
                     .args(["unload", "-w", service_name])
                     .output();
 

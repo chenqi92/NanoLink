@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::process::Command;
 
 #[derive(Debug, Clone, Default)]
@@ -174,6 +173,8 @@ impl GpuCollector {
     fn collect_amd(&self) -> Option<Vec<GpuMetrics>> {
         #[cfg(target_os = "linux")]
         {
+            use std::collections::HashMap;
+            
             let mut gpus = Vec::new();
 
             // Get GPU list
