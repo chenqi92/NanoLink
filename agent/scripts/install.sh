@@ -94,7 +94,7 @@ msg() {
         # Server config
         ["server_config"]="Server Configuration"
         ["server_url_prompt"]="Server address (e.g., monitor.example.com:39100)"
-        ["url_invalid"]="Invalid server address format. Use host:port (e.g., server.example.com:39100)""
+        ["url_invalid"]="Invalid server address format. Use host:port (e.g., server.example.com:39100)"
         ["token_prompt"]="Authentication Token"
         ["permission_level"]="Permission Level"
         ["perm_readonly"]="Read Only (monitoring only)"
