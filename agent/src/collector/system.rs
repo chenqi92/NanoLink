@@ -21,12 +21,25 @@ struct SystemInfoStatic {
 }
 
 /// System info collector
-pub struct SystemInfoCollector;
+pub struct SystemInfoCollector {
+    /// Optional hostname override from config
+    hostname_override: Option<String>,
+}
 
 impl SystemInfoCollector {
     pub fn new() -> Self {
         SYSTEM_INFO.get_or_init(Self::collect_static_info);
-        Self
+        Self {
+            hostname_override: None,
+        }
+    }
+
+    /// Create a new collector with a custom hostname override
+    pub fn with_hostname(hostname: Option<String>) -> Self {
+        SYSTEM_INFO.get_or_init(Self::collect_static_info);
+        Self {
+            hostname_override: hostname,
+        }
     }
 
     fn collect_static_info() -> SystemInfoStatic {
@@ -204,11 +217,17 @@ impl SystemInfoCollector {
         let static_info = SYSTEM_INFO.get().expect("System info not initialized");
         let uptime_seconds = System::uptime();
 
+        // Use hostname_override if set, otherwise use system hostname
+        let hostname = self
+            .hostname_override
+            .clone()
+            .unwrap_or_else(|| static_info.hostname.clone());
+
         SystemInfo {
             os_name: static_info.os_name.clone(),
             os_version: static_info.os_version.clone(),
             kernel_version: static_info.kernel_version.clone(),
-            hostname: static_info.hostname.clone(),
+            hostname,
             boot_time: static_info.boot_time,
             uptime_seconds,
             motherboard_model: static_info.motherboard_model.clone(),

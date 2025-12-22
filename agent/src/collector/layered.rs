@@ -111,7 +111,7 @@ impl LayeredCollector {
         let now = Instant::now();
 
         Self {
-            config,
+            config: config.clone(),
             system,
             disks: Disks::new_with_refreshed_list(),
             networks: Networks::new_with_refreshed_list(),
@@ -123,7 +123,7 @@ impl LayeredCollector {
             gpu_collector: GpuCollector::new(),
             npu_collector: NpuCollector::new(),
             session_collector: SessionCollector::new(),
-            system_info_collector: SystemInfoCollector::new(),
+            system_info_collector: SystemInfoCollector::with_hostname(config.agent.hostname.clone()),
             cached_static_info: None,
             last_periodic_disk: now,
             last_periodic_session: now,

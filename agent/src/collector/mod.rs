@@ -55,12 +55,12 @@ impl MetricsCollector {
         system.refresh_all();
 
         Self {
-            config,
+            config: config.clone(),
             buffer,
             system,
             disks: Disks::new_with_refreshed_list(),
             networks: Networks::new_with_refreshed_list(),
-            hostname,
+            hostname: hostname.clone(),
             cpu_collector: CpuCollector::new(),
             memory_collector: MemoryCollector::new(),
             disk_collector: DiskCollector::new(),
@@ -68,7 +68,7 @@ impl MetricsCollector {
             gpu_collector: GpuCollector::new(),
             npu_collector: NpuCollector::new(),
             session_collector: SessionCollector::new(),
-            system_info_collector: SystemInfoCollector::new(),
+            system_info_collector: SystemInfoCollector::with_hostname(config.agent.hostname.clone()),
         }
     }
 
