@@ -132,10 +132,12 @@ jobs:
           
           # Create install.sh with R2 download URL (modified version)
           if [ -f "agent/scripts/install.sh" ]; then
-            # Replace GitHub download URL with R2 URL
-            sed -e "s|https://github.com/\${GITHUB_REPO}/releases/latest/download/\${BINARY_NAME}-\${OS}-\${ARCH}|${R2_DOWNLOAD_URL}/releases/v${VERSION}/\${BINARY_NAME}-\${OS}-\${ARCH}|g" \
-                -e "s|https://github.com/chenqi92/NanoLink/releases/latest/download/|${R2_DOWNLOAD_URL}/releases/v${VERSION}/|g" \
-                agent/scripts/install.sh > ./r2-upload/install.sh
+            # Remove BOM if present and convert CRLF to LF, then replace URL
+            sed 's/\xEF\xBB\xBF//' agent/scripts/install.sh | \
+              tr -d '\r' | \
+              sed -e "s|https://github.com/\${GITHUB_REPO}/releases/latest/download/\${BINARY_NAME}-\${OS}-\${ARCH}|${R2_DOWNLOAD_URL}/releases/v${VERSION}/\${BINARY_NAME}-\${OS}-\${ARCH}|g" \
+                  -e "s|https://github.com/chenqi92/NanoLink/releases/latest/download/|${R2_DOWNLOAD_URL}/releases/v${VERSION}/|g" \
+              > ./r2-upload/install.sh
             chmod +x ./r2-upload/install.sh
             echo "✅ Created install.sh with R2 download URL"
           else
@@ -144,23 +146,25 @@ jobs:
           
           # Create install.ps1 with R2 download URL (modified version)
           if [ -f "agent/scripts/install.ps1" ]; then
-            # Replace GitHub download URL with R2 URL
-            sed -e "s|https://github.com/\$Script:GitHubRepo/releases/latest/download/nanolink-agent-windows-\$arch.exe|${R2_DOWNLOAD_URL}/releases/v${VERSION}/nanolink-agent-windows-\$arch.exe|g" \
-                -e "s|https://github.com/chenqi92/NanoLink/releases/latest/download/|${R2_DOWNLOAD_URL}/releases/v${VERSION}/|g" \
-                agent/scripts/install.ps1 > ./r2-upload/install.ps1
+            # Remove BOM if present, keep CRLF for PowerShell compatibility, then replace URL
+            sed 's/\xEF\xBB\xBF//' agent/scripts/install.ps1 | \
+              sed -e "s|https://github.com/\$Script:GitHubRepo/releases/latest/download/nanolink-agent-windows-\$arch.exe|${R2_DOWNLOAD_URL}/releases/v${VERSION}/nanolink-agent-windows-\$arch.exe|g" \
+                  -e "s|https://github.com/chenqi92/NanoLink/releases/latest/download/|${R2_DOWNLOAD_URL}/releases/v${VERSION}/|g" \
+              > ./r2-upload/install.ps1
             echo "✅ Created install.ps1 with R2 download URL"
           else
             echo "⚠️ install.ps1 not found"
           fi
           
-          # Copy uninstall scripts (no modification needed)
+          # Copy uninstall scripts (no modification needed, just fix encoding)
           if [ -f "agent/scripts/uninstall.sh" ]; then
-            cp agent/scripts/uninstall.sh ./r2-upload/
+            sed 's/\xEF\xBB\xBF//' agent/scripts/uninstall.sh | tr -d '\r' > ./r2-upload/uninstall.sh
+            chmod +x ./r2-upload/uninstall.sh
             echo "✅ Copied uninstall.sh"
           fi
           
           if [ -f "agent/scripts/uninstall.ps1" ]; then
-            cp agent/scripts/uninstall.ps1 ./r2-upload/
+            sed 's/\xEF\xBB\xBF//' agent/scripts/uninstall.ps1 > ./r2-upload/uninstall.ps1
             echo "✅ Copied uninstall.ps1"
           fi
           
@@ -171,6 +175,9 @@ jobs:
           echo ""
           echo "📋 Verify install.ps1 download URL change:"
           grep -n "downloadUrl = " ./r2-upload/install.ps1 | head -3 || true
+          echo ""
+          echo "📋 File encoding check:"
+          file ./r2-upload/install.sh ./r2-upload/install.ps1 || true
 
       - name: Download agent binaries from GitHub Release
         env:
