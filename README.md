@@ -229,12 +229,12 @@ For faster downloads in mainland China, use R2 mirror:
 
 **Linux/macOS:**
 ```bash
-curl -fsSL https://agent.download.kkape.com/releases/v0.2.6/install.sh | sudo bash
+curl -fsSL https://agent.download.kkape.com/newest/install.sh | sudo bash
 ```
 
 **Windows (PowerShell Admin):**
 ```powershell
-irm https://agent.download.kkape.com/releases/v0.2.6/install.ps1 | iex
+irm https://agent.download.kkape.com/newest/install.ps1 | iex
 ```
 
 <details>
@@ -242,11 +242,11 @@ irm https://agent.download.kkape.com/releases/v0.2.6/install.ps1 | iex
 
 | Platform | Architecture | Download |
 |----------|--------------|----------|
-| Linux | x86_64 | [nanolink-agent-linux-x86_64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-linux-x86_64) |
-| Linux | ARM64 | [nanolink-agent-linux-aarch64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-linux-aarch64) |
-| macOS | Intel | [nanolink-agent-macos-x86_64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-macos-x86_64) |
-| macOS | Apple Silicon | [nanolink-agent-macos-aarch64](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-macos-aarch64) |
-| Windows | x64 | [nanolink-agent-windows-x86_64.exe](https://agent.download.kkape.com/releases/v0.2.6/nanolink-agent-windows-x86_64.exe) |
+| Linux | x86_64 | [nanolink-agent-linux-x86_64](https://agent.download.kkape.com/newest/nanolink-agent-linux-x86_64) |
+| Linux | ARM64 | [nanolink-agent-linux-aarch64](https://agent.download.kkape.com/newest/nanolink-agent-linux-aarch64) |
+| macOS | Intel | [nanolink-agent-macos-x86_64](https://agent.download.kkape.com/newest/nanolink-agent-macos-x86_64) |
+| macOS | Apple Silicon | [nanolink-agent-macos-aarch64](https://agent.download.kkape.com/newest/nanolink-agent-macos-aarch64) |
+| Windows | x64 | [nanolink-agent-windows-x86_64.exe](https://agent.download.kkape.com/newest/nanolink-agent-windows-x86_64.exe) |
 
 </details>
 

@@ -127,7 +127,6 @@ jobs:
         if: inputs.upload_install_scripts == true
         run: |
           echo "📜 Creating install scripts with R2 download URLs..."
-          VERSION="${{ inputs.version }}"
           R2_DOWNLOAD_URL="https://agent.download.kkape.com"
           
           # Create install.sh with R2 download URL (modified version)
@@ -135,8 +134,8 @@ jobs:
             # Remove BOM if present and convert CRLF to LF, then replace URL
             sed 's/\xEF\xBB\xBF//' agent/scripts/install.sh | \
               tr -d '\r' | \
-              sed -e "s|https://github.com/\${GITHUB_REPO}/releases/latest/download/\${BINARY_NAME}-\${OS}-\${ARCH}|${R2_DOWNLOAD_URL}/releases/v${VERSION}/\${BINARY_NAME}-\${OS}-\${ARCH}|g" \
-                  -e "s|https://github.com/chenqi92/NanoLink/releases/latest/download/|${R2_DOWNLOAD_URL}/releases/v${VERSION}/|g" \
+              sed -e "s|https://github.com/\${GITHUB_REPO}/releases/latest/download/\${BINARY_NAME}-\${OS}-\${ARCH}|${R2_DOWNLOAD_URL}/newest/\${BINARY_NAME}-\${OS}-\${ARCH}|g" \
+                  -e "s|https://github.com/chenqi92/NanoLink/releases/latest/download/|${R2_DOWNLOAD_URL}/newest/|g" \
               > ./r2-upload/install.sh
             chmod +x ./r2-upload/install.sh
             echo "✅ Created install.sh with R2 download URL"
@@ -148,8 +147,8 @@ jobs:
           if [ -f "agent/scripts/install.ps1" ]; then
             # Remove BOM if present, keep CRLF for PowerShell compatibility, then replace URL
             sed 's/\xEF\xBB\xBF//' agent/scripts/install.ps1 | \
-              sed -e "s|https://github.com/\$Script:GitHubRepo/releases/latest/download/nanolink-agent-windows-\$arch.exe|${R2_DOWNLOAD_URL}/releases/v${VERSION}/nanolink-agent-windows-\$arch.exe|g" \
-                  -e "s|https://github.com/chenqi92/NanoLink/releases/latest/download/|${R2_DOWNLOAD_URL}/releases/v${VERSION}/|g" \
+              sed -e "s|https://github.com/\$Script:GitHubRepo/releases/latest/download/nanolink-agent-windows-\$arch.exe|${R2_DOWNLOAD_URL}/newest/nanolink-agent-windows-\$arch.exe|g" \
+                  -e "s|https://github.com/chenqi92/NanoLink/releases/latest/download/|${R2_DOWNLOAD_URL}/newest/|g" \
               > ./r2-upload/install.ps1
             echo "✅ Created install.ps1 with R2 download URL"
           else
@@ -257,7 +256,7 @@ jobs:
           echo "📂 Files to upload:"
           ls -la ./r2-upload/
           
-          # Upload all files to R2
+          # Upload all files to R2 (newest/ path - always latest)
           UPLOAD_COUNT=0
           FAILED_COUNT=0
           for file in ./r2-upload/*; do
@@ -266,9 +265,9 @@ jobs:
               filesize=$(du -h "$file" | cut -f1)
               echo "📤 Uploading: $filename ($filesize)"
               
-              # Upload to R2, path format: releases/v{version}/{filename}
+              # Upload to R2, path format: newest/{filename} (always latest)
               if aws s3 cp "$file" \
-                "s3://${R2_BUCKET}/releases/v${VERSION}/${filename}" \
+                "s3://${R2_BUCKET}/newest/${filename}" \
                 --endpoint-url "${R2_ENDPOINT}"; then
                 echo "✅ Successfully uploaded: $filename"
                 UPLOAD_COUNT=$((UPLOAD_COUNT + 1))
@@ -332,12 +331,12 @@ jobs:
           echo "" >> r2-urls.md
           echo "**Linux/macOS:**" >> r2-urls.md
           echo '```bash' >> r2-urls.md
-          echo "curl -fsSL ${base_url}/releases/v${VERSION}/install.sh | sudo bash" >> r2-urls.md
+          echo "curl -fsSL ${base_url}/newest/install.sh | sudo bash" >> r2-urls.md
           echo '```' >> r2-urls.md
           echo "" >> r2-urls.md
           echo "**Windows (PowerShell 管理员):**" >> r2-urls.md
           echo '```powershell' >> r2-urls.md
-          echo "irm ${base_url}/releases/v${VERSION}/install.ps1 | iex" >> r2-urls.md
+          echo "irm ${base_url}/newest/install.ps1 | iex" >> r2-urls.md
           echo '```' >> r2-urls.md
           echo "" >> r2-urls.md
           
@@ -352,7 +351,7 @@ jobs:
             if [ -f "$file" ]; then
               filename=$(basename "$file")
               filesize=$(du -h "$file" | cut -f1)
-              url="${base_url}/releases/v${VERSION}/${filename}"
+              url="${base_url}/newest/${filename}"
               if [[ "$filename" == *.sh ]]; then
                 echo "| **${filename}** | 安装脚本 (Linux/macOS) | [下载](${url}) (${filesize}) |" >> r2-urls.md
               else
@@ -366,7 +365,7 @@ jobs:
             if [ -f "$file" ]; then
               filename=$(basename "$file")
               filesize=$(du -h "$file" | cut -f1)
-              url="${base_url}/releases/v${VERSION}/${filename}"
+              url="${base_url}/newest/${filename}"
               if [[ "$filename" == *.sh ]]; then
                 echo "| ${filename} | 卸载脚本 (Linux/macOS) | [下载](${url}) (${filesize}) |" >> r2-urls.md
               else
@@ -385,7 +384,7 @@ jobs:
             if [ -f "$file" ]; then
               filename=$(basename "$file")
               filesize=$(du -h "$file" | cut -f1)
-              url="${base_url}/releases/v${VERSION}/${filename}"
+              url="${base_url}/newest/${filename}"
               
               # Determine platform and architecture
               case "$filename" in

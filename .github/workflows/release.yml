@@ -286,10 +286,10 @@ jobs:
             **Agent Install Script (Faster in China):**
             ```bash
             # Linux/macOS
-            curl -fsSL https://agent.download.kkape.com/releases/${{ needs.prepare.outputs.tag }}/install.sh | sudo bash
+            curl -fsSL https://agent.download.kkape.com/newest/install.sh | sudo bash
 
             # Windows (PowerShell Admin)
-            irm https://agent.download.kkape.com/releases/${{ needs.prepare.outputs.tag }}/install.ps1 | iex
+            irm https://agent.download.kkape.com/newest/install.ps1 | iex
             ```
 
             ---
