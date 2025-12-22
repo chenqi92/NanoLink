@@ -16,10 +16,21 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/nanolink-server
   FLUTTER_VERSION: "3.27.4"
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
-  # Build and push Docker image for Linux
+  # Run tests first - all other jobs depend on this
+  run-tests:
+    name: Run Tests
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
+
+  # Build and push Docker image for Linux (only runs if tests pass)
   docker:
     name: Build Docker Image
+    needs: run-tests
     runs-on: ubuntu-latest
     permissions:
       contents: read

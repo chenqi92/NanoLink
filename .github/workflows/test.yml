@@ -10,6 +10,13 @@ on:
     paths:
       - "VERSION"
   workflow_dispatch: # Allow manual trigger
+  
+  # Allow other workflows to call this
+  workflow_call:
+    outputs:
+      success:
+        description: "Whether all tests passed"
+        value: ${{ jobs.test-summary.outputs.success }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -182,3 +189,33 @@ jobs:
       - name: Build
         working-directory: dashboard
         run: npm run build
+
+  # Summary job for workflow_call output
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [test-agent, test-java-sdk, test-go-sdk, test-python-sdk, test-dashboard]
+    if: always()
+    outputs:
+      success: ${{ steps.check.outputs.success }}
+    steps:
+      - name: Check test results
+        id: check
+        run: |
+          if [[ "${{ needs.test-agent.result }}" == "success" && \
+                "${{ needs.test-java-sdk.result }}" == "success" && \
+                "${{ needs.test-go-sdk.result }}" == "success" && \
+                "${{ needs.test-python-sdk.result }}" == "success" && \
+                "${{ needs.test-dashboard.result }}" == "success" ]]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "✅ All tests passed!"
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "❌ Some tests failed"
+            echo "Agent: ${{ needs.test-agent.result }}"
+            echo "Java SDK: ${{ needs.test-java-sdk.result }}"
+            echo "Go SDK: ${{ needs.test-go-sdk.result }}"
+            echo "Python SDK: ${{ needs.test-python-sdk.result }}"
+            echo "Dashboard: ${{ needs.test-dashboard.result }}"
+            exit 1
+          fi

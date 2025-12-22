@@ -182,7 +182,7 @@ impl GrpcClient {
                 Some(metrics_stream_response::Response::HeartbeatAck(ack)) => {
                     debug!("Heartbeat acknowledged: {}", ack.timestamp);
                 }
-                Some(metrics_stream_response::Response::ConfigUpdate(config)) => {
+                Some(metrics_stream_response::Response::ConfigUpdate(_config)) => {
                     info!("Received config update from server");
                     // TODO: Apply config update
                 }
@@ -336,7 +336,7 @@ impl GrpcClient {
                 Some(metrics_stream_response::Response::HeartbeatAck(ack)) => {
                     debug!("Heartbeat acknowledged: {}", ack.timestamp);
                 }
-                Some(metrics_stream_response::Response::ConfigUpdate(config)) => {
+                Some(metrics_stream_response::Response::ConfigUpdate(_config)) => {
                     info!("Received config update from server");
                     // TODO: Apply config update
                 }

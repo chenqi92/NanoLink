@@ -40,6 +40,7 @@ impl DiskCollector {
         }
     }
 
+    #[allow(unused_assignments)]
     fn collect_disk_hardware_info() -> HashMap<String, DiskHardwareInfo> {
         let mut info = HashMap::new();
 

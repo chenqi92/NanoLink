@@ -30,6 +30,7 @@ impl CpuCollector {
         Self { prev_usage: None }
     }
 
+    #[allow(unused_assignments)]
     fn collect_static_info() -> CpuStaticInfo {
         let mut info = CpuStaticInfo {
             model: String::new(),

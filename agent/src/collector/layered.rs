@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use sysinfo::{Disks, Networks, System};
 use tokio::sync::mpsc;
 use tokio::time;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::config::Config;
 use crate::proto::{

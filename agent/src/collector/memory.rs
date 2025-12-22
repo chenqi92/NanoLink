@@ -21,6 +21,7 @@ impl MemoryCollector {
         Self
     }
 
+    #[allow(unused_assignments)]
     fn collect_hardware_info() -> MemoryHardwareInfo {
         let mut info = MemoryHardwareInfo::default();
 

@@ -18,9 +18,16 @@ permissions:
   contents: write
 
 jobs:
-  # Get version info
+  # Run tests first - all other jobs depend on this
+  run-tests:
+    name: Run Tests
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
+
+  # Get version info (only runs if tests pass)
   prepare:
     name: Prepare
+    needs: run-tests
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}

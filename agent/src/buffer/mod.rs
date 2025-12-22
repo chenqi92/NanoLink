@@ -104,7 +104,10 @@ mod tests {
             load_average: vec![],
             hostname: "test".to_string(),
             gpus: vec![],
+            npus: vec![],
             system_info: None,
+            is_initial: false,
+            metrics_type: 0,
         }
     }
 

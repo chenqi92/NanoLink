@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+# Git pre-commit hook for NanoLink
+# Automatically removes BOM characters from staged files before commit.
+#
+# Installation:
+#   - Run: ./scripts/install-hooks.sh
+#   - Or manually: cp scripts/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#
+
+# Get the root directory of the repository
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+
+# Detect OS and run appropriate script
+case "$(uname -s)" in
+    CYGWIN*|MINGW*|MSYS*)
+        # Windows (Git Bash, MSYS, Cygwin)
+        if command -v powershell.exe &> /dev/null; then
+            echo "Running BOM removal (Windows PowerShell)..."
+            powershell.exe -ExecutionPolicy Bypass -File "$ROOT_DIR/scripts/remove-bom.ps1"
+        else
+            echo "Warning: PowerShell not found, skipping BOM check"
+        fi
+        ;;
+    *)
+        # Linux/macOS
+        if [ -f "$ROOT_DIR/scripts/remove-bom.sh" ]; then
+            echo "Running BOM removal (Unix)..."
+            bash "$ROOT_DIR/scripts/remove-bom.sh"
+        else
+            echo "Warning: remove-bom.sh not found, skipping BOM check"
+        fi
+        ;;
+esac
+
+# Check if any files were modified by the BOM removal
+MODIFIED=$(git diff --name-only)
+if [ -n "$MODIFIED" ]; then
+    echo ""
+    echo "The following files were modified by BOM removal:"
+    echo "$MODIFIED"
+    echo ""
+    echo "These changes have been auto-staged for your commit."
+    
+    # Auto-stage the fixed files
+    git add $MODIFIED
+fi
+
+exit 0
