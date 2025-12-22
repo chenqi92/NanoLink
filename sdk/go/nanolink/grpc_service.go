@@ -130,14 +130,6 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 				// P0-3: 强制认证模式检查
 				if s.server.config.RequireAuthentication {
 					log.Printf("SECURITY: Rejecting unauthenticated metrics stream (RequireAuthentication=true)")
-					// Send error response before closing
-					stream.Send(&pb.MetricsStreamResponse{
-						Response: &pb.MetricsStreamResponse_ConfigUpdate{
-							ConfigUpdate: &pb.ServerConfig{
-								Message: "Authentication required. Please use Authenticate RPC before streaming metrics.",
-							},
-						},
-					})
 					return fmt.Errorf("authentication required: use Authenticate RPC before streaming metrics")
 				}
 

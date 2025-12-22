@@ -130,11 +130,6 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                             // P0-3: 强制认证模式检查
                             if (requireAuthentication) {
                                 log.warn("SECURITY: Rejecting unauthenticated metrics stream (requireAuthentication=true)");
-                                responseObserver.onNext(MetricsStreamResponse.newBuilder()
-                                        .setConfigUpdate(ServerConfig.newBuilder()
-                                                .setMessage("Authentication required. Please use Authenticate RPC before streaming metrics.")
-                                                .build())
-                                        .build());
                                 responseObserver.onError(
                                         io.grpc.Status.UNAUTHENTICATED
                                                 .withDescription("Authentication required: use Authenticate RPC before streaming metrics")
