@@ -1,33 +1,12 @@
 name: Test
 
 on:
-  push:
-    tags:
-      - "v*"  # Trigger on version tag push
   pull_request:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      release_agent:
-        description: "Release Agent after tests pass"
-        type: boolean
-        default: false
-      release_sdk:
-        description: "Release SDK after tests pass"
-        type: boolean
-        default: false
-      release_apps:
-        description: "Release Apps after tests pass"
-        type: boolean
-        default: false
+  workflow_dispatch:  # Allow manual trigger
   
   # Allow other workflows to call this
   workflow_call:
-    inputs:
-      trigger_releases:
-        description: "Whether to trigger releases after tests pass"
-        type: boolean
-        default: false
     outputs:
       success:
         description: "Whether all tests passed"
@@ -213,18 +192,10 @@ jobs:
     if: always()
     outputs:
       success: ${{ steps.check.outputs.success }}
-      is_tag_push: ${{ steps.check.outputs.is_tag_push }}
     steps:
       - name: Check test results
         id: check
         run: |
-          # Check if this is a tag push
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "is_tag_push=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_tag_push=false" >> $GITHUB_OUTPUT
-          fi
-          
           if [[ "${{ needs.test-agent.result }}" == "success" && \
                 "${{ needs.test-java-sdk.result }}" == "success" && \
                 "${{ needs.test-go-sdk.result }}" == "success" && \
@@ -242,39 +213,3 @@ jobs:
             echo "Dashboard: ${{ needs.test-dashboard.result }}"
             exit 1
           fi
-
-  # Trigger Agent release (on tag push OR manual selection)
-  trigger-agent-release:
-    name: Trigger Agent Release
-    needs: test-summary
-    if: |
-      needs.test-summary.outputs.success == 'true' && 
-      (needs.test-summary.outputs.is_tag_push == 'true' || github.event.inputs.release_agent == 'true')
-    uses: ./.github/workflows/release.yml
-    secrets: inherit
-    with:
-      skip_tests: true
-
-  # Trigger SDK release (on tag push OR manual selection)
-  trigger-sdk-release:
-    name: Trigger SDK Release
-    needs: test-summary
-    if: |
-      needs.test-summary.outputs.success == 'true' && 
-      (needs.test-summary.outputs.is_tag_push == 'true' || github.event.inputs.release_sdk == 'true')
-    uses: ./.github/workflows/sdk-release.yml
-    secrets: inherit
-    with:
-      skip_tests: true
-
-  # Trigger Apps release (on tag push OR manual selection)
-  trigger-apps-release:
-    name: Trigger Apps Release
-    needs: test-summary
-    if: |
-      needs.test-summary.outputs.success == 'true' && 
-      (needs.test-summary.outputs.is_tag_push == 'true' || github.event.inputs.release_apps == 'true')
-    uses: ./.github/workflows/apps-release.yml
-    secrets: inherit
-    with:
-      skip_tests: true
