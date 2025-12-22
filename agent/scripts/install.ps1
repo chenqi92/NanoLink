@@ -11,7 +11,7 @@
     Run in silent mode (no prompts)
 
 .PARAMETER Url
-    Server WebSocket URL (required in silent mode)
+    Server address in host:port format (required in silent mode)
 
 .PARAMETER Token
     Authentication token (required in silent mode)
@@ -37,7 +37,7 @@
 
 .EXAMPLE
     # Silent installation
-    .\install.ps1 -Silent -Url "wss://server:9100" -Token "your_token"
+    .\install.ps1 -Silent -Url "server.example.com:39100" -Token "your_token"
 #>
 
 [CmdletBinding()]
@@ -112,8 +112,8 @@ $Script:EnMsgs = @{
     
     # Server config
     "server_config"       = "Server Configuration"
-    "server_url_prompt"   = "Server WebSocket URL (e.g., wss://monitor.example.com:9100)"
-    "url_invalid"         = "URL must start with ws:// or wss://"
+    "server_url_prompt"   = "Server address (e.g., monitor.example.com:39100)"
+    "url_invalid"         = "Invalid format. Use host:port (e.g., server.example.com:39100)"
     "token_prompt"        = "Authentication Token"
     "permission_level"    = "Permission Level"
     "perm_readonly"       = "Read Only (monitoring only)"
@@ -253,8 +253,8 @@ $Script:ZhMsgs = @{
     
     # Server config
     "server_config"       = "服务器配置"
-    "server_url_prompt"   = "服务器 WebSocket 地址（例如：wss://monitor.example.com:9100）"
-    "url_invalid"         = "地址必须以 ws:// 或 wss:// 开头"
+    "server_url_prompt"   = "服务器地址（例如：monitor.example.com:39100）"
+    "url_invalid"         = "格式无效，请使用 host:port 格式（例如：server.example.com:39100）"
     "token_prompt"        = "认证令牌"
     "permission_level"    = "权限级别"
     "perm_readonly"       = "只读（仅监控）"
@@ -506,11 +506,12 @@ function Get-InteractiveConfig {
     Write-Step "Server Configuration"
     Write-Host ""
 
-    # Server URL
+    # Server URL (now host:port format)
     while ($true) {
-        $Script:ServerUrl = Read-PromptValue -Prompt "Server WebSocket URL (e.g., wss://monitor.example.com:9100)" -Required
-        if ($Script:ServerUrl -notmatch "^wss?://") {
-            Write-Warn "URL must start with ws:// or wss://"
+        $Script:ServerUrl = Read-PromptValue -Prompt "Server address (e.g., monitor.example.com:39100)" -Required
+        # Validate host:port format
+        if ($Script:ServerUrl -notmatch "^[a-zA-Z0-9]([a-zA-Z0-9.\-]*[a-zA-Z0-9])?(:[0-9]+)?$") {
+            Write-Warn "Invalid format. Use host:port (e.g., server.example.com:39100)"
             continue
         }
         break
@@ -529,10 +530,12 @@ function Get-InteractiveConfig {
     )
     $Script:PermissionLevel = Read-Choice -Prompt "Permission Level" -Options $permOptions
 
-    # TLS verification
+    # TLS settings
     Write-Host ""
+    $Script:TlsEnabled = $false
     $Script:TlsVerify = $true
-    if ($Script:ServerUrl -match "^wss://") {
+    if (Read-YesNo -Prompt "Enable TLS?" -Default $false) {
+        $Script:TlsEnabled = $true
         if (-not (Read-YesNo -Prompt "Verify TLS certificate?" -Default $true)) {
             $Script:TlsVerify = $false
             Write-Warn "TLS verification disabled - only use for testing!"
@@ -784,9 +787,9 @@ $hostnameSection
   max_reconnect_delay: 300
 
 servers:
-  - host: "$([System.Uri]::new($Script:ServerUrl).Host)"
-    port: $(if (([System.Uri]::new($Script:ServerUrl)).Port -gt 0) { ([System.Uri]::new($Script:ServerUrl)).Port } else { 39100 })
-    tls_enabled: $($Script:ServerUrl -match '^wss://' ? 'true' : 'false')
+  - host: "$(($Script:ServerUrl -split ':')[0])"
+    port: $(if ($Script:ServerUrl -match ':(\d+)$') { $Matches[1] } else { 39100 })
+    tls_enabled: $($Script:TlsEnabled.ToString().ToLower())
     token: "$Script:AuthToken"
     permission: $Script:PermissionLevel
     tls_verify: $($Script:TlsVerify.ToString().ToLower())
@@ -1074,7 +1077,7 @@ Usage: .\install.ps1 [options]
 
 Installation Options:
   -Silent           Silent mode (no prompts)
-  -Url URL          Server WebSocket URL (IP or domain)
+  -Url URL          Server address (host:port)
   -Token TOKEN      Authentication token
   -Permission N     Permission level (0-3)
   -NoTlsVerify      Disable TLS verification
@@ -1097,16 +1100,16 @@ Examples:
   .\install.ps1
 
   # Silent installation
-  .\install.ps1 -Silent -Url "wss://server:9100" -Token "your_token"
+  .\install.ps1 -Silent -Url "server.example.com:39100" -Token "your_token"
 
   # Add additional server to existing agent
-  .\install.ps1 -AddServer -Url "wss://second.example.com:9100" -Token "yyy"
+  .\install.ps1 -AddServer -Url "second.example.com:39100" -Token "yyy"
 
   # Open management menu
   .\install.ps1 -Manage
 
   # Remove a server
-  .\install.ps1 -RemoveServer -Url "wss://old.example.com:9100"
+  .\install.ps1 -RemoveServer -Url "old.example.com:39100"
 
   # Fetch config from server and install
   .\install.ps1 -FetchConfig "http://monitor.example.com:8080/api/config/generate"

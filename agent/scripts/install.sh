@@ -5,7 +5,7 @@
 #
 # Usage:
 #   Interactive: curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | bash
-#   Silent:      curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | bash -s -- --silent --url wss://server:9100 --token xxx
+#   Silent:      curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | bash -s -- --silent --url server.example.com:39100 --token xxx
 #
 
 set -e
@@ -93,8 +93,8 @@ msg() {
         
         # Server config
         ["server_config"]="Server Configuration"
-        ["server_url_prompt"]="Server WebSocket URL (e.g., wss://monitor.example.com:9100)"
-        ["url_invalid"]="URL must start with ws:// or wss://"
+        ["server_url_prompt"]="Server address (e.g., monitor.example.com:39100)"
+        ["url_invalid"]="Invalid server address format. Use host:port (e.g., server.example.com:39100)""
         ["token_prompt"]="Authentication Token"
         ["permission_level"]="Permission Level"
         ["perm_readonly"]="Read Only (monitoring only)"
@@ -265,7 +265,7 @@ msg() {
         ["usage"]="Usage"
         ["install_options"]="Installation Options"
         ["silent_mode"]="Silent mode (no prompts)"
-        ["url_option"]="Server WebSocket URL (IP or domain)"
+        ["url_option"]="Server address (host:port)"
         ["token_option"]="Authentication token"
         ["permission_option"]="Permission level (0-3)"
         ["no_tls_option"]="Disable TLS verification"
@@ -324,8 +324,8 @@ msg() {
         
         # Server config
         ["server_config"]="服务器配置"
-        ["server_url_prompt"]="服务器 WebSocket 地址（例如：wss://monitor.example.com:9100）"
-        ["url_invalid"]="地址必须以 ws:// 或 wss:// 开头"
+        ["server_url_prompt"]="服务器地址（例如：monitor.example.com:39100）"
+        ["url_invalid"]="服务器地址格式无效，请使用 host:port 格式（例如：server.example.com:39100）"
         ["token_prompt"]="认证令牌"
         ["permission_level"]="权限级别"
         ["perm_readonly"]="只读（仅监控）"
@@ -496,7 +496,7 @@ msg() {
         ["usage"]="用法"
         ["install_options"]="安装选项"
         ["silent_mode"]="静默模式（无提示）"
-        ["url_option"]="服务器 WebSocket 地址"
+        ["url_option"]="服务器地址（host:port）"
         ["token_option"]="认证令牌"
         ["permission_option"]="权限级别（0-3）"
         ["no_tls_option"]="禁用 TLS 验证"
@@ -717,14 +717,15 @@ interactive_config() {
     step "$(msg server_config)"
     echo ""
 
-    # Server URL
+    # Server URL (now host:port format)
     while true; do
         SERVER_URL=$(prompt_value "$(msg server_url_prompt)" "")
         if [ -z "$SERVER_URL" ]; then
             warn "$(msg server_url_required)"
             continue
         fi
-        if [[ ! "$SERVER_URL" =~ ^wss?:// ]]; then
+        # Validate host:port format (allow domain or IP with optional port)
+        if [[ ! "$SERVER_URL" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?(:[0-9]+)?$ ]]; then
             warn "$(msg url_invalid)"
             continue
         fi
@@ -746,10 +747,12 @@ interactive_config() {
     local perms=("$(msg perm_readonly)" "$(msg perm_basic)" "$(msg perm_shell)" "$(msg perm_full)")
     PERMISSION=$(prompt_choice "$(msg permission_level)" "${perms[@]}")
 
-    # TLS verification
+    # TLS settings
     echo ""
+    TLS_ENABLED="false"
     TLS_VERIFY="true"
-    if [[ "$SERVER_URL" =~ ^wss:// ]]; then
+    if prompt_yes_no "Enable TLS?" "n"; then
+        TLS_ENABLED="true"
         if prompt_yes_no "$(msg verify_tls)" "y"; then
             TLS_VERIFY="true"
         else
@@ -991,9 +994,9 @@ $([ -n "$HOSTNAME_OVERRIDE" ] && echo "  hostname: \"$HOSTNAME_OVERRIDE\"")
   max_reconnect_delay: 300
 
 servers:
-  - host: "$(echo "$SERVER_URL" | sed -E 's|^wss?://||' | cut -d':' -f1 | cut -d'/' -f1)"
-    port: $(echo "$SERVER_URL" | sed -E 's|^wss?://||' | grep -oE ':[0-9]+' | cut -d':' -f2 || echo 9100)
-    tls_enabled: $(echo "$SERVER_URL" | grep -q '^wss://' && echo 'true' || echo 'false')
+  - host: "$(echo "$SERVER_URL" | cut -d':' -f1)"
+    port: $(echo "$SERVER_URL" | grep -oE ':[0-9]+$' | cut -d':' -f2 || echo 39100)
+    tls_enabled: ${TLS_ENABLED}
     token: "${TOKEN}"
     permission: ${PERMISSION}
     tls_verify: ${TLS_VERIFY}
@@ -1352,7 +1355,7 @@ parse_args() {
                 echo ""
                 echo "Installation Options:"
                 echo "  --silent, -s        Silent mode (no prompts)"
-                echo "  --url URL           Server WebSocket URL (IP or domain)"
+                echo "  --url URL           Server address (host:port)"
                 echo "  --token TOKEN       Authentication token"
                 echo "  --permission N      Permission level (0-3)"
                 echo "  --no-tls-verify     Disable TLS verification"
@@ -1377,10 +1380,10 @@ parse_args() {
                 echo ""
                 echo "  # Fresh install (silent)"
                 echo "  curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash -s -- \\"
-                echo "    --silent --url wss://monitor.example.com:9100 --token xxx"
+                echo "    --silent --url monitor.example.com:39100 --token xxx"
                 echo ""
                 echo "  # Add additional server to existing agent"
-                echo "  sudo $0 --add-server --url wss://second.example.com:9100 --token yyy"
+                echo "  sudo $0 --add-server --url second.example.com:39100 --token yyy"
                 echo ""
                 echo "  # Open management menu"
                 echo "  sudo $0 --manage"
@@ -1687,13 +1690,14 @@ interactive_add_server() {
     echo ""
     
     while true; do
-        SERVER_URL=$(prompt_value "Server WebSocket URL (e.g., wss://server:9100)" "")
+        SERVER_URL=$(prompt_value "Server address (e.g., server.example.com:39100)" "")
         if [ -z "$SERVER_URL" ]; then
-            warn "Server URL is required"
+            warn "Server address is required"
             continue
         fi
-        if [[ ! "$SERVER_URL" =~ ^wss?:// ]]; then
-            warn "URL must start with ws:// or wss://"
+        # Validate host:port format
+        if [[ ! "$SERVER_URL" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?(:[0-9]+)?$ ]]; then
+            warn "Invalid format. Use host:port (e.g., server.example.com:39100)"
             continue
         fi
         break
@@ -1712,8 +1716,10 @@ interactive_add_server() {
         "Read + Process + Limited Shell" \
         "Full Access (all operations)")
     
+    TLS_ENABLED="false"
     TLS_VERIFY="true"
-    if [[ "$SERVER_URL" =~ ^wss:// ]]; then
+    if prompt_yes_no "Enable TLS?" "n"; then
+        TLS_ENABLED="true"
         if ! prompt_yes_no "Verify TLS certificate?" "y"; then
             TLS_VERIFY="false"
         fi

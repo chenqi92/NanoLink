@@ -509,11 +509,22 @@ impl Config {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {:?}", path))?;
 
-        let config: Config = if path.extension().is_some_and(|e| e == "toml") {
+        let mut config: Config = if path.extension().is_some_and(|e| e == "toml") {
             toml::from_str(&content)?
         } else {
             serde_yaml::from_str(&content)?
         };
+
+        // Auto-disable Management API if enabled but api_token is not set
+        // This ensures backward compatibility with old configs
+        if config.management.enabled && config.management.api_token.is_none() {
+            eprintln!(
+                "Warning: Management API was enabled but api_token is not set. \
+                 Disabling Management API for security. \
+                 To enable, add 'api_token: <your-token>' to the management section."
+            );
+            config.management.enabled = false;
+        }
 
         config.validate()?;
         Ok(config)
@@ -607,13 +618,9 @@ impl Config {
             }
         }
 
-        // P1-3: 管理API启用时必须设置token
-        if self.management.enabled && self.management.api_token.is_none() {
-            anyhow::bail!(
-                "Management API is enabled but api_token is not set. \
-                This is a security risk - please configure an api_token."
-            );
-        }
+        // P1-3: 管理API启用时如果未设置token，则自动禁用并警告（向后兼容）
+        // 不再报错退出，以支持旧版本配置文件升级
+        // Note: We can't mutate self here, so we just warn. The actual disable happens in load()
 
         Ok(())
     }
