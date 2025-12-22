@@ -1066,7 +1066,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=notify
+Type=simple
 User=root
 Group=root
 ExecStart=/usr/local/bin/nanolink-agent -c /etc/nanolink/nanolink.yaml
@@ -1076,11 +1076,7 @@ RestartSec=5
 StartLimitInterval=60
 StartLimitBurst=3
 
-# Watchdog (agent must notify systemd every 30s)
-WatchdogSec=60
-
 # Graceful shutdown
-TimeoutStartSec=10
 TimeoutStopSec=10
 
 # Logging
