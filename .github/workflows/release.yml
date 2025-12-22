@@ -34,16 +34,22 @@ jobs:
       - name: Get version
         id: version
         run: |
+          # 优先使用 inputs.version
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
             TAG="v$VERSION"
-          else
+          # 其次从 tag 提取
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
             VERSION="${TAG#v}"
+          # 最后从 VERSION 文件读取
+          else
+            VERSION=$(cat VERSION | tr -d '[:space:]')
+            TAG="v$VERSION"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION, Tag: $TAG"
+          echo "📦 Version: $VERSION, Tag: $TAG"
 
 
   build-agent:
