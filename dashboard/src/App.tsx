@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useMetricsHistory } from '@/hooks/useMetricsHistory'
 import { AgentCard } from '@/components/cards/AgentCard'
@@ -10,22 +10,31 @@ export default function App() {
   const { agents, selectedAgentId, selectAgent, connected } = useWebSocket()
   const { addMetricsPoint, getHistory } = useMetricsHistory()
   
-  const agentList = Object.values(agents)
+  // Use useMemo to prevent creating new array reference on every render
+  const agentList = useMemo(() => Object.values(agents), [agents])
   const currentAgent = selectedAgentId ? agents[selectedAgentId] : null
 
-  // Track metrics history for all agents
+  // Track last processed timestamps to prevent duplicate updates
+  const lastProcessedRef = useRef<Record<string, number>>({})
+
+  // Track metrics history for all agents - only run when agents object changes
   useEffect(() => {
-    agentList.forEach(agent => {
+    Object.entries(agents).forEach(([agentId, agent]) => {
       if (agent.lastMetrics) {
-        addMetricsPoint(agent.agentId, {
+        const timestamp = agent.lastMetrics.timestamp
+        // Skip if already processed this timestamp
+        if (lastProcessedRef.current[agentId] === timestamp) return
+        lastProcessedRef.current[agentId] = timestamp
+        
+        addMetricsPoint(agentId, {
           cpu: agent.lastMetrics.cpu,
           memory: agent.lastMetrics.memory,
           networks: agent.lastMetrics.networks,
-          timestamp: agent.lastMetrics.timestamp,
+          timestamp,
         })
       }
     })
-  }, [agentList, addMetricsPoint])
+  }, [agents, addMetricsPoint])
 
   const metricsHistory = selectedAgentId ? getHistory(selectedAgentId) : []
 
