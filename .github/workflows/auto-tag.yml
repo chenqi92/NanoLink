@@ -54,6 +54,31 @@ jobs:
           echo "created=true" >> $GITHUB_OUTPUT
           echo "✅ Created and pushed tag v${{ steps.version.outputs.version }}"
 
+      # GitHub Actions 安全限制：workflow 创建的 tag 不会触发其他 workflow
+      # 所以需要手动触发 ci.yml
+      - name: Trigger CI/CD Pipeline
+        if: steps.create-tag.outputs.created == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            console.log('🚀 Triggering CI/CD pipeline for release...');
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci.yml',
+              ref: 'main',
+              inputs: {
+                test_agent: 'true',
+                test_sdk: 'true',
+                test_apps: 'true',
+                release_agent: 'true',
+                release_sdk: 'true',
+                release_apps: 'true'
+              }
+            });
+            console.log('✅ CI/CD pipeline triggered successfully');
+
       - name: Summary
         run: |
           echo "## Auto Tag Summary" >> $GITHUB_STEP_SUMMARY
@@ -61,7 +86,8 @@ jobs:
           if [[ "${{ steps.create-tag.outputs.created }}" == "true" ]]; then
             echo "✅ Created tag **v${{ steps.version.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The CI/CD pipeline will be triggered automatically by the new tag." >> $GITHUB_STEP_SUMMARY
+            echo "🚀 CI/CD pipeline has been triggered for release." >> $GITHUB_STEP_SUMMARY
           else
             echo "⏭️ Tag **v${{ steps.version.outputs.version }}** already exists, skipped." >> $GITHUB_STEP_SUMMARY
           fi
+
