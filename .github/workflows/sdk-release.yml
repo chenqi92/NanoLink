@@ -377,6 +377,11 @@ jobs:
     name: Create GitHub Release
     needs:
       [prepare, build-java-sdk, build-go-sdk, build-python-sdk, build-proto]
+    # 允许部分 SDK 失败，只要有一个成功就上传
+    if: |
+      always() &&
+      needs.prepare.result == 'success' &&
+      (needs.build-java-sdk.result == 'success' || needs.build-go-sdk.result == 'success' || needs.build-python-sdk.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
