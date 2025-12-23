@@ -23,7 +23,7 @@ import (
 
 var (
 	configFile = flag.String("config", "config.yaml", "Configuration file path")
-	version    = "0.2.9"
+	version    = "0.3.0"
 )
 
 func main() {
