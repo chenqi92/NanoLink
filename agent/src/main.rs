@@ -144,7 +144,7 @@ async fn main() -> Result<()> {
     if args.generate_config {
         let sample_config = Config::sample();
         let yaml = serde_yaml::to_string(&sample_config)?;
-        println!("{}", yaml);
+        println!("{yaml}");
         return Ok(());
     }
 
@@ -180,9 +180,7 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                         .any(|s| s.host == host && s.port == port)
                     {
                         anyhow::bail!(
-                            "Server {}:{} already exists. Use 'server update' to modify.",
-                            host,
-                            port
+                            "Server {host}:{port} already exists. Use 'server update' to modify."
                         );
                     }
 
@@ -196,7 +194,7 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                     });
 
                     save_config(&config, config_path)?;
-                    println!("Server {}:{} added successfully.", host, port);
+                    println!("Server {host}:{port} added successfully.");
                     println!("Restart the agent to apply changes, or use the management API for hot-reload.");
                 }
                 ServerAction::Remove { host, port } => {
@@ -206,7 +204,7 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                         .retain(|s| !(s.host == host && s.port == port));
 
                     if config.servers.len() == original_len {
-                        anyhow::bail!("Server {}:{} not found.", host, port);
+                        anyhow::bail!("Server {host}:{port} not found.");
                     }
 
                     if config.servers.is_empty() {
@@ -214,7 +212,7 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                     }
 
                     save_config(&config, config_path)?;
-                    println!("Server {}:{} removed successfully.", host, port);
+                    println!("Server {host}:{port} removed successfully.");
                     println!("Restart the agent to apply changes.");
                 }
                 ServerAction::List => {
@@ -261,11 +259,11 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                             }
 
                             save_config(&config, config_path)?;
-                            println!("Server {}:{} updated successfully.", host, port);
+                            println!("Server {host}:{port} updated successfully.");
                             println!("Restart the agent to apply changes.");
                         }
                         None => {
-                            anyhow::bail!("Server {}:{} not found.", host, port);
+                            anyhow::bail!("Server {host}:{port} not found.");
                         }
                     }
                 }

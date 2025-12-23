@@ -155,9 +155,8 @@ impl ServerConfig {
             let var_name = &token[2..token.len() - 1];
             return std::env::var(var_name).map_err(|_| {
                 format!(
-                    "Environment variable '{}' not found. \
-                    Make sure it is set before starting the agent.",
-                    var_name
+                    "Environment variable '{var_name}' not found. \
+                    Make sure it is set before starting the agent."
                 )
             });
         }
@@ -166,7 +165,7 @@ impl ServerConfig {
         if let Some(path) = token.strip_prefix("file://") {
             return std::fs::read_to_string(path)
                 .map(|s| s.trim().to_string())
-                .map_err(|e| format!("Failed to read token file '{}': {}", path, e));
+                .map_err(|e| format!("Failed to read token file '{path}': {e}"));
         }
 
         // Direct value
@@ -507,7 +506,7 @@ impl Config {
     /// Load configuration from file
     pub fn load(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read config file: {:?}", path))?;
+            .with_context(|| format!("Failed to read config file: {path:?}"))?;
 
         let mut config: Config = if path.extension().is_some_and(|e| e == "toml") {
             toml::from_str(&content)?
@@ -588,13 +587,13 @@ impl Config {
 
         for (i, server) in self.servers.iter().enumerate() {
             if server.host.is_empty() {
-                anyhow::bail!("Server {} host cannot be empty", i);
+                anyhow::bail!("Server {i} host cannot be empty");
             }
             if server.token.is_empty() {
-                anyhow::bail!("Server {} token cannot be empty", i);
+                anyhow::bail!("Server {i} token cannot be empty");
             }
             if server.permission > 3 {
-                anyhow::bail!("Server {} permission must be 0-3", i);
+                anyhow::bail!("Server {i} permission must be 0-3");
             }
         }
 

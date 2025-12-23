@@ -70,7 +70,7 @@ impl GrpcClient {
         let resolved_token = self
             .server_config
             .resolve_token()
-            .map_err(|e| anyhow::anyhow!("Token resolution failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Token resolution failed: {e}"))?;
 
         let request = Request::new(AuthRequest {
             token: resolved_token,

@@ -38,19 +38,19 @@ impl FileExecutor {
         // For non-existent files, we canonicalize the parent directory
         let canonical = if path.exists() {
             path.canonicalize()
-                .map_err(|e| format!("Failed to resolve path: {}", e))?
+                .map_err(|e| format!("Failed to resolve path: {e}"))?
         } else {
             // For new files, check the parent directory
             if let Some(parent) = path.parent() {
                 if parent.as_os_str().is_empty() {
                     // Relative path in current directory
                     std::env::current_dir()
-                        .map_err(|e| format!("Failed to get current directory: {}", e))?
+                        .map_err(|e| format!("Failed to get current directory: {e}"))?
                         .join(path.file_name().ok_or("Invalid filename")?)
                 } else if parent.exists() {
                     parent
                         .canonicalize()
-                        .map_err(|e| format!("Failed to resolve parent path: {}", e))?
+                        .map_err(|e| format!("Failed to resolve parent path: {e}"))?
                         .join(path.file_name().ok_or("Invalid filename")?)
                 } else {
                     return Err(format!(
@@ -75,8 +75,7 @@ impl FileExecutor {
                         canonical_str, denied
                     );
                     return Err(format!(
-                        "Access denied: path matches blocked pattern '{}'",
-                        denied
+                        "Access denied: path matches blocked pattern '{denied}'"
                     ));
                 }
             }
@@ -87,8 +86,7 @@ impl FileExecutor {
                     canonical_str, denied
                 );
                 return Err(format!(
-                    "Access denied: path is within restricted directory '{}'",
-                    denied
+                    "Access denied: path is within restricted directory '{denied}'"
                 ));
             }
         }
@@ -173,7 +171,7 @@ impl FileExecutor {
                     containers: vec![],
                 }
             }
-            Err(e) => Self::error_result(format!("Failed to read file: {}", e)),
+            Err(e) => Self::error_result(format!("Failed to read file: {e}")),
         }
     }
 
@@ -192,7 +190,7 @@ impl FileExecutor {
         // Check file size using config limit
         let metadata = match fs::metadata(&validated_path) {
             Ok(m) => m,
-            Err(e) => return Self::error_result(format!("Failed to read file metadata: {}", e)),
+            Err(e) => return Self::error_result(format!("Failed to read file metadata: {e}")),
         };
 
         let max_size = self.config.security.max_file_size;
@@ -226,7 +224,7 @@ impl FileExecutor {
                 processes: vec![],
                 containers: vec![],
             },
-            Err(e) => Self::error_result(format!("Failed to read file: {}", e)),
+            Err(e) => Self::error_result(format!("Failed to read file: {e}")),
         }
     }
 
@@ -263,8 +261,7 @@ impl FileExecutor {
             if !parent.exists() {
                 if let Err(e) = fs::create_dir_all(parent) {
                     return Self::error_result(format!(
-                        "Failed to create parent directories: {}",
-                        e
+                        "Failed to create parent directories: {e}"
                     ));
                 }
             }
@@ -290,7 +287,7 @@ impl FileExecutor {
                 processes: vec![],
                 containers: vec![],
             },
-            Err(e) => Self::error_result(format!("Failed to write file: {}", e)),
+            Err(e) => Self::error_result(format!("Failed to write file: {e}")),
         }
     }
 
@@ -322,7 +319,7 @@ impl FileExecutor {
                 processes: vec![],
                 containers: vec![],
             },
-            Err(e) => Self::error_result(format!("Failed to truncate file: {}", e)),
+            Err(e) => Self::error_result(format!("Failed to truncate file: {e}")),
         }
     }
 }

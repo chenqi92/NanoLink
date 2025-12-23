@@ -160,7 +160,7 @@ impl GpuCollector {
                     clock_core_mhz: parts[9].parse().unwrap_or(0),
                     clock_memory_mhz: parts[10].parse().unwrap_or(0),
                     driver_version: self.driver_version.clone(),
-                    pcie_generation: format!("Gen{} x{}", pcie_gen, pcie_width),
+                    pcie_generation: format!("Gen{pcie_gen} x{pcie_width}"),
                     encoder_usage: parts[13].parse().unwrap_or(0.0),
                     decoder_usage: parts[14].parse().unwrap_or(0.0),
                 });

@@ -170,7 +170,7 @@ impl MemoryCollector {
                             24 => "DDR3".to_string(),
                             26 => "DDR4".to_string(),
                             34 => "DDR5".to_string(),
-                            _ => format!("Type {}", mem_type_code),
+                            _ => format!("Type {mem_type_code}"),
                         };
 
                         if let Ok(speed) = parts[2].trim().parse() {
@@ -203,7 +203,7 @@ impl MemoryCollector {
                                     24 => "DDR3".to_string(),
                                     26 => "DDR4".to_string(),
                                     34 => "DDR5".to_string(),
-                                    _ => format!("Type {}", type_code),
+                                    _ => format!("Type {type_code}"),
                                 };
                             }
                         } else if line.contains("\"Speed\"") {

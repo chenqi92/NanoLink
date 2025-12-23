@@ -9,13 +9,12 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
-#[cfg(target_os = "linux")]
-#[allow(unused_imports)]
-pub use linux::*;
 #[cfg(target_os = "windows")]
+#[allow(unused_imports)]
 pub use windows::*;
 
 /// Get the current platform name
+#[allow(dead_code)]
 pub fn platform_name() -> &'static str {
     #[cfg(target_os = "linux")]
     return "linux";
@@ -31,6 +30,7 @@ pub fn platform_name() -> &'static str {
 }
 
 /// Get the current architecture
+#[allow(dead_code)]
 pub fn arch_name() -> &'static str {
     std::env::consts::ARCH
 }

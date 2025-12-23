@@ -96,8 +96,7 @@ impl PermissionChecker {
                 command
             );
             return Err(format!(
-                "Command blocked: dangerous pattern detected ({})",
-                pattern
+                "Command blocked: dangerous pattern detected ({pattern})"
             ));
         }
 
@@ -110,7 +109,7 @@ impl PermissionChecker {
         // Check blacklist (both original and normalized)
         for pattern in &self.config.shell.blacklist {
             if command.contains(pattern) || normalized.contains(pattern) {
-                return Err(format!("Command contains blacklisted pattern: {}", pattern));
+                return Err(format!("Command contains blacklisted pattern: {pattern}"));
             }
         }
 
@@ -205,11 +204,10 @@ impl PermissionChecker {
         }
 
         // base64编码执行
-        if command.contains("base64") && (command.contains("-d") || command.contains("--decode")) {
-            if command.contains('|') {
+        if command.contains("base64") && (command.contains("-d") || command.contains("--decode"))
+            && command.contains('|') {
                 return true;
             }
-        }
 
         // eval执行
         if command.contains("eval ") || command.contains("eval\t") {

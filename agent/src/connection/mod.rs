@@ -150,6 +150,7 @@ impl ConnectionManager {
 
 /// Connection state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ConnectionState {
     Disconnected,
     Connecting,

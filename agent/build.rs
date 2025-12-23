@@ -19,8 +19,7 @@ fn main() -> Result<()> {
 
     if !proto_path.exists() {
         println!(
-            "cargo:warning=Proto file not found at {:?}, skipping protobuf generation",
-            proto_path
+            "cargo:warning=Proto file not found at {proto_path:?}, skipping protobuf generation"
         );
         return Ok(());
     }

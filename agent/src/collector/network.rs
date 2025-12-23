@@ -134,7 +134,7 @@ impl NetworkCollector {
         let mut ips = Vec::new();
 
         if let Ok(output) = Command::new("powershell")
-            .args(["-Command", &format!("Get-NetIPAddress -InterfaceAlias '*{}*' | Select-Object -ExpandProperty IPAddress", interface)])
+            .args(["-Command", &format!("Get-NetIPAddress -InterfaceAlias '*{interface}*' | Select-Object -ExpandProperty IPAddress")])
             .output()
         {
             if output.status.success() {
@@ -197,7 +197,7 @@ impl NetworkCollector {
         if let Ok(output) = Command::new("powershell")
             .args([
                 "-Command",
-                &format!("(Get-NetAdapter -Name '*{}*').LinkSpeed", interface),
+                &format!("(Get-NetAdapter -Name '*{interface}*').LinkSpeed"),
             ])
             .output()
         {

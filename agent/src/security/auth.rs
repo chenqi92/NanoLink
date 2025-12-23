@@ -5,6 +5,7 @@ use subtle::ConstantTimeEq;
 use crate::config::Config;
 
 /// 常量时间字符串比较，防止时序攻击
+#[allow(dead_code)]
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -39,11 +40,12 @@ impl From<u8> for PermissionLevel {
 
 impl From<i32> for PermissionLevel {
     fn from(level: i32) -> Self {
-        Self::from(level.max(0).min(3) as u8)
+        Self::from(level.clamp(0, 3) as u8)
     }
 }
 
 /// Authenticator for validating tokens
+#[allow(dead_code)]
 pub struct Authenticator {
     config: Arc<Config>,
 }

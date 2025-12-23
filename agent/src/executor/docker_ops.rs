@@ -18,7 +18,7 @@ impl DockerExecutor {
         match Command::new("docker").arg("--version").output() {
             Ok(output) if output.status.success() => Ok(()),
             Ok(_) => Err("Docker command failed".to_string()),
-            Err(e) => Err(format!("Docker not available: {}", e)),
+            Err(e) => Err(format!("Docker not available: {e}")),
         }
     }
 
@@ -100,7 +100,7 @@ impl DockerExecutor {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
-                error: format!("Failed to list containers: {}", e),
+                error: format!("Failed to list containers: {e}"),
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
@@ -149,7 +149,7 @@ impl DockerExecutor {
                 } else if stderr.is_empty() {
                     stdout.to_string()
                 } else {
-                    format!("{}\n{}", stdout, stderr)
+                    format!("{stdout}\n{stderr}")
                 };
 
                 CommandResult {
@@ -166,7 +166,7 @@ impl DockerExecutor {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
-                error: format!("Failed to get container logs: {}", e),
+                error: format!("Failed to get container logs: {e}"),
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
@@ -201,7 +201,7 @@ impl DockerExecutor {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
-                error: format!("Failed to {} container: {}", action, e),
+                error: format!("Failed to {action} container: {e}"),
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],

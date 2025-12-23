@@ -274,7 +274,7 @@ async fn add_server(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ApiResponse {
                     success: false,
-                    message: format!("Failed to save config: {}", e),
+                    message: format!("Failed to save config: {e}"),
                 }),
             );
         }
@@ -337,7 +337,7 @@ async fn update_server(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ApiResponse {
                     success: false,
-                    message: format!("Failed to save config: {}", e),
+                    message: format!("Failed to save config: {e}"),
                 }),
             );
         }
@@ -398,7 +398,7 @@ async fn remove_server(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ApiResponse {
                     success: false,
-                    message: format!("Failed to save config: {}", e),
+                    message: format!("Failed to save config: {e}"),
                 }),
             );
         }

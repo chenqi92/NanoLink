@@ -276,13 +276,12 @@ impl DiskCollector {
                                     }
                                 };
                             }
-                        } else if line == "}" || line == "}," {
-                            if !current_device.is_empty() {
+                        } else if (line == "}" || line == "},")
+                            && !current_device.is_empty() {
                                 info.insert(current_device.clone(), current_info.clone());
                                 current_device.clear();
                                 current_info = DiskHardwareInfo::default();
                             }
-                        }
                     }
                 }
             }
@@ -482,8 +481,8 @@ impl DiskCollector {
                     (0, 0, 0, 0)
                 };
 
-            let temperature = Self::get_disk_temperature(&format!("/dev/{}", base_device));
-            let health_status = Self::get_smart_health(&format!("/dev/{}", base_device));
+            let temperature = Self::get_disk_temperature(&format!("/dev/{base_device}"));
+            let health_status = Self::get_smart_health(&format!("/dev/{base_device}"));
 
             metrics.push(DiskMetrics {
                 mount_point,
@@ -541,7 +540,7 @@ impl DiskCollector {
             "fuse.portal",   // XDG portals
         ];
 
-        if virtual_fs_types.contains(&fs_type.as_ref()) {
+        if virtual_fs_types.contains(&fs_type) {
             return true;
         }
 
@@ -571,7 +570,7 @@ impl DiskCollector {
             "/dev/pts", // Pseudo terminals
         ];
 
-        if skip_exact_mounts.contains(&mount_point.as_ref()) {
+        if skip_exact_mounts.contains(&mount_point) {
             return true;
         }
 

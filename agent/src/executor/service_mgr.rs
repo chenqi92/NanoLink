@@ -206,7 +206,7 @@ impl ServiceExecutor {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
-                error: format!("Failed to execute sc: {}", e),
+                error: format!("Failed to execute sc: {e}"),
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
