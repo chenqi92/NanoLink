@@ -331,6 +331,8 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          # 使用 API Token 替代 Trusted Publishing，因为可重用工作流不支持 Trusted Publishing
 
   # Generate Protocol Buffers for all languages
   build-proto:
