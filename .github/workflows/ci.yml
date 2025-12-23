@@ -208,6 +208,7 @@ jobs:
 
       - name: Clippy
         working-directory: agent
+        shell: bash
         run: |
           cargo clippy -- -D warnings \
             -A clippy::large_enum_variant \

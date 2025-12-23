@@ -20,6 +20,7 @@ pub use windows::{
 };
 
 /// Get the current platform name
+#[allow(dead_code)]
 pub fn platform_name() -> &'static str {
     #[cfg(target_os = "linux")]
     return "linux";
@@ -35,6 +36,7 @@ pub fn platform_name() -> &'static str {
 }
 
 /// Get the current architecture
+#[allow(dead_code)]
 pub fn arch_name() -> &'static str {
     std::env::consts::ARCH
 }
