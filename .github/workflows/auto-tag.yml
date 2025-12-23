@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write  # Required to trigger ci.yml via workflow_dispatch
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag_created: ${{ steps.create-tag.outputs.created }}
