@@ -95,8 +95,6 @@ pub struct LayeredCollector {
     last_periodic_disk: Instant,
     last_periodic_session: Instant,
     last_periodic_ip_check: Instant,
-    #[allow(dead_code)]
-    last_health_check: Instant,
 
     // Cached IP addresses for change detection
     cached_ip_addresses: Vec<(String, Vec<String>)>,
@@ -131,7 +129,6 @@ impl LayeredCollector {
             last_periodic_disk: now,
             last_periodic_session: now,
             last_periodic_ip_check: now,
-            last_health_check: now,
             cached_ip_addresses: Vec::new(),
         }
     }

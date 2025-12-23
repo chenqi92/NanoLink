@@ -14,11 +14,12 @@ mod windows;
 pub use linux::*;
 
 #[cfg(target_os = "windows")]
-#[allow(unused_imports)]
-pub use windows::*;
+pub use windows::{
+    install_service, query_service_status, run_as_service, start_service, stop_service,
+    uninstall_service,
+};
 
 /// Get the current platform name
-#[allow(dead_code)]
 pub fn platform_name() -> &'static str {
     #[cfg(target_os = "linux")]
     return "linux";
@@ -34,7 +35,6 @@ pub fn platform_name() -> &'static str {
 }
 
 /// Get the current architecture
-#[allow(dead_code)]
 pub fn arch_name() -> &'static str {
     std::env::consts::ARCH
 }

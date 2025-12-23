@@ -59,6 +59,30 @@ enum Commands {
         #[command(subcommand)]
         action: ServerAction,
     },
+    /// Windows Service management (Windows only)
+    #[cfg(target_os = "windows")]
+    Service {
+        #[command(subcommand)]
+        action: ServiceAction,
+    },
+}
+
+/// Windows Service actions
+#[cfg(target_os = "windows")]
+#[derive(Subcommand, Debug)]
+enum ServiceAction {
+    /// Install as Windows Service
+    Install,
+    /// Uninstall Windows Service
+    Uninstall,
+    /// Start the Windows Service
+    Start,
+    /// Stop the Windows Service
+    Stop,
+    /// Query Windows Service status
+    Status,
+    /// Run as Windows Service (called by SCM)
+    Run,
 }
 
 #[derive(Subcommand, Debug)]
@@ -162,6 +186,37 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
     use crate::config::ServerConfig;
 
     match command {
+        #[cfg(target_os = "windows")]
+        Commands::Service { action } => {
+            use crate::platform::{
+                install_service, query_service_status, run_as_service, start_service, stop_service,
+                uninstall_service,
+            };
+
+            match action {
+                ServiceAction::Install => {
+                    install_service(Some(config_path.clone())).map_err(|e| anyhow::anyhow!(e))?;
+                }
+                ServiceAction::Uninstall => {
+                    uninstall_service().map_err(|e| anyhow::anyhow!(e))?;
+                }
+                ServiceAction::Start => {
+                    start_service().map_err(|e| anyhow::anyhow!(e))?;
+                }
+                ServiceAction::Stop => {
+                    stop_service().map_err(|e| anyhow::anyhow!(e))?;
+                }
+                ServiceAction::Status => {
+                    let status = query_service_status().map_err(|e| anyhow::anyhow!(e))?;
+                    println!("{}", status);
+                }
+                ServiceAction::Run => {
+                    // This is called by the Windows Service Control Manager
+                    run_as_service().map_err(|e| anyhow::anyhow!(e))?;
+                }
+            }
+            return Ok(());
+        }
         Commands::Server { action } => {
             let mut config = Config::load(config_path)?;
 
@@ -296,7 +351,8 @@ fn save_config(config: &Config, path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-async fn run_agent(config_path: PathBuf) -> Result<()> {
+/// Run the agent (public for Windows service support)
+pub async fn run_agent(config_path: PathBuf) -> Result<()> {
     info!("NanoLink Agent v{} starting...", env!("CARGO_PKG_VERSION"));
 
     // Load configuration

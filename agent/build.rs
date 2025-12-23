@@ -30,9 +30,18 @@ fn main() -> Result<()> {
         .build_server(false) // Agent only needs client
         .build_client(true)
         // Suppress clippy::large_enum_variant on generated Payload enums
-        .type_attribute("nanolink.Message.Payload", "#[allow(clippy::large_enum_variant)]")
-        .type_attribute("nanolink.MetricsStreamRequest.Request", "#[allow(clippy::large_enum_variant)]")
-        .type_attribute("nanolink.MetricsStreamResponse.Response", "#[allow(clippy::large_enum_variant)]")
+        .type_attribute(
+            "nanolink.Message.Payload",
+            "#[allow(clippy::large_enum_variant)]",
+        )
+        .type_attribute(
+            "nanolink.MetricsStreamRequest.Request",
+            "#[allow(clippy::large_enum_variant)]",
+        )
+        .type_attribute(
+            "nanolink.MetricsStreamResponse.Response",
+            "#[allow(clippy::large_enum_variant)]",
+        )
         .compile_protos(
             &[proto_path.to_str().unwrap()],
             &[proto_dir.to_str().unwrap()],

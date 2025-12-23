@@ -21,7 +21,9 @@ pub fn validate_container_name(name: &str) -> Result<(), String> {
                 "[SECURITY] Blocked container name with dangerous character: {}",
                 name
             );
-            return Err(format!("Container name contains forbidden character: '{c}'"));
+            return Err(format!(
+                "Container name contains forbidden character: '{c}'"
+            ));
         }
     }
 

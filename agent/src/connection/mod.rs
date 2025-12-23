@@ -148,9 +148,8 @@ impl ConnectionManager {
     }
 }
 
-/// Connection state
+/// Connection state for tracking connection lifecycle
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum ConnectionState {
     Disconnected,
     Connecting,

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use sysinfo::System;
 use tracing::info;
 
 use crate::proto::{CommandResult, ProcessInfo};
@@ -7,22 +6,19 @@ use crate::security::validation::{validate_pid_killable, validate_process_name};
 
 /// Process management executor
 pub struct ProcessExecutor {
-    #[allow(dead_code)]
-    system: System,
+    _marker: (),
 }
 
 impl ProcessExecutor {
     /// Create a new process executor
     pub fn new() -> Self {
-        Self {
-            system: System::new_all(),
-        }
+        Self { _marker: () }
     }
 
     /// List all processes
     pub async fn list_processes(&self) -> CommandResult {
-        use sysinfo::ProcessesToUpdate;
-        
+        use sysinfo::{ProcessesToUpdate, System};
+
         let mut system = System::new();
         system.refresh_processes(ProcessesToUpdate::All, true);
 

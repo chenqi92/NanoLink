@@ -14,7 +14,6 @@ pub struct RingBuffer {
     capacity: usize,
 }
 
-#[allow(dead_code)]
 impl RingBuffer {
     /// Create a new ring buffer with specified capacity
     pub fn new(capacity: usize) -> Self {

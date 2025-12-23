@@ -444,7 +444,6 @@ impl GpuCollector {
         (mib * 1024.0 * 1024.0) as u64
     }
 
-    #[allow(dead_code)]
     fn parse_memory_string(mem_str: &str) -> u64 {
         let parts: Vec<&str> = mem_str.split_whitespace().collect();
         if parts.len() >= 2 {

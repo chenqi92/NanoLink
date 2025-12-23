@@ -19,16 +19,14 @@ struct CpuStaticInfo {
 
 /// CPU metrics collector
 pub struct CpuCollector {
-    /// Previous CPU usage for delta calculation
-    #[allow(dead_code)]
-    prev_usage: Option<f64>,
+    _marker: (),
 }
 
 impl CpuCollector {
     pub fn new() -> Self {
         // Initialize static CPU info once
         CPU_INFO.get_or_init(Self::collect_static_info);
-        Self { prev_usage: None }
+        Self { _marker: () }
     }
 
     #[allow(unused_assignments)]

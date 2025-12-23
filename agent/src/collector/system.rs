@@ -244,20 +244,3 @@ impl Default for SystemInfoCollector {
         Self::new()
     }
 }
-
-/// Helper to extract string from JSON line
-#[allow(dead_code)]
-fn extract_json_string(line: &str) -> Option<String> {
-    let parts: Vec<&str> = line.split(':').collect();
-    if parts.len() >= 2 {
-        let val = parts[1..]
-            .join(":")
-            .trim()
-            .trim_matches(',')
-            .trim_matches('"')
-            .to_string();
-        Some(val)
-    } else {
-        None
-    }
-}
