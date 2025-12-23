@@ -541,7 +541,7 @@ impl DiskCollector {
             "fuse.portal",   // XDG portals
         ];
 
-        if virtual_fs_types.iter().any(|&t| fs_type == t) {
+        if virtual_fs_types.contains(&fs_type.as_str()) {
             return true;
         }
 
@@ -571,7 +571,7 @@ impl DiskCollector {
             "/dev/pts", // Pseudo terminals
         ];
 
-        if skip_exact_mounts.iter().any(|&m| mount_point == m) {
+        if skip_exact_mounts.contains(&mount_point.as_str()) {
             return true;
         }
 
