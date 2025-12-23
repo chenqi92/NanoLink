@@ -13,6 +13,10 @@ on:
         description: "Skip tests (already run by caller)"
         type: boolean
         default: false
+      version:
+        description: "Version to release (e.g., 0.2.8)"
+        type: string
+        required: false
 
 env:
   REGISTRY: ghcr.io
@@ -62,9 +66,9 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          # 优先使用 inputs.version
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          # 优先使用 inputs.version（来自 workflow_dispatch 或 workflow_call）
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
           # 其次从 tag 提取
           elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
@@ -131,7 +135,13 @@ jobs:
         working-directory: apps/desktop
         shell: pwsh
         run: |
-          $version = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ github.event.inputs.version }}" } else { "${{ github.ref_name }}".Replace("v", "") }
+          $version = "${{ inputs.version }}"
+          if ([string]::IsNullOrEmpty($version)) {
+            $version = "${{ github.ref_name }}".Replace("v", "")
+          }
+          if ([string]::IsNullOrEmpty($version)) {
+            $version = Get-Content "../../VERSION" | ForEach-Object { $_.Trim() }
+          }
           $buildDir = "build\windows\x64\runner\Release"
           $outDir = "release"
           New-Item -ItemType Directory -Force -Path $outDir
@@ -171,8 +181,14 @@ jobs:
       - name: Create DMG
         working-directory: apps/desktop
         run: |
-          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION=$(cat ../../VERSION | tr -d '[:space:]')
+          fi
           mkdir -p release
           hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/desktop.app -ov -format UDZO "release/NanoLink-macOS-Intel-$VERSION.dmg"
 
@@ -210,8 +226,14 @@ jobs:
       - name: Create DMG
         working-directory: apps/desktop
         run: |
-          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION=$(cat ../../VERSION | tr -d '[:space:]')
+          fi
           mkdir -p release
           hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/desktop.app -ov -format UDZO "release/NanoLink-macOS-AppleSilicon-$VERSION.dmg"
 
@@ -253,8 +275,14 @@ jobs:
       - name: Create tarball
         working-directory: apps/desktop
         run: |
-          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION=$(cat ../../VERSION | tr -d '[:space:]')
+          fi
           mkdir -p release
           tar -czvf "release/NanoLink-Linux-$VERSION.tar.gz" -C build/linux/x64/release/bundle .
 
@@ -297,8 +325,14 @@ jobs:
       - name: Rename APK
         working-directory: apps/desktop
         run: |
-          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION=$(cat ../../VERSION | tr -d '[:space:]')
+          fi
           mkdir -p release
           cp build/app/outputs/flutter-apk/app-release.apk "release/NanoLink-Android-$VERSION.apk"
 
@@ -335,8 +369,14 @@ jobs:
       - name: Create IPA
         working-directory: apps/desktop
         run: |
-          VERSION="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION=$(cat ../../VERSION | tr -d '[:space:]')
+          fi
           mkdir -p release Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
           zip -r "release/NanoLink-iOS-$VERSION-unsigned.ipa" Payload
@@ -406,11 +446,15 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          # 优先使用 inputs.version（来自 workflow_dispatch 或 workflow_call）
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+            VERSION=$(cat VERSION | tr -d '[:space:]')
           fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v1

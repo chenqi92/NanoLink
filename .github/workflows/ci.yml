@@ -417,19 +417,64 @@ jobs:
           fi
 
   # ============================================================
+  # Create Unified Release (先创建 release，后续组件各自上传)
+  # ============================================================
+  create-release:
+    name: Create Release
+    needs: [setup, test-agent-summary, test-sdk-summary, test-apps-summary]
+    if: |
+      always() &&
+      needs.setup.outputs.is_release == 'true' &&
+      needs.setup.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create or Update Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.setup.outputs.tag }}
+          name: NanoLink ${{ needs.setup.outputs.tag }}
+          body: |
+            ## NanoLink Release ${{ needs.setup.outputs.version }}
+
+            > 🚀 Release 正在构建中，各组件完成后将自动上传到此页面...
+            
+            ---
+            
+            ### 构建状态
+            
+            | 组件 | 状态 |
+            |------|------|
+            | Agent | ⏳ 构建中... |
+            | SDK | ⏳ 构建中... |
+            | Apps | ⏳ 构建中... |
+            
+            ---
+            *Release notes 将在所有组件完成后自动更新。*
+          draft: false
+          prerelease: ${{ contains(needs.setup.outputs.version, 'alpha') || contains(needs.setup.outputs.version, 'beta') || contains(needs.setup.outputs.version, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================
   # Release: Agent
   # ============================================================
   release-agent:
     name: Release Agent
-    needs: [setup, test-agent-summary]
+    needs: [setup, test-agent-summary, create-release]
     if: |
       always() &&
       needs.setup.outputs.is_release == 'true' &&
       needs.setup.outputs.release_agent == 'true' &&
+      needs.create-release.result == 'success' &&
       (needs.test-agent-summary.outputs.success == 'true' || needs.setup.outputs.test_agent != 'true')
     uses: ./.github/workflows/release.yml
     with:
       skip_tests: true
+      version: ${{ needs.setup.outputs.version }}
     secrets: inherit
 
   # ============================================================
@@ -437,15 +482,17 @@ jobs:
   # ============================================================
   release-sdk:
     name: Release SDK
-    needs: [setup, test-sdk-summary]
+    needs: [setup, test-sdk-summary, create-release]
     if: |
       always() &&
       needs.setup.outputs.is_release == 'true' &&
       needs.setup.outputs.release_sdk == 'true' &&
+      needs.create-release.result == 'success' &&
       (needs.test-sdk-summary.outputs.success == 'true' || needs.setup.outputs.test_sdk != 'true')
     uses: ./.github/workflows/sdk-release.yml
     with:
       skip_tests: true
+      version: ${{ needs.setup.outputs.version }}
     secrets: inherit
 
   # ============================================================
@@ -453,15 +500,32 @@ jobs:
   # ============================================================
   release-apps:
     name: Release Apps
-    needs: [setup, test-apps-summary]
+    needs: [setup, test-apps-summary, create-release]
     if: |
       always() &&
       needs.setup.outputs.is_release == 'true' &&
       needs.setup.outputs.release_apps == 'true' &&
+      needs.create-release.result == 'success' &&
       (needs.test-apps-summary.outputs.success == 'true' || needs.setup.outputs.test_apps != 'true')
     uses: ./.github/workflows/apps-release.yml
     with:
       skip_tests: true
+      version: ${{ needs.setup.outputs.version }}
+    secrets: inherit
+
+  # ============================================================
+  # Upload to Cloudflare R2 (所有组件完成后执行)
+  # ============================================================
+  upload-to-r2:
+    name: Upload to R2
+    needs: [setup, release-agent, release-sdk, release-apps]
+    if: |
+      always() &&
+      needs.setup.outputs.is_release == 'true' &&
+      (needs.release-agent.result == 'success' || needs.release-sdk.result == 'success' || needs.release-apps.result == 'success')
+    uses: ./.github/workflows/upload-to-r2.yml
+    with:
+      version: ${{ needs.setup.outputs.version }}
     secrets: inherit
 
   # ============================================================
@@ -469,7 +533,7 @@ jobs:
   # ============================================================
   summary:
     name: Pipeline Summary
-    needs: [setup, test-agent-summary, test-sdk-summary, test-apps-summary, release-agent, release-sdk, release-apps]
+    needs: [setup, test-agent-summary, test-sdk-summary, test-apps-summary, create-release, release-agent, release-sdk, release-apps, upload-to-r2]
     if: always()
     runs-on: ubuntu-latest
     steps:

@@ -13,6 +13,10 @@ on:
         description: "Skip tests (already run by caller)"
         type: boolean
         default: false
+      version:
+        description: "Version to release (e.g., 0.2.8)"
+        type: string
+        required: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -34,9 +38,9 @@ jobs:
       - name: Get version
         id: version
         run: |
-          # 优先使用 inputs.version
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          # 优先使用 inputs.version（来自 workflow_dispatch 或 workflow_call）
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
             TAG="v$VERSION"
           # 其次从 tag 提取
           elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
@@ -232,93 +236,12 @@ jobs:
             echo "No files to checksum"
           fi
 
-      - name: Create Release
+      - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          name: NanoLink ${{ needs.prepare.outputs.tag }}
-          body: |
-            ## NanoLink Release ${{ needs.prepare.outputs.version }}
-
-            > 本 Release 包含 Agent、SDK 和桌面应用的所有构建产物。
-            > 各工作流并行构建，产物将陆续上传到此页面。
-
-            ---
-
-            ### 🔧 Agent
-
-            | Platform | Architecture | Download |
-            |----------|--------------|----------|
-            | Linux | x86_64 | `nanolink-agent-linux-x86_64` |
-            | Linux | ARM64 | `nanolink-agent-linux-aarch64` |
-            | macOS | x86_64 | `nanolink-agent-macos-x86_64` |
-            | macOS | ARM64 (M1/M2) | `nanolink-agent-macos-aarch64` |
-            | Windows | x86_64 | `nanolink-agent-windows-x86_64.exe` |
-
-            ### 📦 SDK
-
-            - **Java**: `kkape-nanolink-${{ needs.prepare.outputs.version }}.jar`
-            - **Python**: `kkape_nanolink-${{ needs.prepare.outputs.version }}-py3-none-any.whl`
-            - **Go**: `nanolink-go-sdk-${{ needs.prepare.outputs.version }}.tar.gz`
-
-            ### 🖥️ Desktop Apps
-
-            | Platform | Download |
-            |----------|----------|
-            | Windows | `NanoLink-Windows-${{ needs.prepare.outputs.version }}.zip` |
-            | macOS Intel | `NanoLink-macOS-Intel-${{ needs.prepare.outputs.version }}.dmg` |
-            | macOS Apple Silicon | `NanoLink-macOS-AppleSilicon-${{ needs.prepare.outputs.version }}.dmg` |
-            | Linux | `NanoLink-Linux-${{ needs.prepare.outputs.version }}.tar.gz` |
-
-            ### 🐳 Docker
-
-            ```bash
-            docker pull ghcr.io/chenqi92/nanolink-server:${{ needs.prepare.outputs.version }}
-            docker pull ghcr.io/chenqi92/nanolink-server:latest
-            ```
-
-            ### 📥 Quick Install
-
-            **Agent (Linux/macOS):**
-            ```bash
-            curl -fsSL https://github.com/chenqi92/NanoLink/releases/download/${{ needs.prepare.outputs.tag }}/nanolink-agent-linux-x86_64 -o nanolink-agent
-            chmod +x nanolink-agent && ./nanolink-agent --help
-            ```
-
-            **SDK:**
-            ```bash
-            # Python
-            pip install kkape-nanolink==${{ needs.prepare.outputs.version }}
-
-            # Go
-            go get github.com/chenqi92/NanoLink/sdk/go@${{ needs.prepare.outputs.tag }}
-            ```
-
-            ### ☁️ R2 Mirror (China Optimized)
-
-            **Agent Install Script (Faster in China):**
-            ```bash
-            # Linux/macOS
-            curl -fsSL https://agent.download.kkape.com/newest/install.sh | sudo bash
-
-            # Windows (PowerShell Admin)
-            irm https://agent.download.kkape.com/newest/install.ps1 | iex
-            ```
-
-            ---
-            See [CHANGELOG.md](https://github.com/chenqi92/NanoLink/blob/main/CHANGELOG.md) for details.
           files: release/*
-          draft: false
-          prerelease: ${{ contains(needs.prepare.outputs.version, 'alpha') || contains(needs.prepare.outputs.version, 'beta') || contains(needs.prepare.outputs.version, 'rc') }}
+          fail_on_unmatched_files: false
+          # 不指定 name 和 body，避免覆盖 ci.yml 创建的 release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Upload to Cloudflare R2 for faster access in China
-  upload-r2:
-    name: Upload to R2
-    needs: [prepare, release]
-    if: ${{ needs.release.result == 'success' }}
-    uses: ./.github/workflows/upload-to-r2.yml
-    with:
-      version: ${{ needs.prepare.outputs.version }}
-    secrets: inherit

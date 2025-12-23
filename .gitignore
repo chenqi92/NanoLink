@@ -10,6 +10,7 @@ agent/Cargo.lock
 # Java SDK
 # =========================
 sdk/java/target/
+sdk/java/bin/
 sdk/java/*.iml
 sdk/java/.idea/
 sdk/java/*.class
