@@ -68,7 +68,9 @@ impl MetricsCollector {
             gpu_collector: GpuCollector::new(),
             npu_collector: NpuCollector::new(),
             session_collector: SessionCollector::new(),
-            system_info_collector: SystemInfoCollector::with_hostname(config.agent.hostname.clone()),
+            system_info_collector: SystemInfoCollector::with_hostname(
+                config.agent.hostname.clone(),
+            ),
         }
     }
 

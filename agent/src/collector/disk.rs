@@ -547,15 +547,15 @@ impl DiskCollector {
 
         // Skip by mount point patterns
         let skip_mount_patterns = [
-            "/var/lib/docker/",      // Docker volumes/overlays
-            "/var/lib/containers/",  // Podman containers
-            "/var/lib/kubelet/",     // Kubernetes volumes
-            "/run/",                 // Runtime data
-            "/dev/",                 // Device files (except /dev/shm which has tmpfs)
-            "/sys/",                 // Sysfs virtual filesystem
-            "/proc/",                // Procfs
-            "/snap/",                // Snap package mounts
-            "/var/snap/",            // Snap data (when mounted separately)
+            "/var/lib/docker/",     // Docker volumes/overlays
+            "/var/lib/containers/", // Podman containers
+            "/var/lib/kubelet/",    // Kubernetes volumes
+            "/run/",                // Runtime data
+            "/dev/",                // Device files (except /dev/shm which has tmpfs)
+            "/sys/",                // Sysfs virtual filesystem
+            "/proc/",               // Procfs
+            "/snap/",               // Snap package mounts
+            "/var/snap/",           // Snap data (when mounted separately)
         ];
 
         if skip_mount_patterns
