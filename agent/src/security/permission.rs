@@ -204,10 +204,12 @@ impl PermissionChecker {
         }
 
         // base64编码执行
-        if command.contains("base64") && (command.contains("-d") || command.contains("--decode"))
-            && command.contains('|') {
-                return true;
-            }
+        if command.contains("base64")
+            && (command.contains("-d") || command.contains("--decode"))
+            && command.contains('|')
+        {
+            return true;
+        }
 
         // eval执行
         if command.contains("eval ") || command.contains("eval\t") {
@@ -262,6 +264,7 @@ impl PermissionChecker {
     }
 
     /// Check if a command requires confirmation
+    #[allow(dead_code)]
     pub fn requires_confirmation(&self, command: &str) -> bool {
         self.config
             .shell

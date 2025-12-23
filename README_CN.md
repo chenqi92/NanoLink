@@ -680,6 +680,105 @@ async def main():
 asyncio.run(main())
 ```
 
+### 数据请求 API
+
+SDK 可以主动向 Agent 请求特定数据，适用于实时仪表盘场景。
+
+#### 分层数据推送机制
+
+| 层级 | 数据类型 | 默认间隔 | 描述 |
+|------|----------|----------|------|
+| 静态层 | 硬件信息 | 连接时一次 | CPU 型号、内存大小、磁盘设备 |
+| 实时层 | 动态指标 | 5 秒 | CPU 使用率、内存、磁盘/网络 IO |
+| 周期层 | 低频数据 | 30-60 秒 | 磁盘使用量、用户会话 |
+
+#### 支持的请求类型
+
+| 类型 | 描述 |
+|------|------|
+| `FULL` | 完整指标 |
+| `STATIC` | 静态硬件信息 |
+| `DISK_USAGE` | 磁盘容量 |
+| `NETWORK_INFO` | 网络详情 |
+| `USER_SESSIONS` | 登录用户 |
+| `GPU_INFO` | GPU 信息 |
+| `HEALTH` | 磁盘 S.M.A.R.T. 状态 |
+
+#### 使用示例
+
+**Java:**
+```java
+// 向特定 Agent 请求
+server.requestData(agentId, DataRequestType.DATA_REQUEST_STATIC);
+
+// 向所有 Agent 广播
+server.broadcastDataRequest(DataRequestType.DATA_REQUEST_FULL);
+```
+
+**Go:**
+```go
+server.RequestData(agentID, int32(pb.DataRequestType_DATA_REQUEST_STATIC))
+server.BroadcastDataRequest(int32(pb.DataRequestType_DATA_REQUEST_FULL))
+```
+
+**Python:**
+```python
+server.request_data(agent_id, DataRequestType.STATIC)
+server.broadcast_data_request(DataRequestType.FULL)
+```
+
+#### 响应处理
+
+响应通过现有回调到达。示例 - 获取 GPU 个数：
+
+**Java:**
+```java
+server.onStaticInfo(info -> {
+    int gpuCount = info.getGpusList().size();
+    int npuCount = info.getNpusList().size();
+    System.out.println("GPU 数量: " + gpuCount + ", NPU 数量: " + npuCount);
+
+    for (var gpu : info.getGpusList()) {
+        System.out.println("  " + gpu.getName() + " - " + gpu.getMemoryTotal() / 1024/1024/1024 + "GB");
+    }
+});
+server.requestData(agentId, DataRequestType.DATA_REQUEST_STATIC);
+```
+
+#### 可用数据字段
+
+<details>
+<summary><b>STATIC - 硬件信息</b></summary>
+
+| 类别 | 字段 |
+|------|------|
+| CPU | 型号、厂商、物理核心、逻辑核心、架构、最大频率、缓存大小 |
+| 内存 | 总量、Swap、类型 (DDR4/DDR5)、速度、插槽数 |
+| 磁盘[] | 设备、挂载点、文件系统、型号、序列号、类型 (SSD/HDD/NVMe)、健康状态 |
+| 网络[] | 接口、MAC 地址、IP 地址列表、速度、接口类型 |
+| **GPU[]** | 索引、名称、厂商、显存总量、驱动版本、PCIe 代数、功耗限制 |
+| **NPU[]** | 索引、名称、厂商、内存总量、驱动版本 |
+| 系统 | 操作系统、版本、内核、主机名、运行时间、主板、BIOS |
+
+</details>
+
+<details>
+<summary><b>FULL - 完整指标</b></summary>
+
+所有静态信息 + 实时数据：CPU 使用率/温度、内存使用、磁盘 IO、网络 IO、GPU 使用率/温度/功耗、负载均衡、用户会话。
+
+</details>
+
+#### 安全性
+
+> **重要:** 数据请求是**只读**的，只能请求监控数据，不能执行命令。
+
+| 特性 | 数据请求 | 命令执行 |
+|------|----------|----------|
+| 目的 | 请求监控数据 | 执行操作 |
+| 安全性 | 只读 | 需要认证 + 权限 |
+| 风险级别 | 低 | 高（可修改系统） |
+
 ## 项目结构
 
 ```

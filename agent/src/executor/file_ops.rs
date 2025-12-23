@@ -151,7 +151,7 @@ impl FileExecutor {
         match File::open(&validated_path) {
             Ok(file) => {
                 let reader = BufReader::new(file);
-                let all_lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+                let all_lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
 
                 let start = if all_lines.len() > lines {
                     all_lines.len() - lines
@@ -260,9 +260,7 @@ impl FileExecutor {
         if let Some(parent) = validated_path.parent() {
             if !parent.exists() {
                 if let Err(e) = fs::create_dir_all(parent) {
-                    return Self::error_result(format!(
-                        "Failed to create parent directories: {e}"
-                    ));
+                    return Self::error_result(format!("Failed to create parent directories: {e}"));
                 }
             }
         }

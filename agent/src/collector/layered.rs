@@ -95,6 +95,7 @@ pub struct LayeredCollector {
     last_periodic_disk: Instant,
     last_periodic_session: Instant,
     last_periodic_ip_check: Instant,
+    #[allow(dead_code)]
     last_health_check: Instant,
 
     // Cached IP addresses for change detection
@@ -208,8 +209,8 @@ impl LayeredCollector {
     /// Collect static hardware information
     pub fn collect_static_info(&mut self) -> anyhow::Result<StaticInfo> {
         self.system.refresh_all();
-        self.disks.refresh();
-        self.networks.refresh();
+        self.disks.refresh(false);
+        self.networks.refresh(false);
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
@@ -336,10 +337,10 @@ impl LayeredCollector {
 
     /// Collect realtime metrics (lightweight, for frequent sending)
     pub fn collect_realtime_metrics(&mut self) -> anyhow::Result<RealtimeMetrics> {
-        self.system.refresh_cpu();
+        self.system.refresh_cpu_all();
         self.system.refresh_memory();
-        self.disks.refresh();
-        self.networks.refresh();
+        self.disks.refresh(false);
+        self.networks.refresh(false);
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
@@ -448,7 +449,7 @@ impl LayeredCollector {
         let disk_interval = Duration::from_millis(self.config.collector.disk_usage_interval_ms);
         if now.duration_since(self.last_periodic_disk) >= disk_interval {
             self.last_periodic_disk = now;
-            self.disks.refresh();
+            self.disks.refresh(false);
 
             let disk_metrics = self
                 .disk_collector
@@ -499,7 +500,7 @@ impl LayeredCollector {
         let ip_interval = Duration::from_millis(self.config.collector.ip_check_interval_ms);
         if now.duration_since(self.last_periodic_ip_check) >= ip_interval {
             self.last_periodic_ip_check = now;
-            self.networks.refresh();
+            self.networks.refresh(false);
 
             let net_metrics = self
                 .network_collector
@@ -557,8 +558,8 @@ impl LayeredCollector {
         is_initial: bool,
     ) -> anyhow::Result<crate::proto::Metrics> {
         self.system.refresh_all();
-        self.disks.refresh();
-        self.networks.refresh();
+        self.disks.refresh(false);
+        self.networks.refresh(false);
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
@@ -660,7 +661,7 @@ impl LayeredCollector {
                 }
             }
             DataRequest::DiskUsage => {
-                self.disks.refresh();
+                self.disks.refresh(false);
                 let disk_metrics = self
                     .disk_collector
                     .collect(&self.disks, &self.config.collector);

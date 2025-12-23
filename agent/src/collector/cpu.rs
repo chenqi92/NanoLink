@@ -20,6 +20,7 @@ struct CpuStaticInfo {
 /// CPU metrics collector
 pub struct CpuCollector {
     /// Previous CPU usage for delta calculation
+    #[allow(dead_code)]
     prev_usage: Option<f64>,
 }
 
@@ -369,7 +370,7 @@ impl CpuCollector {
 
     /// Collect CPU metrics
     pub fn collect(&mut self, system: &System, config: &CollectorConfig) -> CpuMetrics {
-        let global_cpu = system.global_cpu_info().cpu_usage();
+        let global_cpu = system.global_cpu_usage();
         let cpu_info = CPU_INFO.get().expect("CPU info not initialized");
 
         // Collect per-core usage if enabled

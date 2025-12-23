@@ -3,6 +3,8 @@ gRPC Service implementation for NanoLink Python SDK
 """
 
 import logging
+import queue
+import threading
 import time
 import uuid
 from concurrent import futures
@@ -52,6 +54,8 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         # Map of context to agent connection
         self._agents: Dict[str, AgentConnection] = {}
         self._context_agents: Dict[Any, AgentConnection] = {}
+        # Map of agent_id to response queue for sending DataRequest
+        self._agent_queues: Dict[str, Any] = {}
 
     @property
     def agents(self) -> Dict[str, AgentConnection]:
@@ -81,6 +85,9 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         if context:
             self._context_agents[id(context)] = agent
 
+        # Create a queue for sending data requests to this agent
+        self._agent_queues[agent.agent_id] = queue.Queue(maxsize=100)
+
         logger.info(f"Agent registered: {agent.hostname} ({agent.agent_id})")
 
         if self.on_agent_connect:
@@ -97,6 +104,9 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         for ctx_id, a in list(self._context_agents.items()):
             if a.agent_id == agent.agent_id:
                 del self._context_agents[ctx_id]
+
+        # Remove the data request queue
+        self._agent_queues.pop(agent.agent_id, None)
 
         logger.info(f"Agent unregistered: {agent.hostname} ({agent.agent_id})")
 
@@ -309,6 +319,18 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                     elif request.HasField('command_result'):
                         result = request.command_result
                         logger.info(f"Command result: {result.command_id} success={result.success}")
+
+                    # Check for pending data requests and send them
+                    if agent_id and agent_id in self._agent_queues:
+                        while True:
+                            try:
+                                data_request = self._agent_queues[agent_id].get_nowait()
+                                yield nanolink_pb2.MetricsStreamResponse(
+                                    data_request=data_request
+                                )
+                                logger.debug(f"Sent data request {data_request.request_type} to {agent_id}")
+                            except queue.Empty:
+                                break
 
                 except Exception as e:
                     logger.error(f"Error processing stream request: {e}")
@@ -711,6 +733,63 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         ]
 
         return periodic
+
+    def send_data_request(
+        self,
+        agent_id: str,
+        request_type: int,
+        target: Optional[str] = None
+    ) -> bool:
+        """
+        Send a data request to a specific agent.
+
+        Args:
+            agent_id: The agent ID to send the request to
+            request_type: The type of data to request (use nanolink_pb2.DataRequestType values)
+            target: Optional target (e.g., specific device name)
+
+        Returns:
+            True if the request was queued successfully
+        """
+        if agent_id not in self._agent_queues:
+            logger.warning(f"Agent {agent_id} not found for data request")
+            return False
+
+        request = nanolink_pb2.DataRequest(
+            request_type=request_type,
+            target=target or ""
+        )
+
+        try:
+            self._agent_queues[agent_id].put_nowait(request)
+            logger.info(f"Queued data request {request_type} for agent {agent_id}")
+            return True
+        except queue.Full:
+            logger.warning(f"Queue full for agent {agent_id}")
+            return False
+
+    def broadcast_data_request(self, request_type: int) -> int:
+        """
+        Send a data request to all connected agents.
+
+        Args:
+            request_type: The type of data to request
+
+        Returns:
+            Number of agents the request was sent to
+        """
+        request = nanolink_pb2.DataRequest(request_type=request_type)
+        count = 0
+
+        for agent_id, q in self._agent_queues.items():
+            try:
+                q.put_nowait(request)
+                count += 1
+            except queue.Full:
+                logger.warning(f"Queue full for agent {agent_id}")
+
+        logger.info(f"Broadcast data request {request_type} to {count} agents")
+        return count
 
 
 def create_grpc_server(

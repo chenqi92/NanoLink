@@ -9,6 +9,10 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
+#[cfg(target_os = "linux")]
+#[allow(unused_imports)]
+pub use linux::*;
+
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
 pub use windows::*;

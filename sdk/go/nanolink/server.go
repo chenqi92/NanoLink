@@ -11,6 +11,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/grpc"
+
+	pb "github.com/chenqi92/NanoLink/sdk/go/nanolink/proto"
 )
 
 // Default ports
@@ -373,4 +375,33 @@ func (s *Server) handleInfoPage(w http.ResponseWriter, r *http.Request) {
 <p><i>For dashboard, use the demo projects or implement your own frontend.</i></p>
 </body>
 </html>`, s.config.GrpcPort)
+}
+
+// RequestData sends a data request to a specific agent.
+// Use this to fetch static info, disk usage, network info etc. on demand.
+// requestType should be one of the DataRequestType constants from the proto package.
+func (s *Server) RequestData(agentID string, requestType int32) bool {
+	if s.grpcServicer != nil {
+		return s.grpcServicer.SendDataRequest(agentID, pb.DataRequestType(requestType), "")
+	}
+	log.Printf("Cannot send data request - gRPC service not available")
+	return false
+}
+
+// RequestDataWithTarget sends a data request with a target parameter to a specific agent.
+func (s *Server) RequestDataWithTarget(agentID string, requestType int32, target string) bool {
+	if s.grpcServicer != nil {
+		return s.grpcServicer.SendDataRequest(agentID, pb.DataRequestType(requestType), target)
+	}
+	log.Printf("Cannot send data request - gRPC service not available")
+	return false
+}
+
+// BroadcastDataRequest sends a data request to all connected agents.
+func (s *Server) BroadcastDataRequest(requestType int32) {
+	if s.grpcServicer != nil {
+		s.grpcServicer.BroadcastDataRequest(pb.DataRequestType(requestType))
+	} else {
+		log.Printf("Cannot broadcast data request - gRPC service not available")
+	}
 }

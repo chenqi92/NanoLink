@@ -7,6 +7,7 @@ use crate::security::validation::{validate_pid_killable, validate_process_name};
 
 /// Process management executor
 pub struct ProcessExecutor {
+    #[allow(dead_code)]
     system: System,
 }
 
@@ -20,15 +21,17 @@ impl ProcessExecutor {
 
     /// List all processes
     pub async fn list_processes(&self) -> CommandResult {
+        use sysinfo::ProcessesToUpdate;
+        
         let mut system = System::new();
-        system.refresh_processes();
+        system.refresh_processes(ProcessesToUpdate::All, true);
 
         let processes: Vec<ProcessInfo> = system
             .processes()
             .iter()
             .map(|(pid, process)| ProcessInfo {
                 pid: pid.as_u32(),
-                name: process.name().to_string(),
+                name: process.name().to_string_lossy().to_string(),
                 user: process.user_id().map(|u| u.to_string()).unwrap_or_default(),
                 cpu_percent: process.cpu_usage() as f64,
                 memory_bytes: process.memory(),

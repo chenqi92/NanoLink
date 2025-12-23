@@ -67,6 +67,7 @@ public class NanoLinkServer {
 
     private Channel serverChannel;
     private Server grpcServer;
+    private NanoLinkServiceImpl grpcServicer;
     private SslContext sslContext;
 
     /** Optional static files path for serving dashboard */
@@ -127,8 +128,9 @@ public class NanoLinkServer {
         log.info("NanoLink Server started on port {} (WebSocket for Agent connections + HTTP API)", config.getWsPort());
 
         // Start gRPC server for agent connections with keepalive settings
+        grpcServicer = new NanoLinkServiceImpl(this, config.getTokenValidator());
         grpcServer = ServerBuilder.forPort(config.getGrpcPort())
-                .addService(new NanoLinkServiceImpl(this, config.getTokenValidator()))
+                .addService(grpcServicer)
                 .keepAliveTime(30, TimeUnit.SECONDS)
                 .keepAliveTimeout(10, TimeUnit.SECONDS)
                 .permitKeepAliveTime(10, TimeUnit.SECONDS)
@@ -298,6 +300,51 @@ public class NanoLinkServer {
      */
     public NanoLinkConfig getConfig() {
         return config;
+    }
+
+    /**
+     * Request specific data from an agent.
+     * Use this to fetch static info, disk usage, network info etc. on demand.
+     *
+     * @param agentId     The agent ID to request data from
+     * @param requestType The type of data to request (use DataRequestType enum values)
+     * @return true if request was sent successfully
+     */
+    public boolean requestData(String agentId, io.nanolink.proto.DataRequestType requestType) {
+        if (grpcServicer != null) {
+            return grpcServicer.sendDataRequest(agentId, requestType, null);
+        }
+        log.warn("Cannot send data request - gRPC service not available");
+        return false;
+    }
+
+    /**
+     * Request specific data from an agent with a target parameter.
+     *
+     * @param agentId     The agent ID to request data from
+     * @param requestType The type of data to request
+     * @param target      Optional target (e.g., specific device or mount point)
+     * @return true if request was sent successfully
+     */
+    public boolean requestData(String agentId, io.nanolink.proto.DataRequestType requestType, String target) {
+        if (grpcServicer != null) {
+            return grpcServicer.sendDataRequest(agentId, requestType, target);
+        }
+        log.warn("Cannot send data request - gRPC service not available");
+        return false;
+    }
+
+    /**
+     * Request data from all connected agents.
+     *
+     * @param requestType The type of data to request
+     */
+    public void broadcastDataRequest(io.nanolink.proto.DataRequestType requestType) {
+        if (grpcServicer != null) {
+            grpcServicer.broadcastDataRequest(requestType);
+        } else {
+            log.warn("Cannot broadcast data request - gRPC service not available");
+        }
     }
 
     // Setters for callbacks

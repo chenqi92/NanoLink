@@ -7,6 +7,7 @@ mod management;
 mod platform;
 mod security;
 
+#[allow(clippy::large_enum_variant)]
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/nanolink.rs"));
 }

@@ -21,6 +21,7 @@ use crate::config::{Config, ServerConfig, DEFAULT_GRPC_PORT};
 
 /// Server change event
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ServerEvent {
     /// Add a new server
     Add(ServerConfig),

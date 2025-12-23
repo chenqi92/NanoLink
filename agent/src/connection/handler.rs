@@ -11,7 +11,9 @@ use crate::security::PermissionChecker;
 
 /// Handles incoming commands from the server
 pub struct MessageHandler {
+    #[allow(dead_code)]
     config: Arc<Config>,
+    #[allow(dead_code)]
     buffer: Arc<RingBuffer>,
     permission_level: u8,
     permission_checker: PermissionChecker,

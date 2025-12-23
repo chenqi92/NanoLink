@@ -119,7 +119,7 @@ impl MetricsCollector {
     /// Collect all metrics
     fn collect_metrics(&mut self) -> anyhow::Result<Metrics> {
         // Refresh system info
-        self.system.refresh_cpu();
+        self.system.refresh_cpu_all();
         self.system.refresh_memory();
 
         let timestamp = std::time::SystemTime::now()
@@ -135,13 +135,13 @@ impl MetricsCollector {
         let memory = self.memory_collector.collect(&self.system);
 
         // Collect disk metrics
-        self.disks.refresh();
+        self.disks.refresh(false);
         let disks = self
             .disk_collector
             .collect(&self.disks, &self.config.collector);
 
         // Collect network metrics
-        self.networks.refresh();
+        self.networks.refresh(false);
         let networks = self
             .network_collector
             .collect(&self.networks, &self.config.collector);

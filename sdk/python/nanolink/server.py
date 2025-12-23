@@ -439,6 +439,48 @@ class NanoLinkServer:
         else:
             logger.debug(f"Unknown message type: {message_type}")
 
+    def request_data(
+        self,
+        agent_id: str,
+        request_type: DataRequestType,
+        target: Optional[str] = None
+    ) -> bool:
+        """
+        Request specific data from an agent.
+        Use this to fetch static info, disk usage, network info etc. on demand.
+
+        Args:
+            agent_id: The agent ID to request data from
+            request_type: The type of data to request (use DataRequestType enum)
+            target: Optional target (e.g., specific device or mount point)
+
+        Returns:
+            True if request was queued successfully
+        """
+        if self._grpc_servicer is not None:
+            return self._grpc_servicer.send_data_request(
+                agent_id,
+                request_type.value,
+                target
+            )
+        logger.warning("Cannot send data request - gRPC service not available")
+        return False
+
+    def broadcast_data_request(self, request_type: DataRequestType) -> int:
+        """
+        Request data from all connected agents.
+
+        Args:
+            request_type: The type of data to request
+
+        Returns:
+            Number of agents the request was sent to
+        """
+        if self._grpc_servicer is not None:
+            return self._grpc_servicer.broadcast_data_request(request_type.value)
+        logger.warning("Cannot broadcast data request - gRPC service not available")
+        return 0
+
 
 # Convenience function for simple usage
 async def create_server(

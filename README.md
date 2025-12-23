@@ -680,6 +680,105 @@ async def main():
 asyncio.run(main())
 ```
 
+### Data Request API
+
+The SDK can proactively request specific data from agents on demand, useful for real-time dashboard scenarios.
+
+#### Layered Data Push Mechanism
+
+| Layer | Data Type | Default Interval | Description |
+|-------|-----------|------------------|-------------|
+| Static | Hardware info | Once on connect | CPU model, memory size, disk devices |
+| Realtime | Dynamic metrics | 5 seconds | CPU usage, memory, disk/network IO |
+| Periodic | Low-frequency | 30-60 seconds | Disk usage, user sessions |
+
+#### Supported Request Types
+
+| Type | Description |
+|------|-------------|
+| `FULL` | Complete metrics |
+| `STATIC` | Static hardware info |
+| `DISK_USAGE` | Disk capacity |
+| `NETWORK_INFO` | Network details |
+| `USER_SESSIONS` | Logged-in users |
+| `GPU_INFO` | GPU information |
+| `HEALTH` | Disk S.M.A.R.T. status |
+
+#### Usage Examples
+
+**Java:**
+```java
+// Request from specific agent
+server.requestData(agentId, DataRequestType.DATA_REQUEST_STATIC);
+
+// Broadcast to all agents
+server.broadcastDataRequest(DataRequestType.DATA_REQUEST_FULL);
+```
+
+**Go:**
+```go
+server.RequestData(agentID, int32(pb.DataRequestType_DATA_REQUEST_STATIC))
+server.BroadcastDataRequest(int32(pb.DataRequestType_DATA_REQUEST_FULL))
+```
+
+**Python:**
+```python
+server.request_data(agent_id, DataRequestType.STATIC)
+server.broadcast_data_request(DataRequestType.FULL)
+```
+
+#### Response Handling
+
+Responses arrive through existing callbacks. Example - getting GPU count:
+
+**Java:**
+```java
+server.onStaticInfo(info -> {
+    int gpuCount = info.getGpusList().size();
+    int npuCount = info.getNpusList().size();
+    System.out.println("GPUs: " + gpuCount + ", NPUs: " + npuCount);
+
+    for (var gpu : info.getGpusList()) {
+        System.out.println("  " + gpu.getName() + " - " + gpu.getMemoryTotal() / 1024/1024/1024 + "GB");
+    }
+});
+server.requestData(agentId, DataRequestType.DATA_REQUEST_STATIC);
+```
+
+#### Available Data Fields
+
+<details>
+<summary><b>STATIC - Hardware Info</b></summary>
+
+| Category | Fields |
+|----------|--------|
+| CPU | model, vendor, physical_cores, logical_cores, architecture, frequency_max, cache sizes |
+| Memory | total, swap_total, memory_type (DDR4/DDR5), speed_mhz, slots |
+| Disks[] | device, mount_point, fs_type, model, serial, disk_type (SSD/HDD/NVMe), health_status |
+| Networks[] | interface, mac_address, ip_addresses[], speed_mbps, interface_type |
+| **GPUs[]** | index, name, vendor, memory_total, driver_version, pcie_generation, power_limit |
+| **NPUs[]** | index, name, vendor, memory_total, driver_version |
+| System | os_name, os_version, kernel, hostname, uptime, motherboard, bios |
+
+</details>
+
+<details>
+<summary><b>FULL - Complete Metrics</b></summary>
+
+All static info plus realtime: CPU usage/temp, memory used, disk IO, network IO, GPU usage/temp/power, load average, user sessions.
+
+</details>
+
+#### Security
+
+> **Important:** Data Request is **read-only**. It can only request monitoring data, not execute commands.
+
+| Feature | Data Request | Command Execution |
+|---------|--------------|-------------------|
+| Purpose | Request monitoring data | Execute operations |
+| Security | Read-only | Requires authentication + permission |
+| Risk Level | Low | High (can modify system) |
+
 ## Project Structure
 
 ```

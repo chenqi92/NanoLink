@@ -50,6 +50,7 @@ pub struct Authenticator {
     config: Arc<Config>,
 }
 
+#[allow(dead_code)]
 impl Authenticator {
     /// Create a new authenticator
     pub fn new(config: Arc<Config>) -> Self {

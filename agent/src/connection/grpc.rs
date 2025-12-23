@@ -200,6 +200,7 @@ impl GrpcClient {
     }
 
     /// Report metrics using unary RPC (simpler, but less efficient)
+    #[allow(dead_code)]
     pub async fn report_metrics(&mut self, metrics: Metrics) -> Result<()> {
         let response = self
             .client
@@ -216,6 +217,7 @@ impl GrpcClient {
     }
 
     /// Execute a command (used for testing or direct command execution)
+    #[allow(dead_code)]
     pub async fn execute_command(&mut self, command: Command) -> Result<CommandResult> {
         let response = self
             .client

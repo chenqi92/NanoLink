@@ -15,6 +15,12 @@ import (
 	pb "github.com/chenqi92/NanoLink/sdk/go/nanolink/proto"
 )
 
+// AgentStream holds a stream and its associated agent
+type AgentStream struct {
+	Stream pb.NanoLinkService_StreamMetricsServer
+	Agent  *AgentConnection
+}
+
 // NanoLinkServicer implements the NanoLinkService gRPC server
 type NanoLinkServicer struct {
 	pb.UnimplementedNanoLinkServiceServer
@@ -22,6 +28,7 @@ type NanoLinkServicer struct {
 	server         *Server
 	tokenValidator TokenValidator
 	streamAgents   map[interface{}]*AgentConnection
+	agentStreams   map[string]*AgentStream // agentID -> stream
 	mu             sync.RWMutex
 }
 
@@ -31,6 +38,7 @@ func NewNanoLinkServicer(server *Server) *NanoLinkServicer {
 		server:         server,
 		tokenValidator: server.config.TokenValidator,
 		streamAgents:   make(map[interface{}]*AgentConnection),
+		agentStreams:   make(map[string]*AgentStream),
 	}
 }
 
@@ -106,6 +114,7 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 			s.server.unregisterAgent(agent)
 			s.mu.Lock()
 			delete(s.streamAgents, stream)
+			delete(s.agentStreams, agentID)
 			s.mu.Unlock()
 			log.Printf("Agent disconnected: %s (%s)", agent.Hostname, agentID)
 		}
@@ -166,6 +175,7 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 				s.server.registerAgent(agent)
 				s.mu.Lock()
 				s.streamAgents[stream] = agent
+				s.agentStreams[agentID] = &AgentStream{Stream: stream, Agent: agent}
 				s.mu.Unlock()
 				log.Printf("Agent registered from metrics: %s (%s)", hostname, agentID)
 			}
@@ -230,6 +240,7 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 					s.server.registerAgent(agent)
 					s.mu.Lock()
 					s.streamAgents[stream] = agent
+					s.agentStreams[agentID] = &AgentStream{Stream: stream, Agent: agent}
 					s.mu.Unlock()
 					log.Printf("Agent registered from static info: %s (%s)", hostname, agentID)
 				}
@@ -337,6 +348,67 @@ func CreateGRPCServer(servicer *NanoLinkServicer) *grpc.Server {
 	)
 	pb.RegisterNanoLinkServiceServer(server, servicer)
 	return server
+}
+
+// SendDataRequest sends a data request to a specific agent
+// requestType should be one of: pb.DataRequestType_DATA_REQUEST_FULL, DATA_REQUEST_STATIC, etc.
+func (s *NanoLinkServicer) SendDataRequest(agentID string, requestType pb.DataRequestType, target string) bool {
+	s.mu.RLock()
+	agentStream, exists := s.agentStreams[agentID]
+	s.mu.RUnlock()
+
+	if !exists {
+		log.Printf("Agent %s not found for data request", agentID)
+		return false
+	}
+
+	request := &pb.DataRequest{
+		RequestType: requestType,
+		Target:      target,
+	}
+
+	err := agentStream.Stream.Send(&pb.MetricsStreamResponse{
+		Response: &pb.MetricsStreamResponse_DataRequest{
+			DataRequest: request,
+		},
+	})
+
+	if err != nil {
+		log.Printf("Failed to send data request to agent %s: %v", agentID, err)
+		return false
+	}
+
+	log.Printf("Sent data request %v to agent %s", requestType, agentID)
+	return true
+}
+
+// BroadcastDataRequest sends a data request to all connected agents
+func (s *NanoLinkServicer) BroadcastDataRequest(requestType pb.DataRequestType) {
+	s.mu.RLock()
+	streams := make([]*AgentStream, 0, len(s.agentStreams))
+	for _, stream := range s.agentStreams {
+		streams = append(streams, stream)
+	}
+	s.mu.RUnlock()
+
+	request := &pb.DataRequest{
+		RequestType: requestType,
+	}
+
+	response := &pb.MetricsStreamResponse{
+		Response: &pb.MetricsStreamResponse_DataRequest{
+			DataRequest: request,
+		},
+	}
+
+	successCount := 0
+	for _, agentStream := range streams {
+		if err := agentStream.Stream.Send(response); err == nil {
+			successCount++
+		}
+	}
+
+	log.Printf("Broadcast data request %v to %d/%d agents", requestType, successCount, len(streams))
 }
 
 // Conversion functions

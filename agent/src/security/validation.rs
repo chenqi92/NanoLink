@@ -21,17 +21,14 @@ pub fn validate_container_name(name: &str) -> Result<(), String> {
                 "[SECURITY] Blocked container name with dangerous character: {}",
                 name
             );
-            return Err(format!(
-                "Container name contains forbidden character: '{c}'"
-            ));
+            return Err(format!("Container name contains forbidden character: '{c}'"));
         }
     }
 
     // Check if it looks like a container ID (hex string)
-    if (name.len() == 12 || name.len() == 64)
-        && name.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Ok(());
-        }
+    if (name.len() == 12 || name.len() == 64) && name.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Ok(());
+    }
 
     // Validate container name format: ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$
     let mut chars = name.chars();
@@ -43,9 +40,7 @@ pub fn validate_container_name(name: &str) -> Result<(), String> {
 
     for c in name.chars() {
         if !c.is_ascii_alphanumeric() && c != '_' && c != '.' && c != '-' {
-            return Err(format!(
-                "Container name contains invalid character: '{c}'"
-            ));
+            return Err(format!("Container name contains invalid character: '{c}'"));
         }
     }
 
@@ -71,9 +66,7 @@ pub fn validate_service_name(name: &str) -> Result<(), String> {
                 "[SECURITY] Blocked service name with dangerous character: {}",
                 name
             );
-            return Err(format!(
-                "Service name contains forbidden character: '{c}'"
-            ));
+            return Err(format!("Service name contains forbidden character: '{c}'"));
         }
     }
 
@@ -104,9 +97,7 @@ pub fn validate_process_name(name: &str) -> Result<(), String> {
                 "[SECURITY] Blocked process name with dangerous character: {}",
                 name
             );
-            return Err(format!(
-                "Process name contains forbidden character: '{c}'"
-            ));
+            return Err(format!("Process name contains forbidden character: '{c}'"));
         }
     }
 
@@ -130,9 +121,7 @@ pub fn validate_pid_killable(pid: u32) -> Result<(), String> {
     // This is a conservative protection - users can still kill most processes
     if pid < 10 {
         warn!("[SECURITY] Blocked kill of low PID: {}", pid);
-        return Err(format!(
-            "Cannot kill PID {pid} (protected system process)"
-        ));
+        return Err(format!("Cannot kill PID {pid} (protected system process)"));
     }
 
     Ok(())
