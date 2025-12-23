@@ -432,7 +432,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create or Update Release
+      - name: Check if release exists
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.setup.outputs.tag }}"
+          if gh release view "$TAG" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Release $TAG already exists, will only upload new assets"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "📦 Release $TAG does not exist, will create new one"
+          fi
+
+      - name: Create Release (only if not exists)
+        if: steps.check.outputs.exists != 'true'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.setup.outputs.tag }}
@@ -440,20 +455,53 @@ jobs:
           body: |
             ## NanoLink Release ${{ needs.setup.outputs.version }}
 
-            > 🚀 Release 正在构建中，各组件完成后将自动上传到此页面...
-            
+            本 Release 包含 Agent、SDK 和桌面应用的所有构建产物。
+
+            <!-- AGENT_SECTION_START -->
+            ### � Agent
+
+            | Platform | Architecture | Download |
+            |----------|--------------|----------|
+            | - | - | ⏳ 构建中... |
+            <!-- AGENT_SECTION_END -->
+
+            <!-- SDK_SECTION_START -->
+            ### 📦 SDK
+
+            - ⏳ 构建中...
+            <!-- SDK_SECTION_END -->
+
+            <!-- APPS_SECTION_START -->
+            ### 🖥️ Desktop Apps
+
+            | Platform | Download |
+            |----------|----------|
+            | - | ⏳ 构建中... |
+
+            ### 🐳 Docker
+
+            ```bash
+            docker pull ghcr.io/${{ github.repository_owner }}/nanolink-server:${{ needs.setup.outputs.version }}
+            ```
+            <!-- APPS_SECTION_END -->
+
             ---
-            
-            ### 构建状态
-            
-            | 组件 | 状态 |
-            |------|------|
-            | Agent | ⏳ 构建中... |
-            | SDK | ⏳ 构建中... |
-            | Apps | ⏳ 构建中... |
-            
+
+            ### 📥 Quick Install
+
+            **Agent (Linux/macOS):**
+            ```bash
+            curl -fsSL https://github.com/${{ github.repository }}/releases/download/${{ needs.setup.outputs.tag }}/nanolink-agent-linux-x86_64 -o nanolink-agent
+            chmod +x nanolink-agent && ./nanolink-agent --help
+            ```
+
+            **Python SDK:**
+            ```bash
+            pip install kkape-nanolink==${{ needs.setup.outputs.version }}
+            ```
+
             ---
-            *Release notes 将在所有组件完成后自动更新。*
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
           draft: false
           prerelease: ${{ contains(needs.setup.outputs.version, 'alpha') || contains(needs.setup.outputs.version, 'beta') || contains(needs.setup.outputs.version, 'rc') }}
         env:

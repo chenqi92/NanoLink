@@ -242,6 +242,62 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.tag }}
           files: release/*
           fail_on_unmatched_files: false
-          # 不指定 name 和 body，避免覆盖 ci.yml 创建的 release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Agent Section in Release Notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          TAG="${{ needs.prepare.outputs.tag }}"
+          
+          # Get current release notes
+          CURRENT_NOTES=$(gh release view "$TAG" --json body -q .body --repo ${{ github.repository }} 2>/dev/null || echo "")
+          
+          if [ -z "$CURRENT_NOTES" ]; then
+            echo "⚠️ No existing release notes found, skipping update"
+            exit 0
+          fi
+          
+          # Build Agent section content
+          AGENT_SECTION="### 🔧 Agent
+
+          | Platform | Architecture | Download |
+          |----------|--------------|----------|"
+          
+          # Get agent files from release
+          ASSETS=$(gh release view "$TAG" --json assets -q '.assets[].name' --repo ${{ github.repository }} 2>/dev/null | grep "nanolink-agent-" || true)
+          
+          if [ -n "$ASSETS" ]; then
+            for filename in $ASSETS; do
+              url="https://github.com/${{ github.repository }}/releases/download/${TAG}/${filename}"
+              case "$filename" in
+                *linux-x86_64*) AGENT_SECTION="$AGENT_SECTION
+          | Linux | x86_64 | [${filename}](${url}) |" ;;
+                *linux-aarch64*) AGENT_SECTION="$AGENT_SECTION
+          | Linux | ARM64 | [${filename}](${url}) |" ;;
+                *macos-x86_64*) AGENT_SECTION="$AGENT_SECTION
+          | macOS | x86_64 | [${filename}](${url}) |" ;;
+                *macos-aarch64*) AGENT_SECTION="$AGENT_SECTION
+          | macOS | ARM64 (M1/M2) | [${filename}](${url}) |" ;;
+                *windows*.exe) AGENT_SECTION="$AGENT_SECTION
+          | Windows | x86_64 | [${filename}](${url}) |" ;;
+              esac
+            done
+          else
+            AGENT_SECTION="$AGENT_SECTION
+          | - | - | ⏳ 构建中... |"
+          fi
+          
+          # Replace section in notes using awk
+          echo "$CURRENT_NOTES" | awk -v section="$AGENT_SECTION" '
+            /<!-- AGENT_SECTION_START -->/ { print; print section; skip=1; next }
+            /<!-- AGENT_SECTION_END -->/ { skip=0 }
+            !skip { print }
+          ' > updated-notes.md
+          
+          # Update release
+          gh release edit "$TAG" --notes-file updated-notes.md --repo ${{ github.repository }}
+          echo "✅ Agent section updated in release notes"
+

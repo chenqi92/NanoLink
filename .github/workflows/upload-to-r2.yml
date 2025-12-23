@@ -434,126 +434,26 @@ jobs:
           echo "📄 Generated r2-urls.md content:"
           cat r2-urls.md
           
-          # ========================================================
-          # Generate FULL release notes (not just append R2 section)
-          # ========================================================
-          echo "📝 Generating full release notes..."
+          # Get current Release notes
+          CURRENT_NOTES=$(gh release view "v${VERSION}" --json body -q .body --repo ${{ github.repository }})
           
-          # Start with header
-          {
-            echo "## NanoLink Release ${VERSION}"
-            echo ""
-            echo "本 Release 包含 Agent、SDK 和桌面应用的所有构建产物。"
-            echo ""
-          } > full-release-notes.md
-          
-          # Get all assets from release
-          ASSETS=$(gh release view "v${VERSION}" --json assets -q '.assets[].name' --repo ${{ github.repository }} 2>/dev/null || true)
-          
-          # Agent section
-          echo "### 🔧 Agent" >> full-release-notes.md
-          echo "" >> full-release-notes.md
-          echo "| Platform | Architecture | Download |" >> full-release-notes.md
-          echo "|----------|--------------|----------|" >> full-release-notes.md
-          
-          AGENT_COUNT=0
-          for filename in $(echo "$ASSETS" | grep "nanolink-agent-" || true); do
-            AGENT_COUNT=$((AGENT_COUNT + 1))
-            url="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${filename}"
-            case "$filename" in
-              *linux-x86_64*) echo "| Linux | x86_64 | [${filename}](${url}) |" >> full-release-notes.md ;;
-              *linux-aarch64*) echo "| Linux | ARM64 | [${filename}](${url}) |" >> full-release-notes.md ;;
-              *macos-x86_64*) echo "| macOS | x86_64 | [${filename}](${url}) |" >> full-release-notes.md ;;
-              *macos-aarch64*) echo "| macOS | ARM64 (M1/M2) | [${filename}](${url}) |" >> full-release-notes.md ;;
-              *windows*.exe) echo "| Windows | x86_64 | [${filename}](${url}) |" >> full-release-notes.md ;;
-            esac
-          done
-          [ $AGENT_COUNT -eq 0 ] && echo "| - | - | ⏳ 构建中... |" >> full-release-notes.md
-          
-          echo "" >> full-release-notes.md
-          
-          # SDK section
-          echo "### 📦 SDK" >> full-release-notes.md
-          echo "" >> full-release-notes.md
-          
-          SDK_COUNT=0
-          for filename in $(echo "$ASSETS" | grep -E "\.(jar|whl)$" || true) $(echo "$ASSETS" | grep "go-sdk.*tar.gz" || true); do
-            SDK_COUNT=$((SDK_COUNT + 1))
-            url="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${filename}"
-            case "$filename" in
-              *.jar) echo "- **Java**: [${filename}](${url})" >> full-release-notes.md ;;
-              *.whl) echo "- **Python**: [${filename}](${url})" >> full-release-notes.md ;;
-              *go-sdk*) echo "- **Go**: [${filename}](${url})" >> full-release-notes.md ;;
-            esac
-          done
-          [ $SDK_COUNT -eq 0 ] && echo "- ⏳ 构建中..." >> full-release-notes.md
-          
-          echo "" >> full-release-notes.md
-          
-          # Desktop Apps section
-          echo "### 🖥️ Desktop Apps" >> full-release-notes.md
-          echo "" >> full-release-notes.md
-          echo "| Platform | Download |" >> full-release-notes.md
-          echo "|----------|----------|" >> full-release-notes.md
-          
-          APP_COUNT=0
-          for filename in $(echo "$ASSETS" | grep -E "NanoLink-.*(zip|dmg|tar.gz|apk|ipa)$" || true); do
-            APP_COUNT=$((APP_COUNT + 1))
-            url="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${filename}"
-            case "$filename" in
-              *Windows*) echo "| Windows | [${filename}](${url}) |" >> full-release-notes.md ;;
-              *macOS*Intel*|*macos*x64*) echo "| macOS Intel | [${filename}](${url}) |" >> full-release-notes.md ;;
-              *macOS*AppleSilicon*|*macos*arm64*) echo "| macOS Apple Silicon | [${filename}](${url}) |" >> full-release-notes.md ;;
-              *Linux*.tar.gz) echo "| Linux | [${filename}](${url}) |" >> full-release-notes.md ;;
-              *.apk) echo "| Android | [${filename}](${url}) |" >> full-release-notes.md ;;
-              *.ipa) echo "| iOS | [${filename}](${url}) |" >> full-release-notes.md ;;
-            esac
-          done
-          [ $APP_COUNT -eq 0 ] && echo "| - | ⏳ 构建中... |" >> full-release-notes.md
-          
-          echo "" >> full-release-notes.md
-          
-          # Docker & Install sections
-          {
-            echo "### 🐳 Docker"
-            echo ""
-            echo '```bash'
-            echo "docker pull ghcr.io/${{ github.repository_owner }}/nanolink-server:${VERSION}"
-            echo "docker pull ghcr.io/${{ github.repository_owner }}/nanolink-server:latest"
-            echo '```'
-            echo ""
-            echo "### 📥 Quick Install"
-            echo ""
-            echo "**Agent (Linux/macOS):**"
-            echo '```bash'
-            echo "curl -fsSL https://github.com/${{ github.repository }}/releases/download/v${VERSION}/nanolink-agent-linux-x86_64 -o nanolink-agent"
-            echo 'chmod +x nanolink-agent && ./nanolink-agent --help'
-            echo '```'
-            echo ""
-            echo "**SDK:**"
-            echo '```bash'
-            echo "# Python"
-            echo "pip install kkape-nanolink==${VERSION}"
-            echo ""
-            echo "# Go"
-            echo "go get github.com/${{ github.repository }}/sdk/go@v${VERSION}"
-            echo '```'
-            echo ""
-            echo "---"
-            echo "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details."
-            echo ""
-          } >> full-release-notes.md
-          
-          # Append R2 section
-          cat r2-urls.md >> full-release-notes.md
-          
-          echo "📄 Generated full-release-notes.md:"
-          cat full-release-notes.md
-          
-          # Update Release notes with full content
-          gh release edit "v${VERSION}" \
-            --notes-file full-release-notes.md \
-            --repo ${{ github.repository }}
-          
-          echo "✅ Release notes updated with full content"
+          # Check if R2 links already exist
+          if echo "$CURRENT_NOTES" | grep -q "Cloudflare R2"; then
+            echo "⚠️ Release notes already contain R2 links, skipping update"
+          else
+            # Append R2 links to existing notes
+            {
+              echo "$CURRENT_NOTES"
+              echo ""
+              cat r2-urls.md
+            } > combined-notes.md
+            
+            # Update Release notes
+            gh release edit "v${VERSION}" \
+              --notes-file combined-notes.md \
+              --repo ${{ github.repository }}
+            
+            echo "✅ R2 download links appended to release notes"
+          fi
+
 

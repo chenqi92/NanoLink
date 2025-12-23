@@ -442,6 +442,56 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Update SDK Section in Release Notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          TAG="${{ needs.prepare.outputs.tag }}"
+          
+          # Get current release notes
+          CURRENT_NOTES=$(gh release view "$TAG" --json body -q .body --repo ${{ github.repository }} 2>/dev/null || echo "")
+          
+          if [ -z "$CURRENT_NOTES" ]; then
+            echo "⚠️ No existing release notes found, skipping update"
+            exit 0
+          fi
+          
+          # Build SDK section content
+          SDK_SECTION="### 📦 SDK
+          "
+          
+          # Get SDK files from release
+          ASSETS=$(gh release view "$TAG" --json assets -q '.assets[].name' --repo ${{ github.repository }} 2>/dev/null || true)
+          
+          SDK_COUNT=0
+          for filename in $(echo "$ASSETS" | grep -E "\.(jar|whl)$" || true) $(echo "$ASSETS" | grep "go-sdk.*tar.gz" || true); do
+            SDK_COUNT=$((SDK_COUNT + 1))
+            url="https://github.com/${{ github.repository }}/releases/download/${TAG}/${filename}"
+            case "$filename" in
+              *.jar) SDK_SECTION="${SDK_SECTION}
+          - **Java**: [${filename}](${url})" ;;
+              *.whl) SDK_SECTION="${SDK_SECTION}
+          - **Python**: [${filename}](${url})" ;;
+              *go-sdk*) SDK_SECTION="${SDK_SECTION}
+          - **Go**: [${filename}](${url})" ;;
+            esac
+          done
+          
+          [ $SDK_COUNT -eq 0 ] && SDK_SECTION="${SDK_SECTION}
+          - ⏳ 构建中..."
+          
+          # Replace section in notes using awk
+          echo "$CURRENT_NOTES" | awk -v section="$SDK_SECTION" '
+            /<!-- SDK_SECTION_START -->/ { print; print section; skip=1; next }
+            /<!-- SDK_SECTION_END -->/ { skip=0 }
+            !skip { print }
+          ' > updated-notes.md
+          
+          # Update release
+          gh release edit "$TAG" --notes-file updated-notes.md --repo ${{ github.repository }}
+          echo "✅ SDK section updated in release notes"
+
   # Notify completion
   notify:
     name: Notify

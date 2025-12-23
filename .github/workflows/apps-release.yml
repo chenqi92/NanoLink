@@ -470,3 +470,72 @@ jobs:
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Apps Section in Release Notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+          
+          # Get current release notes
+          CURRENT_NOTES=$(gh release view "$TAG" --json body -q .body --repo ${{ github.repository }} 2>/dev/null || echo "")
+          
+          if [ -z "$CURRENT_NOTES" ]; then
+            echo "⚠️ No existing release notes found, skipping update"
+            exit 0
+          fi
+          
+          # Build Apps section content
+          APPS_SECTION="### 🖥️ Desktop Apps
+
+          | Platform | Download |
+          |----------|----------|"
+          
+          # Get app files from release
+          ASSETS=$(gh release view "$TAG" --json assets -q '.assets[].name' --repo ${{ github.repository }} 2>/dev/null || true)
+          
+          APP_COUNT=0
+          for filename in $(echo "$ASSETS" | grep -E "NanoLink-.*(zip|dmg|tar.gz|apk|ipa)$" || true); do
+            APP_COUNT=$((APP_COUNT + 1))
+            url="https://github.com/${{ github.repository }}/releases/download/${TAG}/${filename}"
+            case "$filename" in
+              *Windows*) APPS_SECTION="${APPS_SECTION}
+          | Windows | [${filename}](${url}) |" ;;
+              *macOS*Intel*|*macos*x64*) APPS_SECTION="${APPS_SECTION}
+          | macOS Intel | [${filename}](${url}) |" ;;
+              *macOS*AppleSilicon*|*macos*arm64*) APPS_SECTION="${APPS_SECTION}
+          | macOS Apple Silicon | [${filename}](${url}) |" ;;
+              *Linux*.tar.gz) APPS_SECTION="${APPS_SECTION}
+          | Linux | [${filename}](${url}) |" ;;
+              *.apk) APPS_SECTION="${APPS_SECTION}
+          | Android | [${filename}](${url}) |" ;;
+              *.ipa) APPS_SECTION="${APPS_SECTION}
+          | iOS | [${filename}](${url}) |" ;;
+            esac
+          done
+          
+          [ $APP_COUNT -eq 0 ] && APPS_SECTION="${APPS_SECTION}
+          | - | ⏳ 构建中... |"
+          
+          # Add Docker section
+          APPS_SECTION="${APPS_SECTION}
+
+          ### 🐳 Docker
+
+          \`\`\`bash
+          docker pull ghcr.io/${{ github.repository_owner }}/nanolink-server:${VERSION}
+          docker pull ghcr.io/${{ github.repository_owner }}/nanolink-server:latest
+          \`\`\`"
+          
+          # Replace section in notes using awk
+          echo "$CURRENT_NOTES" | awk -v section="$APPS_SECTION" '
+            /<!-- APPS_SECTION_START -->/ { print; print section; skip=1; next }
+            /<!-- APPS_SECTION_END -->/ { skip=0 }
+            !skip { print }
+          ' > updated-notes.md
+          
+          # Update release
+          gh release edit "$TAG" --notes-file updated-notes.md --repo ${{ github.repository }}
+          echo "✅ Apps section updated in release notes"
+
