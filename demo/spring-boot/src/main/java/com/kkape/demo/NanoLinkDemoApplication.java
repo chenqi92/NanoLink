@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
  * NanoLink Spring Boot Demo Application
- *
+ * <p>
  * This demo shows how to integrate NanoLink SDK with Spring Boot
  * to receive metrics from monitoring agents.
  */

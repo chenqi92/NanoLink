@@ -249,6 +249,10 @@ msg() {
         ["configured_servers"]="Configured Servers"
         ["no_servers"]="No servers configured"
         ["config_not_found"]="Configuration file not found"
+        ["server_configured"]="Server configuration found"
+        ["no_server_configured"]="No server configured"
+        ["need_server_config"]="You need to configure at least one server"
+        ["configure_server_now"]="Configure server now?"
         
         # Agent status
         ["agent_status"]="Agent Status"
@@ -480,6 +484,10 @@ msg() {
         ["configured_servers"]="已配置的服务器"
         ["no_servers"]="未配置服务器"
         ["config_not_found"]="配置文件未找到"
+        ["server_configured"]="已找到服务器配置"
+        ["no_server_configured"]="未配置服务器"
+        ["need_server_config"]="您需要至少配置一个服务器"
+        ["configure_server_now"]="现在配置服务器？"
         
         # Agent status
         ["agent_status"]="Agent 状态"
@@ -834,6 +842,25 @@ test_connection() {
 # Installation Functions
 # =============================================================================
 
+# Check if configuration has any servers configured
+check_server_config() {
+    local config_file="${CONFIG_DIR}/nanolink.yaml"
+    
+    if [ ! -f "$config_file" ]; then
+        return 1  # No config file
+    fi
+    
+    # Check if servers section exists and has entries
+    if grep -qE "^servers:" "$config_file" 2>/dev/null; then
+        # Check if there's at least one server entry (host: or url:)
+        if grep -qE "^\s+- (host|url):" "$config_file" 2>/dev/null; then
+            return 0  # Has server config
+        fi
+    fi
+    
+    return 1  # No server config
+}
+
 # Check if agent is already installed and offer upgrade
 check_existing_agent() {
     local binary_path="${INSTALL_DIR}/${BINARY_NAME}"
@@ -877,51 +904,72 @@ check_existing_agent() {
     fi
     
     echo ""
-    echo -e "${BOLD}$(msg what_to_do)${NC}"
-    local action=$(prompt_choice "$(msg select_action)" \
-        "$(msg opt_update)" \
-        "$(msg opt_manage)" \
-        "$(msg opt_fresh)" \
-        "$(msg opt_cancel)")
     
-    case $action in
-        0)  # Update
-            UPDATE_MODE=true
-            if [ "$service_running" = "true" ]; then
-                info "$(msg stopping_service)"
-                if [ "$OS" = "linux" ]; then
-                    systemctl stop nanolink-agent
-                elif [ "$OS" = "macos" ]; then
-                    launchctl stop com.nanolink.agent 2>/dev/null || true
+    # Check if server is configured
+    if check_server_config; then
+        # Has server config - show management options
+        echo -e "${GREEN}✓ $(msg server_configured)${NC}"
+        echo ""
+        echo -e "${BOLD}$(msg what_to_do)${NC}"
+        local action=$(prompt_choice "$(msg select_action)" \
+            "$(msg opt_manage)" \
+            "$(msg opt_update)" \
+            "$(msg opt_fresh)" \
+            "$(msg opt_cancel)")
+        
+        case $action in
+            0)  # Manage (default for existing with server)
+                manage_menu
+                exit 0
+                ;;
+            1)  # Update
+                UPDATE_MODE=true
+                if [ "$service_running" = "true" ]; then
+                    info "$(msg stopping_service)"
+                    if [ "$OS" = "linux" ]; then
+                        systemctl stop nanolink-agent
+                    elif [ "$OS" = "macos" ]; then
+                        launchctl stop com.nanolink.agent 2>/dev/null || true
+                    fi
+                    success "$(msg service_stopped_ok)"
                 fi
-                success "$(msg service_stopped_ok)"
-            fi
-            ;;
-        1)  # Manage
-            manage_menu
-            exit 0
-            ;;
-        2)  # Fresh install
-            warn "$(msg warn_overwrite)"
-            if ! prompt_yes_no "$(msg are_you_sure)" "n"; then
+                ;;
+            2)  # Fresh install
+                warn "$(msg warn_overwrite)"
+                if ! prompt_yes_no "$(msg are_you_sure)" "n"; then
+                    info "$(msg cancelled)"
+                    exit 0
+                fi
+                if [ "$service_running" = "true" ]; then
+                    info "$(msg stopping_service)"
+                    if [ "$OS" = "linux" ]; then
+                        systemctl stop nanolink-agent
+                    elif [ "$OS" = "macos" ]; then
+                        launchctl stop com.nanolink.agent 2>/dev/null || true
+                    fi
+                    success "$(msg service_stopped_ok)"
+                fi
+                ;;
+            3)  # Cancel
                 info "$(msg cancelled)"
                 exit 0
-            fi
-            if [ "$service_running" = "true" ]; then
-                info "$(msg stopping_service)"
-                if [ "$OS" = "linux" ]; then
-                    systemctl stop nanolink-agent
-                elif [ "$OS" = "macos" ]; then
-                    launchctl stop com.nanolink.agent 2>/dev/null || true
-                fi
-                success "$(msg service_stopped_ok)"
-            fi
-            ;;
-        3)  # Cancel
+                ;;
+        esac
+    else
+        # No server config - require configuration first
+        echo -e "${YELLOW}⚠ $(msg no_server_configured)${NC}"
+        echo ""
+        info "$(msg need_server_config)"
+        echo ""
+        
+        if prompt_yes_no "$(msg configure_server_now)" "y"; then
+            # Will continue to interactive_config
+            UPDATE_MODE=true  # Keep binary, just add config
+        else
             info "$(msg cancelled)"
             exit 0
-            ;;
-    esac
+        fi
+    fi
 }
 download_binary() {
     step "Downloading NanoLink Agent"
