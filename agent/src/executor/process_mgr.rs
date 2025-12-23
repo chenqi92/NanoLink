@@ -92,7 +92,7 @@ impl ProcessExecutor {
     }
 
     /// Kill process by PID
-    async fn kill_by_pid(&self, pid: u32, _signal: &str) -> CommandResult {
+    async fn kill_by_pid(&self, pid: u32, signal: &str) -> CommandResult {
         #[cfg(unix)]
         {
             use std::process::Command;
@@ -161,7 +161,7 @@ impl ProcessExecutor {
     }
 
     /// Kill process by name
-    async fn kill_by_name(&self, name: &str, _signal: &str) -> CommandResult {
+    async fn kill_by_name(&self, name: &str, signal: &str) -> CommandResult {
         #[cfg(unix)]
         {
             use std::process::Command;

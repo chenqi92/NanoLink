@@ -208,7 +208,7 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                 }
                 ServiceAction::Status => {
                     let status = query_service_status().map_err(|e| anyhow::anyhow!(e))?;
-                    println!("{}", status);
+                    println!("{status}");
                 }
                 ServiceAction::Run => {
                     // This is called by the Windows Service Control Manager

@@ -66,8 +66,8 @@ pub fn install_service(config_path: Option<PathBuf>) -> Result<(), String> {
         .set_description(SERVICE_DESCRIPTION)
         .map_err(|e| format!("Failed to set service description: {e}"))?;
 
-    println!("Service '{}' installed successfully.", SERVICE_DISPLAY_NAME);
-    println!("Use 'sc start {}' to start the service.", SERVICE_NAME);
+    println!("Service '{SERVICE_DISPLAY_NAME}' installed successfully.");
+    println!("Use 'sc start {SERVICE_NAME}' to start the service.");
     Ok(())
 }
 
@@ -93,8 +93,7 @@ pub fn uninstall_service() -> Result<(), String> {
 
     if status.current_state != ServiceState::Stopped {
         return Err(format!(
-            "Service is still running. Stop it first with 'sc stop {}'",
-            SERVICE_NAME
+            "Service is still running. Stop it first with 'sc stop {SERVICE_NAME}'"
         ));
     }
 
@@ -102,10 +101,7 @@ pub fn uninstall_service() -> Result<(), String> {
         .delete()
         .map_err(|e| format!("Failed to delete service: {e}"))?;
 
-    println!(
-        "Service '{}' uninstalled successfully.",
-        SERVICE_DISPLAY_NAME
-    );
+    println!("Service '{SERVICE_DISPLAY_NAME}' uninstalled successfully.");
     Ok(())
 }
 
@@ -122,7 +118,7 @@ pub fn start_service() -> Result<(), String> {
         .start::<String>(&[])
         .map_err(|e| format!("Failed to start service: {e}"))?;
 
-    println!("Service '{}' started.", SERVICE_DISPLAY_NAME);
+    println!("Service '{SERVICE_DISPLAY_NAME}' started.");
     Ok(())
 }
 
@@ -142,7 +138,7 @@ pub fn stop_service() -> Result<(), String> {
         .stop()
         .map_err(|e| format!("Failed to stop service: {e}"))?;
 
-    println!("Service '{}' stopped.", SERVICE_DISPLAY_NAME);
+    println!("Service '{SERVICE_DISPLAY_NAME}' stopped.");
     Ok(())
 }
 
@@ -169,7 +165,7 @@ pub fn query_service_status() -> Result<String, String> {
         ServiceState::Paused => "Paused",
     };
 
-    Ok(format!("Service '{}': {}", SERVICE_DISPLAY_NAME, state))
+    Ok(format!("Service '{SERVICE_DISPLAY_NAME}': {state}"))
 }
 
 // Define the Windows service entry point
