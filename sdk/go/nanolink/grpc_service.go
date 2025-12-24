@@ -231,7 +231,7 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 						Hostname:        hostname,
 						OS:              protoStatic.SystemInfo.OsName,
 						Arch:            arch,
-						Version:         "0.2.1",
+						Version:         getVersionOrDefault(protoStatic.AgentVersion),
 						PermissionLevel: PermissionReadOnly, // Default to READ_ONLY for unauthenticated streams
 						ConnectedAt:     time.Now(),
 						LastHeartbeat:   time.Now(),
@@ -695,4 +695,12 @@ func (s *NanoLinkServicer) convertPeriodicData(proto *pb.PeriodicData) *Periodic
 	}
 
 	return periodic
+}
+
+// getVersionOrDefault returns the version or "unknown" if empty
+func getVersionOrDefault(version string) string {
+	if version == "" {
+		return "unknown"
+	}
+	return version
 }

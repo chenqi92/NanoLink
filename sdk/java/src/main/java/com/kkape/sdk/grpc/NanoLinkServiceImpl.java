@@ -115,7 +115,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                 .build());
         log.debug("Sent initial heartbeat ack to establish stream");
 
-        return new StreamObserver<MetricsStreamRequest>() {
+        return new StreamObserver<>() {
             private AgentConnection agent = null;
             private String agentId = null;
 
@@ -193,7 +193,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
                         // Register agent on first message if needed
                         if (agent == null) {
-                            agent = findOrCreateAgentForStream(responseObserver, "realtime");
+                            agent = findOrCreateAgentForStream(responseObserver);
                             if (agent != null) {
                                 agentId = agent.getAgentId();
                             }
@@ -227,7 +227,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                                         hostname,
                                         protoStatic.getSystemInfo().getOsName(),
                                         protoStatic.hasCpu() ? protoStatic.getCpu().getArchitecture() : "",
-                                        "0.2.1",
+                                        protoStatic.getAgentVersion().isEmpty() ? "unknown" : protoStatic.getAgentVersion(),
                                         TokenValidator.PermissionLevel.READ_ONLY // Default to READ_ONLY for
                                                                                  // unauthenticated streams
                                 );
@@ -550,7 +550,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
      * Find or create an agent for the current stream.
      * Used when receiving layered metrics without initial full metrics.
      */
-    private AgentConnection findOrCreateAgentForStream(StreamObserver<?> observer, String source) {
+    private AgentConnection findOrCreateAgentForStream(StreamObserver<?> observer) {
         // Check if already registered
         AgentConnection existing = streamAgents.get(observer);
         if (existing != null) {
@@ -558,7 +558,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
         }
         // For layered metrics, we need to wait for either full metrics or static info
         // to get the hostname. Return null to indicate we need to wait.
-        log.debug("No agent found for {} stream, waiting for initial data", source);
+        log.debug("No agent found for realtime stream, waiting for initial data");
         return null;
     }
 

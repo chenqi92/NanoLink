@@ -324,6 +324,7 @@ impl LayeredCollector {
             gpus: gpus_static,
             npus: npus_static,
             system_info: Some(system_info),
+            agent_version: env!("CARGO_PKG_VERSION").to_string(),
         };
 
         // Cache the static info

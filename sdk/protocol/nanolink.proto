@@ -148,6 +148,7 @@ message StaticInfo {
   repeated GpuStaticInfo gpus = 6;
   repeated NpuStaticInfo npus = 7;
   SystemInfo system_info = 8;
+  string agent_version = 9;  // Agent version for tracking
 }
 
 message CpuStaticInfo {

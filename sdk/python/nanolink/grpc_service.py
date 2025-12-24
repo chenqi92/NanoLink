@@ -281,7 +281,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                                     hostname=hostname,
                                     os=os_name,
                                     arch=arch,
-                                    version="0.2.1",
+                                    version=proto_static.agent_version or "unknown",
                                     permission_level=PermissionLevel.READ_ONLY,  # Default to READ_ONLY for unauthenticated
                                     connected_at=datetime.now(),
                                     last_heartbeat=datetime.now(),

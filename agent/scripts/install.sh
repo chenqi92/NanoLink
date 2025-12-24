@@ -662,11 +662,11 @@ prompt_value() {
 
     if [ -n "$default" ]; then
         echo -en "${BOLD}$prompt${NC} [${YELLOW}$default${NC}]: " >/dev/tty
-        read value </dev/tty
+        read -e value </dev/tty
         echo "${value:-$default}"
     else
         echo -en "${BOLD}$prompt${NC}: " >/dev/tty
-        read value </dev/tty
+        read -e value </dev/tty
         echo "$value"
     fi
 }
@@ -676,7 +676,7 @@ prompt_password() {
     local value
 
     echo -en "${BOLD}$prompt${NC}: " >/dev/tty
-    read -s value </dev/tty
+    read -se value </dev/tty
     echo "" >/dev/tty
     echo "$value"
 }
@@ -688,11 +688,11 @@ prompt_yes_no() {
 
     if [ "$default" = "y" ]; then
         echo -en "${BOLD}$prompt${NC} [${YELLOW}Y/n${NC}]: " >/dev/tty
-        read value </dev/tty
+        read -e value </dev/tty
         value="${value:-y}"
     else
         echo -en "${BOLD}$prompt${NC} [${YELLOW}y/N${NC}]: " >/dev/tty
-        read value </dev/tty
+        read -e value </dev/tty
         value="${value:-n}"
     fi
 
@@ -712,7 +712,7 @@ prompt_choice() {
     local choice
     while true; do
         echo -en "${BOLD}Select [1-${#options[@]}]${NC}: " >/dev/tty
-        read choice </dev/tty
+        read -e choice </dev/tty
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#options[@]}" ]; then
             echo "$((choice-1))"
             return
@@ -1965,7 +1965,7 @@ manage_menu() {
         echo ""
         
         echo -en "${BOLD}$(msg select_option): ${NC}" >/dev/tty
-        read choice </dev/tty
+        read -e choice </dev/tty
         
         echo ""
         case $choice in
@@ -1987,7 +1987,7 @@ manage_menu() {
         
         echo ""
         echo -en "${BOLD}$(msg press_enter)${NC}" >/dev/tty
-        read </dev/tty
+        read -e </dev/tty
     done
 }
 
