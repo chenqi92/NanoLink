@@ -8,28 +8,22 @@ from nanolink.connection import ValidationResult, default_token_validator
 class TestServerConfig:
     def test_default_values(self):
         config = ServerConfig()
-        assert config.ws_port == 9100
         assert config.grpc_port == 39100
         assert config.host == "0.0.0.0"
         assert config.tls_cert_path is None
         assert config.tls_key_path is None
-        assert config.static_files_path is None
 
     def test_custom_values(self):
         config = ServerConfig(
-            ws_port=8080,
             grpc_port=39200,
             host="127.0.0.1",
             tls_cert_path="/path/to/cert.pem",
             tls_key_path="/path/to/key.pem",
-            static_files_path="/path/to/dashboard",
         )
-        assert config.ws_port == 8080
         assert config.grpc_port == 39200
         assert config.host == "127.0.0.1"
         assert config.tls_cert_path == "/path/to/cert.pem"
         assert config.tls_key_path == "/path/to/key.pem"
-        assert config.static_files_path == "/path/to/dashboard"
 
 
 class TestDefaultTokenValidator:
@@ -71,13 +65,12 @@ class TestCustomTokenValidator:
 class TestNanoLinkServer:
     def test_create_with_default_config(self):
         server = NanoLinkServer()
-        assert server.config.ws_port == 9100
         assert server.config.grpc_port == 39100
 
     def test_create_with_custom_config(self):
-        config = ServerConfig(ws_port=8080)
+        config = ServerConfig(grpc_port=39200)
         server = NanoLinkServer(config)
-        assert server.config.ws_port == 8080
+        assert server.config.grpc_port == 39200
 
     def test_agents_empty_initially(self):
         server = NanoLinkServer()

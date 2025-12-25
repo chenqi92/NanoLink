@@ -21,30 +21,17 @@ class NanoLinkServerTest {
 
         assertNotNull(server);
         assertNotNull(server.getConfig());
-        assertEquals(NanoLinkConfig.DEFAULT_WS_PORT, server.getConfig().getWsPort());
         assertEquals(NanoLinkConfig.DEFAULT_GRPC_PORT, server.getConfig().getGrpcPort());
     }
 
     @Test
-    @DisplayName("Builder creates server with custom ports")
+    @DisplayName("Builder creates server with custom gRPC port")
     void testBuilderCustomPorts() {
         NanoLinkServer server = NanoLinkServer.builder()
-                .wsPort(8080)
                 .grpcPort(40000)
                 .build();
 
-        assertEquals(8080, server.getConfig().getWsPort());
         assertEquals(40000, server.getConfig().getGrpcPort());
-    }
-
-    @Test
-    @DisplayName("Builder creates server with static files path")
-    void testBuilderStaticFilesPath() {
-        NanoLinkServer server = NanoLinkServer.builder()
-                .staticFilesPath("/path/to/dashboard")
-                .build();
-
-        assertNotNull(server);
     }
 
     @Test
@@ -133,9 +120,7 @@ class NanoLinkServerTest {
     @DisplayName("Builder creates server with all options")
     void testBuilderFullConfig() {
         NanoLinkServer server = NanoLinkServer.builder()
-                .wsPort(9200)
                 .grpcPort(39200)
-                .staticFilesPath("/custom/path")
                 .tlsCert("/cert.pem")
                 .tlsKey("/key.pem")
                 .onAgentConnect(agent -> {
@@ -147,7 +132,6 @@ class NanoLinkServerTest {
                 .build();
 
         NanoLinkConfig config = server.getConfig();
-        assertEquals(9200, config.getWsPort());
         assertEquals(39200, config.getGrpcPort());
         assertEquals("/cert.pem", config.getTlsCertPath());
         assertEquals("/key.pem", config.getTlsKeyPath());
