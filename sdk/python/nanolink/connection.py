@@ -3,17 +3,12 @@ Agent connection management for NanoLink SDK
 """
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Optional, Awaitable
-
-import websockets
-from websockets.server import WebSocketServerProtocol
+from typing import Callable, Optional
 
 from .command import Command, CommandResult
-from .metrics import Metrics
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +32,7 @@ class AgentInfo:
 
 @dataclass
 class AgentConnection:
-    """Represents a connection to a NanoLink agent"""
+    """Represents a connection to a NanoLink agent (gRPC-based)"""
     agent_id: str = ""
     hostname: str = ""
     os: str = ""
@@ -47,8 +42,13 @@ class AgentConnection:
     connected_at: datetime = field(default_factory=datetime.now)
     last_heartbeat: datetime = field(default_factory=datetime.now)
 
-    _websocket: Optional[WebSocketServerProtocol] = field(default=None, repr=False)
+    _stream_sender: Optional[Callable[[bytes], None]] = field(default=None, repr=False)
     _pending_commands: dict = field(default_factory=dict, repr=False)
+    _active: bool = field(default=True, repr=False)
+
+    def set_stream_sender(self, sender: Callable[[bytes], None]) -> None:
+        """Set the stream sender for sending commands via gRPC"""
+        self._stream_sender = sender
 
     async def send_command(self, command: Command, timeout: float = 30.0) -> CommandResult:
         """
@@ -65,8 +65,11 @@ class AgentConnection:
             TimeoutError: If command times out
             ConnectionError: If agent is disconnected
         """
-        if self._websocket is None or self._websocket.closed:
+        if not self._active:
             raise ConnectionError("Agent is not connected")
+
+        if self._stream_sender is None:
+            raise ConnectionError("Stream sender not available")
 
         # Check permission level
         required_level = self._get_required_permission(command)
@@ -83,12 +86,9 @@ class AgentConnection:
         self._pending_commands[command.command_id] = future
 
         try:
-            # Send command
-            message = {
-                "type": "command",
-                "payload": command.to_dict(),
-            }
-            await self._websocket.send(json.dumps(message))
+            # Send command via gRPC stream
+            data = command.to_protobuf()
+            self._stream_sender(data)
 
             # Wait for result
             result = await asyncio.wait_for(future, timeout=timeout)
@@ -155,13 +155,12 @@ class AgentConnection:
 
     async def close(self) -> None:
         """Close the agent connection"""
-        if self._websocket and not self._websocket.closed:
-            await self._websocket.close()
+        self._active = False
 
     @property
     def is_connected(self) -> bool:
         """Check if agent is connected"""
-        return self._websocket is not None and not self._websocket.closed
+        return self._active
 
 
 @dataclass

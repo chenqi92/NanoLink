@@ -1,7 +1,5 @@
 package com.kkape.sdk;
 
-import io.netty.channel.Channel;
-import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
 import com.kkape.sdk.model.Command;
 import com.kkape.sdk.model.Metrics;
 import org.slf4j.Logger;
@@ -13,17 +11,16 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
- * Represents a connection to a monitoring agent
+ * Represents a connection to a monitoring agent (gRPC-based)
  */
+@SuppressWarnings("unused") // Public API methods may not be used internally
 public class AgentConnection {
     private static final Logger log = LoggerFactory.getLogger(AgentConnection.class);
 
     private final String agentId;
-    private final Channel channel;
-    private final NanoLinkServer server;
-
     private String hostname;
     private String agentVersion;
     private String os;
@@ -33,25 +30,19 @@ public class AgentConnection {
     private Instant lastHeartbeat;
     private Metrics lastMetrics;
     private Instant lastMetricsAt;
+    private volatile boolean active = true;
+
+    // For sending commands via gRPC stream
+    private Consumer<byte[]> streamSender;
 
     private final Map<String, CompletableFuture<Command.Result>> pendingCommands = new ConcurrentHashMap<>();
 
-    public AgentConnection(Channel channel, NanoLinkServer server) {
-        this.agentId = UUID.randomUUID().toString();
-        this.channel = channel;
-        this.server = server;
-        this.connectedAt = Instant.now();
-        this.lastHeartbeat = Instant.now();
-    }
-
     /**
-     * Constructor for gRPC-based connections (no Netty Channel)
+     * Constructor for gRPC-based connections
      */
     public AgentConnection(String agentId, String hostname, String os, String arch,
             String agentVersion, int permissionLevel) {
         this.agentId = agentId;
-        this.channel = null;
-        this.server = null;
         this.hostname = hostname;
         this.os = os;
         this.arch = arch;
@@ -62,22 +53,30 @@ public class AgentConnection {
     }
 
     /**
-     * Initialize agent info after authentication
+     * Create a new agent connection with auto-generated ID
      */
-    public void initialize(String hostname, String agentVersion, String os, String arch, int permissionLevel) {
-        this.hostname = hostname;
-        this.agentVersion = agentVersion;
-        this.os = os;
-        this.arch = arch;
-        this.permissionLevel = permissionLevel;
+    public static AgentConnection create(String hostname, String os, String arch,
+            String agentVersion, int permissionLevel) {
+        return new AgentConnection(UUID.randomUUID().toString(), hostname, os, arch, agentVersion, permissionLevel);
+    }
+
+    /**
+     * Set the stream sender for sending commands
+     */
+    public void setStreamSender(Consumer<byte[]> sender) {
+        this.streamSender = sender;
     }
 
     /**
      * Send a command to the agent
      */
     public CompletableFuture<Command.Result> sendCommand(Command command) {
-        if (!channel.isActive()) {
+        if (!active) {
             return CompletableFuture.failedFuture(new IllegalStateException("Agent not connected"));
+        }
+
+        if (streamSender == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Stream sender not available"));
         }
 
         // Check permission
@@ -97,12 +96,16 @@ public class AgentConnection {
         future.orTimeout(30, TimeUnit.SECONDS)
                 .whenComplete((result, error) -> pendingCommands.remove(commandId));
 
-        // Send command
-        byte[] data = command.toProtobuf();
-        channel.writeAndFlush(new BinaryWebSocketFrame(
-                channel.alloc().buffer().writeBytes(data)));
+        // Send command via gRPC stream
+        try {
+            byte[] data = command.toProtobuf();
+            streamSender.accept(data);
+            log.debug("Sent command {} to agent {}", command.getType(), hostname);
+        } catch (Exception e) {
+            pendingCommands.remove(commandId);
+            return CompletableFuture.failedFuture(e);
+        }
 
-        log.debug("Sent command {} to agent {}", command.getType(), hostname);
         return future;
     }
 
@@ -129,13 +132,10 @@ public class AgentConnection {
     public void updateMetrics(Metrics metrics) {
         this.lastMetrics = metrics;
         this.lastMetricsAt = Instant.now();
-        if (server != null) {
-            server.handleMetrics(metrics);
-        }
     }
 
     /**
-     * Update last metrics time (for gRPC connections)
+     * Update last metrics time
      */
     public void updateLastMetricsAt() {
         this.lastMetricsAt = Instant.now();
@@ -145,9 +145,7 @@ public class AgentConnection {
      * Close the connection
      */
     public void close() {
-        if (channel.isActive()) {
-            channel.close();
-        }
+        active = false;
         pendingCommands.values().forEach(f -> f.completeExceptionally(new IllegalStateException("Connection closed")));
         pendingCommands.clear();
     }
@@ -156,7 +154,7 @@ public class AgentConnection {
      * Check if connection is active
      */
     public boolean isActive() {
-        return channel.isActive();
+        return active;
     }
 
     // Command shortcuts
@@ -250,9 +248,5 @@ public class AgentConnection {
 
     public Instant getLastMetricsAt() {
         return lastMetricsAt;
-    }
-
-    public Channel getChannel() {
-        return channel;
     }
 }

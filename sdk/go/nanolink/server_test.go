@@ -1,9 +1,6 @@
 package nanolink
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
@@ -14,10 +11,6 @@ func TestNewServer(t *testing.T) {
 		t.Fatal("Expected server to be created")
 	}
 
-	if server.config.WsPort != DefaultWsPort {
-		t.Errorf("Expected default WebSocket port %d, got %d", DefaultWsPort, server.config.WsPort)
-	}
-
 	if server.config.GrpcPort != DefaultGrpcPort {
 		t.Errorf("Expected default gRPC port %d, got %d", DefaultGrpcPort, server.config.GrpcPort)
 	}
@@ -25,28 +18,12 @@ func TestNewServer(t *testing.T) {
 
 func TestNewServerWithCustomConfig(t *testing.T) {
 	config := Config{
-		WsPort:   8080,
 		GrpcPort: 40000,
 	}
 	server := NewServer(config)
 
-	if server.config.WsPort != 8080 {
-		t.Errorf("Expected WebSocket port 8080, got %d", server.config.WsPort)
-	}
-
 	if server.config.GrpcPort != 40000 {
 		t.Errorf("Expected gRPC port 40000, got %d", server.config.GrpcPort)
-	}
-}
-
-func TestNewServerWithStaticFilesPath(t *testing.T) {
-	config := Config{
-		StaticFilesPath: "/path/to/dashboard",
-	}
-	server := NewServer(config)
-
-	if server.config.StaticFilesPath != "/path/to/dashboard" {
-		t.Errorf("Expected StaticFilesPath '/path/to/dashboard', got '%s'", server.config.StaticFilesPath)
 	}
 }
 
@@ -102,63 +79,6 @@ func TestGetAgents(t *testing.T) {
 	server := NewServer(Config{})
 
 	agents := server.GetAgents()
-	if len(agents) != 0 {
-		t.Errorf("Expected 0 agents, got %d", len(agents))
-	}
-}
-
-func TestAPIHealth(t *testing.T) {
-	server := NewServer(Config{})
-
-	req, err := http.NewRequest("GET", "/api/health", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(server.handleAPIHealth)
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("Expected status OK, got %d", status)
-	}
-
-	var response map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
-		t.Errorf("Failed to decode response: %v", err)
-	}
-
-	if response["status"] != "ok" {
-		t.Errorf("Expected status 'ok', got '%s'", response["status"])
-	}
-}
-
-func TestAPIAgents(t *testing.T) {
-	server := NewServer(Config{})
-
-	req, err := http.NewRequest("GET", "/api/agents", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(server.handleAPIAgents)
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("Expected status OK, got %d", status)
-	}
-
-	var response map[string]interface{}
-	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
-		t.Errorf("Failed to decode response: %v", err)
-	}
-
-	agents, ok := response["agents"].([]interface{})
-	if !ok {
-		t.Error("Expected agents array in response")
-	}
-
 	if len(agents) != 0 {
 		t.Errorf("Expected 0 agents, got %d", len(agents))
 	}
