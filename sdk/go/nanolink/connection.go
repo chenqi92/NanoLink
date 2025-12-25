@@ -25,8 +25,30 @@ type AgentConnection struct {
 
 	mu          sync.Mutex
 	done        chan struct{}
+	closed      bool // Track if connection is closed
 	pendingCmds map[string]chan *CommandResult
 	pendingMu   sync.Mutex
+}
+
+// IsClosed returns true if the connection is closed
+func (c *AgentConnection) IsClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
+}
+
+// UpdateHeartbeat updates the last heartbeat time
+func (c *AgentConnection) UpdateHeartbeat() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.LastHeartbeat = time.Now()
+}
+
+// HeartbeatAge returns the duration since last heartbeat
+func (c *AgentConnection) HeartbeatAge() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return time.Since(c.LastHeartbeat)
 }
 
 // NewAgentConnectionFromGRPC creates a new agent connection from gRPC stream
@@ -120,12 +142,25 @@ func (c *AgentConnection) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.closed {
+		return
+	}
+	c.closed = true
+
 	select {
 	case <-c.done:
 		return
 	default:
 		close(c.done)
 	}
+
+	// Cancel all pending commands
+	c.pendingMu.Lock()
+	for id, ch := range c.pendingCmds {
+		delete(c.pendingCmds, id)
+		close(ch)
+	}
+	c.pendingMu.Unlock()
 }
 
 // Convenience methods

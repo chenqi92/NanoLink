@@ -10,8 +10,14 @@ import com.kkape.sdk.model.StaticInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -28,6 +34,11 @@ import java.util.function.Consumer;
 public class NanoLinkServer {
     private static final Logger log = LoggerFactory.getLogger(NanoLinkServer.class);
 
+    /** Default heartbeat timeout (90 seconds) */
+    public static final Duration DEFAULT_HEARTBEAT_TIMEOUT = Duration.ofSeconds(90);
+    /** Default heartbeat check interval (30 seconds) */
+    public static final Duration DEFAULT_HEARTBEAT_CHECK_INTERVAL = Duration.ofSeconds(30);
+
     private final NanoLinkConfig config;
     private final Map<String, AgentConnection> agents = new ConcurrentHashMap<>();
 
@@ -40,6 +51,13 @@ public class NanoLinkServer {
 
     private Server grpcServer;
     private NanoLinkServiceImpl grpcServicer;
+    private ScheduledExecutorService heartbeatChecker;
+    private java.util.concurrent.ExecutorService callbackExecutor;
+
+    // Configurable options
+    private Duration heartbeatTimeout = DEFAULT_HEARTBEAT_TIMEOUT;
+    private Duration heartbeatCheckInterval = DEFAULT_HEARTBEAT_CHECK_INTERVAL;
+    private boolean asyncCallbacks = false;
 
     private NanoLinkServer(NanoLinkConfig config) {
         this.config = config;
@@ -56,6 +74,15 @@ public class NanoLinkServer {
      * Start the gRPC server
      */
     public void start() throws Exception {
+        // Start callback executor if async callbacks enabled
+        if (asyncCallbacks) {
+            callbackExecutor = Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r, "nanolink-callback");
+                t.setDaemon(true);
+                return t;
+            });
+        }
+
         grpcServicer = new NanoLinkServiceImpl(this, config.getTokenValidator());
         grpcServer = ServerBuilder.forPort(config.getGrpcPort())
                 .addService(grpcServicer)
@@ -66,7 +93,53 @@ public class NanoLinkServer {
                 .maxInboundMessageSize(16 * 1024 * 1024)
                 .build()
                 .start();
+
+        // Start heartbeat checker
+        startHeartbeatChecker();
+
         log.info("NanoLink gRPC Server started on port {}", config.getGrpcPort());
+    }
+
+    /**
+     * Start the heartbeat checker thread
+     */
+    private void startHeartbeatChecker() {
+        heartbeatChecker = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "nanolink-heartbeat-checker");
+            t.setDaemon(true);
+            return t;
+        });
+
+        heartbeatChecker.scheduleAtFixedRate(
+                this::checkHeartbeatTimeouts,
+                heartbeatCheckInterval.toMillis(),
+                heartbeatCheckInterval.toMillis(),
+                TimeUnit.MILLISECONDS
+        );
+
+        log.info("Heartbeat checker started (timeout: {}s, interval: {}s)",
+                heartbeatTimeout.getSeconds(), heartbeatCheckInterval.getSeconds());
+    }
+
+    /**
+     * Check for agents that have timed out
+     */
+    private void checkHeartbeatTimeouts() {
+        List<AgentConnection> deadAgents = new ArrayList<>();
+
+        Instant threshold = Instant.now().minus(heartbeatTimeout);
+        for (AgentConnection agent : agents.values()) {
+            if (agent.getLastHeartbeat().isBefore(threshold)) {
+                deadAgents.add(agent);
+            }
+        }
+
+        for (AgentConnection agent : deadAgents) {
+            log.warn("Agent {} ({}) heartbeat timeout, disconnecting",
+                    agent.getHostname(), agent.getAgentId());
+            agent.close();
+            unregisterAgent(agent);
+        }
     }
 
     /**
@@ -74,6 +147,26 @@ public class NanoLinkServer {
      */
     public void stop() {
         log.info("Stopping NanoLink Server...");
+
+        // Stop heartbeat checker
+        if (heartbeatChecker != null) {
+            heartbeatChecker.shutdownNow();
+            try {
+                heartbeatChecker.awaitTermination(2, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        // Stop callback executor
+        if (callbackExecutor != null) {
+            callbackExecutor.shutdownNow();
+            try {
+                callbackExecutor.awaitTermination(2, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
 
         if (grpcServer != null) {
             grpcServer.shutdown();
@@ -139,11 +232,7 @@ public class NanoLinkServer {
      */
     public void handleMetrics(Metrics metrics) {
         if (onMetrics != null) {
-            try {
-                onMetrics.accept(metrics);
-            } catch (Exception e) {
-                log.error("Error in onMetrics callback", e);
-            }
+            executeCallback(() -> onMetrics.accept(metrics), "onMetrics");
         }
     }
 
@@ -152,11 +241,7 @@ public class NanoLinkServer {
      */
     public void handleRealtimeMetrics(RealtimeMetrics realtime) {
         if (onRealtimeMetrics != null) {
-            try {
-                onRealtimeMetrics.accept(realtime);
-            } catch (Exception e) {
-                log.error("Error in onRealtimeMetrics callback", e);
-            }
+            executeCallback(() -> onRealtimeMetrics.accept(realtime), "onRealtimeMetrics");
         }
     }
 
@@ -165,11 +250,7 @@ public class NanoLinkServer {
      */
     public void handleStaticInfo(StaticInfo staticInfo) {
         if (onStaticInfo != null) {
-            try {
-                onStaticInfo.accept(staticInfo);
-            } catch (Exception e) {
-                log.error("Error in onStaticInfo callback", e);
-            }
+            executeCallback(() -> onStaticInfo.accept(staticInfo), "onStaticInfo");
         }
     }
 
@@ -178,10 +259,27 @@ public class NanoLinkServer {
      */
     public void handlePeriodicData(PeriodicData periodicData) {
         if (onPeriodicData != null) {
+            executeCallback(() -> onPeriodicData.accept(periodicData), "onPeriodicData");
+        }
+    }
+
+    /**
+     * Execute a callback, either synchronously or asynchronously
+     */
+    private void executeCallback(Runnable callback, String name) {
+        if (asyncCallbacks && callbackExecutor != null) {
+            callbackExecutor.execute(() -> {
+                try {
+                    callback.run();
+                } catch (Exception e) {
+                    log.error("Error in {} callback", name, e);
+                }
+            });
+        } else {
             try {
-                onPeriodicData.accept(periodicData);
+                callback.run();
             } catch (Exception e) {
-                log.error("Error in onPeriodicData callback", e);
+                log.error("Error in {} callback", name, e);
             }
         }
     }
@@ -286,6 +384,9 @@ public class NanoLinkServer {
         private Consumer<RealtimeMetrics> onRealtimeMetrics;
         private Consumer<StaticInfo> onStaticInfo;
         private Consumer<PeriodicData> onPeriodicData;
+        private Duration heartbeatTimeout = DEFAULT_HEARTBEAT_TIMEOUT;
+        private Duration heartbeatCheckInterval = DEFAULT_HEARTBEAT_CHECK_INTERVAL;
+        private boolean asyncCallbacks = false;
 
         /**
          * Set the gRPC port for agent connections (default: 39100)
@@ -307,6 +408,31 @@ public class NanoLinkServer {
 
         public Builder tokenValidator(TokenValidator validator) {
             config.setTokenValidator(validator);
+            return this;
+        }
+
+        /**
+         * Set the heartbeat timeout duration (default: 90 seconds)
+         */
+        public Builder heartbeatTimeout(Duration timeout) {
+            this.heartbeatTimeout = timeout;
+            return this;
+        }
+
+        /**
+         * Set the heartbeat check interval (default: 30 seconds)
+         */
+        public Builder heartbeatCheckInterval(Duration interval) {
+            this.heartbeatCheckInterval = interval;
+            return this;
+        }
+
+        /**
+         * Enable async callbacks (default: false)
+         * When enabled, callbacks are executed in separate threads to prevent blocking
+         */
+        public Builder asyncCallbacks(boolean enabled) {
+            this.asyncCallbacks = enabled;
             return this;
         }
 
@@ -348,6 +474,9 @@ public class NanoLinkServer {
             server.setOnRealtimeMetrics(onRealtimeMetrics);
             server.setOnStaticInfo(onStaticInfo);
             server.setOnPeriodicData(onPeriodicData);
+            server.heartbeatTimeout = heartbeatTimeout;
+            server.heartbeatCheckInterval = heartbeatCheckInterval;
+            server.asyncCallbacks = asyncCallbacks;
             return server;
         }
     }

@@ -5,10 +5,17 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 
 	pb "github.com/chenqi92/NanoLink/sdk/go/nanolink/proto"
+)
+
+// Default timeouts
+const (
+	DefaultHeartbeatTimeout  = 90 * time.Second  // Agent considered dead after this
+	DefaultHeartbeatInterval = 30 * time.Second  // Check interval
 )
 
 // Default ports
@@ -28,6 +35,16 @@ type Config struct {
 	// When false (default), agents can connect via metrics stream without explicit auth
 	// but will have ReadOnly permission level
 	RequireAuthentication bool
+
+	// Heartbeat timeout settings
+	// HeartbeatTimeout is the duration after which an agent is considered dead (default: 90s)
+	HeartbeatTimeout time.Duration
+	// HeartbeatCheckInterval is the interval for checking heartbeat timeouts (default: 30s)
+	HeartbeatCheckInterval time.Duration
+
+	// AsyncCallbacks if true, callbacks are executed in separate goroutines (default: false)
+	// This prevents slow callbacks from blocking message processing
+	AsyncCallbacks bool
 }
 
 // Token validation result
@@ -66,6 +83,7 @@ type Server struct {
 	onPeriodicData    func(*PeriodicData)
 	grpcServer        *grpc.Server
 	grpcServicer      *NanoLinkServicer
+	heartbeatStop     chan struct{} // Channel to stop heartbeat checker
 }
 
 // NewServer creates a new NanoLink gRPC server
@@ -76,10 +94,17 @@ func NewServer(config Config) *Server {
 	if config.TokenValidator == nil {
 		config.TokenValidator = DefaultTokenValidator
 	}
+	if config.HeartbeatTimeout == 0 {
+		config.HeartbeatTimeout = DefaultHeartbeatTimeout
+	}
+	if config.HeartbeatCheckInterval == 0 {
+		config.HeartbeatCheckInterval = DefaultHeartbeatInterval
+	}
 
 	return &Server{
-		config: config,
-		agents: make(map[string]*AgentConnection),
+		config:        config,
+		agents:        make(map[string]*AgentConnection),
+		heartbeatStop: make(chan struct{}),
 	}
 }
 
@@ -119,8 +144,50 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to start gRPC server: %w", err)
 	}
 
+	// Start heartbeat checker
+	s.startHeartbeatChecker()
+
 	log.Printf("NanoLink gRPC Server started on port %d", s.config.GrpcPort)
 	return nil
+}
+
+// startHeartbeatChecker starts a goroutine that periodically checks for dead agents
+func (s *Server) startHeartbeatChecker() {
+	go func() {
+		ticker := time.NewTicker(s.config.HeartbeatCheckInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				s.checkHeartbeatTimeouts()
+			case <-s.heartbeatStop:
+				return
+			}
+		}
+	}()
+	log.Printf("Heartbeat checker started (timeout: %v, interval: %v)",
+		s.config.HeartbeatTimeout, s.config.HeartbeatCheckInterval)
+}
+
+// checkHeartbeatTimeouts checks for agents that have timed out
+func (s *Server) checkHeartbeatTimeouts() {
+	var deadAgents []*AgentConnection
+
+	s.agentsMu.RLock()
+	for _, agent := range s.agents {
+		if agent.HeartbeatAge() > s.config.HeartbeatTimeout {
+			deadAgents = append(deadAgents, agent)
+		}
+	}
+	s.agentsMu.RUnlock()
+
+	// Unregister dead agents outside of the lock
+	for _, agent := range deadAgents {
+		log.Printf("Agent %s (%s) heartbeat timeout, disconnecting", agent.Hostname, agent.AgentID)
+		agent.Close()
+		s.unregisterAgent(agent)
+	}
 }
 
 // startGRPC starts the gRPC server
@@ -145,6 +212,14 @@ func (s *Server) startGRPC() error {
 
 // Stop stops the server
 func (s *Server) Stop() error {
+	// Stop heartbeat checker
+	select {
+	case <-s.heartbeatStop:
+		// Already closed
+	default:
+		close(s.heartbeatStop)
+	}
+
 	// Stop gRPC server
 	if s.grpcServer != nil {
 		s.grpcServer.GracefulStop()
@@ -221,28 +296,44 @@ func (s *Server) unregisterAgent(agent *AgentConnection) {
 // handleMetrics handles incoming metrics
 func (s *Server) handleMetrics(metrics *Metrics) {
 	if s.onMetrics != nil {
-		s.onMetrics(metrics)
+		if s.config.AsyncCallbacks {
+			go s.onMetrics(metrics)
+		} else {
+			s.onMetrics(metrics)
+		}
 	}
 }
 
 // handleRealtimeMetrics handles incoming realtime metrics
 func (s *Server) handleRealtimeMetrics(realtime *RealtimeMetrics) {
 	if s.onRealtimeMetrics != nil {
-		s.onRealtimeMetrics(realtime)
+		if s.config.AsyncCallbacks {
+			go s.onRealtimeMetrics(realtime)
+		} else {
+			s.onRealtimeMetrics(realtime)
+		}
 	}
 }
 
 // handleStaticInfo handles incoming static hardware info
 func (s *Server) handleStaticInfo(staticInfo *StaticInfo) {
 	if s.onStaticInfo != nil {
-		s.onStaticInfo(staticInfo)
+		if s.config.AsyncCallbacks {
+			go s.onStaticInfo(staticInfo)
+		} else {
+			s.onStaticInfo(staticInfo)
+		}
 	}
 }
 
 // handlePeriodicData handles incoming periodic data
 func (s *Server) handlePeriodicData(periodic *PeriodicData) {
 	if s.onPeriodicData != nil {
-		s.onPeriodicData(periodic)
+		if s.config.AsyncCallbacks {
+			go s.onPeriodicData(periodic)
+		} else {
+			s.onPeriodicData(periodic)
+		}
 	}
 }
 

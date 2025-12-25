@@ -16,8 +16,9 @@ import (
 
 // AgentStream holds a stream and its associated agent
 type AgentStream struct {
-	Stream pb.NanoLinkService_StreamMetricsServer
-	Agent  *AgentConnection
+	Stream   pb.NanoLinkService_StreamMetricsServer
+	Agent    *AgentConnection
+	IsActive bool // Track if stream is still active
 }
 
 // NanoLinkServicer implements the NanoLinkService gRPC server
@@ -28,6 +29,7 @@ type NanoLinkServicer struct {
 	tokenValidator TokenValidator
 	streamAgents   map[interface{}]*AgentConnection
 	agentStreams   map[string]*AgentStream // agentID -> stream
+	hostnameIndex  map[string]string       // hostname -> agentID for quick lookup
 	mu             sync.RWMutex
 }
 
@@ -38,7 +40,55 @@ func NewNanoLinkServicer(server *Server) *NanoLinkServicer {
 		tokenValidator: server.config.TokenValidator,
 		streamAgents:   make(map[interface{}]*AgentConnection),
 		agentStreams:   make(map[string]*AgentStream),
+		hostnameIndex:  make(map[string]string),
 	}
+}
+
+// cleanupAgent safely removes an agent from all internal maps
+func (s *NanoLinkServicer) cleanupAgent(agent *AgentConnection, stream interface{}) {
+	if agent == nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Mark stream as inactive
+	if agentStream, ok := s.agentStreams[agent.AgentID]; ok {
+		agentStream.IsActive = false
+	}
+
+	// Remove from all maps
+	delete(s.streamAgents, stream)
+	delete(s.agentStreams, agent.AgentID)
+	delete(s.hostnameIndex, agent.Hostname)
+}
+
+// registerAgentStream registers an agent and its stream
+func (s *NanoLinkServicer) registerAgentStream(agent *AgentConnection, stream pb.NanoLinkService_StreamMetricsServer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.streamAgents[stream] = agent
+	s.agentStreams[agent.AgentID] = &AgentStream{
+		Stream:   stream,
+		Agent:    agent,
+		IsActive: true,
+	}
+	s.hostnameIndex[agent.Hostname] = agent.AgentID
+}
+
+// getAgentStreamByHostname returns the agent stream for a hostname
+func (s *NanoLinkServicer) getAgentStreamByHostname(hostname string) (*AgentStream, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if agentID, ok := s.hostnameIndex[hostname]; ok {
+		if stream, ok := s.agentStreams[agentID]; ok {
+			return stream, true
+		}
+	}
+	return nil, false
 }
 
 // Authenticate handles agent authentication
@@ -48,11 +98,21 @@ func (s *NanoLinkServicer) Authenticate(ctx context.Context, req *pb.AuthRequest
 	result := s.tokenValidator(req.Token)
 
 	if result.Valid {
-		// Check for existing agent with same hostname
-		existing := s.server.GetAgentByHostname(req.Hostname)
-		if existing != nil {
-			s.server.unregisterAgent(existing)
-			log.Printf("Replacing stale agent connection for hostname: %s", req.Hostname)
+		// Check for existing agent with same hostname - handle gracefully
+		if existingStream, ok := s.getAgentStreamByHostname(req.Hostname); ok {
+			// Check if existing connection is still active
+			if existingStream.IsActive && existingStream.Agent != nil {
+				// Check heartbeat age - if recent, this might be a duplicate
+				if existingStream.Agent.HeartbeatAge() < 30*time.Second {
+					log.Printf("WARNING: Agent %s attempting reconnect while existing connection is active (heartbeat age: %v)",
+						req.Hostname, existingStream.Agent.HeartbeatAge())
+				}
+			}
+			// Clean up old connection
+			existingStream.Agent.Close()
+			s.server.unregisterAgent(existingStream.Agent)
+			s.cleanupAgent(existingStream.Agent, existingStream.Stream)
+			log.Printf("Replaced stale agent connection for hostname: %s", req.Hostname)
 		}
 
 		// Create agent connection
@@ -107,11 +167,9 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 
 	defer func() {
 		if agent != nil {
+			agent.Close()
 			s.server.unregisterAgent(agent)
-			s.mu.Lock()
-			delete(s.streamAgents, stream)
-			delete(s.agentStreams, agentID)
-			s.mu.Unlock()
+			s.cleanupAgent(agent, stream)
 			log.Printf("Agent disconnected: %s (%s)", agent.Hostname, agentID)
 		}
 	}()
@@ -140,10 +198,17 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 
 				hostname := SanitizeHostname(protoMetrics.Hostname)
 
-				// Check for existing agent
-				existing := s.server.GetAgentByHostname(hostname)
-				if existing != nil {
-					s.server.unregisterAgent(existing)
+				// Check for existing agent with same hostname
+				if existingStream, ok := s.getAgentStreamByHostname(hostname); ok {
+					if existingStream.IsActive && existingStream.Agent != nil {
+						if existingStream.Agent.HeartbeatAge() < 30*time.Second {
+							log.Printf("WARNING: Agent %s stream reconnect while existing is active (heartbeat age: %v)",
+								hostname, existingStream.Agent.HeartbeatAge())
+						}
+					}
+					existingStream.Agent.Close()
+					s.server.unregisterAgent(existingStream.Agent)
+					s.cleanupAgent(existingStream.Agent, existingStream.Stream)
 					log.Printf("Replacing stale agent for hostname: %s", hostname)
 				}
 
@@ -160,10 +225,7 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 				agentID = agent.AgentID
 				log.Printf("WARNING: Agent %s registered via stream without authentication - using READ_ONLY permission", hostname)
 				s.server.registerAgent(agent)
-				s.mu.Lock()
-				s.streamAgents[stream] = agent
-				s.agentStreams[agentID] = &AgentStream{Stream: stream, Agent: agent}
-				s.mu.Unlock()
+				s.registerAgentStream(agent, stream)
 				log.Printf("Agent registered from metrics: %s (%s)", hostname, agentID)
 			}
 
@@ -174,7 +236,7 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 
 		case *pb.MetricsStreamRequest_Heartbeat:
 			if agent != nil {
-				agent.LastHeartbeat = time.Now()
+				agent.UpdateHeartbeat()
 			}
 			// Send heartbeat ack
 			if err := stream.Send(&pb.MetricsStreamResponse{
@@ -202,9 +264,17 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 			if agent == nil && protoStatic.SystemInfo != nil {
 				hostname := SanitizeHostname(protoStatic.SystemInfo.Hostname)
 				if hostname != "" {
-					existing := s.server.GetAgentByHostname(hostname)
-					if existing != nil {
-						s.server.unregisterAgent(existing)
+					// Check for existing agent with same hostname
+					if existingStream, ok := s.getAgentStreamByHostname(hostname); ok {
+						if existingStream.IsActive && existingStream.Agent != nil {
+							if existingStream.Agent.HeartbeatAge() < 30*time.Second {
+								log.Printf("WARNING: Agent %s static info while existing is active (heartbeat age: %v)",
+									hostname, existingStream.Agent.HeartbeatAge())
+							}
+						}
+						existingStream.Agent.Close()
+						s.server.unregisterAgent(existingStream.Agent)
+						s.cleanupAgent(existingStream.Agent, existingStream.Stream)
 					}
 
 					arch := ""
@@ -222,10 +292,7 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 					agentID = agent.AgentID
 					log.Printf("WARNING: Agent %s registered via static info without authentication - using READ_ONLY permission", hostname)
 					s.server.registerAgent(agent)
-					s.mu.Lock()
-					s.streamAgents[stream] = agent
-					s.agentStreams[agentID] = &AgentStream{Stream: stream, Agent: agent}
-					s.mu.Unlock()
+					s.registerAgentStream(agent, stream)
 					log.Printf("Agent registered from static info: %s (%s)", hostname, agentID)
 				}
 			}
@@ -346,6 +413,11 @@ func (s *NanoLinkServicer) SendDataRequest(agentID string, requestType pb.DataRe
 		return false
 	}
 
+	if !agentStream.IsActive {
+		log.Printf("Agent %s stream is not active", agentID)
+		return false
+	}
+
 	request := &pb.DataRequest{
 		RequestType: requestType,
 		Target:      target,
@@ -359,6 +431,10 @@ func (s *NanoLinkServicer) SendDataRequest(agentID string, requestType pb.DataRe
 
 	if err != nil {
 		log.Printf("Failed to send data request to agent %s: %v", agentID, err)
+		// Mark stream as inactive
+		s.mu.Lock()
+		agentStream.IsActive = false
+		s.mu.Unlock()
 		return false
 	}
 
@@ -371,7 +447,9 @@ func (s *NanoLinkServicer) BroadcastDataRequest(requestType pb.DataRequestType) 
 	s.mu.RLock()
 	streams := make([]*AgentStream, 0, len(s.agentStreams))
 	for _, stream := range s.agentStreams {
-		streams = append(streams, stream)
+		if stream.IsActive {
+			streams = append(streams, stream)
+		}
 	}
 	s.mu.RUnlock()
 
@@ -386,10 +464,23 @@ func (s *NanoLinkServicer) BroadcastDataRequest(requestType pb.DataRequestType) 
 	}
 
 	successCount := 0
+	var failedAgents []*AgentStream
 	for _, agentStream := range streams {
 		if err := agentStream.Stream.Send(response); err == nil {
 			successCount++
+		} else {
+			log.Printf("Failed to send broadcast to agent %s: %v", agentStream.Agent.Hostname, err)
+			failedAgents = append(failedAgents, agentStream)
 		}
+	}
+
+	// Mark failed streams as inactive (they will be cleaned up by their defer)
+	if len(failedAgents) > 0 {
+		s.mu.Lock()
+		for _, agentStream := range failedAgents {
+			agentStream.IsActive = false
+		}
+		s.mu.Unlock()
 	}
 
 	log.Printf("Broadcast data request %v to %d/%d agents", requestType, successCount, len(streams))

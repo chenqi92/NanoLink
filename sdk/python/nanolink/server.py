@@ -10,7 +10,7 @@ import logging
 import threading
 from concurrent import futures
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable, Dict, Optional, Awaitable
 
 try:
@@ -37,6 +37,10 @@ logger = logging.getLogger(__name__)
 # Default ports
 DEFAULT_GRPC_PORT = 39100
 
+# Default timeouts
+DEFAULT_HEARTBEAT_TIMEOUT = timedelta(seconds=90)  # Agent considered dead after this
+DEFAULT_HEARTBEAT_CHECK_INTERVAL = timedelta(seconds=30)  # Check interval
+
 
 @dataclass
 class ServerConfig:
@@ -49,12 +53,16 @@ class ServerConfig:
         tls_cert_path: Path to TLS certificate (for gRPC TLS)
         tls_key_path: Path to TLS key (for gRPC TLS)
         token_validator: Token validation function
+        heartbeat_timeout: Duration after which an agent is considered dead (default: 90s)
+        heartbeat_check_interval: Interval for checking heartbeat timeouts (default: 30s)
     """
     grpc_port: int = DEFAULT_GRPC_PORT
     host: str = "0.0.0.0"
     tls_cert_path: Optional[str] = None
     tls_key_path: Optional[str] = None
     token_validator: TokenValidator = default_token_validator
+    heartbeat_timeout: timedelta = DEFAULT_HEARTBEAT_TIMEOUT
+    heartbeat_check_interval: timedelta = DEFAULT_HEARTBEAT_CHECK_INTERVAL
 
 
 class NanoLinkServer:
@@ -84,6 +92,8 @@ class NanoLinkServer:
         self._agents: Dict[str, AgentConnection] = {}
         self._grpc_server = None
         self._grpc_servicer = None
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._running = False
 
         # Callbacks
         self._on_agent_connect: Optional[Callable[[AgentConnection], Awaitable[None]]] = None
@@ -144,8 +154,58 @@ class NanoLinkServer:
         if not GRPC_AVAILABLE:
             raise RuntimeError("gRPC is not available. Install grpcio and grpcio-tools.")
 
+        self._running = True
         self._start_grpc_server()
+
+        # Start heartbeat checker
+        self._start_heartbeat_checker()
+
         logger.info(f"NanoLink gRPC Server started on port {self.config.grpc_port}")
+
+    def _start_heartbeat_checker(self) -> None:
+        """Start the heartbeat checker background task"""
+        async def heartbeat_loop():
+            interval = self.config.heartbeat_check_interval.total_seconds()
+            logger.info(
+                f"Heartbeat checker started (timeout: {self.config.heartbeat_timeout.total_seconds()}s, "
+                f"interval: {interval}s)"
+            )
+            while self._running:
+                try:
+                    await asyncio.sleep(interval)
+                    await self._check_heartbeat_timeouts()
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"Error in heartbeat checker: {e}")
+
+        try:
+            loop = asyncio.get_running_loop()
+            self._heartbeat_task = loop.create_task(heartbeat_loop())
+        except RuntimeError:
+            # No event loop running, skip heartbeat checker
+            logger.warning("No event loop available, heartbeat checker not started")
+
+    async def _check_heartbeat_timeouts(self) -> None:
+        """Check for agents that have timed out"""
+        threshold = datetime.now() - self.config.heartbeat_timeout
+        dead_agents = []
+
+        for agent in list(self._agents.values()):
+            if agent.last_heartbeat < threshold:
+                dead_agents.append(agent)
+
+        for agent in dead_agents:
+            logger.warning(
+                f"Agent {agent.hostname} ({agent.agent_id}) heartbeat timeout, disconnecting"
+            )
+            await agent.close()
+            self._agents.pop(agent.agent_id, None)
+            if self._on_agent_disconnect:
+                try:
+                    await self._on_agent_disconnect(agent)
+                except Exception as e:
+                    logger.error(f"Error in on_agent_disconnect callback: {e}")
 
     def _start_grpc_server(self) -> None:
         """Start the gRPC server in a background thread"""
@@ -226,6 +286,17 @@ class NanoLinkServer:
     async def stop(self) -> None:
         """Stop the server"""
         logger.info("Stopping NanoLink Server...")
+
+        self._running = False
+
+        # Stop heartbeat checker
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self._heartbeat_task = None
 
         # Stop gRPC server
         if self._grpc_server:
