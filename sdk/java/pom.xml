@@ -212,6 +212,8 @@
                             <detectJavaApiLink>false</detectJavaApiLink>
                             <doclint>none</doclint>
                             <failOnError>false</failOnError>
+                            <!-- Include protobuf generated sources -->
+                            <sourcepath>${project.build.sourceDirectory}:${project.build.directory}/generated-sources/protobuf/java:${project.build.directory}/generated-sources/protobuf/grpc-java</sourcepath>
                         </configuration>
                         <executions>
                             <execution>
