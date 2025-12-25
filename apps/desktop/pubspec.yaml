@@ -1,7 +1,7 @@
 name: desktop
 description: "NanoLink Desktop - Multi-server agent monitoring"
 publish_to: 'none'
-version: 0.3.3
+version: 0.3.4
 
 environment:
   sdk: ^3.5.0

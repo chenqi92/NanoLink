@@ -606,7 +606,7 @@ logging:
 <dependency>
     <groupId>com.kkape</groupId>
     <artifactId>nanolink-sdk</artifactId>
-    <version>0.3.3</version>
+    <version>0.3.4</version>
 </dependency>
 ```
 
