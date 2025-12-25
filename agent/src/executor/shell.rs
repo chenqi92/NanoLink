@@ -38,6 +38,7 @@ impl ShellExecutor {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             };
         }
 
@@ -85,6 +86,7 @@ impl ShellExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 }
             }
         };
@@ -115,6 +117,7 @@ impl ShellExecutor {
                         file_content: vec![],
                         processes: vec![],
                         containers: vec![],
+                        update_info: None,
                     };
                 }
                 Ok(None) => {
@@ -130,6 +133,7 @@ impl ShellExecutor {
                             file_content: vec![],
                             processes: vec![],
                             containers: vec![],
+                            update_info: None,
                         };
                     }
                     std::thread::sleep(Duration::from_millis(100));
@@ -143,6 +147,7 @@ impl ShellExecutor {
                         file_content: vec![],
                         processes: vec![],
                         containers: vec![],
+                        update_info: None,
                     }
                 }
             }
@@ -171,6 +176,7 @@ impl ShellExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 }
             }
         };
@@ -201,6 +207,7 @@ impl ShellExecutor {
                         file_content: vec![],
                         processes: vec![],
                         containers: vec![],
+                        update_info: None,
                     };
                 }
                 Ok(None) => {
@@ -216,6 +223,7 @@ impl ShellExecutor {
                             file_content: vec![],
                             processes: vec![],
                             containers: vec![],
+                            update_info: None,
                         };
                     }
                     std::thread::sleep(Duration::from_millis(100));
@@ -229,6 +237,7 @@ impl ShellExecutor {
                         file_content: vec![],
                         processes: vec![],
                         containers: vec![],
+                        update_info: None,
                     }
                 }
             }

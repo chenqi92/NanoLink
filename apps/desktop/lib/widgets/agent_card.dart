@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
@@ -7,7 +8,9 @@ class Formatter {
   static String bytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
@@ -25,8 +28,8 @@ class Formatter {
   }
 }
 
-/// Enhanced card widget displaying agent information and real-time metrics
-class AgentCard extends StatelessWidget {
+/// Enhanced card widget displaying agent information with Glassmorphism effect
+class AgentCard extends StatefulWidget {
   final Agent agent;
   final AgentMetrics? metrics;
   final String serverName;
@@ -41,124 +44,217 @@ class AgentCard extends StatelessWidget {
   });
 
   @override
+  State<AgentCard> createState() => _AgentCardState();
+}
+
+class _AgentCardState extends State<AgentCard>
+    with SingleTickerProviderStateMixin {
+  bool _isHovered = false;
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.02).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onHoverChanged(bool isHovered) {
+    setState(() => _isHovered = isHovered);
+    if (isHovered) {
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: isDark
-                ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      theme.cardTheme.color ?? const Color(0xFF1E293B),
-                      const Color(0xFF1E293B).withValues(alpha: 0.8),
-                    ],
-                  )
-                : null,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header
-                _buildHeader(context),
-                const SizedBox(height: 12),
-                
-                // Server badge
-                _buildServerBadge(context),
-                const SizedBox(height: 16),
-                
-                // Metrics
-                Expanded(
-                  child: metrics != null
-                      ? _buildMetrics(context)
-                      : _buildLoadingState(context),
+
+    return AnimatedBuilder(
+      animation: _scaleAnimation,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scaleAnimation.value,
+          child: MouseRegion(
+            onEnter: (_) => _onHoverChanged(true),
+            onExit: (_) => _onHoverChanged(false),
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: widget.onTap,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+                  boxShadow: _isHovered
+                      ? [
+                          BoxShadow(
+                            color: AppTheme.primaryBlue.withValues(alpha: 0.2),
+                            blurRadius: 20,
+                            spreadRadius: 0,
+                          ),
+                        ]
+                      : AppTheme.cardShadow,
                 ),
-              ],
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: isDark
+                              ? [
+                                  AppTheme.darkCard.withValues(alpha: 0.8),
+                                  AppTheme.darkCard.withValues(alpha: 0.6),
+                                ]
+                              : [
+                                  AppTheme.lightCard.withValues(alpha: 0.9),
+                                  AppTheme.lightCard.withValues(alpha: 0.7),
+                                ],
+                        ),
+                        borderRadius:
+                            BorderRadius.circular(AppTheme.radiusLarge),
+                        border: Border.all(
+                          color: _isHovered
+                              ? AppTheme.primaryBlue.withValues(alpha: 0.4)
+                              : (isDark
+                                  ? AppTheme.darkBorder
+                                      .withValues(alpha: 0.3)
+                                  : AppTheme.lightBorder
+                                      .withValues(alpha: 0.5)),
+                          width: 1,
+                        ),
+                      ),
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.all(AppTheme.spacingLarge),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildHeader(context),
+                            const SizedBox(height: AppTheme.spacingMedium),
+                            _buildServerBadge(context),
+                            const SizedBox(height: AppTheme.spacingLarge),
+                            Expanded(
+                              child: widget.metrics != null
+                                  ? _buildMetrics(context)
+                                  : _buildLoadingState(context),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   Widget _buildHeader(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final isDark = theme.brightness == Brightness.dark;
+
     return Row(
       children: [
-        // OS Icon with background
+        // OS Icon with gradient background
         Container(
-          width: 44,
-          height: 44,
+          width: 48,
+          height: 48,
           decoration: BoxDecoration(
-            color: _getOsColor(agent.os).withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(12),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                _getOsColor(widget.agent.os).withValues(alpha: 0.2),
+                _getOsColor(widget.agent.os).withValues(alpha: 0.1),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+            border: Border.all(
+              color: _getOsColor(widget.agent.os).withValues(alpha: 0.3),
+            ),
           ),
           child: Icon(
-            _getOsIcon(agent.os),
-            color: _getOsColor(agent.os),
+            _getOsIcon(widget.agent.os),
+            color: _getOsColor(widget.agent.os),
             size: 24,
           ),
         ),
-        const SizedBox(width: 12),
-        
+        const SizedBox(width: AppTheme.spacingMedium),
+
         // Hostname and OS info
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                agent.hostname,
+                widget.agent.hostname,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
+                  letterSpacing: -0.3,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 2),
               Text(
-                '${agent.os} • ${agent.arch}',
+                '${widget.agent.os} \u2022 ${widget.agent.arch}',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  color: isDark
+                      ? AppTheme.darkTextSecondary
+                      : AppTheme.lightTextSecondary,
                 ),
               ),
             ],
           ),
         ),
-        
-        // Online indicator
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppTheme.successGreen,
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.successGreen.withValues(alpha: 0.4),
-                blurRadius: 8,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-        ),
+
+        // Online indicator with glow
+        const StatusIndicator(isOnline: true, size: 12),
       ],
     );
   }
 
   Widget _buildServerBadge(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacingMedium,
+        vertical: AppTheme.spacingSmall,
+      ),
       decoration: BoxDecoration(
-        color: AppTheme.primaryBlue.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
+        gradient: LinearGradient(
+          colors: [
+            AppTheme.primaryBlue.withValues(alpha: 0.15),
+            AppTheme.primaryBlue.withValues(alpha: 0.08),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(
+          color: AppTheme.primaryBlue.withValues(alpha: 0.2),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -168,13 +264,14 @@ class AgentCard extends StatelessWidget {
             size: 12,
             color: AppTheme.primaryBlue,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: AppTheme.spacingSmall),
           Text(
-            serverName,
+            widget.serverName,
             style: TextStyle(
               color: AppTheme.primaryBlue,
               fontSize: 11,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
             ),
           ),
         ],
@@ -183,8 +280,8 @@ class AgentCard extends StatelessWidget {
   }
 
   Widget _buildMetrics(BuildContext context) {
-    final m = metrics!;
-    
+    final m = widget.metrics!;
+
     return Column(
       children: [
         // CPU & Memory
@@ -195,16 +292,17 @@ class AgentCard extends StatelessWidget {
           value: m.cpuPercent,
           color: AppTheme.primaryBlue,
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppTheme.spacingSmall),
         _buildMetricRow(
           context,
           icon: Icons.storage_rounded,
           label: 'RAM',
           value: m.memoryPercent,
           color: AppTheme.successGreen,
-          subtitle: '${Formatter.bytes(m.memory.used)} / ${Formatter.bytes(m.memory.total)}',
+          subtitle:
+              '${Formatter.bytes(m.memory.used)} / ${Formatter.bytes(m.memory.total)}',
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppTheme.spacingSmall),
         _buildMetricRow(
           context,
           icon: Icons.folder_open,
@@ -212,18 +310,17 @@ class AgentCard extends StatelessWidget {
           value: m.diskPercent,
           color: AppTheme.warningYellow,
         ),
-        
+
         const Spacer(),
-        
+
         // Network speed
         if (m.networks.isNotEmpty) ...[
-          const Divider(height: 16),
           _buildNetworkRow(context, m),
         ],
-        
+
         // GPU indicator
         if (m.gpus.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: AppTheme.spacingSmall),
           _buildGpuIndicator(context, m.gpus.first),
         ],
       ],
@@ -239,50 +336,60 @@ class AgentCard extends StatelessWidget {
     String? subtitle,
   }) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final statusColor = AppTheme.getStatusColor(value);
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Icon(icon, size: 12, color: color),
+            ),
+            const SizedBox(width: AppTheme.spacingSmall),
             Text(
               label,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                color: isDark
+                    ? AppTheme.darkTextSecondary
+                    : AppTheme.lightTextSecondary,
+                fontWeight: FontWeight.w500,
               ),
             ),
+            const Spacer(),
             if (subtitle != null) ...[
-              const Spacer(),
               Text(
                 subtitle,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                  color: (isDark
+                          ? AppTheme.darkTextSecondary
+                          : AppTheme.lightTextSecondary)
+                      .withValues(alpha: 0.6),
                   fontSize: 10,
                 ),
               ),
+              const SizedBox(width: AppTheme.spacingSmall),
             ],
-            const Spacer(),
             Text(
               Formatter.percent(value),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: statusColor,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],
         ),
         const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: value / 100,
-            backgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.1),
-            valueColor: AlwaysStoppedAnimation(statusColor),
-            minHeight: 6,
-          ),
+        GradientProgressBar(
+          value: value / 100,
+          height: 5,
+          color: statusColor,
         ),
       ],
     );
@@ -290,63 +397,65 @@ class AgentCard extends StatelessWidget {
 
   Widget _buildNetworkRow(BuildContext context, AgentMetrics m) {
     final theme = Theme.of(context);
-    
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _buildNetworkStat(
-          context,
-          icon: Icons.arrow_downward,
-          label: 'Download',
-          value: m.networkIn,
-          color: AppTheme.successGreen,
-        ),
-        Container(
-          width: 1,
-          height: 24,
-          color: theme.dividerTheme.color,
-        ),
-        _buildNetworkStat(
-          context,
-          icon: Icons.arrow_upward,
-          label: 'Upload',
-          value: m.networkOut,
-          color: AppTheme.primaryBlue,
-        ),
-      ],
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        vertical: AppTheme.spacingSmall,
+        horizontal: AppTheme.spacingMedium,
+      ),
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppTheme.darkBorder.withValues(alpha: 0.2)
+            : AppTheme.lightBorder.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildNetworkStat(
+            context,
+            icon: Icons.arrow_downward_rounded,
+            value: m.networkIn,
+            color: AppTheme.successGreen,
+          ),
+          Container(
+            width: 1,
+            height: 20,
+            color: isDark
+                ? AppTheme.darkBorder.withValues(alpha: 0.5)
+                : AppTheme.lightBorder,
+          ),
+          _buildNetworkStat(
+            context,
+            icon: Icons.arrow_upward_rounded,
+            value: m.networkOut,
+            color: AppTheme.primaryBlue,
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildNetworkStat(
     BuildContext context, {
     required IconData icon,
-    required String label,
     required int value,
     required Color color,
   }) {
     final theme = Theme.of(context);
-    
-    return Column(
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 12, color: color),
-            const SizedBox(width: 4),
-            Text(
-              Formatter.bytesPerSec(value),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 4),
         Text(
-          label,
+          Formatter.bytesPerSec(value),
           style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-            fontSize: 10,
+            color: color,
+            fontWeight: FontWeight.w600,
+            fontSize: 11,
           ),
         ),
       ],
@@ -355,48 +464,75 @@ class AgentCard extends StatelessWidget {
 
   Widget _buildGpuIndicator(BuildContext context, GpuMetrics gpu) {
     final theme = Theme.of(context);
-    
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacingMedium,
+        vertical: AppTheme.spacingSmall,
+      ),
       decoration: BoxDecoration(
-        color: AppTheme.gpuPurple.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
+        gradient: LinearGradient(
+          colors: [
+            AppTheme.gpuPurple.withValues(alpha: 0.15),
+            AppTheme.gpuPurple.withValues(alpha: 0.08),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(
+          color: AppTheme.gpuPurple.withValues(alpha: 0.2),
+        ),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.videocam,
-            size: 14,
-            color: AppTheme.gpuPurple,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            gpu.name.length > 15 ? '${gpu.name.substring(0, 15)}...' : gpu.name,
-            style: theme.textTheme.bodySmall?.copyWith(
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: AppTheme.gpuPurple.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Icon(
+              Icons.videocam_rounded,
+              size: 12,
               color: AppTheme.gpuPurple,
-              fontWeight: FontWeight.w500,
             ),
           ),
-          const Spacer(),
+          const SizedBox(width: AppTheme.spacingSmall),
+          Expanded(
+            child: Text(
+              gpu.name.length > 15
+                  ? '${gpu.name.substring(0, 15)}...'
+                  : gpu.name,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AppTheme.gpuPurple,
+                fontWeight: FontWeight.w500,
+                fontSize: 11,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           Text(
             Formatter.percent(gpu.usagePercent),
             style: theme.textTheme.bodySmall?.copyWith(
               color: AppTheme.getStatusColor(gpu.usagePercent),
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
             ),
           ),
           if (gpu.temperature > 0) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: AppTheme.spacingSmall),
             Icon(
-              Icons.thermostat,
+              Icons.thermostat_rounded,
               size: 12,
-              color: gpu.temperature > 80 ? AppTheme.errorRed : AppTheme.warningYellow,
+              color:
+                  gpu.temperature > 80 ? AppTheme.errorRed : AppTheme.warningYellow,
             ),
             Text(
-              '${gpu.temperature.toInt()}°',
+              '${gpu.temperature.toInt()}\u00B0',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: gpu.temperature > 80 ? AppTheme.errorRed : AppTheme.warningYellow,
+                color: gpu.temperature > 80
+                    ? AppTheme.errorRed
+                    : AppTheme.warningYellow,
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
               ),
             ),
           ],
@@ -407,24 +543,34 @@ class AgentCard extends StatelessWidget {
 
   Widget _buildLoadingState(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final isDark = theme.brightness == Brightness.dark;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: theme.colorScheme.primary,
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryBlue.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: AppTheme.primaryBlue,
+              ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppTheme.spacingMedium),
           Text(
             'Waiting for metrics...',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+              color: isDark
+                  ? AppTheme.darkTextSecondary
+                  : AppTheme.lightTextSecondary,
             ),
           ),
         ],
@@ -436,7 +582,9 @@ class AgentCard extends StatelessWidget {
     final osLower = os.toLowerCase();
     if (osLower.contains('linux')) return Icons.terminal;
     if (osLower.contains('windows')) return Icons.window;
-    if (osLower.contains('darwin') || osLower.contains('macos')) return Icons.laptop_mac;
+    if (osLower.contains('darwin') || osLower.contains('macos')) {
+      return Icons.laptop_mac;
+    }
     return Icons.computer;
   }
 
@@ -444,7 +592,9 @@ class AgentCard extends StatelessWidget {
     final osLower = os.toLowerCase();
     if (osLower.contains('linux')) return Colors.orange;
     if (osLower.contains('windows')) return AppTheme.primaryBlue;
-    if (osLower.contains('darwin') || osLower.contains('macos')) return Colors.grey;
+    if (osLower.contains('darwin') || osLower.contains('macos')) {
+      return Colors.grey;
+    }
     return AppTheme.npuIndigo;
   }
 }

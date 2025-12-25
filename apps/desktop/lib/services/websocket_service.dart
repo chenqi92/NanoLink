@@ -147,7 +147,7 @@ class WebSocketService {
     _reconnectTimer?.cancel();
     if (!_intentionalDisconnect) {
       _reconnectTimer = Timer(const Duration(seconds: 3), () {
-        debugPring('[WS] Attempting reconnect...');
+        debugPrint('[WS] Attempting reconnect...');
         connect();
       });
     }

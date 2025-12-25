@@ -44,6 +44,7 @@ impl ProcessExecutor {
             file_content: vec![],
             processes,
             containers: vec![],
+            update_info: None,
         }
     }
 
@@ -88,6 +89,7 @@ impl ProcessExecutor {
             file_content: vec![],
             processes: vec![],
             containers: vec![],
+            update_info: None,
         }
     }
 
@@ -118,6 +120,7 @@ impl ProcessExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
                 Err(e) => CommandResult {
                     command_id: String::new(),
@@ -127,6 +130,7 @@ impl ProcessExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
             }
         }
@@ -147,6 +151,7 @@ impl ProcessExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
                 Err(e) => CommandResult {
                     command_id: String::new(),
@@ -156,6 +161,7 @@ impl ProcessExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
             }
         }
@@ -183,6 +189,7 @@ impl ProcessExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
                 Err(e) => CommandResult {
                     command_id: String::new(),
@@ -192,6 +199,7 @@ impl ProcessExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
             }
         }
@@ -209,6 +217,7 @@ impl ProcessExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
                 Err(e) => CommandResult {
                     command_id: String::new(),
@@ -218,6 +227,7 @@ impl ProcessExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
             }
         }

@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
@@ -10,196 +11,410 @@ import '../widgets/server_chip.dart';
 import '../widgets/empty_state.dart';
 import 'agent_detail_screen.dart';
 
-/// Main home screen displaying all agents from connected servers
+/// Main home screen displaying all agents with Glassmorphism design
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryBlue.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.developer_board,
-                color: AppTheme.primaryBlue,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'NanoLink',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
+      extendBodyBehindAppBar: true,
+      appBar: _buildAppBar(context, isDark),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient,
         ),
-        actions: [
-          // Agent count and status
-          Consumer<AppProvider>(
-            builder: (context, provider, _) {
-              final connectedCount = provider.servers.where((s) => s.isConnected).length;
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: theme.dividerTheme.color ?? Colors.grey,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            '${provider.allAgents.length}',
-                            style: TextStyle(
-                              color: AppTheme.primaryBlue,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            ' Agent${provider.allAgents.length != 1 ? 's' : ''}',
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: connectedCount > 0 
-                                  ? AppTheme.successGreen 
-                                  : AppTheme.errorRed,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (connectedCount > 0 
-                                      ? AppTheme.successGreen 
-                                      : AppTheme.errorRed).withValues(alpha: 0.4),
-                                  blurRadius: 6,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+        child: Consumer<AppProvider>(
+          builder: (context, provider, _) {
+            if (provider.isLoading) {
+              return _buildLoadingState(context, isDark);
+            }
+
+            return Column(
+              children: [
+                // Safe area padding for app bar
+                SizedBox(
+                  height: MediaQuery.of(context).padding.top + kToolbarHeight,
                 ),
-              );
-            },
-          ),
-          
-          // Theme toggle
-          Consumer<ThemeProvider>(
-            builder: (context, themeProvider, _) {
-              IconData icon;
-              switch (themeProvider.themeMode) {
-                case AppThemeMode.light:
-                  icon = Icons.light_mode;
-                case AppThemeMode.dark:
-                  icon = Icons.dark_mode;
-                case AppThemeMode.system:
-                  icon = Icons.brightness_auto;
-              }
-              return IconButton(
-                icon: Icon(icon),
-                tooltip: 'Toggle theme',
-                onPressed: themeProvider.cycleTheme,
-              );
-            },
-          ),
-          
-          // Add server button
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: IconButton(
-              icon: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryBlue.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
+                // Server chips
+                if (provider.servers.isNotEmpty) _buildServerChips(context, provider),
+                // Agent grid or empty state
+                Expanded(
+                  child: provider.servers.isEmpty
+                      ? EmptyState(
+                          icon: Icons.dns_outlined,
+                          title: 'No Servers Connected',
+                          subtitle:
+                              'Add a NanoLink server to start monitoring your agents',
+                          actionLabel: 'Add Server',
+                          onAction: () => _showAddServerDialog(context),
+                        )
+                      : provider.allAgents.isEmpty
+                          ? const EmptyState(
+                              icon: Icons.computer_outlined,
+                              title: 'No Agents Connected',
+                              subtitle:
+                                  'Agents will appear here when they connect to your servers',
+                            )
+                          : _buildAgentGrid(context, provider),
                 ),
-                child: const Icon(Icons.add, color: AppTheme.primaryBlue),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+
+    return AppBar(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      flexibleSpace: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: isDark
+                    ? [
+                        AppTheme.darkBackground.withValues(alpha: 0.8),
+                        AppTheme.darkBackground.withValues(alpha: 0.0),
+                      ]
+                    : [
+                        AppTheme.lightBackground.withValues(alpha: 0.8),
+                        AppTheme.lightBackground.withValues(alpha: 0.0),
+                      ],
               ),
-              tooltip: 'Add Server',
-              onPressed: () => _showAddServerDialog(context),
+            ),
+          ),
+        ),
+      ),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              gradient: AppTheme.primaryGradient,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryBlue.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.developer_board,
+              color: Colors.white,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacingMedium),
+          Text(
+            'NanoLink',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+              letterSpacing: -0.5,
             ),
           ),
         ],
       ),
-      body: Consumer<AppProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoading) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+      actions: [
+        // Agent count and status
+        Consumer<AppProvider>(
+          builder: (context, provider, _) {
+            final connectedCount =
+                provider.servers.where((s) => s.isConnected).length;
+            return _buildStatusChip(context, provider, connectedCount, isDark);
+          },
+        ),
+
+        // Theme toggle
+        Consumer<ThemeProvider>(
+          builder: (context, themeProvider, _) {
+            return _buildThemeToggle(context, themeProvider, isDark);
+          },
+        ),
+
+        // Add server button
+        Padding(
+          padding: const EdgeInsets.only(right: AppTheme.spacingMedium),
+          child: _buildAddServerButton(context, isDark),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusChip(
+    BuildContext context,
+    AppProvider provider,
+    int connectedCount,
+    bool isDark,
+  ) {
+    // Determine connection mode icon and tooltip
+    final hasWs = provider.hasWebSocketConnection;
+    final hasPolling = provider.hasPollingConnection;
+
+    IconData modeIcon;
+    String modeTooltip;
+    Color modeColor;
+
+    if (hasWs) {
+      modeIcon = Icons.bolt_rounded;
+      modeTooltip = 'WebSocket (Real-time)';
+      modeColor = AppTheme.successGreen;
+    } else if (hasPolling) {
+      modeIcon = Icons.sync_rounded;
+      modeTooltip = 'HTTP Polling';
+      modeColor = AppTheme.warningYellow;
+    } else {
+      modeIcon = Icons.cloud_off_rounded;
+      modeTooltip = 'Disconnected';
+      modeColor = AppTheme.errorRed;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacingMedium),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Tooltip(
+            message: modeTooltip,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? AppTheme.darkCard.withValues(alpha: 0.6)
+                    : AppTheme.lightCard.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isDark
+                      ? AppTheme.darkBorder.withValues(alpha: 0.3)
+                      : AppTheme.lightBorder.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(color: AppTheme.primaryBlue),
-                  const SizedBox(height: 16),
+                  // Connection mode indicator
+                  Icon(
+                    modeIcon,
+                    size: 14,
+                    color: modeColor,
+                  ),
+                  const SizedBox(width: 6),
                   Text(
-                    'Connecting to servers...',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    '${provider.allAgents.length}',
+                    style: TextStyle(
+                      color: AppTheme.primaryBlue,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
                     ),
+                  ),
+                  Text(
+                    ' Agent${provider.allAgents.length != 1 ? 's' : ''}',
+                    style: TextStyle(
+                      color: isDark
+                          ? AppTheme.darkTextSecondary
+                          : AppTheme.lightTextSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: AppTheme.spacingSmall),
+                  StatusIndicator(
+                    isOnline: connectedCount > 0,
+                    size: 8,
                   ),
                 ],
               ),
-            );
-          }
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-          return Column(
-            children: [
-              // Server chips
-              if (provider.servers.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: provider.servers.map((server) {
-                      return ServerChip(
-                        server: server,
-                        onDelete: () => _confirmDeleteServer(context, provider, server),
-                      );
-                    }).toList(),
+  Widget _buildThemeToggle(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    bool isDark,
+  ) {
+    IconData icon;
+    String tooltip;
+    switch (themeProvider.themeMode) {
+      case AppThemeMode.light:
+        icon = Icons.light_mode_rounded;
+        tooltip = 'Light mode';
+      case AppThemeMode.dark:
+        icon = Icons.dark_mode_rounded;
+        tooltip = 'Dark mode';
+      case AppThemeMode.system:
+        icon = Icons.brightness_auto_rounded;
+        tooltip = 'System mode';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Tooltip(
+        message: tooltip,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: themeProvider.cycleTheme,
+                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppTheme.darkCard.withValues(alpha: 0.5)
+                        : AppTheme.lightCard.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                    border: Border.all(
+                      color: isDark
+                          ? AppTheme.darkBorder.withValues(alpha: 0.3)
+                          : AppTheme.lightBorder.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 20,
+                    color: isDark
+                        ? AppTheme.darkTextSecondary
+                        : AppTheme.lightTextSecondary,
                   ),
                 ),
-
-              // Agent grid or empty state
-              Expanded(
-                child: provider.servers.isEmpty
-                    ? EmptyState(
-                        icon: Icons.dns_outlined,
-                        title: 'No Servers Connected',
-                        subtitle: 'Add a NanoLink server to start monitoring your agents',
-                        actionLabel: 'Add Server',
-                        onAction: () => _showAddServerDialog(context),
-                      )
-                    : provider.allAgents.isEmpty
-                        ? const EmptyState(
-                            icon: Icons.computer_outlined,
-                            title: 'No Agents Connected',
-                            subtitle: 'Agents will appear here when they connect to your servers',
-                          )
-                        : _buildAgentGrid(context, provider),
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddServerButton(BuildContext context, bool isDark) {
+    return Tooltip(
+      message: 'Add Server',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _showAddServerDialog(context),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppTheme.primaryBlue.withValues(alpha: 0.2),
+                      AppTheme.primaryBlue.withValues(alpha: 0.1),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                  border: Border.all(
+                    color: AppTheme.primaryBlue.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.add_rounded,
+                  size: 20,
+                  color: AppTheme.primaryBlue,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState(BuildContext context, bool isDark) {
+    final theme = Theme.of(context);
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryBlue.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: AppTheme.primaryBlue,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppTheme.spacingLarge),
+          Text(
+            'Connecting to servers...',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: isDark
+                  ? AppTheme.darkTextSecondary
+                  : AppTheme.lightTextSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServerChips(BuildContext context, AppProvider provider) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacingLarge),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            padding: const EdgeInsets.all(AppTheme.spacingSmall),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? AppTheme.darkCard.withValues(alpha: 0.4)
+                  : AppTheme.lightCard.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+              border: Border.all(
+                color: isDark
+                    ? AppTheme.darkBorder.withValues(alpha: 0.2)
+                    : AppTheme.lightBorder.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Wrap(
+              spacing: AppTheme.spacingSmall,
+              runSpacing: AppTheme.spacingSmall,
+              children: provider.servers.map((server) {
+                return ServerChip(
+                  server: server,
+                  onDelete: () =>
+                      _confirmDeleteServer(context, provider, server),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -208,21 +423,21 @@ class HomeScreen extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = (constraints.maxWidth / 380).floor().clamp(1, 4);
-        
+
         return GridView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppTheme.spacingLarge),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
             childAspectRatio: 1.15,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
+            crossAxisSpacing: AppTheme.spacingLarge,
+            mainAxisSpacing: AppTheme.spacingLarge,
           ),
           itemCount: provider.allAgents.length,
           itemBuilder: (context, index) {
             final agent = provider.allAgents[index];
             final metrics = provider.allMetrics[agent.id];
             final serverName = provider.getServerName(agent.serverId);
-            
+
             return AgentCard(
               agent: agent,
               metrics: metrics,
@@ -235,11 +450,20 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  void _openAgentDetail(BuildContext context, Agent agent, AgentMetrics? metrics) {
+  void _openAgentDetail(
+      BuildContext context, Agent agent, AgentMetrics? metrics) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => AgentDetailScreen(agent: agent),
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            AgentDetailScreen(agent: agent),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 200),
       ),
     );
   }
@@ -257,21 +481,58 @@ class HomeScreen extends StatelessWidget {
     ServerConnection server,
   ) {
     final theme = Theme.of(context);
-    
+    final isDark = theme.brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Remove Server'),
-        content: Text('Are you sure you want to remove "${server.name}"?'),
+        backgroundColor: isDark ? AppTheme.darkSurface : AppTheme.lightSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
+          side: BorderSide(
+            color: isDark
+                ? AppTheme.darkBorder.withValues(alpha: 0.3)
+                : AppTheme.lightBorder,
+          ),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.errorRed.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+              ),
+              child: Icon(
+                Icons.delete_outline_rounded,
+                color: AppTheme.errorRed,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: AppTheme.spacingMedium),
+            const Text('Remove Server'),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to remove "${server.name}"?',
+          style: theme.textTheme.bodyMedium,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: isDark
+                    ? AppTheme.darkTextSecondary
+                    : AppTheme.lightTextSecondary,
+              ),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.errorRed,
+              foregroundColor: Colors.white,
             ),
             onPressed: () {
               provider.removeServer(server.id);

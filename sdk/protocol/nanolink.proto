@@ -383,6 +383,11 @@ enum CommandType {
   SYSTEM_REBOOT = 40;
   // Shell Command (requires SuperToken)
   SHELL_EXECUTE = 50;
+  // Agent Self-Upgrade Operations (requires SYSTEM_ADMIN permission)
+  AGENT_CHECK_UPDATE = 60;    // Check for available updates
+  AGENT_DOWNLOAD_UPDATE = 61; // Download update package
+  AGENT_APPLY_UPDATE = 62;    // Apply update and restart agent
+  AGENT_GET_VERSION = 63;     // Get current agent version info
 }
 
 message CommandResult {
@@ -393,6 +398,20 @@ message CommandResult {
   bytes file_content = 5;  // Used for file download
   repeated ProcessInfo processes = 6;  // Used for PROCESS_LIST
   repeated ContainerInfo containers = 7;  // Used for DOCKER_LIST
+  UpdateInfo update_info = 8;  // Used for AGENT_CHECK_UPDATE/GET_VERSION
+}
+
+// UpdateInfo contains agent version and update information
+message UpdateInfo {
+  string current_version = 1;       // Current agent version
+  string latest_version = 2;        // Latest available version
+  bool update_available = 3;        // Whether an update is available
+  string download_url = 4;          // URL to download the update
+  string changelog = 5;             // Changelog for the update
+  string release_date = 6;          // Release date (ISO 8601)
+  int64 download_size = 7;          // Download size in bytes
+  string checksum = 8;              // SHA256 checksum of the update file
+  string min_version = 9;           // Minimum version required to update
 }
 
 message ProcessInfo {

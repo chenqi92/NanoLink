@@ -23,6 +23,7 @@ impl ServiceExecutor {
             file_content: vec![],
             processes: vec![],
             containers: vec![],
+            update_info: None,
         }
     }
 
@@ -100,6 +101,7 @@ impl ServiceExecutor {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             },
             Err(e) => CommandResult {
                 command_id: String::new(),
@@ -109,6 +111,7 @@ impl ServiceExecutor {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             },
         }
     }
@@ -137,6 +140,7 @@ impl ServiceExecutor {
                         file_content: vec![],
                         processes: vec![],
                         containers: vec![],
+                        update_info: None,
                     },
                     Err(e) => CommandResult {
                         command_id: String::new(),
@@ -146,6 +150,7 @@ impl ServiceExecutor {
                         file_content: vec![],
                         processes: vec![],
                         containers: vec![],
+                        update_info: None,
                     },
                 };
             }
@@ -161,6 +166,7 @@ impl ServiceExecutor {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             },
             Err(e) => CommandResult {
                 command_id: String::new(),
@@ -170,6 +176,7 @@ impl ServiceExecutor {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             },
         }
     }
@@ -201,6 +208,7 @@ impl ServiceExecutor {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             },
             Err(e) => CommandResult {
                 command_id: String::new(),
@@ -210,6 +218,7 @@ impl ServiceExecutor {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             },
         }
     }

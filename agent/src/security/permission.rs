@@ -61,6 +61,12 @@ impl PermissionChecker {
             CommandType::SystemReboot => 3,
             CommandType::ShellExecute => 3,
 
+            // Agent update operations (level 3 - SYSTEM_ADMIN required)
+            CommandType::AgentCheckUpdate => 3,
+            CommandType::AgentDownloadUpdate => 3,
+            CommandType::AgentApplyUpdate => 3,
+            CommandType::AgentGetVersion => 0, // Version info is read-only
+
             // Unknown commands require highest level
             _ => 3,
         }

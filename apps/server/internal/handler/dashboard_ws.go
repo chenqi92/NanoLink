@@ -48,6 +48,7 @@ type dashboardClient struct {
 type DashboardMsgType string
 
 const (
+	MsgTypeWelcome      DashboardMsgType = "welcome"
 	MsgTypeAgents       DashboardMsgType = "agents"
 	MsgTypeMetrics      DashboardMsgType = "metrics"
 	MsgTypeAgentUpdate  DashboardMsgType = "agent_update"
@@ -58,6 +59,17 @@ const (
 	MsgTypePing         DashboardMsgType = "ping"
 	MsgTypePong         DashboardMsgType = "pong"
 )
+
+// ServerVersion is the current server version
+const ServerVersion = "0.3.3"
+
+// WelcomeData contains server information sent on connection
+type WelcomeData struct {
+	Version     string `json:"version"`
+	MinVersion  string `json:"minVersion"`
+	ServerTime  int64  `json:"serverTime"`
+	Features    []string `json:"features"`
+}
 
 // DashboardMessage is the WebSocket message format
 type DashboardMessage struct {
@@ -162,6 +174,18 @@ func (h *DashboardWSHandler) unregisterClient(client *dashboardClient) {
 }
 
 func (h *DashboardWSHandler) sendInitialData(client *dashboardClient) {
+	// Send welcome message with version info
+	h.sendToClient(client, &DashboardMessage{
+		Type:      MsgTypeWelcome,
+		Timestamp: time.Now().UnixMilli(),
+		Data: WelcomeData{
+			Version:    ServerVersion,
+			MinVersion: "0.3.0", // Minimum compatible client version
+			ServerTime: time.Now().UnixMilli(),
+			Features:   []string{"websocket", "metrics", "agents", "commands", "layered_metrics"},
+		},
+	})
+
 	// Send all agents
 	agents := h.agentService.GetAllAgents()
 	h.sendToClient(client, &DashboardMessage{

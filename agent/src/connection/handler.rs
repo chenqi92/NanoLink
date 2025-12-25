@@ -4,7 +4,7 @@ use tracing::{info, warn};
 use crate::buffer::RingBuffer;
 use crate::config::Config;
 use crate::executor::{
-    DockerExecutor, FileExecutor, ProcessExecutor, ServiceExecutor, ShellExecutor,
+    DockerExecutor, FileExecutor, ProcessExecutor, ServiceExecutor, ShellExecutor, UpdateExecutor,
 };
 use crate::proto::{Command, CommandResult, CommandType};
 use crate::security::PermissionChecker;
@@ -22,6 +22,7 @@ pub struct MessageHandler {
     file_executor: FileExecutor,
     docker_executor: DockerExecutor,
     shell_executor: ShellExecutor,
+    update_executor: UpdateExecutor,
 }
 
 impl MessageHandler {
@@ -36,7 +37,8 @@ impl MessageHandler {
             service_executor: ServiceExecutor::new(),
             file_executor: FileExecutor::new(config.clone()),
             docker_executor: DockerExecutor::new(),
-            shell_executor: ShellExecutor::new(config),
+            shell_executor: ShellExecutor::new(config.clone()),
+            update_executor: UpdateExecutor::new(config.update.clone()),
         }
     }
 
@@ -73,6 +75,7 @@ impl MessageHandler {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             };
         }
 
@@ -144,6 +147,16 @@ impl MessageHandler {
                     .await
             }
 
+            // Agent update commands
+            CommandType::AgentCheckUpdate => self.update_executor.check_update().await,
+            CommandType::AgentDownloadUpdate => {
+                self.update_executor.download_update(&command.params).await
+            }
+            CommandType::AgentApplyUpdate => {
+                self.update_executor.apply_update(&command.params).await
+            }
+            CommandType::AgentGetVersion => self.update_executor.get_version().await,
+
             _ => CommandResult {
                 command_id: command.command_id.clone(),
                 success: false,
@@ -152,6 +165,7 @@ impl MessageHandler {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             },
         };
 
@@ -174,6 +188,7 @@ impl MessageHandler {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
                 Err(e) => CommandResult {
                     command_id: String::new(),
@@ -183,6 +198,7 @@ impl MessageHandler {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
             }
         }
@@ -201,6 +217,7 @@ impl MessageHandler {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
                 Err(e) => CommandResult {
                     command_id: String::new(),
@@ -210,6 +227,7 @@ impl MessageHandler {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 },
             }
         }

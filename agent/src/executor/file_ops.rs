@@ -127,6 +127,7 @@ impl FileExecutor {
             file_content: vec![],
             processes: vec![],
             containers: vec![],
+            update_info: None,
         }
     }
 
@@ -169,6 +170,7 @@ impl FileExecutor {
                     file_content: vec![],
                     processes: vec![],
                     containers: vec![],
+                    update_info: None,
                 }
             }
             Err(e) => Self::error_result(format!("Failed to read file: {e}")),
@@ -223,6 +225,7 @@ impl FileExecutor {
                 file_content: content,
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             },
             Err(e) => Self::error_result(format!("Failed to read file: {e}")),
         }
@@ -284,6 +287,7 @@ impl FileExecutor {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             },
             Err(e) => Self::error_result(format!("Failed to write file: {e}")),
         }
@@ -316,6 +320,7 @@ impl FileExecutor {
                 file_content: vec![],
                 processes: vec![],
                 containers: vec![],
+                update_info: None,
             },
             Err(e) => Self::error_result(format!("Failed to truncate file: {e}")),
         }

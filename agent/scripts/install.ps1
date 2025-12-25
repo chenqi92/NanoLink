@@ -109,7 +109,10 @@ $Script:EnMsgs = @{
     "cancelled"           = "Installation cancelled"
     "keeping_config"      = "Keeping existing configuration"
     "update_success"      = "Agent updated successfully!"
-    
+    "update_config_choice" = "Do you want to update server configuration?"
+    "skip_config"         = "Skip (keep existing configuration)"
+    "update_config"       = "Update server configuration"
+
     # Server config
     "server_config"       = "Server Configuration"
     "server_url_prompt"   = "Server address (e.g., monitor.example.com:39100)"
@@ -250,7 +253,10 @@ $Script:ZhMsgs = @{
     "cancelled"           = "安装已取消"
     "keeping_config"      = "保留现有配置"
     "update_success"      = "Agent 更新成功！"
-    
+    "update_config_choice" = "是否更新服务器配置？"
+    "skip_config"         = "跳过（保留现有配置）"
+    "update_config"       = "更新服务器配置"
+
     # Server config
     "server_config"       = "服务器配置"
     "server_url_prompt"   = "服务器地址（例如：monitor.example.com:39100）"
@@ -663,6 +669,20 @@ function Test-ExistingAgent {
         0 {
             # Update
             $Script:UpdateMode = $true
+            $Script:SkipConfig = $true
+
+            # Ask if user wants to update server config
+            Write-Host ""
+            $configOptions = @(
+                (Get-Msg "skip_config"),
+                (Get-Msg "update_config")
+            )
+            $configAction = Read-Choice -Prompt (Get-Msg "update_config_choice") -Options $configOptions
+
+            if ($configAction -eq 1) {
+                $Script:SkipConfig = $false
+            }
+
             if ($service -and $service.Status -eq "Running") {
                 Write-Info "Stopping agent service before update..."
                 Stop-Service -Name $Script:ServiceName -Force -ErrorAction SilentlyContinue
@@ -1438,17 +1458,26 @@ function Main {
         Write-Banner
     }
 
-    Write-Info "Detected: Windows $([Environment]::OSVersion.Version) ($([Environment]::Is64BitOperatingSystem ? 'x64' : 'x86'))"
+    $arch = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
+    Write-Info "Detected: Windows $([Environment]::OSVersion.Version) ($arch)"
 
     # Check for existing installation (only in interactive mode)
     $Script:UpdateMode = $false
+    $Script:SkipConfig = $true  # Default to skip config on update
     if (-not $Silent) {
         Test-ExistingAgent | Out-Null
     }
 
-    # Interactive configuration (skip if updating)
-    if (-not $Silent -and -not $Script:UpdateMode) {
-        Get-InteractiveConfig
+    # Interactive configuration (skip if updating with SkipConfig=true)
+    if (-not $Silent) {
+        if (-not $Script:UpdateMode) {
+            # Fresh install - always configure
+            Get-InteractiveConfig
+        }
+        elseif (-not $Script:SkipConfig) {
+            # Update mode but user chose to update config
+            Get-InteractiveConfig
+        }
     }
 
     # Installation steps
@@ -1457,12 +1486,18 @@ function Main {
     New-Directories
     Get-Binary
     
-    # Only generate config if not updating (preserve existing config)
+    # Generate config based on mode
     if (-not $Script:UpdateMode) {
+        # Fresh install - always generate config
+        New-Configuration
+    }
+    elseif (-not $Script:SkipConfig) {
+        # Update mode but user chose to update config
         New-Configuration
     }
     else {
-        Write-Info "Keeping existing configuration"
+        # Update mode with skip config - keep existing
+        Write-Info (Get-Msg "keeping_config")
     }
     
     Install-Service

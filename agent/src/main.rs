@@ -203,7 +203,7 @@ fn print_no_config_help() {
     eprintln!();
     eprintln!("Searched locations:");
     for path in CONFIG_SEARCH_PATHS {
-        eprintln!("  - {}", path);
+        eprintln!("  - {path}");
     }
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
@@ -379,7 +379,7 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                             );
                         }
                         Err(e) => {
-                            println!("  Error loading config: {}", e);
+                            println!("  Error loading config: {e}");
                         }
                     }
                 }

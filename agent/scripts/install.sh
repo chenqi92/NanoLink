@@ -90,6 +90,9 @@ msg() {
         ["cancelled"]="Installation cancelled"
         ["keeping_config"]="Keeping existing configuration"
         ["update_success"]="Agent updated successfully!"
+        ["update_config_choice"]="Do you want to update server configuration?"
+        ["skip_config"]="Skip (keep existing configuration)"
+        ["update_config"]="Update server configuration"
         
         # Server config
         ["server_config"]="Server Configuration"
@@ -325,7 +328,10 @@ msg() {
         ["cancelled"]="安装已取消"
         ["keeping_config"]="保留现有配置"
         ["update_success"]="Agent 更新成功！"
-        
+        ["update_config_choice"]="是否更新服务器配置？"
+        ["skip_config"]="跳过（保留现有配置）"
+        ["update_config"]="更新服务器配置"
+
         # Server config
         ["server_config"]="服务器配置"
         ["server_url_prompt"]="服务器地址（例如：monitor.example.com:39100）"
@@ -924,6 +930,18 @@ check_existing_agent() {
                 ;;
             1)  # Update
                 UPDATE_MODE=true
+                SKIP_CONFIG=true
+
+                # Ask if user wants to update server config
+                echo ""
+                local config_action=$(prompt_choice "$(msg update_config_choice)" \
+                    "$(msg skip_config)" \
+                    "$(msg update_config)")
+
+                if [ "$config_action" = "1" ]; then
+                    SKIP_CONFIG=false
+                fi
+
                 if [ "$service_running" = "true" ]; then
                     info "$(msg stopping_service)"
                     if [ "$OS" = "linux" ]; then
@@ -2047,14 +2065,21 @@ main() {
 
     # Check for existing installation (only in interactive mode)
     UPDATE_MODE=false
+    SKIP_CONFIG=true  # Default to skip config on update
     if [ "$SILENT_MODE" = "false" ]; then
         check_interactive
         check_existing_agent
     fi
 
-    # Interactive configuration (skip if updating)
-    if [ "$SILENT_MODE" = "false" ] && [ "$UPDATE_MODE" = "false" ]; then
-        interactive_config
+    # Interactive configuration (skip if updating with SKIP_CONFIG=true)
+    if [ "$SILENT_MODE" = "false" ]; then
+        if [ "$UPDATE_MODE" = "false" ]; then
+            # Fresh install - always configure
+            interactive_config
+        elif [ "$SKIP_CONFIG" = "false" ]; then
+            # Update mode but user chose to update config
+            interactive_config
+        fi
     fi
 
     # Installation steps
@@ -2062,11 +2087,16 @@ main() {
     install_binary
     create_directories
     
-    # Only generate config if not updating (preserve existing config)
+    # Generate config based on mode
     if [ "$UPDATE_MODE" = "false" ]; then
+        # Fresh install - always generate config
+        generate_config
+    elif [ "$SKIP_CONFIG" = "false" ]; then
+        # Update mode but user chose to update config
         generate_config
     else
-        info "Keeping existing configuration"
+        # Update mode with skip config - keep existing
+        info "$(msg keeping_config)"
     fi
 
     # Install service based on init system

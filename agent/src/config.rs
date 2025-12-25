@@ -2,8 +2,15 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// Current config version for migration support
+pub const CONFIG_VERSION: u32 = 2;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// Config file version for migration support
+    #[serde(default = "default_config_version")]
+    pub config_version: u32,
+
     /// Agent settings
     #[serde(default)]
     pub agent: AgentConfig,
@@ -34,6 +41,62 @@ pub struct Config {
     /// Security settings
     #[serde(default)]
     pub security: SecurityConfig,
+
+    /// Update settings
+    #[serde(default)]
+    pub update: UpdateConfig,
+}
+
+fn default_config_version() -> u32 {
+    1 // Default to version 1 for old configs without version field
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateConfig {
+    /// Enable automatic update check
+    #[serde(default)]
+    pub auto_check: bool,
+
+    /// Update check interval in hours (default: 24)
+    #[serde(default = "default_update_check_interval")]
+    pub check_interval_hours: u64,
+
+    /// GitHub repository for updates (default: chenqi92/NanoLink)
+    #[serde(default = "default_update_repo")]
+    pub repo: String,
+
+    /// Allow automatic download of updates
+    #[serde(default)]
+    pub auto_download: bool,
+
+    /// Allow automatic application of updates (requires auto_download)
+    #[serde(default)]
+    pub auto_apply: bool,
+
+    /// Pre-release updates allowed
+    #[serde(default)]
+    pub allow_prerelease: bool,
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            auto_check: false,
+            check_interval_hours: default_update_check_interval(),
+            repo: default_update_repo(),
+            auto_download: false,
+            auto_apply: false,
+            allow_prerelease: false,
+        }
+    }
+}
+
+fn default_update_check_interval() -> u64 {
+    24
+}
+
+fn default_update_repo() -> String {
+    "chenqi92/NanoLink".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -514,6 +577,15 @@ impl Config {
             serde_yaml::from_str(&content)?
         };
 
+        // Migrate config if needed
+        if config.config_version < CONFIG_VERSION {
+            config = config.migrate()?;
+            // Optionally save migrated config
+            if let Err(e) = config.save(path) {
+                eprintln!("Warning: Failed to save migrated config: {e}");
+            }
+        }
+
         // Auto-disable Management API if enabled but api_token is not set
         // This ensures backward compatibility with old configs
         if config.management.enabled && config.management.api_token.is_none() {
@@ -529,10 +601,53 @@ impl Config {
         Ok(config)
     }
 
+    /// Migrate config from older versions
+    fn migrate(mut self) -> Result<Self> {
+        let original_version = self.config_version;
+
+        // Migration from v1 to v2: Add update config section
+        if self.config_version == 1 {
+            eprintln!("Migrating config from v1 to v2...");
+            self.update = UpdateConfig::default();
+            self.config_version = 2;
+        }
+
+        // Add future migrations here:
+        // if self.config_version == 2 {
+        //     // migrate v2 -> v3
+        //     self.config_version = 3;
+        // }
+
+        if original_version != self.config_version {
+            eprintln!(
+                "Config migrated from v{} to v{}",
+                original_version, self.config_version
+            );
+        }
+
+        Ok(self)
+    }
+
+    /// Save configuration to file
+    pub fn save(&self, path: &Path) -> Result<()> {
+        let content = if path.extension().is_some_and(|e| e == "toml") {
+            toml::to_string_pretty(self)?
+        } else {
+            serde_yaml::to_string(self)?
+        };
+
+        std::fs::write(path, content)
+            .with_context(|| format!("Failed to write config file: {path:?}"))?;
+
+        Ok(())
+    }
+
     /// Generate a sample configuration
     pub fn sample() -> Self {
         Self {
+            config_version: CONFIG_VERSION,
             agent: AgentConfig::default(),
+            update: UpdateConfig::default(),
             servers: vec![ServerConfig {
                 host: "localhost".to_string(),
                 port: DEFAULT_GRPC_PORT,
