@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 
@@ -57,17 +56,14 @@ func (s *NanoLinkServicer) Authenticate(ctx context.Context, req *pb.AuthRequest
 		}
 
 		// Create agent connection
-		agentID := uuid.New().String()
-		agent := &AgentConnection{
-			AgentID:         agentID,
-			Hostname:        req.Hostname,
-			OS:              req.Os,
-			Arch:            req.Arch,
-			Version:         req.AgentVersion,
-			PermissionLevel: result.PermissionLevel,
-			ConnectedAt:     time.Now(),
-			LastHeartbeat:   time.Now(),
-		}
+		agent := NewAgentConnectionFromGRPC(
+			req.Hostname,
+			req.Os,
+			req.Arch,
+			req.AgentVersion,
+			result.PermissionLevel,
+		)
+		agentID := agent.AgentID
 
 		s.server.registerAgent(agent)
 		log.Printf("Agent authenticated: %s (%s) with permission level %d",
@@ -151,7 +147,6 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 					log.Printf("Replacing stale agent for hostname: %s", hostname)
 				}
 
-				agentID = uuid.New().String()
 				osName := ""
 				arch := ""
 				if protoMetrics.SystemInfo != nil {
@@ -161,16 +156,8 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 					arch = protoMetrics.Cpu.Architecture
 				}
 
-				agent = &AgentConnection{
-					AgentID:         agentID,
-					Hostname:        hostname,
-					OS:              osName,
-					Arch:            arch,
-					Version:         "0.2.0",
-					PermissionLevel: PermissionReadOnly, // Default to READ_ONLY for unauthenticated streams
-					ConnectedAt:     time.Now(),
-					LastHeartbeat:   time.Now(),
-				}
+				agent = NewAgentConnectionFromGRPC(hostname, osName, arch, "0.2.0", PermissionReadOnly)
+				agentID = agent.AgentID
 				log.Printf("WARNING: Agent %s registered via stream without authentication - using READ_ONLY permission", hostname)
 				s.server.registerAgent(agent)
 				s.mu.Lock()
@@ -220,22 +207,19 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 						s.server.unregisterAgent(existing)
 					}
 
-					agentID = uuid.New().String()
 					arch := ""
 					if protoStatic.Cpu != nil {
 						arch = protoStatic.Cpu.Architecture
 					}
 
-					agent = &AgentConnection{
-						AgentID:         agentID,
-						Hostname:        hostname,
-						OS:              protoStatic.SystemInfo.OsName,
-						Arch:            arch,
-						Version:         getVersionOrDefault(protoStatic.AgentVersion),
-						PermissionLevel: PermissionReadOnly, // Default to READ_ONLY for unauthenticated streams
-						ConnectedAt:     time.Now(),
-						LastHeartbeat:   time.Now(),
-					}
+					agent = NewAgentConnectionFromGRPC(
+						hostname,
+						protoStatic.SystemInfo.OsName,
+						arch,
+						getVersionOrDefault(protoStatic.AgentVersion),
+						PermissionReadOnly,
+					)
+					agentID = agent.AgentID
 					log.Printf("WARNING: Agent %s registered via static info without authentication - using READ_ONLY permission", hostname)
 					s.server.registerAgent(agent)
 					s.mu.Lock()

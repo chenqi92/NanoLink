@@ -1,22 +1,17 @@
 """
 NanoLink Server implementation for Python SDK
+
+This module provides a gRPC server for receiving metrics from NanoLink agents.
+WebSocket/HTTP API should be implemented separately based on your application needs.
 """
 
 import asyncio
-import json
 import logging
-import ssl
-import uuid
 import threading
 from concurrent import futures
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Callable, Dict, Optional, Awaitable, Union
-
-import websockets
-from websockets.server import WebSocketServerProtocol, serve
-from aiohttp import web
+from typing import Callable, Dict, Optional, Awaitable
 
 try:
     import grpc
@@ -41,40 +36,37 @@ logger = logging.getLogger(__name__)
 
 # Default ports
 DEFAULT_GRPC_PORT = 39100
-DEFAULT_WS_PORT = 9100
 
 
 @dataclass
 class ServerConfig:
     """
     Server configuration
-    
+
     Attributes:
-        ws_port: WebSocket/HTTP port for agent connections and API (default: 9100)
-                 - WebSocket endpoint /ws for agent connections (protobuf)
-                 - HTTP API endpoints (/api/agents, /api/health)
         grpc_port: gRPC port for agent connections (default: 39100)
         host: Host to bind to
-        tls_cert_path: Path to TLS certificate
-        tls_key_path: Path to TLS key
-        static_files_path: Optional path to static files
+        tls_cert_path: Path to TLS certificate (for gRPC TLS)
+        tls_key_path: Path to TLS key (for gRPC TLS)
         token_validator: Token validation function
     """
-    ws_port: int = DEFAULT_WS_PORT
     grpc_port: int = DEFAULT_GRPC_PORT
     host: str = "0.0.0.0"
     tls_cert_path: Optional[str] = None
     tls_key_path: Optional[str] = None
-    static_files_path: Optional[str] = None
     token_validator: TokenValidator = default_token_validator
 
 
 class NanoLinkServer:
     """
-    NanoLink Server - receives metrics from agents and provides management interface
+    NanoLink Server - receives metrics from agents via gRPC
+
+    This server only handles gRPC connections from agents.
+    For WebSocket/HTTP API functionality, implement your own server using
+    the callbacks and agent data provided by this class.
 
     Example usage:
-        server = NanoLinkServer(ServerConfig(port=9100))
+        server = NanoLinkServer(ServerConfig(grpc_port=39100))
 
         @server.on_agent_connect
         async def handle_connect(agent: AgentConnection):
@@ -90,11 +82,8 @@ class NanoLinkServer:
     def __init__(self, config: Optional[ServerConfig] = None):
         self.config = config or ServerConfig()
         self._agents: Dict[str, AgentConnection] = {}
-        self._websocket_server = None
         self._grpc_server = None
         self._grpc_servicer = None
-        self._http_app = None
-        self._http_runner = None
 
         # Callbacks
         self._on_agent_connect: Optional[Callable[[AgentConnection], Awaitable[None]]] = None
@@ -151,36 +140,12 @@ class NanoLinkServer:
         return None
 
     async def start(self) -> None:
-        """Start the server (WebSocket for agents + gRPC for agents + HTTP API)"""
-        # Setup SSL if configured
-        ssl_context = None
-        if self.config.tls_cert_path and self.config.tls_key_path:
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            ssl_context.load_cert_chain(
-                self.config.tls_cert_path,
-                self.config.tls_key_path,
-            )
-            logger.info("TLS enabled")
+        """Start the gRPC server for agent connections"""
+        if not GRPC_AVAILABLE:
+            raise RuntimeError("gRPC is not available. Install grpcio and grpcio-tools.")
 
-        # Start WebSocket server for agent connections (protobuf protocol)
-        self._websocket_server = await serve(
-            self._handle_websocket,
-            self.config.host,
-            self.config.ws_port,
-            ssl=ssl_context,
-        )
-
-        logger.info(f"NanoLink Server started on port {self.config.ws_port} (WebSocket for Agent + HTTP API)")
-
-        # Start gRPC server for agent connections
-        if GRPC_AVAILABLE:
-            self._start_grpc_server()
-            logger.info(f"gRPC Server started on port {self.config.grpc_port} (Agent connections)")
-        else:
-            logger.warning("gRPC not available. Install grpcio to enable agent connections via gRPC.")
-
-        if self.config.static_files_path:
-            logger.info(f"Dashboard available at http://localhost:{self.config.ws_port}/")
+        self._start_grpc_server()
+        logger.info(f"NanoLink gRPC Server started on port {self.config.grpc_port}")
 
     def _start_grpc_server(self) -> None:
         """Start the gRPC server in a background thread"""
@@ -262,7 +227,7 @@ class NanoLinkServer:
         """Stop the server"""
         logger.info("Stopping NanoLink Server...")
 
-        # Stop gRPC server first
+        # Stop gRPC server
         if self._grpc_server:
             self._grpc_server.stop(grace=5)
             logger.info("gRPC server stopped")
@@ -271,11 +236,6 @@ class NanoLinkServer:
         for agent in list(self._agents.values()):
             await agent.close()
         self._agents.clear()
-
-        # Stop WebSocket server
-        if self._websocket_server:
-            self._websocket_server.close()
-            await self._websocket_server.wait_closed()
 
         logger.info("NanoLink Server stopped")
 
@@ -286,158 +246,6 @@ class NanoLinkServer:
             await asyncio.Future()  # Run forever
         except asyncio.CancelledError:
             await self.stop()
-
-    @property
-    def grpc_agents(self) -> Dict[str, AgentConnection]:
-        """Get agents connected via gRPC"""
-        if self._grpc_servicer:
-            return self._grpc_servicer.agents
-        return {}
-
-
-    async def _handle_websocket(self, websocket: WebSocketServerProtocol) -> None:
-        """Handle incoming WebSocket connection from agent"""
-        agent: Optional[AgentConnection] = None
-
-        try:
-            # Wait for authentication message
-            auth_message = await asyncio.wait_for(websocket.recv(), timeout=10.0)
-            auth_data = json.loads(auth_message)
-
-            if auth_data.get("type") != "auth":
-                await websocket.close(1008, "Expected auth message")
-                return
-
-            payload = auth_data.get("payload", {})
-            token = payload.get("token", "")
-
-            # Validate token
-            validation = self.config.token_validator(token)
-            if not validation.valid:
-                response = {
-                    "type": "auth_response",
-                    "payload": {
-                        "success": False,
-                        "errorMessage": validation.error_message or "Invalid token",
-                    },
-                }
-                await websocket.send(json.dumps(response))
-                await websocket.close(1008, "Authentication failed")
-                return
-
-            # Create agent connection
-            agent_id = str(uuid.uuid4())
-            agent = AgentConnection(
-                agent_id=agent_id,
-                hostname=payload.get("hostname", "unknown"),
-                os=payload.get("os", ""),
-                arch=payload.get("arch", ""),
-                version=payload.get("agentVersion", ""),
-                permission_level=validation.permission_level,
-                connected_at=datetime.now(),
-                last_heartbeat=datetime.now(),
-                _websocket=websocket,
-            )
-
-            # Send auth response
-            response = {
-                "type": "auth_response",
-                "payload": {
-                    "success": True,
-                    "permissionLevel": validation.permission_level,
-                },
-            }
-            await websocket.send(json.dumps(response))
-
-            # Register agent
-            self._agents[agent_id] = agent
-            logger.info(f"Agent registered: {agent.hostname} ({agent_id})")
-
-            # Notify callback
-            if self._on_agent_connect:
-                try:
-                    await self._on_agent_connect(agent)
-                except Exception as e:
-                    logger.error(f"Error in on_agent_connect callback: {e}")
-
-            # Handle messages
-            async for message in websocket:
-                try:
-                    data = json.loads(message)
-                    await self._handle_message(agent, data)
-                except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON from agent {agent.hostname}")
-                except Exception as e:
-                    logger.error(f"Error handling message from {agent.hostname}: {e}")
-
-        except asyncio.TimeoutError:
-            logger.warning("Authentication timeout")
-            await websocket.close(1008, "Authentication timeout")
-        except websockets.ConnectionClosed:
-            pass
-        except Exception as e:
-            logger.error(f"WebSocket error: {e}")
-        finally:
-            if agent:
-                # Unregister agent
-                self._agents.pop(agent.agent_id, None)
-                logger.info(f"Agent unregistered: {agent.hostname} ({agent.agent_id})")
-
-                # Notify callback
-                if self._on_agent_disconnect:
-                    try:
-                        await self._on_agent_disconnect(agent)
-                    except Exception as e:
-                        logger.error(f"Error in on_agent_disconnect callback: {e}")
-
-    async def _handle_message(self, agent: AgentConnection, data: dict) -> None:
-        """Handle incoming message from agent"""
-        message_type = data.get("type")
-
-        if message_type == "metrics":
-            metrics = Metrics.from_dict(data.get("payload", {}))
-            metrics.hostname = agent.hostname
-            if self._on_metrics:
-                try:
-                    await self._on_metrics(metrics)
-                except Exception as e:
-                    logger.error(f"Error in on_metrics callback: {e}")
-
-        elif message_type == "realtime":
-            realtime = RealtimeMetrics.from_dict(data.get("payload", {}))
-            realtime.hostname = agent.hostname
-            if self._on_realtime_metrics:
-                try:
-                    await self._on_realtime_metrics(realtime)
-                except Exception as e:
-                    logger.error(f"Error in on_realtime_metrics callback: {e}")
-
-        elif message_type == "static_info":
-            static_info = StaticInfo.from_dict(data.get("payload", {}))
-            static_info.hostname = agent.hostname
-            if self._on_static_info:
-                try:
-                    await self._on_static_info(static_info)
-                except Exception as e:
-                    logger.error(f"Error in on_static_info callback: {e}")
-
-        elif message_type == "periodic":
-            periodic = PeriodicData.from_dict(data.get("payload", {}))
-            periodic.hostname = agent.hostname
-            if self._on_periodic_data:
-                try:
-                    await self._on_periodic_data(periodic)
-                except Exception as e:
-                    logger.error(f"Error in on_periodic_data callback: {e}")
-
-        elif message_type == "heartbeat":
-            agent.last_heartbeat = datetime.now()
-
-        elif message_type == "command_result":
-            agent._handle_command_result(data.get("payload", {}))
-
-        else:
-            logger.debug(f"Unknown message type: {message_type}")
 
     def request_data(
         self,
@@ -484,7 +292,6 @@ class NanoLinkServer:
 
 # Convenience function for simple usage
 async def create_server(
-    ws_port: int = DEFAULT_WS_PORT,
     grpc_port: int = DEFAULT_GRPC_PORT,
     on_metrics: Optional[Callable[[Metrics], Awaitable[None]]] = None,
     on_realtime_metrics: Optional[Callable[[RealtimeMetrics], Awaitable[None]]] = None,
@@ -495,10 +302,9 @@ async def create_server(
     token_validator: Optional[TokenValidator] = None,
 ) -> NanoLinkServer:
     """
-    Create and start a NanoLink server with simple configuration
+    Create and start a NanoLink gRPC server with simple configuration
 
     Args:
-        ws_port: WebSocket/HTTP port for agent connections and API (default: 9100)
         grpc_port: gRPC port for agent connections (default: 39100)
         on_metrics: Callback for full metrics
         on_realtime_metrics: Callback for realtime metrics (CPU, memory usage)
@@ -511,7 +317,7 @@ async def create_server(
     Returns:
         Running NanoLinkServer instance
     """
-    config = ServerConfig(ws_port=ws_port, grpc_port=grpc_port)
+    config = ServerConfig(grpc_port=grpc_port)
     if token_validator:
         config.token_validator = token_validator
 

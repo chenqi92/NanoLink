@@ -26,15 +26,25 @@ use crate::config::Config;
 use crate::connection::ConnectionManager;
 use crate::management::ManagementServer;
 
+/// Default config file search paths (in order of priority)
+const CONFIG_SEARCH_PATHS: &[&str] = &[
+    "nanolink.yaml",
+    "nanolink.toml",
+    "/etc/nanolink/nanolink.yaml",
+    "/etc/nanolink/nanolink.toml",
+    "/etc/nanolink.yaml",
+    "/etc/nanolink.toml",
+];
+
 #[derive(Parser, Debug)]
 #[command(name = "nanolink-agent")]
 #[command(author = "NanoLink Team")]
 #[command(version = "0.3.1")]
 #[command(about = "Lightweight server monitoring agent", long_about = None)]
 struct Args {
-    /// Path to configuration file
-    #[arg(short, long, default_value = "nanolink.yaml", global = true)]
-    config: PathBuf,
+    /// Path to configuration file (auto-detected if not specified)
+    #[arg(short, long, global = true)]
+    config: Option<PathBuf>,
 
     /// Log level (trace, debug, info, warn, error)
     #[arg(short, long, default_value = "info", global = true)]
@@ -65,6 +75,17 @@ enum Commands {
         #[command(subcommand)]
         action: ServiceAction,
     },
+    /// Initialize a new configuration file
+    Init {
+        /// Output path for config file (default: ./nanolink.yaml)
+        #[arg(short, long, default_value = "nanolink.yaml")]
+        output: PathBuf,
+        /// Use TOML format instead of YAML
+        #[arg(long)]
+        toml: bool,
+    },
+    /// Show agent status and configuration
+    Status,
 }
 
 /// Windows Service actions
@@ -142,6 +163,67 @@ enum ServerAction {
     },
 }
 
+/// Find configuration file from search paths
+fn find_config() -> Option<PathBuf> {
+    // First, check paths relative to current directory
+    for path in CONFIG_SEARCH_PATHS {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    // Check paths relative to executable directory
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            for name in &["nanolink.yaml", "nanolink.toml"] {
+                let p = exe_dir.join(name);
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Get config path from args or auto-detect
+fn get_config_path(args: &Args) -> Option<PathBuf> {
+    if let Some(ref path) = args.config {
+        Some(path.clone())
+    } else {
+        find_config()
+    }
+}
+
+/// Print help message when no config is found
+fn print_no_config_help() {
+    eprintln!("Error: No configuration file found.");
+    eprintln!();
+    eprintln!("Searched locations:");
+    for path in CONFIG_SEARCH_PATHS {
+        eprintln!("  - {}", path);
+    }
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            eprintln!("  - {}/nanolink.yaml", exe_dir.display());
+            eprintln!("  - {}/nanolink.toml", exe_dir.display());
+        }
+    }
+    eprintln!();
+    eprintln!("Quick start:");
+    eprintln!("  1. Initialize a new config:  nanolink-agent init");
+    eprintln!(
+        "  2. Add a server:             nanolink-agent server add --host <HOST> --token <TOKEN>"
+    );
+    eprintln!("  3. Run the agent:            nanolink-agent");
+    eprintln!();
+    eprintln!("Or specify a config file:      nanolink-agent -c /path/to/config.yaml");
+    eprintln!();
+    eprintln!("Generate sample config:        nanolink-agent --generate-config > nanolink.yaml");
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -174,15 +256,23 @@ async fn main() -> Result<()> {
     }
 
     // Handle subcommands
-    if let Some(command) = args.command {
-        return handle_command(command, &args.config).await;
+    if let Some(ref command) = args.command {
+        return handle_command(command, &args).await;
     }
 
-    // Run the agent
-    run_agent(args.config).await
+    // Run the agent - requires config file
+    let config_path = match get_config_path(&args) {
+        Some(path) => path,
+        None => {
+            print_no_config_help();
+            std::process::exit(1);
+        }
+    };
+
+    run_agent(config_path).await
 }
 
-async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> {
+async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
     use crate::config::ServerConfig;
 
     match command {
@@ -195,7 +285,8 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
 
             match action {
                 ServiceAction::Install => {
-                    install_service(Some(config_path.clone())).map_err(|e| anyhow::anyhow!(e))?;
+                    let config_path = get_config_path(args);
+                    install_service(config_path).map_err(|e| anyhow::anyhow!(e))?;
                 }
                 ServiceAction::Uninstall => {
                     uninstall_service().map_err(|e| anyhow::anyhow!(e))?;
@@ -211,14 +302,106 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                     println!("{status}");
                 }
                 ServiceAction::Run => {
-                    // This is called by the Windows Service Control Manager
                     run_as_service().map_err(|e| anyhow::anyhow!(e))?;
                 }
             }
             return Ok(());
         }
+
+        Commands::Init { output, toml } => {
+            let sample_config = Config::sample();
+            let content = if *toml {
+                toml::to_string_pretty(&sample_config)?
+            } else {
+                serde_yaml::to_string(&sample_config)?
+            };
+
+            if output.exists() {
+                anyhow::bail!(
+                    "Config file already exists: {}. Use --output to specify a different path.",
+                    output.display()
+                );
+            }
+
+            std::fs::write(output, &content)?;
+            println!("Configuration file created: {}", output.display());
+            println!();
+            println!("Next steps:");
+            println!("  1. Add a server: nanolink-agent server add --host <HOST> --token <TOKEN>");
+            println!("  2. Run agent:    nanolink-agent");
+            return Ok(());
+        }
+
+        Commands::Status => {
+            println!("NanoLink Agent v{}", env!("CARGO_PKG_VERSION"));
+            println!();
+
+            match get_config_path(args) {
+                Some(config_path) => {
+                    println!("Config file: {}", config_path.display());
+
+                    match Config::load(&config_path) {
+                        Ok(config) => {
+                            println!();
+                            println!("Configured servers:");
+                            if config.servers.is_empty() {
+                                println!("  (none)");
+                            } else {
+                                for (i, server) in config.servers.iter().enumerate() {
+                                    println!("  {}. {}:{}", i + 1, server.host, server.port);
+                                    println!(
+                                        "     Permission: {} ({})",
+                                        server.permission,
+                                        permission_name(server.permission)
+                                    );
+                                    println!(
+                                        "     TLS: {}, Verify: {}",
+                                        server.tls_enabled, server.tls_verify
+                                    );
+                                }
+                            }
+
+                            println!();
+                            println!("Settings:");
+                            println!(
+                                "  Realtime interval: {}ms",
+                                config.collector.realtime_interval_ms
+                            );
+                            println!("  Buffer capacity: {}", config.buffer.capacity);
+                            println!(
+                                "  Management API: {} (port {})",
+                                if config.management.enabled {
+                                    "enabled"
+                                } else {
+                                    "disabled"
+                                },
+                                config.management.port
+                            );
+                        }
+                        Err(e) => {
+                            println!("  Error loading config: {}", e);
+                        }
+                    }
+                }
+                None => {
+                    println!("Config file: (not found)");
+                    println!();
+                    print_no_config_help();
+                }
+            }
+            return Ok(());
+        }
+
         Commands::Server { action } => {
-            let mut config = Config::load(config_path)?;
+            let config_path = match get_config_path(args) {
+                Some(path) => path,
+                None => {
+                    print_no_config_help();
+                    std::process::exit(1);
+                }
+            };
+
+            let mut config = Config::load(&config_path)?;
 
             match action {
                 ServerAction::Add {
@@ -229,11 +412,10 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                     tls_enabled,
                     tls_verify,
                 } => {
-                    // Check if server already exists
                     if config
                         .servers
                         .iter()
-                        .any(|s| s.host == host && s.port == port)
+                        .any(|s| s.host == *host && s.port == *port)
                     {
                         anyhow::bail!(
                             "Server {host}:{port} already exists. Use 'server update' to modify."
@@ -242,22 +424,24 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
 
                     config.servers.push(ServerConfig {
                         host: host.clone(),
-                        port,
-                        token,
-                        permission,
-                        tls_enabled,
-                        tls_verify,
+                        port: *port,
+                        token: token.clone(),
+                        permission: *permission,
+                        tls_enabled: *tls_enabled,
+                        tls_verify: *tls_verify,
                     });
 
-                    save_config(&config, config_path)?;
+                    save_config(&config, &config_path)?;
                     println!("Server {host}:{port} added successfully.");
-                    println!("Restart the agent to apply changes, or use the management API for hot-reload.");
+                    println!(
+                        "Restart the agent to apply changes, or use the management API for hot-reload."
+                    );
                 }
                 ServerAction::Remove { host, port } => {
                     let original_len = config.servers.len();
                     config
                         .servers
-                        .retain(|s| !(s.host == host && s.port == port));
+                        .retain(|s| !(s.host == *host && s.port == *port));
 
                     if config.servers.len() == original_len {
                         anyhow::bail!("Server {host}:{port} not found.");
@@ -267,7 +451,7 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                         anyhow::bail!("Cannot remove the last server.");
                     }
 
-                    save_config(&config, config_path)?;
+                    save_config(&config, &config_path)?;
                     println!("Server {host}:{port} removed successfully.");
                     println!("Restart the agent to apply changes.");
                 }
@@ -297,24 +481,24 @@ async fn handle_command(command: Commands, config_path: &PathBuf) -> Result<()> 
                     let server = config
                         .servers
                         .iter_mut()
-                        .find(|s| s.host == host && s.port == port);
+                        .find(|s| s.host == *host && s.port == *port);
 
                     match server {
                         Some(s) => {
                             if let Some(t) = token {
-                                s.token = t;
+                                s.token = t.clone();
                             }
                             if let Some(p) = permission {
-                                s.permission = p;
+                                s.permission = *p;
                             }
                             if let Some(te) = tls_enabled {
-                                s.tls_enabled = te;
+                                s.tls_enabled = *te;
                             }
                             if let Some(tv) = tls_verify {
-                                s.tls_verify = tv;
+                                s.tls_verify = *tv;
                             }
 
-                            save_config(&config, config_path)?;
+                            save_config(&config, &config_path)?;
                             println!("Server {host}:{port} updated successfully.");
                             println!("Restart the agent to apply changes.");
                         }

@@ -1,15 +1,11 @@
 package nanolink
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
-	"net/http"
 	"sync"
-	"time"
 
-	"github.com/gorilla/websocket"
 	"google.golang.org/grpc"
 
 	pb "github.com/chenqi92/NanoLink/sdk/go/nanolink/proto"
@@ -18,17 +14,14 @@ import (
 // Default ports
 const (
 	DefaultGrpcPort = 39100
-	DefaultWsPort   = 9100
 )
 
 // Server configuration
 type Config struct {
-	WsPort          int // WebSocket/HTTP port for agent connections and API (default: 9100)
-	GrpcPort        int // gRPC port for agents (default: 39100)
-	TLSCert         string
-	TLSKey          string
-	StaticFilesPath string // Optional path to dashboard static files
-	TokenValidator  TokenValidator
+	GrpcPort       int // gRPC port for agents (default: 39100)
+	TLSCert        string
+	TLSKey         string
+	TokenValidator TokenValidator
 
 	// Security options
 	// RequireAuthentication if true, rejects unauthenticated agent connections
@@ -60,28 +53,23 @@ const (
 	PermissionSystemAdmin    = 3
 )
 
-// Server is the NanoLink server
+// Server is the NanoLink gRPC server
 type Server struct {
 	config            Config
 	agents            map[string]*AgentConnection
 	agentsMu          sync.RWMutex
-	upgrader          websocket.Upgrader
 	onAgentConnect    func(*AgentConnection)
 	onAgentDisconnect func(*AgentConnection)
 	onMetrics         func(*Metrics)
 	onRealtimeMetrics func(*RealtimeMetrics)
 	onStaticInfo      func(*StaticInfo)
 	onPeriodicData    func(*PeriodicData)
-	httpServer        *http.Server
 	grpcServer        *grpc.Server
 	grpcServicer      *NanoLinkServicer
 }
 
-// NewServer creates a new NanoLink server
+// NewServer creates a new NanoLink gRPC server
 func NewServer(config Config) *Server {
-	if config.WsPort == 0 {
-		config.WsPort = DefaultWsPort
-	}
 	if config.GrpcPort == 0 {
 		config.GrpcPort = DefaultGrpcPort
 	}
@@ -92,13 +80,6 @@ func NewServer(config Config) *Server {
 	return &Server{
 		config: config,
 		agents: make(map[string]*AgentConnection),
-		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins for dashboard
-			},
-			ReadBufferSize:  1024,
-			WriteBufferSize: 1024,
-		},
 	}
 }
 
@@ -132,45 +113,14 @@ func (s *Server) OnPeriodicData(callback func(*PeriodicData)) {
 	s.onPeriodicData = callback
 }
 
-// Start starts the server (WebSocket for agents + gRPC for agents + HTTP API)
+// Start starts the gRPC server for agent connections
 func (s *Server) Start() error {
-	// Start gRPC server for agent connections
 	if err := s.startGRPC(); err != nil {
 		return fmt.Errorf("failed to start gRPC server: %w", err)
 	}
 
-	mux := http.NewServeMux()
-
-	// WebSocket endpoint for agent connections (protobuf protocol)
-	mux.HandleFunc("/ws", s.handleWebSocket)
-
-	// API endpoints
-	mux.HandleFunc("/api/agents", s.handleAPIAgents)
-	mux.HandleFunc("/api/health", s.handleAPIHealth)
-
-	// Static files or info page
-	if s.config.StaticFilesPath != "" {
-		fs := http.FileServer(http.Dir(s.config.StaticFilesPath))
-		mux.Handle("/", fs)
-	} else {
-		mux.HandleFunc("/", s.handleInfoPage)
-	}
-
-	addr := fmt.Sprintf(":%d", s.config.WsPort)
-	s.httpServer = &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
-	log.Printf("NanoLink Server started on port %d (WebSocket for Agent + HTTP API)", s.config.WsPort)
-	if s.config.StaticFilesPath != "" {
-		log.Printf("Dashboard available at http://localhost:%d/", s.config.WsPort)
-	}
-
-	if s.config.TLSCert != "" && s.config.TLSKey != "" {
-		return s.httpServer.ListenAndServeTLS(s.config.TLSCert, s.config.TLSKey)
-	}
-	return s.httpServer.ListenAndServe()
+	log.Printf("NanoLink gRPC Server started on port %d", s.config.GrpcPort)
+	return nil
 }
 
 // startGRPC starts the gRPC server
@@ -195,7 +145,7 @@ func (s *Server) startGRPC() error {
 
 // Stop stops the server
 func (s *Server) Stop() error {
-	// Stop gRPC server first
+	// Stop gRPC server
 	if s.grpcServer != nil {
 		s.grpcServer.GracefulStop()
 		log.Printf("gRPC server stopped")
@@ -209,9 +159,6 @@ func (s *Server) Stop() error {
 	s.agents = make(map[string]*AgentConnection)
 	s.agentsMu.Unlock()
 
-	if s.httpServer != nil {
-		return s.httpServer.Close()
-	}
 	return nil
 }
 
@@ -297,84 +244,6 @@ func (s *Server) handlePeriodicData(periodic *PeriodicData) {
 	if s.onPeriodicData != nil {
 		s.onPeriodicData(periodic)
 	}
-}
-
-// handleWebSocket handles WebSocket connections
-func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := s.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
-		return
-	}
-
-	agent := NewAgentConnection(conn, s)
-	go agent.readPump()
-	go agent.writePump()
-}
-
-// handleAPIAgents handles the /api/agents endpoint
-func (s *Server) handleAPIAgents(w http.ResponseWriter, r *http.Request) {
-	agents := s.GetAgents()
-
-	type AgentInfo struct {
-		AgentID       string    `json:"agentId"`
-		Hostname      string    `json:"hostname"`
-		OS            string    `json:"os"`
-		Arch          string    `json:"arch"`
-		Version       string    `json:"version"`
-		ConnectedAt   time.Time `json:"connectedAt"`
-		LastHeartbeat time.Time `json:"lastHeartbeat"`
-	}
-
-	result := make([]AgentInfo, 0, len(agents))
-	for _, agent := range agents {
-		result = append(result, AgentInfo{
-			AgentID:       agent.AgentID,
-			Hostname:      agent.Hostname,
-			OS:            agent.OS,
-			Arch:          agent.Arch,
-			Version:       agent.Version,
-			ConnectedAt:   agent.ConnectedAt,
-			LastHeartbeat: agent.LastHeartbeat,
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"agents": result,
-	})
-}
-
-// handleAPIHealth handles the /api/health endpoint
-func (s *Server) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "ok",
-	})
-}
-
-// handleInfoPage serves a simple info page when no static files are configured
-func (s *Server) handleInfoPage(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, `<!DOCTYPE html>
-<html>
-<head><title>NanoLink Server</title></head>
-<body style="font-family:sans-serif;padding:40px;background:#0f172a;color:#e2e8f0">
-<h1>NanoLink Server</h1>
-<p>The server is running.</p>
-<p><b>Agent Endpoints:</b></p>
-<ul>
-<li>WebSocket: <code>/ws</code> (protobuf protocol for agent connections)</li>
-<li>gRPC: port %d</li>
-</ul>
-<p><b>API Endpoints:</b></p>
-<ul>
-<li><a href="/api/health" style="color:#3b82f6">Health Check</a></li>
-<li><a href="/api/agents" style="color:#3b82f6">Connected Agents</a></li>
-</ul>
-<p><i>For dashboard, use the demo projects or implement your own frontend.</i></p>
-</body>
-</html>`, s.config.GrpcPort)
 }
 
 // RequestData sends a data request to a specific agent.
