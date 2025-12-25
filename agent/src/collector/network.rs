@@ -3,6 +3,9 @@ use sysinfo::Networks;
 
 use crate::config::CollectorConfig;
 use crate::proto::NetworkMetrics;
+use crate::utils::safe_command::exec_with_timeout;
+use std::process::Command;
+use std::time::Duration;
 
 /// Network metrics collector
 pub struct NetworkCollector {
@@ -19,10 +22,20 @@ impl NetworkCollector {
         }
     }
 
+    /// Check if interface should skip command execution (virtual/problematic interfaces)
+    fn should_skip_command(interface: &str) -> bool {
+        let name_lower = interface.to_lowercase();
+        name_lower.starts_with("veth")
+            || name_lower.starts_with("br-")
+            || name_lower.starts_with("docker")
+            || name_lower.starts_with("virbr")
+    }
+
     /// Get MAC address for an interface
     #[cfg(target_os = "linux")]
     fn get_mac_address(interface: &str) -> String {
         use std::fs;
+        // Use sysfs - this is fast and doesn't spawn subprocesses
         let path = format!("/sys/class/net/{}/address", interface);
         fs::read_to_string(path)
             .map(|s| s.trim().to_uppercase())
@@ -31,16 +44,19 @@ impl NetworkCollector {
 
     #[cfg(target_os = "macos")]
     fn get_mac_address(interface: &str) -> String {
-        use std::process::Command;
+        if Self::should_skip_command(interface) {
+            return String::new();
+        }
 
-        if let Ok(output) = Command::new("ifconfig").arg(interface).output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    if line.contains("ether ") {
-                        if let Some(mac) = line.split_whitespace().nth(1) {
-                            return mac.to_uppercase();
-                        }
+        let mut cmd = Command::new("ifconfig");
+        cmd.arg(interface);
+
+        if let Some(output) = exec_with_timeout(cmd, DEFAULT_COMMAND_TIMEOUT) {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.contains("ether ") {
+                    if let Some(mac) = line.split_whitespace().nth(1) {
+                        return mac.to_uppercase();
                     }
                 }
             }
@@ -50,20 +66,32 @@ impl NetworkCollector {
 
     #[cfg(target_os = "windows")]
     fn get_mac_address(interface: &str) -> String {
-        use std::process::Command;
+        // Cache this call - it's slow but returns all interfaces at once
+        static MAC_CACHE: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
 
-        if let Ok(output) = Command::new("getmac").args(["/v", "/fo", "csv"]).output() {
-            if output.status.success() {
+        let cache = MAC_CACHE.get_or_init(|| {
+            let mut map = HashMap::new();
+            let mut cmd = Command::new("getmac");
+            cmd.args(["/v", "/fo", "csv"]);
+
+            if let Some(output) = exec_with_timeout(cmd, Duration::from_secs(10)) {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines().skip(1) {
                     let parts: Vec<&str> = line.split(',').collect();
                     if parts.len() >= 3 {
-                        let name = parts[0].trim_matches('"');
-                        if name.contains(interface) || interface.contains(name) {
-                            return parts[2].trim_matches('"').to_uppercase();
-                        }
+                        let name = parts[0].trim_matches('"').to_string();
+                        let mac = parts[2].trim_matches('"').to_uppercase();
+                        map.insert(name, mac);
                     }
                 }
+            }
+            map
+        });
+
+        // Find matching interface
+        for (name, mac) in cache.iter() {
+            if name.contains(interface) || interface.contains(name) {
+                return mac.clone();
             }
         }
         String::new()
@@ -72,82 +100,83 @@ impl NetworkCollector {
     /// Get IP addresses for an interface
     #[cfg(target_os = "linux")]
     fn get_ip_addresses(interface: &str) -> Vec<String> {
-        use std::process::Command;
-
-        let mut ips = Vec::new();
-
-        if let Ok(output) = Command::new("ip")
-            .args(["addr", "show", interface])
-            .output()
-        {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let line = line.trim();
-                    if line.starts_with("inet ") || line.starts_with("inet6 ") {
-                        if let Some(addr) = line.split_whitespace().nth(1) {
-                            // Remove CIDR notation
-                            let ip = addr.split('/').next().unwrap_or(addr);
-                            ips.push(ip.to_string());
-                        }
-                    }
-                }
-            }
+        // Skip problematic virtual interfaces
+        if Self::should_skip_command(interface) {
+            return Vec::new();
         }
 
-        ips
-    }
-
-    #[cfg(target_os = "macos")]
-    fn get_ip_addresses(interface: &str) -> Vec<String> {
-        use std::process::Command;
+        let mut cmd = Command::new("ip");
+        cmd.args(["addr", "show", interface]);
 
         let mut ips = Vec::new();
-
-        if let Ok(output) = Command::new("ifconfig").arg(interface).output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let line = line.trim();
-                    if line.starts_with("inet ") {
-                        if let Some(addr) = line.split_whitespace().nth(1) {
-                            ips.push(addr.to_string());
-                        }
-                    } else if line.starts_with("inet6 ") {
-                        if let Some(addr) = line.split_whitespace().nth(1) {
-                            // Remove scope ID
-                            let ip = addr.split('%').next().unwrap_or(addr);
-                            ips.push(ip.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        ips
-    }
-
-    #[cfg(target_os = "windows")]
-    fn get_ip_addresses(interface: &str) -> Vec<String> {
-        use std::process::Command;
-
-        let mut ips = Vec::new();
-
-        if let Ok(output) = Command::new("powershell")
-            .args(["-Command", &format!("Get-NetIPAddress -InterfaceAlias '*{interface}*' | Select-Object -ExpandProperty IPAddress")])
-            .output()
-        {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let ip = line.trim();
-                    if !ip.is_empty() {
+        if let Some(output) = exec_with_timeout(cmd, Duration::from_secs(2)) {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let line = line.trim();
+                if line.starts_with("inet ") || line.starts_with("inet6 ") {
+                    if let Some(addr) = line.split_whitespace().nth(1) {
+                        let ip = addr.split('/').next().unwrap_or(addr);
                         ips.push(ip.to_string());
                     }
                 }
             }
         }
+        ips
+    }
 
+    #[cfg(target_os = "macos")]
+    fn get_ip_addresses(interface: &str) -> Vec<String> {
+        if Self::should_skip_command(interface) {
+            return Vec::new();
+        }
+
+        let mut cmd = Command::new("ifconfig");
+        cmd.arg(interface);
+
+        let mut ips = Vec::new();
+        if let Some(output) = exec_with_timeout(cmd, DEFAULT_COMMAND_TIMEOUT) {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let line = line.trim();
+                if line.starts_with("inet ") {
+                    if let Some(addr) = line.split_whitespace().nth(1) {
+                        ips.push(addr.to_string());
+                    }
+                } else if line.starts_with("inet6 ") {
+                    if let Some(addr) = line.split_whitespace().nth(1) {
+                        let ip = addr.split('%').next().unwrap_or(addr);
+                        ips.push(ip.to_string());
+                    }
+                }
+            }
+        }
+        ips
+    }
+
+    #[cfg(target_os = "windows")]
+    fn get_ip_addresses(interface: &str) -> Vec<String> {
+        if Self::should_skip_command(interface) {
+            return Vec::new();
+        }
+
+        let mut cmd = Command::new("powershell");
+        cmd.args([
+            "-Command",
+            &format!(
+                "Get-NetIPAddress -InterfaceAlias '*{interface}*' | Select-Object -ExpandProperty IPAddress"
+            ),
+        ]);
+
+        let mut ips = Vec::new();
+        if let Some(output) = exec_with_timeout(cmd, Duration::from_secs(5)) {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let ip = line.trim();
+                if !ip.is_empty() {
+                    ips.push(ip.to_string());
+                }
+            }
+        }
         ips
     }
 
@@ -155,7 +184,7 @@ impl NetworkCollector {
     #[cfg(target_os = "linux")]
     fn get_link_speed(interface: &str) -> u64 {
         use std::fs;
-
+        // Use sysfs - fast, no subprocess
         let speed_path = format!("/sys/class/net/{}/speed", interface);
         fs::read_to_string(speed_path)
             .ok()
@@ -165,23 +194,22 @@ impl NetworkCollector {
 
     #[cfg(target_os = "macos")]
     fn get_link_speed(interface: &str) -> u64 {
-        use std::process::Command;
+        if Self::should_skip_command(interface) {
+            return 0;
+        }
 
-        if let Ok(output) = Command::new("networksetup")
-            .args(["-getMedia", interface])
-            .output()
-        {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    if line.contains("Speed:") {
-                        // Parse speed like "1000baseT" or "100baseTX"
-                        if let Some(speed_part) = line.split(':').nth(1) {
-                            let speed_str: String =
-                                speed_part.chars().take_while(|c| c.is_numeric()).collect();
-                            if let Ok(speed) = speed_str.parse() {
-                                return speed;
-                            }
+        let mut cmd = Command::new("networksetup");
+        cmd.args(["-getMedia", interface]);
+
+        if let Some(output) = exec_with_timeout(cmd, DEFAULT_COMMAND_TIMEOUT) {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.contains("Speed:") {
+                    if let Some(speed_part) = line.split(':').nth(1) {
+                        let speed_str: String =
+                            speed_part.chars().take_while(|c| c.is_numeric()).collect();
+                        if let Ok(speed) = speed_str.parse() {
+                            return speed;
                         }
                     }
                 }
@@ -192,33 +220,32 @@ impl NetworkCollector {
 
     #[cfg(target_os = "windows")]
     fn get_link_speed(interface: &str) -> u64 {
-        use std::process::Command;
+        if Self::should_skip_command(interface) {
+            return 0;
+        }
 
-        if let Ok(output) = Command::new("powershell")
-            .args([
-                "-Command",
-                &format!("(Get-NetAdapter -Name '*{interface}*').LinkSpeed"),
-            ])
-            .output()
-        {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let speed_str = stdout.trim();
-                // Parse speeds like "1 Gbps", "100 Mbps", etc.
-                if speed_str.contains("Gbps") {
-                    let num: u64 = speed_str
-                        .split_whitespace()
-                        .next()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0);
-                    return num * 1000;
-                } else if speed_str.contains("Mbps") {
-                    return speed_str
-                        .split_whitespace()
-                        .next()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0);
-                }
+        let mut cmd = Command::new("powershell");
+        cmd.args([
+            "-Command",
+            &format!("(Get-NetAdapter -Name '*{interface}*').LinkSpeed"),
+        ]);
+
+        if let Some(output) = exec_with_timeout(cmd, Duration::from_secs(5)) {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let speed_str = stdout.trim();
+            if speed_str.contains("Gbps") {
+                let num: u64 = speed_str
+                    .split_whitespace()
+                    .next()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                return num * 1000;
+            } else if speed_str.contains("Mbps") {
+                return speed_str
+                    .split_whitespace()
+                    .next()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
             }
         }
         0
@@ -274,16 +301,16 @@ impl NetworkCollector {
     #[cfg(target_os = "linux")]
     fn is_interface_up(interface: &str) -> bool {
         use std::fs;
-
+        // Use sysfs - fast, no subprocess
         let operstate_path = format!("/sys/class/net/{}/operstate", interface);
         fs::read_to_string(operstate_path)
             .map(|s| s.trim() == "up")
-            .unwrap_or(true) // Assume up if we can't determine
+            .unwrap_or(true)
     }
 
     #[cfg(not(target_os = "linux"))]
     fn is_interface_up(_interface: &str) -> bool {
-        true // Assume up on non-Linux platforms
+        true
     }
 
     /// Collect network metrics
@@ -301,8 +328,6 @@ impl NetworkCollector {
         let mut metrics = Vec::new();
 
         for (interface_name, data) in networks.list() {
-            // Skip loopback and virtual interfaces by default
-            // but still include them in the metrics list
             let interface_type = Self::get_interface_type(interface_name);
 
             let rx_bytes = data.received();
@@ -326,7 +351,6 @@ impl NetworkCollector {
                     (0, 0, 0, 0)
                 };
 
-            // Update previous stats
             self.prev_stats.insert(
                 interface_name.clone(),
                 (rx_bytes, tx_bytes, rx_packets, tx_packets),

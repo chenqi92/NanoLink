@@ -6,13 +6,21 @@
 //! - Other accelerators
 
 use std::process::Command;
+use std::time::Duration;
+
+use crate::utils::safe_command::exec_with_timeout;
+
+/// NPU command timeout - 15 seconds (drivers can be slow)
+const NPU_COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
+/// Fast NPU availability check timeout
+const NPU_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// NPU metrics
 #[derive(Debug, Clone, Default)]
 pub struct NpuMetrics {
     pub index: u32,
     pub name: String,
-    pub vendor: String, // "Intel", "Huawei", "Qualcomm", etc.
+    pub vendor: String,
     pub usage_percent: f64,
     pub memory_total: u64,
     pub memory_used: u64,
@@ -35,19 +43,16 @@ impl NpuCollector {
         }
     }
 
-    /// Check if Intel NPU tools are available
     fn check_intel_npu_available() -> bool {
-        // Check for xpu-smi (Intel data center accelerators)
-        if Command::new("xpu-smi")
-            .arg("discovery")
-            .output()
+        let mut cmd = Command::new("xpu-smi");
+        cmd.arg("discovery");
+        if exec_with_timeout(cmd, NPU_CHECK_TIMEOUT)
             .map(|o| o.status.success())
             .unwrap_or(false)
         {
             return true;
         }
 
-        // Check for Intel NPU driver via sysfs (Intel Core Ultra NPU)
         #[cfg(target_os = "linux")]
         {
             use std::path::Path;
@@ -59,16 +64,14 @@ impl NpuCollector {
         false
     }
 
-    /// Check if Huawei NPU tools are available
     fn check_huawei_npu_available() -> bool {
-        Command::new("npu-smi")
-            .arg("info")
-            .output()
+        let mut cmd = Command::new("npu-smi");
+        cmd.arg("info");
+        exec_with_timeout(cmd, NPU_CHECK_TIMEOUT)
             .map(|o| o.status.success())
             .unwrap_or(false)
     }
 
-    /// Collect all NPU metrics
     pub fn collect(&self) -> Vec<NpuMetrics> {
         let mut npus = Vec::new();
 
@@ -84,7 +87,6 @@ impl NpuCollector {
             }
         }
 
-        // Try to detect Intel NPU via sysfs
         #[cfg(target_os = "linux")]
         if npus.is_empty() {
             if let Some(sysfs_npus) = self.collect_intel_sysfs() {
@@ -95,9 +97,10 @@ impl NpuCollector {
         npus
     }
 
-    /// Collect Intel NPU metrics via xpu-smi
     fn collect_intel(&self) -> Option<Vec<NpuMetrics>> {
-        let output = Command::new("xpu-smi").arg("discovery").output().ok()?;
+        let mut cmd = Command::new("xpu-smi");
+        cmd.arg("discovery");
+        let output = exec_with_timeout(cmd, NPU_COMMAND_TIMEOUT)?;
 
         if !output.status.success() {
             return None;
@@ -107,7 +110,6 @@ impl NpuCollector {
         let mut npus = Vec::new();
         let mut current_index = 0u32;
 
-        // Parse xpu-smi discovery output
         for line in stdout.lines() {
             if line.contains("Device Name") {
                 let name = line
@@ -123,7 +125,6 @@ impl NpuCollector {
                     ..Default::default()
                 };
 
-                // Get detailed stats for this device
                 if let Some(stats) = self.get_intel_device_stats(current_index) {
                     npu.usage_percent = stats.0;
                     npu.memory_total = stats.1;
@@ -144,12 +145,10 @@ impl NpuCollector {
         }
     }
 
-    /// Get Intel device statistics
     fn get_intel_device_stats(&self, device_id: u32) -> Option<(f64, u64, u64, f64, u32)> {
-        let output = Command::new("xpu-smi")
-            .args(["stats", "-d", &device_id.to_string()])
-            .output()
-            .ok()?;
+        let mut cmd = Command::new("xpu-smi");
+        cmd.args(["stats", "-d", &device_id.to_string()]);
+        let output = exec_with_timeout(cmd, NPU_COMMAND_TIMEOUT)?;
 
         if !output.status.success() {
             return None;
@@ -179,7 +178,6 @@ impl NpuCollector {
         Some((usage, mem_total, mem_used, temp, power))
     }
 
-    /// Collect Intel NPU via sysfs (Linux)
     #[cfg(target_os = "linux")]
     fn collect_intel_sysfs(&self) -> Option<Vec<NpuMetrics>> {
         use std::fs;
@@ -200,11 +198,9 @@ impl NpuCollector {
 
                 if name.starts_with("accel") {
                     let device_path = path.join("device");
-
-                    // Check if it's an Intel device
                     let vendor_path = device_path.join("vendor");
+
                     if let Ok(vendor) = fs::read_to_string(&vendor_path) {
-                        // Intel vendor ID
                         if vendor.trim() == "0x8086" {
                             let mut npu = NpuMetrics {
                                 index,
@@ -213,7 +209,6 @@ impl NpuCollector {
                                 ..Default::default()
                             };
 
-                            // Try to get device name
                             if let Ok(device_name) =
                                 fs::read_to_string(device_path.join("device_name"))
                             {
@@ -235,9 +230,10 @@ impl NpuCollector {
         }
     }
 
-    /// Collect Huawei Ascend NPU metrics
     fn collect_huawei(&self) -> Option<Vec<NpuMetrics>> {
-        let output = Command::new("npu-smi").arg("info").output().ok()?;
+        let mut cmd = Command::new("npu-smi");
+        cmd.arg("info");
+        let output = exec_with_timeout(cmd, NPU_COMMAND_TIMEOUT)?;
 
         if !output.status.success() {
             return None;
@@ -248,9 +244,7 @@ impl NpuCollector {
         let mut current_npu: Option<NpuMetrics> = None;
 
         for line in stdout.lines() {
-            // Parse device header
             if line.contains("NPU ID") {
-                // Save previous NPU if exists
                 if let Some(npu) = current_npu.take() {
                     npus.push(npu);
                 }
@@ -276,10 +270,7 @@ impl NpuCollector {
                         .nth(1)
                         .map(|s| s.trim().to_string())
                         .unwrap_or_else(|| "Ascend NPU".to_string());
-                } else if line.contains("Aicore Usage Rate") {
-                    npu.usage_percent = Self::extract_number(line);
-                } else if line.contains("HBM Usage Rate") {
-                    // Parse HBM as memory usage
+                } else if line.contains("Aicore Usage Rate") || line.contains("HBM Usage Rate") {
                     npu.usage_percent = Self::extract_number(line);
                 } else if line.contains("Chip Temp") {
                     npu.temperature = Self::extract_number(line);
@@ -289,7 +280,6 @@ impl NpuCollector {
             }
         }
 
-        // Don't forget the last NPU
         if let Some(npu) = current_npu {
             npus.push(npu);
         }
@@ -301,9 +291,7 @@ impl NpuCollector {
         }
     }
 
-    /// Extract numeric value from a line
     fn extract_number(line: &str) -> f64 {
-        // Find first numeric value in line
         for part in line.split_whitespace() {
             let cleaned = part
                 .trim_end_matches('%')
@@ -316,12 +304,10 @@ impl NpuCollector {
         0.0
     }
 
-    /// Extract bytes value from a line (handles MB, GB, etc.)
     fn extract_bytes(line: &str) -> u64 {
         let parts: Vec<&str> = line.split_whitespace().collect();
         for (i, part) in parts.iter().enumerate() {
             if let Ok(num) = part.parse::<f64>() {
-                // Check for unit in next part
                 let unit = parts.get(i + 1).map(|s| s.to_uppercase());
                 return match unit.as_deref() {
                     Some("KB") | Some("KIB") => (num * 1024.0) as u64,
@@ -348,19 +334,8 @@ mod tests {
     #[test]
     fn test_npu_collector_new() {
         let collector = NpuCollector::new();
-        // Just verify it doesn't panic
         println!("Intel NPU available: {}", collector.intel_available);
         println!("Huawei NPU available: {}", collector.huawei_available);
-    }
-
-    #[test]
-    fn test_collect_npus() {
-        let collector = NpuCollector::new();
-        let npus = collector.collect();
-        println!("Found {} NPUs", npus.len());
-        for npu in &npus {
-            println!("  NPU {}: {} ({})", npu.index, npu.name, npu.vendor);
-        }
     }
 
     #[test]

@@ -63,10 +63,13 @@ impl ConnectionManager {
         buffer: Arc<RingBuffer>,
         server: ServerConfig,
     ) {
-        let mut reconnect_delay = config.agent.reconnect_delay;
+        let initial_delay = config.agent.reconnect_delay;
         let max_delay = config.agent.max_reconnect_delay;
         let grpc_url = server.get_grpc_url();
         let mut connection_attempts: u32 = 0;
+        let mut total_connected_time: u64 = 0;
+        let mut was_previously_connected = false;
+        let mut reconnect_delay = initial_delay;
 
         loop {
             connection_attempts += 1;
@@ -75,13 +78,25 @@ impl ConnectionManager {
                 grpc_url, connection_attempts
             );
 
+            // If we were previously connected, use fast retry for first few attempts
+            if was_previously_connected && connection_attempts <= 3 {
+                reconnect_delay = initial_delay; // Reset to initial delay for quick reconnect
+            }
+
+            let connect_start = std::time::Instant::now();
             match grpc::GrpcClient::connect(&server, &config).await {
                 Ok(mut client) => {
-                    info!("gRPC connection established to {}", grpc_url);
+                    let connect_elapsed = connect_start.elapsed();
+                    let connection_start = std::time::Instant::now();
+                    info!(
+                        "gRPC connection established to {} (connect took {:?})",
+                        grpc_url, connect_elapsed
+                    );
 
                     // Reset reconnect delay and attempts on successful connection
-                    reconnect_delay = config.agent.reconnect_delay;
+                    reconnect_delay = initial_delay;
                     connection_attempts = 0;
+                    was_previously_connected = true;
 
                     // Authenticate
                     match client.authenticate().await {
@@ -124,12 +139,21 @@ impl ConnectionManager {
                                     .await
                             };
 
+                            let connection_duration = connection_start.elapsed();
+                            total_connected_time += connection_duration.as_secs();
+
                             match &stream_result {
                                 Ok(_) => {
-                                    warn!("gRPC stream ended normally for {}", grpc_url);
+                                    warn!(
+                                        "gRPC stream ended normally for {} after {:?} (server may have closed the connection)",
+                                        grpc_url, connection_duration
+                                    );
                                 }
                                 Err(e) => {
-                                    error!("gRPC stream error for {}: {}", grpc_url, e);
+                                    error!(
+                                        "gRPC stream error for {} after {:?}: {:?}",
+                                        grpc_url, connection_duration, e
+                                    );
                                 }
                             }
                         }
@@ -144,12 +168,16 @@ impl ConnectionManager {
                         }
                     }
 
-                    warn!("gRPC connection to {} lost, will reconnect", grpc_url);
+                    warn!(
+                        "gRPC connection to {} lost, will reconnect (total connected time: {}s)",
+                        grpc_url, total_connected_time
+                    );
                 }
                 Err(e) => {
+                    let connect_elapsed = connect_start.elapsed();
                     error!(
-                        "Failed to connect to gRPC server {} (attempt #{}): {}",
-                        grpc_url, connection_attempts, e
+                        "Failed to connect to gRPC server {} (attempt #{}, took {:?}): {:?}",
+                        grpc_url, connection_attempts, connect_elapsed, e
                     );
                 }
             }

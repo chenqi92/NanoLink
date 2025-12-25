@@ -40,12 +40,13 @@ impl GrpcClient {
             .context("Invalid server URL")?
             // Note: Don't set .timeout() here - it kills streaming RPCs
             // Use connect_timeout for connection establishment instead
-            .connect_timeout(Duration::from_secs(30))
-            // TCP keepalive - OS level
-            .tcp_keepalive(Some(Duration::from_secs(30)))
+            // Keep this SHORT to detect failures quickly and allow fast reconnection
+            .connect_timeout(Duration::from_secs(15))
+            // TCP keepalive - OS level (aggressive for NAT/firewall environments)
+            .tcp_keepalive(Some(Duration::from_secs(20)))
             // HTTP/2 keepalive - gRPC level (must match server settings)
             // Server: keepAliveTime=30s, keepAliveTimeout=10s
-            .http2_keep_alive_interval(Duration::from_secs(30))
+            .http2_keep_alive_interval(Duration::from_secs(20))
             .keep_alive_timeout(Duration::from_secs(10))
             .keep_alive_while_idle(true);
 

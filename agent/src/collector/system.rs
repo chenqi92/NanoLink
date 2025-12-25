@@ -1,7 +1,13 @@
+use std::process::Command;
 use std::sync::OnceLock;
+use std::time::Duration;
 use sysinfo::System;
 
 use crate::proto::SystemInfo;
+use crate::utils::safe_command::exec_with_timeout;
+
+/// System info command timeout - 10 seconds
+const SYSTEM_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Static system info that doesn't change
 static SYSTEM_INFO: OnceLock<SystemInfoStatic> = OnceLock::new();
@@ -22,7 +28,6 @@ struct SystemInfoStatic {
 
 /// System info collector
 pub struct SystemInfoCollector {
-    /// Optional hostname override from config
     hostname_override: Option<String>,
 }
 
@@ -34,7 +39,6 @@ impl SystemInfoCollector {
         }
     }
 
-    /// Create a new collector with a custom hostname override
     pub fn with_hostname(hostname: Option<String>) -> Self {
         SYSTEM_INFO.get_or_init(Self::collect_static_info);
         Self {
@@ -52,7 +56,6 @@ impl SystemInfoCollector {
             ..Default::default()
         };
 
-        // Get hardware info (platform-specific)
         #[cfg(target_os = "linux")]
         {
             info = Self::add_linux_hardware_info(info);
@@ -75,23 +78,18 @@ impl SystemInfoCollector {
     fn add_linux_hardware_info(mut info: SystemInfoStatic) -> SystemInfoStatic {
         use std::fs;
 
-        // DMI/SMBIOS information (requires root or specific permissions)
+        // DMI/SMBIOS information (fast, uses sysfs)
         let dmi_path = "/sys/class/dmi/id";
 
-        // Motherboard info
         if let Ok(vendor) = fs::read_to_string(format!("{}/board_vendor", dmi_path)) {
             info.motherboard_vendor = vendor.trim().to_string();
         }
         if let Ok(name) = fs::read_to_string(format!("{}/board_name", dmi_path)) {
             info.motherboard_model = name.trim().to_string();
         }
-
-        // BIOS info
         if let Ok(version) = fs::read_to_string(format!("{}/bios_version", dmi_path)) {
             info.bios_version = version.trim().to_string();
         }
-
-        // System info
         if let Ok(vendor) = fs::read_to_string(format!("{}/sys_vendor", dmi_path)) {
             info.system_vendor = vendor.trim().to_string();
         }
@@ -104,17 +102,14 @@ impl SystemInfoCollector {
 
     #[cfg(target_os = "macos")]
     fn add_macos_hardware_info(mut info: SystemInfoStatic) -> SystemInfoStatic {
-        use std::process::Command;
+        // Get hardware info with JSON output
+        let mut cmd = Command::new("system_profiler");
+        cmd.args(["SPHardwareDataType", "-json"]);
 
-        // Use system_profiler to get hardware info
-        if let Ok(output) = Command::new("system_profiler")
-            .args(["SPHardwareDataType", "-json"])
-            .output()
-        {
+        if let Some(output) = exec_with_timeout(cmd, SYSTEM_COMMAND_TIMEOUT) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
 
-                // Simple JSON parsing
                 for line in stdout.lines() {
                     let line = line.trim();
                     if line.contains("\"model_name\"") {
@@ -133,10 +128,10 @@ impl SystemInfoCollector {
         }
 
         // Get boot ROM version
-        if let Ok(output) = Command::new("system_profiler")
-            .args(["SPHardwareDataType"])
-            .output()
-        {
+        let mut cmd = Command::new("system_profiler");
+        cmd.args(["SPHardwareDataType"]);
+
+        if let Some(output) = exec_with_timeout(cmd, SYSTEM_COMMAND_TIMEOUT) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
@@ -157,13 +152,11 @@ impl SystemInfoCollector {
 
     #[cfg(target_os = "windows")]
     fn add_windows_hardware_info(mut info: SystemInfoStatic) -> SystemInfoStatic {
-        use std::process::Command;
-
         // Get system info using WMIC
-        if let Ok(output) = Command::new("wmic")
-            .args(["csproduct", "get", "Name,Vendor", "/format:csv"])
-            .output()
-        {
+        let mut cmd = Command::new("wmic");
+        cmd.args(["csproduct", "get", "Name,Vendor", "/format:csv"]);
+
+        if let Some(output) = exec_with_timeout(cmd, SYSTEM_COMMAND_TIMEOUT) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines().skip(1) {
@@ -177,10 +170,10 @@ impl SystemInfoCollector {
         }
 
         // Get motherboard info
-        if let Ok(output) = Command::new("wmic")
-            .args(["baseboard", "get", "Manufacturer,Product", "/format:csv"])
-            .output()
-        {
+        let mut cmd = Command::new("wmic");
+        cmd.args(["baseboard", "get", "Manufacturer,Product", "/format:csv"]);
+
+        if let Some(output) = exec_with_timeout(cmd, SYSTEM_COMMAND_TIMEOUT) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines().skip(1) {
@@ -194,10 +187,10 @@ impl SystemInfoCollector {
         }
 
         // Get BIOS info
-        if let Ok(output) = Command::new("wmic")
-            .args(["bios", "get", "SMBIOSBIOSVersion", "/format:csv"])
-            .output()
-        {
+        let mut cmd = Command::new("wmic");
+        cmd.args(["bios", "get", "SMBIOSBIOSVersion", "/format:csv"]);
+
+        if let Some(output) = exec_with_timeout(cmd, SYSTEM_COMMAND_TIMEOUT) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines().skip(1) {
@@ -212,12 +205,10 @@ impl SystemInfoCollector {
         info
     }
 
-    /// Collect system info with current uptime
     pub fn collect(&self) -> SystemInfo {
         let static_info = SYSTEM_INFO.get().expect("System info not initialized");
         let uptime_seconds = System::uptime();
 
-        // Use hostname_override if set, otherwise use system hostname
         let hostname = self
             .hostname_override
             .clone()
@@ -245,7 +236,6 @@ impl Default for SystemInfoCollector {
     }
 }
 
-/// Helper to extract string value from JSON line
 #[allow(dead_code)]
 fn extract_json_string(line: &str) -> Option<String> {
     let parts: Vec<&str> = line.split(':').collect();

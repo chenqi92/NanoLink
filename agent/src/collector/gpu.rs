@@ -1,4 +1,7 @@
 use std::process::Command;
+use std::time::Duration;
+
+use crate::utils::safe_command::exec_with_timeout;
 
 #[derive(Debug, Clone, Default)]
 pub struct GpuMetrics {
@@ -19,6 +22,11 @@ pub struct GpuMetrics {
     pub encoder_usage: f64,
     pub decoder_usage: f64,
 }
+
+/// GPU command timeout - 15 seconds for nvidia-smi under load
+const GPU_COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
+/// Fast GPU availability check timeout
+const GPU_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct GpuCollector {
     nvidia_available: bool,
@@ -44,32 +52,19 @@ impl GpuCollector {
     }
 
     fn check_nvidia_available() -> bool {
-        #[cfg(target_os = "windows")]
-        {
-            Command::new("nvidia-smi")
-                .arg("--query-gpu=name")
-                .arg("--format=csv,noheader")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            Command::new("nvidia-smi")
-                .arg("--query-gpu=name")
-                .arg("--format=csv,noheader")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        }
+        let mut cmd = Command::new("nvidia-smi");
+        cmd.args(["--query-gpu=name", "--format=csv,noheader"]);
+        exec_with_timeout(cmd, GPU_CHECK_TIMEOUT)
+            .map(|o| o.status.success())
+            .unwrap_or(false)
     }
 
     fn check_amd_available() -> bool {
         #[cfg(target_os = "linux")]
         {
-            Command::new("rocm-smi")
-                .arg("--showproductname")
-                .output()
+            let mut cmd = Command::new("rocm-smi");
+            cmd.arg("--showproductname");
+            exec_with_timeout(cmd, GPU_CHECK_TIMEOUT)
                 .map(|o| o.status.success())
                 .unwrap_or(false)
         }
@@ -80,12 +75,10 @@ impl GpuCollector {
     }
 
     fn get_nvidia_driver_version() -> Option<String> {
-        let output = Command::new("nvidia-smi")
-            .arg("--query-gpu=driver_version")
-            .arg("--format=csv,noheader")
-            .output()
-            .ok()?;
+        let mut cmd = Command::new("nvidia-smi");
+        cmd.args(["--query-gpu=driver_version", "--format=csv,noheader"]);
 
+        let output = exec_with_timeout(cmd, GPU_CHECK_TIMEOUT)?;
         if output.status.success() {
             let version = String::from_utf8_lossy(&output.stdout)
                 .trim()
@@ -114,7 +107,6 @@ impl GpuCollector {
             }
         }
 
-        // Try to detect Intel integrated graphics
         if let Some(intel_gpus) = self.collect_intel() {
             gpus.extend(intel_gpus);
         }
@@ -123,15 +115,13 @@ impl GpuCollector {
     }
 
     fn collect_nvidia(&self) -> Option<Vec<GpuMetrics>> {
-        // Query all needed GPU info in one call for efficiency
-        let output = Command::new("nvidia-smi")
-            .args([
-                "--query-gpu=index,name,utilization.gpu,memory.total,memory.used,temperature.gpu,fan.speed,power.draw,power.limit,clocks.current.graphics,clocks.current.memory,pcie.link.gen.current,pcie.link.width.current,utilization.encoder,utilization.decoder",
-                "--format=csv,noheader,nounits"
-            ])
-            .output()
-            .ok()?;
+        let mut cmd = Command::new("nvidia-smi");
+        cmd.args([
+            "--query-gpu=index,name,utilization.gpu,memory.total,memory.used,temperature.gpu,fan.speed,power.draw,power.limit,clocks.current.graphics,clocks.current.memory,pcie.link.gen.current,pcie.link.width.current,utilization.encoder,utilization.decoder",
+            "--format=csv,noheader,nounits"
+        ]);
 
+        let output = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT)?;
         if !output.status.success() {
             return None;
         }
@@ -177,17 +167,14 @@ impl GpuCollector {
 
             let mut gpus = Vec::new();
 
-            // Get GPU list
-            let list_output = Command::new("rocm-smi")
-                .arg("--showproductname")
-                .output()
-                .ok()?;
+            let mut cmd = Command::new("rocm-smi");
+            cmd.arg("--showproductname");
+            let list_output = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT)?;
 
             if !list_output.status.success() {
                 return None;
             }
 
-            // Parse GPU names
             let stdout = String::from_utf8_lossy(&list_output.stdout);
             let mut gpu_names: HashMap<u32, String> = HashMap::new();
 
@@ -204,7 +191,6 @@ impl GpuCollector {
                 }
             }
 
-            // Get detailed metrics for each GPU
             for (index, name) in gpu_names {
                 let metrics = self.collect_amd_gpu_metrics(index, &name);
                 gpus.push(metrics);
@@ -228,10 +214,9 @@ impl GpuCollector {
         };
 
         // Get GPU usage
-        if let Ok(output) = Command::new("rocm-smi")
-            .args(["-d", &index.to_string(), "--showuse"])
-            .output()
-        {
+        let mut cmd = Command::new("rocm-smi");
+        cmd.args(["-d", &index.to_string(), "--showuse"]);
+        if let Some(output) = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT) {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 if line.contains("GPU use") {
@@ -244,10 +229,9 @@ impl GpuCollector {
         }
 
         // Get memory info
-        if let Ok(output) = Command::new("rocm-smi")
-            .args(["-d", &index.to_string(), "--showmeminfo", "vram"])
-            .output()
-        {
+        let mut cmd = Command::new("rocm-smi");
+        cmd.args(["-d", &index.to_string(), "--showmeminfo", "vram"]);
+        if let Some(output) = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT) {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 if line.contains("Total Memory") {
@@ -263,10 +247,9 @@ impl GpuCollector {
         }
 
         // Get temperature
-        if let Ok(output) = Command::new("rocm-smi")
-            .args(["-d", &index.to_string(), "--showtemp"])
-            .output()
-        {
+        let mut cmd = Command::new("rocm-smi");
+        cmd.args(["-d", &index.to_string(), "--showtemp"]);
+        if let Some(output) = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT) {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 if line.contains("Temperature") && line.contains("edge") {
@@ -283,10 +266,9 @@ impl GpuCollector {
         }
 
         // Get fan speed
-        if let Ok(output) = Command::new("rocm-smi")
-            .args(["-d", &index.to_string(), "--showfan"])
-            .output()
-        {
+        let mut cmd = Command::new("rocm-smi");
+        cmd.args(["-d", &index.to_string(), "--showfan"]);
+        if let Some(output) = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT) {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 if line.contains("Fan Speed") {
@@ -299,10 +281,9 @@ impl GpuCollector {
         }
 
         // Get power
-        if let Ok(output) = Command::new("rocm-smi")
-            .args(["-d", &index.to_string(), "--showpower"])
-            .output()
-        {
+        let mut cmd = Command::new("rocm-smi");
+        cmd.args(["-d", &index.to_string(), "--showpower"]);
+        if let Some(output) = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT) {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 if line.contains("Average Graphics Package Power") {
@@ -319,10 +300,9 @@ impl GpuCollector {
         }
 
         // Get clocks
-        if let Ok(output) = Command::new("rocm-smi")
-            .args(["-d", &index.to_string(), "--showclocks"])
-            .output()
-        {
+        let mut cmd = Command::new("rocm-smi");
+        cmd.args(["-d", &index.to_string(), "--showclocks"]);
+        if let Some(output) = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT) {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 if line.contains("sclk") {
@@ -353,7 +333,6 @@ impl GpuCollector {
     fn collect_intel(&self) -> Option<Vec<GpuMetrics>> {
         #[cfg(target_os = "linux")]
         {
-            // Check for Intel GPU via sysfs
             use std::fs;
             use std::path::Path;
 
@@ -375,7 +354,6 @@ impl GpuCollector {
                         let vendor_path = device_path.join("vendor");
 
                         if let Ok(vendor) = fs::read_to_string(&vendor_path) {
-                            // Intel vendor ID is 0x8086
                             if vendor.trim() == "0x8086" {
                                 let mut gpu = GpuMetrics {
                                     index,
@@ -383,7 +361,6 @@ impl GpuCollector {
                                     ..Default::default()
                                 };
 
-                                // Try to get product name
                                 if let Ok(product) =
                                     fs::read_to_string(device_path.join("product_name"))
                                 {
@@ -392,25 +369,8 @@ impl GpuCollector {
                                     gpu.name = "Intel Integrated Graphics".to_string();
                                 }
 
-                                // Try intel_gpu_top for usage (if available)
-                                if let Ok(output) = Command::new("intel_gpu_top")
-                                    .args(["-l", "-s", "100"])
-                                    .output()
-                                {
-                                    if output.status.success() {
-                                        let stdout = String::from_utf8_lossy(&output.stdout);
-                                        for line in stdout.lines().skip(1).take(1) {
-                                            let parts: Vec<&str> =
-                                                line.split_whitespace().collect();
-                                            if parts.len() > 1 {
-                                                gpu.usage_percent = parts[1]
-                                                    .trim_end_matches('%')
-                                                    .parse()
-                                                    .unwrap_or(0.0);
-                                            }
-                                        }
-                                    }
-                                }
+                                // Note: intel_gpu_top requires root and can hang, skip it
+                                // GPU usage monitoring for Intel requires different approach
 
                                 gpus.push(gpu);
                                 index += 1;
@@ -426,15 +386,8 @@ impl GpuCollector {
                 Some(gpus)
             }
         }
-        #[cfg(target_os = "windows")]
+        #[cfg(not(target_os = "linux"))]
         {
-            // On Windows, try to detect Intel GPU via WMI
-            // This is a simplified version - full implementation would use WMI bindings
-            None
-        }
-        #[cfg(target_os = "macos")]
-        {
-            // macOS doesn't have traditional GPU monitoring for Intel integrated
             None
         }
     }

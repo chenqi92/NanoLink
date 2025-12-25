@@ -1,7 +1,13 @@
+use std::process::Command;
 use std::sync::OnceLock;
+use std::time::Duration;
 use sysinfo::System;
 
 use crate::proto::MemoryMetrics;
+use crate::utils::safe_command::exec_with_timeout;
+
+/// Memory command timeout - 10 seconds (dmidecode can be slow)
+const MEMORY_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Static memory hardware info
 static MEMORY_INFO: OnceLock<MemoryHardwareInfo> = OnceLock::new();
@@ -45,12 +51,13 @@ impl MemoryCollector {
 
     #[cfg(target_os = "linux")]
     fn collect_linux_memory_info() -> MemoryHardwareInfo {
-        use std::process::Command;
-
         let mut info = MemoryHardwareInfo::default();
 
         // Use dmidecode to get memory info (requires root)
-        if let Ok(output) = Command::new("dmidecode").args(["-t", "memory"]).output() {
+        let mut cmd = Command::new("dmidecode");
+        cmd.args(["-t", "memory"]);
+
+        if let Some(output) = exec_with_timeout(cmd, MEMORY_COMMAND_TIMEOUT) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let mut in_device_section = false;
@@ -85,15 +92,14 @@ impl MemoryCollector {
 
         // Fallback: try lshw
         if info.memory_type.is_empty() {
-            if let Ok(output) = Command::new("lshw")
-                .args(["-class", "memory", "-short"])
-                .output()
-            {
+            let mut cmd = Command::new("lshw");
+            cmd.args(["-class", "memory", "-short"]);
+
+            if let Some(output) = exec_with_timeout(cmd, MEMORY_COMMAND_TIMEOUT) {
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     for line in stdout.lines() {
                         if line.contains("DDR") {
-                            // Extract DDR type from line
                             for word in line.split_whitespace() {
                                 if word.starts_with("DDR") {
                                     info.memory_type = word.to_string();
@@ -111,15 +117,12 @@ impl MemoryCollector {
 
     #[cfg(target_os = "macos")]
     fn collect_macos_memory_info() -> MemoryHardwareInfo {
-        use std::process::Command;
-
         let mut info = MemoryHardwareInfo::default();
 
-        // Use system_profiler
-        if let Ok(output) = Command::new("system_profiler")
-            .args(["SPMemoryDataType"])
-            .output()
-        {
+        let mut cmd = Command::new("system_profiler");
+        cmd.args(["SPMemoryDataType"]);
+
+        if let Some(output) = exec_with_timeout(cmd, MEMORY_COMMAND_TIMEOUT) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -146,22 +149,19 @@ impl MemoryCollector {
 
     #[cfg(target_os = "windows")]
     fn collect_windows_memory_info() -> MemoryHardwareInfo {
-        use std::process::Command;
-
         let mut info = MemoryHardwareInfo::default();
 
         // Use WMIC to get memory info
-        if let Ok(output) = Command::new("wmic")
-            .args(["memorychip", "get", "MemoryType,Speed", "/format:csv"])
-            .output()
-        {
+        let mut cmd = Command::new("wmic");
+        cmd.args(["memorychip", "get", "MemoryType,Speed", "/format:csv"]);
+
+        if let Some(output) = exec_with_timeout(cmd, MEMORY_COMMAND_TIMEOUT) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
 
                 for line in stdout.lines().skip(1) {
                     let parts: Vec<&str> = line.split(',').collect();
                     if parts.len() >= 3 {
-                        // Memory type code to string
                         let mem_type_code: u32 = parts[1].trim().parse().unwrap_or(0);
                         info.memory_type = match mem_type_code {
                             20 => "DDR".to_string(),
@@ -184,10 +184,13 @@ impl MemoryCollector {
 
         // Fallback to PowerShell
         if info.memory_type.is_empty() || info.memory_type.starts_with("Type ") {
-            if let Ok(output) = Command::new("powershell")
-                .args(["-Command", "Get-CimInstance -ClassName Win32_PhysicalMemory | Select-Object SMBIOSMemoryType,Speed | ConvertTo-Json"])
-                .output()
-            {
+            let mut cmd = Command::new("powershell");
+            cmd.args([
+                "-Command",
+                "Get-CimInstance -ClassName Win32_PhysicalMemory | Select-Object SMBIOSMemoryType,Speed | ConvertTo-Json",
+            ]);
+
+            if let Some(output) = exec_with_timeout(cmd, MEMORY_COMMAND_TIMEOUT) {
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -195,7 +198,8 @@ impl MemoryCollector {
                         let line = line.trim();
                         if line.contains("\"SMBIOSMemoryType\"") {
                             if let Some(val) = line.split(':').nth(1) {
-                                let type_code: u32 = val.trim().trim_matches(',').parse().unwrap_or(0);
+                                let type_code: u32 =
+                                    val.trim().trim_matches(',').parse().unwrap_or(0);
                                 info.memory_type = match type_code {
                                     20 => "DDR".to_string(),
                                     21 => "DDR2".to_string(),
@@ -230,7 +234,6 @@ impl MemoryCollector {
             for line in meminfo.lines() {
                 if line.starts_with("Cached:") {
                     if let Some(val) = line.split_whitespace().nth(1) {
-                        // Value is in kB
                         return val.parse::<u64>().unwrap_or(0) * 1024;
                     }
                 }
@@ -253,7 +256,6 @@ impl MemoryCollector {
             for line in meminfo.lines() {
                 if line.starts_with("Buffers:") {
                     if let Some(val) = line.split_whitespace().nth(1) {
-                        // Value is in kB
                         return val.parse::<u64>().unwrap_or(0) * 1024;
                     }
                 }

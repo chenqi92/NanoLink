@@ -6,6 +6,7 @@ mod executor;
 mod management;
 mod platform;
 mod security;
+mod utils;
 
 #[allow(clippy::large_enum_variant)]
 pub mod proto {

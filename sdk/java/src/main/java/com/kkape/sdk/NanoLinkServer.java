@@ -86,10 +86,16 @@ public class NanoLinkServer {
         grpcServicer = new NanoLinkServiceImpl(this, config.getTokenValidator());
         grpcServer = ServerBuilder.forPort(config.getGrpcPort())
                 .addService(grpcServicer)
+                // Keepalive settings - server sends pings to keep connection alive
                 .keepAliveTime(30, TimeUnit.SECONDS)
                 .keepAliveTimeout(10, TimeUnit.SECONDS)
                 .permitKeepAliveTime(10, TimeUnit.SECONDS)
                 .permitKeepAliveWithoutCalls(true)
+                // Connection lifecycle - prevent premature connection closure
+                // MAX_VALUE effectively disables these timeouts
+                .maxConnectionIdle(Long.MAX_VALUE, TimeUnit.SECONDS)
+                .maxConnectionAge(Long.MAX_VALUE, TimeUnit.SECONDS)
+                .maxConnectionAgeGrace(Long.MAX_VALUE, TimeUnit.SECONDS)
                 .maxInboundMessageSize(16 * 1024 * 1024)
                 .build()
                 .start();
@@ -152,8 +158,11 @@ public class NanoLinkServer {
         if (heartbeatChecker != null) {
             heartbeatChecker.shutdownNow();
             try {
-                heartbeatChecker.awaitTermination(2, TimeUnit.SECONDS);
+                if (!heartbeatChecker.awaitTermination(2, TimeUnit.SECONDS)) {
+                    log.warn("heartbeatChecker did not terminate gracefully within timeout");
+                }
             } catch (InterruptedException e) {
+                log.warn("Interrupted while waiting for heartbeatChecker termination");
                 Thread.currentThread().interrupt();
             }
         }
@@ -162,8 +171,11 @@ public class NanoLinkServer {
         if (callbackExecutor != null) {
             callbackExecutor.shutdownNow();
             try {
-                callbackExecutor.awaitTermination(2, TimeUnit.SECONDS);
+                if (!callbackExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    log.warn("callbackExecutor did not terminate gracefully within timeout");
+                }
             } catch (InterruptedException e) {
+                log.warn("Interrupted while waiting for callbackExecutor termination");
                 Thread.currentThread().interrupt();
             }
         }
