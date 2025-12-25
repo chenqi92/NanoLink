@@ -41,13 +41,24 @@ impl GrpcClient {
             // Note: Don't set .timeout() here - it kills streaming RPCs
             // Use connect_timeout for connection establishment instead
             .connect_timeout(Duration::from_secs(30))
-            .tcp_keepalive(Some(Duration::from_secs(30)));
+            // TCP keepalive - OS level
+            .tcp_keepalive(Some(Duration::from_secs(30)))
+            // HTTP/2 keepalive - gRPC level (must match server settings)
+            // Server: keepAliveTime=30s, keepAliveTimeout=10s
+            .http2_keep_alive_interval(Duration::from_secs(30))
+            .keep_alive_timeout(Duration::from_secs(10))
+            .keep_alive_while_idle(true);
 
         // Configure TLS if enabled
         if server_config.tls_enabled {
             let tls_config = ClientTlsConfig::new();
             endpoint = endpoint.tls_config(tls_config)?;
         }
+
+        info!(
+            "Connecting to gRPC server: {} with HTTP/2 keepalive enabled",
+            url
+        );
 
         let channel = endpoint
             .connect()
@@ -257,8 +268,8 @@ impl GrpcClient {
         let config = self.config.clone();
         let collector = LayeredCollector::new(config.clone());
 
-        // Spawn the layered collector
-        tokio::spawn(async move {
+        // Spawn the layered collector and keep the handle for cleanup
+        let collector_handle = tokio::spawn(async move {
             collector.run(metrics_tx, request_rx).await;
         });
 
@@ -353,7 +364,10 @@ impl GrpcClient {
             }
         }
 
+        // Clean up all spawned tasks
         sender_handle.abort();
+        collector_handle.abort();
+        debug!("Cleaned up layered metrics stream tasks");
         Ok(())
     }
 }

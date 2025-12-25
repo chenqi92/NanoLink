@@ -628,40 +628,704 @@ message CommandResult {
 
 ## 安全考量
 
-### 权限矩阵
+### ⚠️ 核心安全风险
 
-| 命令类型 | Level 0 | Level 1 | Level 2 | Level 3 |
-|----------|:-------:|:-------:|:-------:|:-------:|
-| SERVICE_LOGS | ✅ | ✅ | ✅ | ✅ |
-| SYSTEM_LOGS | ✅ | ✅ | ✅ | ✅ |
-| AUDIT_LOGS | ✅ | ✅ | ✅ | ✅ |
-| PACKAGE_LIST | ✅ | ✅ | ✅ | ✅ |
-| PACKAGE_CHECK | ✅ | ✅ | ✅ | ✅ |
-| SCRIPT_LIST | ✅ | ✅ | ✅ | ✅ |
-| CONFIG_READ | ✅ | ✅ | ✅ | ✅ |
-| SCRIPT_EXECUTE | ❌ | ❌ | ✅ | ✅ |
-| CONFIG_WRITE | ❌ | ❌ | ✅ | ✅ |
-| PACKAGE_UPDATE | ❌ | ❌ | ❌ | ✅ |
-| SYSTEM_UPDATE | ❌ | ❌ | ❌ | ✅ |
-| AGENT_UPDATE | ❌ | ❌ | ❌ | ✅ |
+在实施运维功能前，必须认识到以下核心风险：
 
-### 安全增强建议
+| 功能 | 风险类型 | 风险等级 | 典型场景 |
+|------|---------|:--------:|---------|
+| 日志查询 | 敏感信息泄露 | 🔴 高 | 日志中包含数据库密码、API 密钥 |
+| 配置读取 | 凭证泄露 | 🔴 高 | 配置文件包含明文密码 |
+| 配置写入 | 后门植入 | 🔴 高 | 修改 SSH 配置允许未授权访问 |
+| 脚本执行 | 命令注入 | 🟠 中 | 参数注入恶意命令 |
+| 包管理 | 供应链攻击 | 🟠 中 | 安装被篡改的软件包 |
 
-1. **双重确认机制**
-   - 危险操作 (PACKAGE_UPDATE, SYSTEM_UPDATE, CONFIG_WRITE) 需要二次确认
-   - 可配置短信/邮件验证码确认
+---
 
-2. **操作时间窗口**
-   - 可配置允许执行危险操作的时间窗口
-   - 如: 只允许工作日 9:00-18:00 执行
+### 1. 日志脱敏系统 (必须实现)
 
-3. **IP 白名单**
-   - Dashboard 用户可绑定 IP 白名单
-   - 从非白名单 IP 执行危险操作需要额外验证
+日志中常见的敏感信息：
+```
+[ERROR] Database: mysql://admin:P@ssw0rd123@localhost/db  # 数据库密码
+[DEBUG] Authorization: Bearer eyJhbGciOiJIUzI1NiIs...    # JWT Token
+[INFO] AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG...    # 云服务密钥
+[ERROR] Redis AUTH failed with password: redis123        # Redis 密码
+```
 
-4. **操作回退**
-   - CONFIG_WRITE 自动备份
-   - 支持一键回滚最近 N 次配置变更
+#### 脱敏模块设计
+
+```rust
+// 新增文件: agent/src/security/log_sanitizer.rs
+
+use regex::Regex;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref SENSITIVE_PATTERNS: Vec<(Regex, &'static str)> = vec![
+        // 密码模式 (password=xxx, passwd:xxx, pwd = xxx)
+        (Regex::new(r"(?i)(password|passwd|pwd)\s*[:=]\s*\S+").unwrap(), "$1=[REDACTED]"),
+
+        // API 密钥模式
+        (Regex::new(r"(?i)(api[_-]?key|apikey|secret[_-]?key|access[_-]?key)\s*[:=]\s*\S+").unwrap(), "$1=[REDACTED]"),
+
+        // Bearer Token
+        (Regex::new(r"(?i)Bearer\s+[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+").unwrap(), "Bearer [REDACTED]"),
+
+        // 数据库连接字符串 (隐藏密码部分)
+        (Regex::new(r"(?i)(mysql|postgres|mongodb|redis|amqp)://([^:]+):([^@]+)@").unwrap(), "$1://$2:[REDACTED]@"),
+
+        // AWS 密钥
+        (Regex::new(r"(?i)(AKIA[A-Z0-9]{16})").unwrap(), "[AWS_KEY_REDACTED]"),
+        (Regex::new(r"(?i)(aws_secret_access_key\s*=\s*)\S+").unwrap(), "$1[REDACTED]"),
+
+        // 私钥内容
+        (Regex::new(r"-----BEGIN\s+(RSA\s+)?PRIVATE KEY-----[\s\S]*?-----END\s+(RSA\s+)?PRIVATE KEY-----").unwrap(), "[PRIVATE_KEY_REDACTED]"),
+
+        // 常见 Token 格式
+        (Regex::new(r"(?i)(token|auth|authorization)\s*[:=]\s*\S{20,}").unwrap(), "$1=[REDACTED]"),
+
+        // IP:Port 后的认证信息 (如 Redis)
+        (Regex::new(r"(?i)AUTH\s+\S+").unwrap(), "AUTH [REDACTED]"),
+    ];
+}
+
+pub struct LogSanitizer {
+    enabled: bool,
+    custom_patterns: Vec<(Regex, String)>,
+}
+
+impl LogSanitizer {
+    pub fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            custom_patterns: Vec::new(),
+        }
+    }
+
+    /// 添加自定义脱敏规则
+    pub fn add_pattern(&mut self, pattern: &str, replacement: &str) -> Result<(), regex::Error> {
+        self.custom_patterns.push((Regex::new(pattern)?, replacement.to_string()));
+        Ok(())
+    }
+
+    /// 对日志内容进行脱敏
+    pub fn sanitize(&self, content: &str) -> String {
+        if !self.enabled {
+            return content.to_string();
+        }
+
+        let mut result = content.to_string();
+
+        // 应用内置规则
+        for (pattern, replacement) in SENSITIVE_PATTERNS.iter() {
+            result = pattern.replace_all(&result, *replacement).to_string();
+        }
+
+        // 应用自定义规则
+        for (pattern, replacement) in &self.custom_patterns {
+            result = pattern.replace_all(&result, replacement.as_str()).to_string();
+        }
+
+        result
+    }
+
+    /// 检测日志中是否可能包含敏感信息 (用于警告)
+    pub fn detect_sensitive(&self, content: &str) -> Vec<String> {
+        let mut warnings = Vec::new();
+        for (pattern, _) in SENSITIVE_PATTERNS.iter() {
+            if pattern.is_match(content) {
+                warnings.push(format!("Detected potential sensitive data matching: {}", pattern.as_str()));
+            }
+        }
+        warnings
+    }
+}
+```
+
+#### 日志查询接口更新
+
+```rust
+// 修改文件: agent/src/executor/log_ops.rs
+
+pub struct LogExecutor {
+    sanitizer: LogSanitizer,
+    allowed_paths: Vec<PathBuf>,
+    max_lines: u32,
+}
+
+impl LogExecutor {
+    /// 查询日志 (自动脱敏)
+    pub async fn get_logs(
+        &self,
+        target: &str,
+        lines: u32,
+        sanitize: bool,  // 是否脱敏，默认 true
+    ) -> Result<LogQueryResult> {
+        // 1. 验证路径
+        self.validate_path(target)?;
+
+        // 2. 读取日志
+        let raw_content = self.read_log_file(target, lines).await?;
+
+        // 3. 脱敏处理
+        let content = if sanitize {
+            self.sanitizer.sanitize(&raw_content)
+        } else {
+            raw_content
+        };
+
+        Ok(LogQueryResult {
+            lines: content.lines().map(String::from).collect(),
+            sanitized: sanitize,
+            ..Default::default()
+        })
+    }
+}
+```
+
+---
+
+### 2. 配置文件分级管理
+
+#### 配置敏感度分级
+
+```rust
+// 新增文件: agent/src/security/config_policy.rs
+
+use std::path::PathBuf;
+use std::collections::HashMap;
+
+/// 配置文件敏感度级别
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConfigSensitivity {
+    /// 公开 - 可直接读取，无需脱敏
+    Public,
+    /// 敏感 - 可读取但需要脱敏处理
+    Sensitive,
+    /// 机密 - 禁止通过 API 读取
+    Secret,
+}
+
+/// 配置文件访问策略
+pub struct ConfigPolicy {
+    /// 文件路径 -> 敏感度映射
+    sensitivity_map: HashMap<PathBuf, ConfigSensitivity>,
+
+    /// 始终禁止访问的文件
+    blocked_paths: Vec<PathBuf>,
+
+    /// 敏感内容正则 (用于自动检测)
+    sensitive_patterns: Vec<Regex>,
+}
+
+impl ConfigPolicy {
+    pub fn new() -> Self {
+        Self {
+            sensitivity_map: Self::default_sensitivity_map(),
+            blocked_paths: Self::default_blocked_paths(),
+            sensitive_patterns: Self::default_sensitive_patterns(),
+        }
+    }
+
+    /// 默认禁止访问的路径
+    fn default_blocked_paths() -> Vec<PathBuf> {
+        vec![
+            // 系统凭证
+            PathBuf::from("/etc/shadow"),
+            PathBuf::from("/etc/gshadow"),
+            PathBuf::from("/etc/sudoers.d"),
+
+            // SSH 私钥
+            PathBuf::from("/etc/ssh/ssh_host_rsa_key"),
+            PathBuf::from("/etc/ssh/ssh_host_ecdsa_key"),
+            PathBuf::from("/etc/ssh/ssh_host_ed25519_key"),
+            PathBuf::from("/root/.ssh"),
+
+            // SSL/TLS 私钥
+            PathBuf::from("/etc/ssl/private"),
+            PathBuf::from("/etc/pki/tls/private"),
+
+            // 数据库数据文件
+            PathBuf::from("/var/lib/mysql"),
+            PathBuf::from("/var/lib/postgresql"),
+        ]
+    }
+
+    /// 默认敏感度映射
+    fn default_sensitivity_map() -> HashMap<PathBuf, ConfigSensitivity> {
+        let mut map = HashMap::new();
+
+        // 机密级别 - 包含密码的配置
+        map.insert(PathBuf::from("/etc/mysql/debian.cnf"), ConfigSensitivity::Secret);
+        map.insert(PathBuf::from("/etc/grafana/grafana.ini"), ConfigSensitivity::Secret);
+
+        // 敏感级别 - 可能包含密码
+        map.insert(PathBuf::from("/etc/mysql/my.cnf"), ConfigSensitivity::Sensitive);
+        map.insert(PathBuf::from("/etc/redis/redis.conf"), ConfigSensitivity::Sensitive);
+        map.insert(PathBuf::from("/etc/postgresql/*/pg_hba.conf"), ConfigSensitivity::Sensitive);
+
+        // 公开级别 - 不包含敏感信息
+        map.insert(PathBuf::from("/etc/nginx/nginx.conf"), ConfigSensitivity::Public);
+        map.insert(PathBuf::from("/etc/hosts"), ConfigSensitivity::Public);
+        map.insert(PathBuf::from("/etc/resolv.conf"), ConfigSensitivity::Public);
+
+        map
+    }
+
+    /// 检查文件访问权限
+    pub fn check_access(&self, path: &PathBuf, permission_level: u8) -> Result<ConfigSensitivity, String> {
+        // 检查是否在禁止列表
+        for blocked in &self.blocked_paths {
+            if path.starts_with(blocked) {
+                return Err(format!("Access denied: {} is in blocked list", path.display()));
+            }
+        }
+
+        // 获取敏感度级别
+        let sensitivity = self.sensitivity_map
+            .get(path)
+            .copied()
+            .unwrap_or(ConfigSensitivity::Sensitive); // 默认为敏感
+
+        // 机密文件需要最高权限
+        if sensitivity == ConfigSensitivity::Secret && permission_level < 3 {
+            return Err("Secret config requires SYSTEM_ADMIN permission".to_string());
+        }
+
+        Ok(sensitivity)
+    }
+}
+```
+
+#### 配置读取脱敏
+
+```rust
+// 配置文件内容脱敏
+pub struct ConfigSanitizer;
+
+impl ConfigSanitizer {
+    /// 对配置文件内容进行脱敏
+    pub fn sanitize(content: &str, file_type: ConfigType) -> String {
+        match file_type {
+            ConfigType::Ini | ConfigType::Conf => Self::sanitize_ini(content),
+            ConfigType::Yaml => Self::sanitize_yaml(content),
+            ConfigType::Json => Self::sanitize_json(content),
+            ConfigType::Env => Self::sanitize_env(content),
+            _ => Self::sanitize_generic(content),
+        }
+    }
+
+    fn sanitize_ini(content: &str) -> String {
+        let password_pattern = Regex::new(r"(?im)^(\s*(?:password|passwd|secret|key|token|auth)\s*=\s*)(.+)$").unwrap();
+        password_pattern.replace_all(content, "$1[REDACTED]").to_string()
+    }
+
+    fn sanitize_env(content: &str) -> String {
+        let secret_pattern = Regex::new(r"(?im)^((?:.*(?:PASSWORD|SECRET|KEY|TOKEN|AUTH).*)\s*=\s*)(.+)$").unwrap();
+        secret_pattern.replace_all(content, "$1[REDACTED]").to_string()
+    }
+
+    // ... 其他格式的脱敏实现
+}
+```
+
+---
+
+### 3. 脚本执行安全增强
+
+#### 参数验证与沙箱
+
+```rust
+// 新增文件: agent/src/security/script_security.rs
+
+use std::collections::HashSet;
+
+/// 危险的 Shell 元字符
+const DANGEROUS_CHARS: &[char] = &[
+    '|', '&', ';', '$', '`', '(', ')', '{', '}',
+    '<', '>', '\n', '\r', '\'', '"', '\\',
+];
+
+/// 脚本执行策略
+pub struct ScriptPolicy {
+    /// 允许的脚本目录
+    scripts_dir: PathBuf,
+
+    /// 脚本参数白名单 (脚本名 -> 允许的参数格式)
+    allowed_args: HashMap<String, Vec<ArgSpec>>,
+
+    /// 是否启用沙箱
+    use_sandbox: bool,
+
+    /// 执行超时 (秒)
+    timeout_secs: u64,
+
+    /// 资源限制
+    resource_limits: ResourceLimits,
+}
+
+/// 参数规格
+pub struct ArgSpec {
+    name: String,
+    pattern: Regex,        // 参数值必须匹配的正则
+    required: bool,
+    max_length: usize,
+}
+
+impl ScriptPolicy {
+    /// 验证脚本参数安全性
+    pub fn validate_args(&self, script_name: &str, args: &[String]) -> Result<(), String> {
+        // 1. 检查危险字符
+        for arg in args {
+            for &c in DANGEROUS_CHARS {
+                if arg.contains(c) {
+                    return Err(format!(
+                        "Dangerous character '{}' detected in argument",
+                        c.escape_default()
+                    ));
+                }
+            }
+
+            // 长度限制
+            if arg.len() > 1024 {
+                return Err("Argument too long (max 1024 chars)".to_string());
+            }
+        }
+
+        // 2. 检查白名单规则
+        if let Some(allowed) = self.allowed_args.get(script_name) {
+            for (i, arg) in args.iter().enumerate() {
+                if let Some(spec) = allowed.get(i) {
+                    if !spec.pattern.is_match(arg) {
+                        return Err(format!(
+                            "Argument {} does not match required pattern: {}",
+                            spec.name, spec.pattern.as_str()
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 构建沙箱执行命令
+    pub fn build_sandboxed_command(&self, script_path: &Path, args: &[String]) -> Command {
+        if self.use_sandbox {
+            // 使用 firejail 或 bubblewrap 沙箱
+            let mut cmd = Command::new("firejail");
+            cmd.args(&[
+                "--quiet",
+                "--private-tmp",
+                "--private-dev",
+                "--net=none",           // 禁用网络
+                "--no3d",
+                "--nodvd",
+                "--nosound",
+                "--notv",
+                "--novideo",
+                "--x11=none",
+                &format!("--timeout={}", self.timeout_secs),
+                "--rlimit-as=256m",     // 内存限制
+                "--rlimit-cpu=60",      // CPU 时间限制
+                "--rlimit-fsize=10m",   // 文件大小限制
+                "--rlimit-nproc=10",    // 进程数限制
+            ]);
+            cmd.arg(script_path);
+            cmd.args(args);
+            cmd
+        } else {
+            let mut cmd = Command::new(script_path);
+            cmd.args(args);
+            cmd
+        }
+    }
+}
+```
+
+#### 脚本清单与签名
+
+```rust
+/// 脚本清单 (scripts/manifest.json)
+#[derive(Serialize, Deserialize)]
+pub struct ScriptManifest {
+    pub scripts: Vec<ScriptEntry>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ScriptEntry {
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub required_permission: u8,
+    pub args: Vec<ArgSpec>,
+    pub sha256: String,  // 脚本文件 SHA256 校验
+}
+
+impl ScriptExecutor {
+    /// 验证脚本完整性
+    pub fn verify_script(&self, script_name: &str) -> Result<bool, String> {
+        let manifest = self.load_manifest()?;
+
+        if let Some(entry) = manifest.scripts.iter().find(|s| s.name == script_name) {
+            let script_path = self.scripts_dir.join(&entry.name);
+            let actual_hash = sha256_file(&script_path)?;
+
+            if actual_hash != entry.sha256 {
+                return Err(format!(
+                    "Script integrity check failed: expected {}, got {}",
+                    entry.sha256, actual_hash
+                ));
+            }
+
+            Ok(true)
+        } else {
+            Err(format!("Script {} not found in manifest", script_name))
+        }
+    }
+}
+```
+
+---
+
+### 4. 权限矩阵 (更新版)
+
+| 命令类型 | Level 0 | Level 1 | Level 2 | Level 3 | 额外要求 |
+|----------|:-------:|:-------:|:-------:|:-------:|---------|
+| **日志查询** |
+| SERVICE_LOGS | ✅¹ | ✅¹ | ✅ | ✅ | ¹ 强制脱敏 |
+| SYSTEM_LOGS | ❌ | ✅¹ | ✅ | ✅ | ¹ 强制脱敏 + 路径白名单 |
+| AUDIT_LOGS | ❌ | ❌ | ✅ | ✅ | 敏感操作 |
+| LOG_STREAM | ❌ | ❌ | ✅ | ✅ | 实时流需审批 |
+| **包管理** |
+| PACKAGE_LIST | ✅ | ✅ | ✅ | ✅ | 只读 |
+| PACKAGE_CHECK | ✅ | ✅ | ✅ | ✅ | 只读 |
+| PACKAGE_UPDATE | ❌ | ❌ | ❌ | ✅² | ² 需二次确认 |
+| SYSTEM_UPDATE | ❌ | ❌ | ❌ | ✅² | ² 需二次确认 + 维护窗口 |
+| **脚本执行** |
+| SCRIPT_LIST | ✅ | ✅ | ✅ | ✅ | 只读 |
+| SCRIPT_EXECUTE | ❌ | ❌ | ✅³ | ✅ | ³ 仅白名单脚本 |
+| SCRIPT_UPLOAD | ❌ | ❌ | ❌ | ✅ | 需签名验证 |
+| **配置管理** |
+| CONFIG_READ (Public) | ✅ | ✅ | ✅ | ✅ | 无敏感信息 |
+| CONFIG_READ (Sensitive) | ❌ | ✅¹ | ✅ | ✅ | ¹ 强制脱敏 |
+| CONFIG_READ (Secret) | ❌ | ❌ | ❌ | ✅ | 需审计日志 |
+| CONFIG_WRITE | ❌ | ❌ | ✅⁴ | ✅ | ⁴ 自动备份 + 语法验证 |
+| CONFIG_ROLLBACK | ❌ | ❌ | ✅ | ✅ | |
+| **系统管理** |
+| AGENT_UPDATE | ❌ | ❌ | ❌ | ✅² | ² 需二次确认 |
+| SYSTEM_REBOOT | ❌ | ❌ | ❌ | ✅² | ² 需二次确认 + 维护窗口 |
+
+**图例说明：**
+- ✅ 允许
+- ❌ 禁止
+- ¹ 强制脱敏
+- ² 需要二次确认
+- ³ 仅限白名单
+- ⁴ 需要自动备份
+
+---
+
+### 5. 安全增强机制
+
+#### 5.1 二次确认机制
+
+```rust
+// 新增文件: agent/src/security/confirmation.rs
+
+/// 需要二次确认的命令类型
+const REQUIRE_CONFIRMATION: &[CommandType] = &[
+    CommandType::PackageUpdate,
+    CommandType::SystemUpdate,
+    CommandType::AgentUpdate,
+    CommandType::SystemReboot,
+    CommandType::ConfigWrite,
+];
+
+/// 确认令牌
+pub struct ConfirmationToken {
+    pub token: String,
+    pub command_type: CommandType,
+    pub target: String,
+    pub expires_at: DateTime<Utc>,
+    pub user_id: String,
+}
+
+impl ConfirmationService {
+    /// 生成确认令牌 (有效期 5 分钟)
+    pub fn generate_token(&self, cmd: &Command, user_id: &str) -> ConfirmationToken {
+        ConfirmationToken {
+            token: generate_secure_token(32),
+            command_type: cmd.command_type,
+            target: cmd.target.clone(),
+            expires_at: Utc::now() + Duration::minutes(5),
+            user_id: user_id.to_string(),
+        }
+    }
+
+    /// 验证确认令牌
+    pub fn verify_token(&self, token: &str, cmd: &Command) -> Result<(), String> {
+        // 验证令牌有效性、匹配性、过期时间
+    }
+}
+```
+
+#### 5.2 操作时间窗口
+
+```yaml
+# 配置文件: agent/config.yaml
+
+security:
+  # 维护时间窗口 (只在此时间段允许危险操作)
+  maintenance_windows:
+    - day_of_week: [1, 2, 3, 4, 5]  # 周一到周五
+      start_time: "02:00"
+      end_time: "06:00"
+      timezone: "Asia/Shanghai"
+
+  # 紧急操作绕过 (需要特殊令牌)
+  emergency_bypass:
+    enabled: true
+    token_env: "NANOLINK_EMERGENCY_TOKEN"
+```
+
+#### 5.3 IP 白名单
+
+```rust
+/// IP 白名单检查
+pub struct IpWhitelist {
+    allowed_ips: Vec<IpNetwork>,
+    allowed_for_commands: HashSet<CommandType>,
+}
+
+impl IpWhitelist {
+    pub fn check(&self, client_ip: &IpAddr, command_type: CommandType) -> bool {
+        // 如果命令不在受限列表，放行
+        if !self.allowed_for_commands.contains(&command_type) {
+            return true;
+        }
+
+        // 检查 IP 是否在白名单
+        self.allowed_ips.iter().any(|net| net.contains(*client_ip))
+    }
+}
+```
+
+#### 5.4 敏感文件检测
+
+```rust
+/// 检测配置文件中的敏感信息
+pub fn detect_sensitive_content(content: &str) -> Vec<SensitiveMatch> {
+    let mut matches = Vec::new();
+
+    // 检测私钥
+    if content.contains("-----BEGIN") && content.contains("PRIVATE KEY-----") {
+        matches.push(SensitiveMatch {
+            type_: "PRIVATE_KEY",
+            severity: Severity::Critical,
+            line: find_line_number(content, "PRIVATE KEY"),
+        });
+    }
+
+    // 检测硬编码密码
+    let password_pattern = Regex::new(r"(?i)(password|passwd|pwd)\s*[:=]\s*['\"]?([^'\"\\s]{8,})").unwrap();
+    for cap in password_pattern.captures_iter(content) {
+        matches.push(SensitiveMatch {
+            type_: "HARDCODED_PASSWORD",
+            severity: Severity::High,
+            line: find_line_number(content, cap.get(0).unwrap().as_str()),
+        });
+    }
+
+    matches
+}
+```
+
+---
+
+### 6. 安全配置模板
+
+```yaml
+# agent/config.security.yaml - 安全配置模板
+
+# 日志查询安全配置
+log_security:
+  # 是否启用脱敏 (强烈建议开启)
+  sanitize_enabled: true
+
+  # 自定义脱敏规则
+  custom_patterns:
+    - pattern: "(?i)my_company_secret_\\w+"
+      replacement: "[COMPANY_SECRET]"
+
+  # 允许查询的日志路径
+  allowed_paths:
+    - /var/log/syslog
+    - /var/log/messages
+    - /var/log/nginx/access.log
+    - /var/log/nginx/error.log
+
+  # 禁止查询的日志 (即使在 allowed_paths 中)
+  blocked_paths:
+    - /var/log/auth.log     # 包含认证信息
+    - /var/log/secure       # 包含认证信息
+
+# 配置管理安全配置
+config_security:
+  # 配置分级
+  classifications:
+    secret:  # 禁止 API 读取
+      - /etc/mysql/debian.cnf
+      - /etc/shadow
+    sensitive:  # 需要脱敏
+      - /etc/mysql/my.cnf
+      - /etc/redis/redis.conf
+    public:  # 可直接读取
+      - /etc/nginx/nginx.conf
+      - /etc/hosts
+
+  # 写入配置时自动备份
+  auto_backup: true
+  max_backups: 10
+
+  # 写入前语法验证
+  validate_before_write: true
+
+# 脚本执行安全配置
+script_security:
+  # 启用沙箱
+  sandbox_enabled: true
+  sandbox_type: firejail  # firejail / bubblewrap / none
+
+  # 执行超时
+  timeout_secs: 300
+
+  # 资源限制
+  limits:
+    max_memory_mb: 256
+    max_cpu_seconds: 60
+    max_file_size_mb: 10
+    max_processes: 10
+
+  # 需要验证脚本签名
+  require_signature: false
+
+# 包管理安全配置
+package_security:
+  # 是否允许包更新 (默认禁用)
+  allow_update: false
+
+  # 允许更新的包白名单
+  update_whitelist:
+    - nginx
+    - redis-server
+
+  # 禁止更新的包
+  update_blacklist:
+    - openssh-server
+    - sudo
+    - kernel*
+```
 
 ---
 

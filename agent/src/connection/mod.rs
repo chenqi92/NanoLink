@@ -66,14 +66,22 @@ impl ConnectionManager {
         let mut reconnect_delay = config.agent.reconnect_delay;
         let max_delay = config.agent.max_reconnect_delay;
         let grpc_url = server.get_grpc_url();
+        let mut connection_attempts: u32 = 0;
 
         loop {
-            info!("Connecting to gRPC server: {}", grpc_url);
+            connection_attempts += 1;
+            info!(
+                "Connecting to gRPC server: {} (attempt #{})",
+                grpc_url, connection_attempts
+            );
 
             match grpc::GrpcClient::connect(&server, &config).await {
                 Ok(mut client) => {
-                    // Reset reconnect delay on successful connection
+                    info!("gRPC connection established to {}", grpc_url);
+
+                    // Reset reconnect delay and attempts on successful connection
                     reconnect_delay = config.agent.reconnect_delay;
+                    connection_attempts = 0;
 
                     // Authenticate
                     match client.authenticate().await {
@@ -116,29 +124,42 @@ impl ConnectionManager {
                                     .await
                             };
 
-                            if let Err(e) = stream_result {
-                                error!("gRPC stream error: {}", e);
+                            match &stream_result {
+                                Ok(_) => {
+                                    warn!("gRPC stream ended normally for {}", grpc_url);
+                                }
+                                Err(e) => {
+                                    error!("gRPC stream error for {}: {}", grpc_url, e);
+                                }
                             }
                         }
                         Ok(auth) => {
-                            error!("gRPC authentication failed: {}", auth.error_message);
+                            error!(
+                                "gRPC authentication failed for {}: {}",
+                                grpc_url, auth.error_message
+                            );
                         }
                         Err(e) => {
-                            error!("gRPC authentication error: {}", e);
+                            error!("gRPC authentication error for {}: {}", grpc_url, e);
                         }
                     }
 
-                    warn!("gRPC connection to {} lost", grpc_url);
+                    warn!("gRPC connection to {} lost, will reconnect", grpc_url);
                 }
                 Err(e) => {
-                    error!("Failed to connect to gRPC server {}: {}", grpc_url, e);
+                    error!(
+                        "Failed to connect to gRPC server {} (attempt #{}): {}",
+                        grpc_url, connection_attempts, e
+                    );
                 }
             }
 
             // Wait before reconnecting with exponential backoff
             info!(
-                "Reconnecting to {} in {} seconds...",
-                grpc_url, reconnect_delay
+                "Reconnecting to {} in {} seconds (next delay: {}s)...",
+                grpc_url,
+                reconnect_delay,
+                (reconnect_delay * 2).min(max_delay)
             );
             time::sleep(Duration::from_secs(reconnect_delay)).await;
 

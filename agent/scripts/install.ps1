@@ -63,7 +63,7 @@ $ErrorActionPreference = "Stop"
 # =============================================================================
 # Configuration
 # =============================================================================
-$Script:VERSION = "0.3.2"
+$Script:VERSION = "0.3.3"
 $Script:ServiceName = "NanoLinkAgent"
 $Script:ServiceDisplayName = "NanoLink Monitoring Agent"
 $Script:InstallDir = "C:\Program Files\NanoLink"
