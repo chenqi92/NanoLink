@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:easy_localization/easy_localization.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
 import '../providers/theme_provider.dart';
@@ -46,18 +47,16 @@ class HomeScreen extends StatelessWidget {
                   child: provider.servers.isEmpty
                       ? EmptyState(
                           icon: Icons.dns_outlined,
-                          title: 'No Servers Connected',
-                          subtitle:
-                              'Add a NanoLink server to start monitoring your agents',
-                          actionLabel: 'Add Server',
+                          title: 'home.noServersTitle'.tr(),
+                          subtitle: 'home.noServersDesc'.tr(),
+                          actionLabel: 'server.addServer'.tr(),
                           onAction: () => _showAddServerDialog(context),
                         )
                       : provider.allAgents.isEmpty
-                          ? const EmptyState(
+                          ? EmptyState(
                               icon: Icons.computer_outlined,
-                              title: 'No Agents Connected',
-                              subtitle:
-                                  'Agents will appear here when they connect to your servers',
+                              title: 'home.noAgentsTitle'.tr(),
+                              subtitle: 'home.noAgentsDesc'.tr(),
                             )
                           : _buildAgentGrid(context, provider),
                 ),
@@ -145,6 +144,9 @@ class HomeScreen extends StatelessWidget {
           },
         ),
 
+        // Language toggle
+        _buildLanguageToggle(context, isDark),
+
         // Add server button
         Padding(
           padding: const EdgeInsets.only(right: AppTheme.spacingMedium),
@@ -170,15 +172,15 @@ class HomeScreen extends StatelessWidget {
 
     if (hasWs) {
       modeIcon = Icons.bolt_rounded;
-      modeTooltip = 'WebSocket (Real-time)';
+      modeTooltip = 'connection.wsRealtime'.tr();
       modeColor = AppTheme.successGreen;
     } else if (hasPolling) {
       modeIcon = Icons.sync_rounded;
-      modeTooltip = 'HTTP Polling';
+      modeTooltip = 'connection.httpPolling'.tr();
       modeColor = AppTheme.warningYellow;
     } else {
       modeIcon = Icons.cloud_off_rounded;
-      modeTooltip = 'Disconnected';
+      modeTooltip = 'connection.disconnected'.tr();
       modeColor = AppTheme.errorRed;
     }
 
@@ -222,7 +224,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    ' Agent${provider.allAgents.length != 1 ? 's' : ''}',
+                    ' ${provider.allAgents.length != 1 ? 'home.agentsCount'.tr() : 'home.agentCount'.tr()}'.replaceFirst('{} ', ''),
                     style: TextStyle(
                       color: isDark
                           ? AppTheme.darkTextSecondary
@@ -254,13 +256,13 @@ class HomeScreen extends StatelessWidget {
     switch (themeProvider.themeMode) {
       case AppThemeMode.light:
         icon = Icons.light_mode_rounded;
-        tooltip = 'Light mode';
+        tooltip = 'theme.light'.tr();
       case AppThemeMode.dark:
         icon = Icons.dark_mode_rounded;
-        tooltip = 'Dark mode';
+        tooltip = 'theme.dark'.tr();
       case AppThemeMode.system:
         icon = Icons.brightness_auto_rounded;
-        tooltip = 'System mode';
+        tooltip = 'theme.system'.tr();
     }
 
     return Padding(
@@ -305,9 +307,63 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildLanguageToggle(BuildContext context, bool isDark) {
+    final isZh = context.locale.languageCode == 'zh';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Tooltip(
+        message: 'language.title'.tr(),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  if (isZh) {
+                    context.setLocale(const Locale('en'));
+                  } else {
+                    context.setLocale(const Locale('zh'));
+                  }
+                },
+                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppTheme.darkCard.withValues(alpha: 0.5)
+                        : AppTheme.lightCard.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                    border: Border.all(
+                      color: isDark
+                          ? AppTheme.darkBorder.withValues(alpha: 0.3)
+                          : AppTheme.lightBorder.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Text(
+                    isZh ? 'EN' : '中',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: isDark
+                          ? AppTheme.darkTextSecondary
+                          : AppTheme.lightTextSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAddServerButton(BuildContext context, bool isDark) {
     return Tooltip(
-      message: 'Add Server',
+      message: 'server.addServer'.tr(),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         child: BackdropFilter(
@@ -368,7 +424,7 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: AppTheme.spacingLarge),
           Text(
-            'Connecting to servers...',
+            'home.connectingToServers'.tr(),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: isDark
                   ? AppTheme.darkTextSecondary
@@ -510,18 +566,18 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppTheme.spacingMedium),
-            const Text('Remove Server'),
+            Text('home.removeServer'.tr()),
           ],
         ),
         content: Text(
-          'Are you sure you want to remove "${server.name}"?',
+          'home.removeServerConfirm'.tr().replaceFirst('{}', server.name),
           style: theme.textTheme.bodyMedium,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
-              'Cancel',
+              'common.cancel'.tr(),
               style: TextStyle(
                 color: isDark
                     ? AppTheme.darkTextSecondary
@@ -538,7 +594,7 @@ class HomeScreen extends StatelessWidget {
               provider.removeServer(server.id);
               Navigator.pop(context);
             },
-            child: const Text('Remove'),
+            child: Text('common.remove'.tr()),
           ),
         ],
       ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 
@@ -71,7 +72,7 @@ class ServerChip extends StatelessWidget {
               constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
               padding: EdgeInsets.zero,
               onPressed: onDelete,
-              tooltip: 'Remove server',
+              tooltip: 'server.removeServer'.tr(),
             ),
         ],
       ),

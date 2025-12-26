@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:easy_localization/easy_localization.dart';
 import '../providers/app_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -49,7 +50,7 @@ class _AddServerDialogState extends State<AddServerDialog> {
     } else {
       setState(() {
         _isLoading = false;
-        _error = 'Failed to connect. Please check the URL and token.';
+        _error = 'server.connectionFailed'.tr();
       });
     }
   }
@@ -71,7 +72,7 @@ class _AddServerDialogState extends State<AddServerDialog> {
             child: const Icon(Icons.dns, color: AppTheme.primaryBlue, size: 20),
           ),
           const SizedBox(width: 12),
-          const Text('Add Server'),
+          Text('server.addServer'.tr()),
         ],
       ),
       content: SizedBox(
@@ -84,7 +85,7 @@ class _AddServerDialogState extends State<AddServerDialog> {
             children: [
               // Name field
               Text(
-                'Server Name',
+                'server.serverName'.tr(),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
@@ -92,13 +93,13 @@ class _AddServerDialogState extends State<AddServerDialog> {
               const SizedBox(height: 6),
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(
-                  hintText: 'e.g., Production Server',
-                  prefixIcon: Icon(Icons.label_outline, size: 20),
+                decoration: InputDecoration(
+                  hintText: 'server.serverNameHint'.tr(),
+                  prefixIcon: const Icon(Icons.label_outline, size: 20),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return 'Please enter a name';
+                    return 'server.serverNameRequired'.tr();
                   }
                   return null;
                 },
@@ -107,7 +108,7 @@ class _AddServerDialogState extends State<AddServerDialog> {
 
               // URL field
               Text(
-                'Server URL',
+                'server.serverUrl'.tr(),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
@@ -115,17 +116,17 @@ class _AddServerDialogState extends State<AddServerDialog> {
               const SizedBox(height: 6),
               TextFormField(
                 controller: _urlController,
-                decoration: const InputDecoration(
-                  hintText: 'e.g., http://192.168.1.100:8080',
-                  prefixIcon: Icon(Icons.link, size: 20),
+                decoration: InputDecoration(
+                  hintText: 'server.serverUrlHint'.tr(),
+                  prefixIcon: const Icon(Icons.link, size: 20),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return 'Please enter the server URL';
+                    return 'server.serverUrlRequired'.tr();
                   }
                   final uri = Uri.tryParse(value.trim());
                   if (uri == null || !uri.hasScheme) {
-                    return 'Please enter a valid URL (e.g., http://...)';
+                    return 'server.serverUrlInvalid'.tr();
                   }
                   return null;
                 },
@@ -134,7 +135,7 @@ class _AddServerDialogState extends State<AddServerDialog> {
 
               // Token field
               Text(
-                'Auth Token (optional)',
+                'server.authToken'.tr(),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
@@ -142,9 +143,9 @@ class _AddServerDialogState extends State<AddServerDialog> {
               const SizedBox(height: 6),
               TextFormField(
                 controller: _tokenController,
-                decoration: const InputDecoration(
-                  hintText: 'JWT token for authentication',
-                  prefixIcon: Icon(Icons.key_outlined, size: 20),
+                decoration: InputDecoration(
+                  hintText: 'server.authTokenHint'.tr(),
+                  prefixIcon: const Icon(Icons.key_outlined, size: 20),
                 ),
                 obscureText: true,
               ),
@@ -179,7 +180,7 @@ class _AddServerDialogState extends State<AddServerDialog> {
       actions: [
         TextButton(
           onPressed: _isLoading ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text('common.cancel'.tr()),
         ),
         ElevatedButton(
           onPressed: _isLoading ? null : _submit,
@@ -189,7 +190,7 @@ class _AddServerDialogState extends State<AddServerDialog> {
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 )
-              : const Text('Connect'),
+              : Text('common.connect'.tr()),
         ),
       ],
     );

@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 
@@ -566,7 +567,7 @@ class _AgentCardState extends State<AgentCard>
           ),
           const SizedBox(height: AppTheme.spacingMedium),
           Text(
-            'Waiting for metrics...',
+            'metrics.waitingForMetrics'.tr(),
             style: theme.textTheme.bodySmall?.copyWith(
               color: isDark
                   ? AppTheme.darkTextSecondary

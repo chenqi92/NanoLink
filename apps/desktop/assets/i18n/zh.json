@@ -1,0 +1,89 @@
+{
+  "app": {
+    "title": "NanoLink"
+  },
+  "common": {
+    "loading": "加载中...",
+    "cancel": "取消",
+    "remove": "删除",
+    "connect": "连接",
+    "online": "在线",
+    "offline": "离线"
+  },
+  "home": {
+    "noServersTitle": "未连接服务器",
+    "noServersDesc": "添加 NanoLink 服务器以开始监控您的代理",
+    "noAgentsTitle": "暂无代理连接",
+    "noAgentsDesc": "代理连接后将显示在这里",
+    "connectingToServers": "正在连接服务器...",
+    "agentCount": "{} 个代理",
+    "agentsCount": "{} 个代理",
+    "removeServer": "删除服务器",
+    "removeServerConfirm": "确定要删除 \"{}\" 吗？"
+  },
+  "connection": {
+    "wsRealtime": "WebSocket（实时）",
+    "httpPolling": "HTTP 轮询",
+    "disconnected": "已断开"
+  },
+  "theme": {
+    "light": "浅色模式",
+    "dark": "深色模式",
+    "system": "跟随系统"
+  },
+  "server": {
+    "addServer": "添加服务器",
+    "removeServer": "删除服务器",
+    "serverName": "服务器名称",
+    "serverNameHint": "例如：生产服务器",
+    "serverNameRequired": "请输入名称",
+    "serverUrl": "服务器地址",
+    "serverUrlHint": "例如：http://192.168.1.100:8080",
+    "serverUrlRequired": "请输入服务器地址",
+    "serverUrlInvalid": "请输入有效的 URL（例如：http://...）",
+    "authToken": "认证令牌（可选）",
+    "authTokenHint": "用于认证的 JWT 令牌",
+    "connectionFailed": "连接失败，请检查 URL 和令牌。"
+  },
+  "metrics": {
+    "cpu": "CPU",
+    "memory": "内存",
+    "ram": "内存",
+    "disk": "磁盘",
+    "network": "网络",
+    "gpu": "GPU",
+    "npu": "NPU / AI 加速器",
+    "overview": "概览",
+    "cpuMemory": "CPU 和内存",
+    "cpuUsage": "CPU 使用率",
+    "memoryUsage": "内存使用率",
+    "gpuUsage": "GPU 使用率",
+    "vram": "显存",
+    "available": "可用",
+    "swapUsed": "交换已用",
+    "swapTotal": "交换总计",
+    "loadingMetrics": "加载指标中...",
+    "waitingForMetrics": "等待指标数据...",
+    "storage": "存储（{} 个磁盘）",
+    "storages": "存储（{} 个磁盘）",
+    "networkInterface": "网络（{} 个接口）",
+    "networkInterfaces": "网络（{} 个接口）",
+    "gpuCount": "GPU（{}）",
+    "npuCount": "NPU / AI 加速器（{}）",
+    "activeUsers": "活跃用户（{}）"
+  },
+  "system": {
+    "systemInfo": "系统信息",
+    "os": "操作系统",
+    "kernel": "内核",
+    "uptime": "运行时间",
+    "systemModel": "系统型号",
+    "motherboard": "主板",
+    "bios": "BIOS"
+  },
+  "language": {
+    "title": "语言",
+    "english": "英文",
+    "chinese": "中文"
+  }
+}

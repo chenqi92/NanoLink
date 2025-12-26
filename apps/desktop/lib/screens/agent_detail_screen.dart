@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:easy_localization/easy_localization.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
 import '../theme/app_theme.dart';
@@ -184,7 +185,7 @@ class AgentDetailScreen extends StatelessWidget {
           const StatusIndicator(isOnline: true, size: 8),
           const SizedBox(width: AppTheme.spacingSmall),
           Text(
-            'Online',
+            'common.online'.tr(),
             style: TextStyle(
               color: AppTheme.successGreen,
               fontWeight: FontWeight.w600,
@@ -221,7 +222,7 @@ class AgentDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: AppTheme.spacingLarge),
           Text(
-            'Loading metrics...',
+            'metrics.loadingMetrics'.tr(),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: isDark
                   ? AppTheme.darkTextSecondary
@@ -301,7 +302,7 @@ class AgentDetailScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle(context, 'Overview', icon: Icons.dashboard_rounded),
+        _buildSectionTitle(context, 'metrics.overview'.tr(), icon: Icons.dashboard_rounded),
         const SizedBox(height: AppTheme.spacingMedium),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -318,7 +319,7 @@ class AgentDetailScreen extends StatelessWidget {
                   context,
                   width: adjustedWidth,
                   icon: Icons.memory,
-                  label: 'CPU',
+                  label: 'metrics.cpu'.tr(),
                   value: Formatter.percent(metrics.cpuPercent),
                   color: AppTheme.primaryBlue,
                   percent: metrics.cpuPercent,
@@ -327,7 +328,7 @@ class AgentDetailScreen extends StatelessWidget {
                   context,
                   width: adjustedWidth,
                   icon: Icons.storage_rounded,
-                  label: 'Memory',
+                  label: 'metrics.memory'.tr(),
                   value: Formatter.bytes(metrics.memory.used),
                   subtitle: 'of ${Formatter.bytes(metrics.memory.total)}',
                   color: AppTheme.successGreen,
@@ -337,7 +338,7 @@ class AgentDetailScreen extends StatelessWidget {
                   context,
                   width: adjustedWidth,
                   icon: Icons.folder_open,
-                  label: 'Disk',
+                  label: 'metrics.disk'.tr(),
                   value: Formatter.percent(metrics.diskPercent),
                   color: AppTheme.warningYellow,
                   percent: metrics.diskPercent,
@@ -346,7 +347,7 @@ class AgentDetailScreen extends StatelessWidget {
                   context,
                   width: adjustedWidth,
                   icon: Icons.wifi,
-                  label: 'Network',
+                  label: 'metrics.network'.tr(),
                   value: '\u2193${Formatter.bytesPerSec(metrics.networkIn)}',
                   subtitle: '\u2191${Formatter.bytesPerSec(metrics.networkOut)}',
                   color: AppTheme.infoCyan,
@@ -468,7 +469,7 @@ class AgentDetailScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle(context, 'CPU & Memory', icon: Icons.memory),
+        _buildSectionTitle(context, 'metrics.cpuMemory'.tr(), icon: Icons.memory),
         const SizedBox(height: AppTheme.spacingMedium),
         _buildGlassCard(
           context,
@@ -487,7 +488,7 @@ class AgentDetailScreen extends StatelessWidget {
                     child: Icon(Icons.memory, size: 18, color: AppTheme.primaryBlue),
                   ),
                   const SizedBox(width: AppTheme.spacingMedium),
-                  Text('CPU Usage', style: theme.textTheme.titleSmall),
+                  Text('metrics.cpuUsage'.tr(), style: theme.textTheme.titleSmall),
                   const Spacer(),
                   Text(
                     Formatter.percent(metrics.cpuPercent),
@@ -538,7 +539,7 @@ class AgentDetailScreen extends StatelessWidget {
                     child: Icon(Icons.storage_rounded, size: 18, color: AppTheme.successGreen),
                   ),
                   const SizedBox(width: AppTheme.spacingMedium),
-                  Text('Memory Usage', style: theme.textTheme.titleSmall),
+                  Text('metrics.memoryUsage'.tr(), style: theme.textTheme.titleSmall),
                   const Spacer(),
                   Text(
                     '${Formatter.bytes(metrics.memory.used)} / ${Formatter.bytes(metrics.memory.total)}',
@@ -559,9 +560,9 @@ class AgentDetailScreen extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildMemoryLabel(context, 'Available', metrics.memory.available),
-                  _buildMemoryLabel(context, 'Swap Used', metrics.memory.swapUsed),
-                  _buildMemoryLabel(context, 'Swap Total', metrics.memory.swapTotal),
+                  _buildMemoryLabel(context, 'metrics.available'.tr(), metrics.memory.available),
+                  _buildMemoryLabel(context, 'metrics.swapUsed'.tr(), metrics.memory.swapUsed),
+                  _buildMemoryLabel(context, 'metrics.swapTotal'.tr(), metrics.memory.swapTotal),
                 ],
               ),
             ],
@@ -602,7 +603,9 @@ class AgentDetailScreen extends StatelessWidget {
       children: [
         _buildSectionTitle(
           context,
-          'Storage (${disks.length} ${disks.length == 1 ? 'disk' : 'disks'})',
+          disks.length == 1
+              ? 'metrics.storage'.tr().replaceFirst('{}', disks.length.toString())
+              : 'metrics.storages'.tr().replaceFirst('{}', disks.length.toString()),
           icon: Icons.folder_open,
         ),
         const SizedBox(height: AppTheme.spacingMedium),
@@ -697,7 +700,9 @@ class AgentDetailScreen extends StatelessWidget {
       children: [
         _buildSectionTitle(
           context,
-          'Network (${networks.length} ${networks.length == 1 ? 'interface' : 'interfaces'})',
+          networks.length == 1
+              ? 'metrics.networkInterface'.tr().replaceFirst('{}', networks.length.toString())
+              : 'metrics.networkInterfaces'.tr().replaceFirst('{}', networks.length.toString()),
           icon: Icons.wifi,
         ),
         const SizedBox(height: AppTheme.spacingMedium),
@@ -817,7 +822,7 @@ class AgentDetailScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle(context, 'GPU (${gpus.length})', icon: Icons.videocam_rounded),
+        _buildSectionTitle(context, 'metrics.gpuCount'.tr().replaceFirst('{}', gpus.length.toString()), icon: Icons.videocam_rounded),
         const SizedBox(height: AppTheme.spacingMedium),
         ...gpus.map((gpu) => Padding(
           padding: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
@@ -914,7 +919,7 @@ class AgentDetailScreen extends StatelessWidget {
           // Usage
           _buildProgressRow(
             context,
-            label: 'GPU Usage',
+            label: 'metrics.gpuUsage'.tr(),
             value: gpu.usagePercent,
             color: AppTheme.gpuPurple,
           ),
@@ -923,7 +928,7 @@ class AgentDetailScreen extends StatelessWidget {
           // VRAM
           _buildProgressRow(
             context,
-            label: 'VRAM',
+            label: 'metrics.vram'.tr(),
             value: gpu.memoryPercent,
             suffix: '${Formatter.bytes(gpu.memoryUsed)} / ${Formatter.bytes(gpu.memoryTotal)}',
           ),
@@ -1007,7 +1012,7 @@ class AgentDetailScreen extends StatelessWidget {
       children: [
         _buildSectionTitle(
           context,
-          'NPU / AI Accelerator (${npus.length})',
+          'metrics.npuCount'.tr().replaceFirst('{}', npus.length.toString()),
           icon: Icons.psychology,
         ),
         const SizedBox(height: AppTheme.spacingMedium),
@@ -1087,7 +1092,7 @@ class AgentDetailScreen extends StatelessWidget {
       children: [
         _buildSectionTitle(
           context,
-          'Active Users (${sessions.length})',
+          'metrics.activeUsers'.tr().replaceFirst('{}', sessions.length.toString()),
           icon: Icons.people_rounded,
         ),
         const SizedBox(height: AppTheme.spacingMedium),
@@ -1186,21 +1191,21 @@ class AgentDetailScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle(context, 'System Information', icon: Icons.info_outline),
+        _buildSectionTitle(context, 'system.systemInfo'.tr(), icon: Icons.info_outline),
         const SizedBox(height: AppTheme.spacingMedium),
         _buildGlassCard(
           context,
           child: Column(
             children: [
-              _buildInfoRow(context, 'OS', '${info.osName} ${info.osVersion}'),
-              _buildInfoRow(context, 'Kernel', info.kernelVersion),
-              _buildInfoRow(context, 'Uptime', Formatter.uptime(info.uptimeSeconds)),
+              _buildInfoRow(context, 'system.os'.tr(), '${info.osName} ${info.osVersion}'),
+              _buildInfoRow(context, 'system.kernel'.tr(), info.kernelVersion),
+              _buildInfoRow(context, 'system.uptime'.tr(), Formatter.uptime(info.uptimeSeconds)),
               if (info.systemModel.isNotEmpty)
-                _buildInfoRow(context, 'System', '${info.systemVendor} ${info.systemModel}'),
+                _buildInfoRow(context, 'system.systemModel'.tr(), '${info.systemVendor} ${info.systemModel}'),
               if (info.motherboardModel.isNotEmpty)
-                _buildInfoRow(context, 'Motherboard', '${info.motherboardVendor} ${info.motherboardModel}'),
+                _buildInfoRow(context, 'system.motherboard'.tr(), '${info.motherboardVendor} ${info.motherboardModel}'),
               if (info.biosVersion.isNotEmpty)
-                _buildInfoRow(context, 'BIOS', info.biosVersion),
+                _buildInfoRow(context, 'system.bios'.tr(), info.biosVersion),
             ],
           ),
         ),

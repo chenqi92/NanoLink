@@ -3,6 +3,8 @@ mod collector;
 mod config;
 mod connection;
 mod executor;
+#[cfg(feature = "gui")]
+mod gui;
 mod management;
 mod platform;
 mod security;
@@ -265,8 +267,18 @@ async fn main() -> Result<()> {
     let config_path = match get_config_path(&args) {
         Some(path) => path,
         None => {
-            print_no_config_help();
-            std::process::exit(1);
+            // If GUI feature is enabled, launch the configuration wizard
+            #[cfg(feature = "gui")]
+            {
+                info!("No configuration file found. Launching configuration wizard...");
+                return gui::run_wizard();
+            }
+
+            #[cfg(not(feature = "gui"))]
+            {
+                print_no_config_help();
+                std::process::exit(1);
+            }
         }
     };
 
