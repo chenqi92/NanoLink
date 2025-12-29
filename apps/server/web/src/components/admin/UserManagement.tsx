@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { Plus, Pencil, Trash2, Key, Users, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useAuth } from "@/hooks/use-auth"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface User {
   id: number

@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Loader2 } from "lucide-react"
 import "./i18n"
 import "@/index.css"
-import { useAuth } from "@/hooks/use-auth"
-import { useAgents } from "@/hooks/use-agents"
+import { useAuth } from "@/contexts/AuthContext"
+import { useData } from "@/contexts/DataContext"
 import { useTheme } from "@/hooks/use-theme"
 import { LoginForm } from "@/components/auth/LoginForm"
 import { Header } from "@/components/layout/Header"
@@ -19,14 +19,14 @@ type View = "dashboard" | "users" | "groups" | "permissions" | "settings"
 
 function App() {
   const { t } = useTranslation()
-  const { user, isAuthenticated, loading: authLoading, logout, initAuth } = useAuth()
-  const { agents, metrics, summary, loading: dataLoading, error } = useAgents()
-  const { theme } = useTheme() // Initialize theme
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
+  const { agents, metrics, summary, isLoading: dataLoading, error } = useData()
+  useTheme() // Initialize theme
   const [currentView, setCurrentView] = useState<View>("dashboard")
   const [shellAgent, setShellAgent] = useState<{ id: string; name: string } | null>(null)
   const [metricsAgent, setMetricsAgent] = useState<{ id: string; name: string } | null>(null)
 
-  // Show loading
+  // Show loading while checking authentication
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)]">
@@ -38,20 +38,14 @@ function App() {
     )
   }
 
-  // Show login
+  // Show login form when not authenticated
   if (!isAuthenticated) {
-    return <LoginForm onSuccess={() => initAuth()} />
+    return <LoginForm />
   }
 
   return (
     <div className="min-h-screen bg-[var(--color-background)]">
-      <Header
-        user={user}
-        agentCount={agents.length}
-        hasError={!!error}
-        onLogout={logout}
-        onNavigate={setCurrentView}
-      />
+      <Header onNavigate={setCurrentView} />
 
       <main className="container mx-auto p-6">
         {error && (

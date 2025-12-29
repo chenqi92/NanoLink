@@ -4,13 +4,9 @@ import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
-import { useAuth } from "@/hooks/use-auth"
+import { useAuth } from "@/contexts/AuthContext"
 
-interface LoginFormProps {
-  onSuccess: () => void
-}
-
-export function LoginForm({ onSuccess }: LoginFormProps) {
+export function LoginForm() {
   const { t } = useTranslation()
   const { login, register } = useAuth()
   const [mode, setMode] = useState<"login" | "register">("login")
@@ -31,7 +27,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       } else {
         await register(username, password, email || undefined)
       }
-      onSuccess()
+      // No need to call onSuccess - Context will update isAuthenticated
     } catch (err) {
       setError(err instanceof Error ? err.message : t(mode === "login" ? "auth.loginFailed" : "auth.registerFailed"))
     } finally {
