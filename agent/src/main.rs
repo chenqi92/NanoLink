@@ -111,43 +111,43 @@ enum ServiceAction {
 
 #[derive(Subcommand, Debug)]
 enum ServerAction {
-    /// Add a new server
+    /// Add a new server (interactive if host/token not provided)
     Add {
-        /// Server hostname or IP address
+        /// Server hostname or IP address (supports host:port format)
         #[arg(long)]
-        host: String,
-        /// gRPC port (default: 39100)
+        host: Option<String>,
+        /// gRPC port (default: 39100, ignored if port specified in host)
         #[arg(long, default_value = "39100")]
         port: u16,
         /// Authentication token
         #[arg(long)]
-        token: String,
+        token: Option<String>,
         /// Permission level (0-3)
-        #[arg(long, default_value = "0")]
-        permission: u8,
-        /// Enable TLS
-        #[arg(long, default_value = "false")]
-        tls_enabled: bool,
-        /// Enable TLS certificate verification
-        #[arg(long, default_value = "true")]
-        tls_verify: bool,
-    },
-    /// Remove a server
-    Remove {
-        /// Server hostname to remove
         #[arg(long)]
-        host: String,
+        permission: Option<u8>,
+        /// Enable TLS
+        #[arg(long)]
+        tls_enabled: Option<bool>,
+        /// Enable TLS certificate verification
+        #[arg(long)]
+        tls_verify: Option<bool>,
+    },
+    /// Remove a server (interactive if host not provided)
+    Remove {
+        /// Server hostname to remove (supports host:port format)
+        #[arg(long)]
+        host: Option<String>,
         /// Server port to remove
         #[arg(long, default_value = "39100")]
         port: u16,
     },
     /// List all configured servers
     List,
-    /// Update a server configuration
+    /// Update a server configuration (interactive if host not provided)
     Update {
-        /// Server hostname
+        /// Server hostname (supports host:port format)
         #[arg(long)]
-        host: String,
+        host: Option<String>,
         /// Server port
         #[arg(long, default_value = "39100")]
         port: u16,
@@ -164,6 +164,38 @@ enum ServerAction {
         #[arg(long)]
         tls_verify: Option<bool>,
     },
+}
+
+/// Permission level options for interactive selection
+const PERMISSION_OPTIONS: &[(&str, u8)] = &[
+    ("READ_ONLY (0) - View metrics only", 0),
+    ("BASIC_WRITE (1) - Basic operations", 1),
+    ("SERVICE_CONTROL (2) - Manage services", 2),
+    ("SYSTEM_ADMIN (3) - Full control", 3),
+];
+
+/// Parse host string that may contain port (e.g., "192.168.0.174:39100")
+fn parse_host_port(input: &str, default_port: u16) -> (String, u16) {
+    // Handle IPv6 addresses in brackets like [::1]:8080
+    if input.starts_with('[') {
+        if let Some(bracket_end) = input.find(']') {
+            let host = &input[1..bracket_end];
+            if let Some(port_str) = input.get(bracket_end + 2..) {
+                if let Ok(port) = port_str.parse::<u16>() {
+                    return (host.to_string(), port);
+                }
+            }
+            return (host.to_string(), default_port);
+        }
+    }
+
+    // Handle regular host:port format
+    if let Some((host, port_str)) = input.rsplit_once(':') {
+        if let Ok(port) = port_str.parse::<u16>() {
+            return (host.to_string(), port);
+        }
+    }
+    (input.to_string(), default_port)
 }
 
 /// Find configuration file from search paths
@@ -286,8 +318,6 @@ async fn main() -> Result<()> {
 }
 
 async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
-    use crate::config::ServerConfig;
-
     match command {
         #[cfg(target_os = "windows")]
         Commands::Service { action } => {
@@ -425,48 +455,19 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                     tls_enabled,
                     tls_verify,
                 } => {
-                    if config
-                        .servers
-                        .iter()
-                        .any(|s| s.host == *host && s.port == *port)
-                    {
-                        anyhow::bail!(
-                            "Server {host}:{port} already exists. Use 'server update' to modify."
-                        );
-                    }
-
-                    config.servers.push(ServerConfig {
-                        host: host.clone(),
-                        port: *port,
-                        token: token.clone(),
-                        permission: *permission,
-                        tls_enabled: *tls_enabled,
-                        tls_verify: *tls_verify,
-                    });
-
-                    save_config(&config, &config_path)?;
-                    println!("Server {host}:{port} added successfully.");
-                    println!(
-                        "Restart the agent to apply changes, or use the management API for hot-reload."
-                    );
+                    handle_server_add(
+                        &mut config,
+                        &config_path,
+                        host.clone(),
+                        *port,
+                        token.clone(),
+                        *permission,
+                        *tls_enabled,
+                        *tls_verify,
+                    )?;
                 }
                 ServerAction::Remove { host, port } => {
-                    let original_len = config.servers.len();
-                    config
-                        .servers
-                        .retain(|s| !(s.host == *host && s.port == *port));
-
-                    if config.servers.len() == original_len {
-                        anyhow::bail!("Server {host}:{port} not found.");
-                    }
-
-                    if config.servers.is_empty() {
-                        anyhow::bail!("Cannot remove the last server.");
-                    }
-
-                    save_config(&config, &config_path)?;
-                    println!("Server {host}:{port} removed successfully.");
-                    println!("Restart the agent to apply changes.");
+                    handle_server_remove(&mut config, &config_path, host.clone(), *port)?;
                 }
                 ServerAction::List => {
                     println!("Configured servers:");
@@ -491,39 +492,310 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                     tls_enabled,
                     tls_verify,
                 } => {
-                    let server = config
-                        .servers
-                        .iter_mut()
-                        .find(|s| s.host == *host && s.port == *port);
-
-                    match server {
-                        Some(s) => {
-                            if let Some(t) = token {
-                                s.token = t.clone();
-                            }
-                            if let Some(p) = permission {
-                                s.permission = *p;
-                            }
-                            if let Some(te) = tls_enabled {
-                                s.tls_enabled = *te;
-                            }
-                            if let Some(tv) = tls_verify {
-                                s.tls_verify = *tv;
-                            }
-
-                            save_config(&config, &config_path)?;
-                            println!("Server {host}:{port} updated successfully.");
-                            println!("Restart the agent to apply changes.");
-                        }
-                        None => {
-                            anyhow::bail!("Server {host}:{port} not found.");
-                        }
-                    }
+                    handle_server_update(
+                        &mut config,
+                        &config_path,
+                        host.clone(),
+                        *port,
+                        token.clone(),
+                        *permission,
+                        *tls_enabled,
+                        *tls_verify,
+                    )?;
                 }
             }
         }
     }
 
+    Ok(())
+}
+
+/// Handle server add command with interactive support
+fn handle_server_add(
+    config: &mut Config,
+    config_path: &PathBuf,
+    host: Option<String>,
+    default_port: u16,
+    token: Option<String>,
+    permission: Option<u8>,
+    tls_enabled: Option<bool>,
+    tls_verify: Option<bool>,
+) -> Result<()> {
+    use crate::config::ServerConfig;
+    use dialoguer::{Confirm, Input, Password, Select};
+
+    // Determine if we need interactive mode
+    let needs_interactive = host.is_none() || token.is_none();
+
+    let (final_host, final_port) = if let Some(ref h) = host {
+        parse_host_port(&h, default_port)
+    } else {
+        // Interactive: prompt for host
+        let host_input: String = Input::new()
+            .with_prompt("Server address (host:port)")
+            .interact_text()?;
+        parse_host_port(&host_input, default_port)
+    };
+
+    // Check if server already exists
+    if config
+        .servers
+        .iter()
+        .any(|s| s.host == final_host && s.port == final_port)
+    {
+        anyhow::bail!(
+            "Server {}:{} already exists. Use 'server update' to modify.",
+            final_host,
+            final_port
+        );
+    }
+
+    let final_token = if let Some(t) = token {
+        t
+    } else {
+        // Interactive: prompt for token
+        Password::new()
+            .with_prompt("Authentication token")
+            .interact()?
+    };
+
+    let final_permission = if let Some(p) = permission {
+        p
+    } else if needs_interactive {
+        // Interactive: select permission
+        let options: Vec<&str> = PERMISSION_OPTIONS.iter().map(|(s, _)| *s).collect();
+        let selection = Select::new()
+            .with_prompt("Permission level")
+            .items(&options)
+            .default(0)
+            .interact()?;
+        PERMISSION_OPTIONS[selection].1
+    } else {
+        0 // Default to READ_ONLY
+    };
+
+    let final_tls_enabled = if let Some(te) = tls_enabled {
+        te
+    } else if needs_interactive {
+        Confirm::new()
+            .with_prompt("Enable TLS?")
+            .default(false)
+            .interact()?
+    } else {
+        false
+    };
+
+    let final_tls_verify = if let Some(tv) = tls_verify {
+        tv
+    } else if needs_interactive && final_tls_enabled {
+        Confirm::new()
+            .with_prompt("Verify TLS certificate?")
+            .default(true)
+            .interact()?
+    } else {
+        true
+    };
+
+    config.servers.push(ServerConfig {
+        host: final_host.clone(),
+        port: final_port,
+        token: final_token,
+        permission: final_permission,
+        tls_enabled: final_tls_enabled,
+        tls_verify: final_tls_verify,
+    });
+
+    save_config(config, config_path)?;
+    println!("Server {}:{} added successfully.", final_host, final_port);
+    println!("Restart the agent to apply changes, or use the management API for hot-reload.");
+    Ok(())
+}
+
+/// Handle server remove command with interactive support
+fn handle_server_remove(
+    config: &mut Config,
+    config_path: &PathBuf,
+    host: Option<String>,
+    default_port: u16,
+) -> Result<()> {
+    use dialoguer::{Confirm, Select};
+
+    let is_interactive = host.is_none();
+
+    let (final_host, final_port) = if let Some(ref h) = host {
+        parse_host_port(&h, default_port)
+    } else {
+        // Interactive: show server list for selection
+        if config.servers.is_empty() {
+            anyhow::bail!("No servers configured.");
+        }
+
+        let options: Vec<String> = config
+            .servers
+            .iter()
+            .map(|s| format!("{}:{} ({})", s.host, s.port, permission_name(s.permission)))
+            .collect();
+
+        let selection = Select::new()
+            .with_prompt("Select server to remove")
+            .items(&options)
+            .interact()?;
+
+        let server = &config.servers[selection];
+        (server.host.clone(), server.port)
+    };
+
+    // Confirm removal in interactive mode
+    if is_interactive {
+        let confirm = Confirm::new()
+            .with_prompt(format!("Confirm removal of {}:{}?", final_host, final_port))
+            .default(false)
+            .interact()?;
+
+        if !confirm {
+            println!("Cancelled.");
+            return Ok(());
+        }
+    }
+
+    let original_len = config.servers.len();
+    config
+        .servers
+        .retain(|s| !(s.host == final_host && s.port == final_port));
+
+    if config.servers.len() == original_len {
+        anyhow::bail!("Server {}:{} not found.", final_host, final_port);
+    }
+
+    if config.servers.is_empty() {
+        anyhow::bail!("Cannot remove the last server.");
+    }
+
+    save_config(config, config_path)?;
+    println!("Server {}:{} removed successfully.", final_host, final_port);
+    println!("Restart the agent to apply changes.");
+    Ok(())
+}
+
+/// Handle server update command with interactive support
+fn handle_server_update(
+    config: &mut Config,
+    config_path: &PathBuf,
+    host: Option<String>,
+    default_port: u16,
+    token: Option<String>,
+    permission: Option<u8>,
+    tls_enabled: Option<bool>,
+    tls_verify: Option<bool>,
+) -> Result<()> {
+    use dialoguer::{Confirm, Password, Select};
+
+    let is_interactive = host.is_none();
+
+    let (final_host, final_port) = if let Some(ref h) = host {
+        parse_host_port(&h, default_port)
+    } else {
+        // Interactive: show server list for selection
+        if config.servers.is_empty() {
+            anyhow::bail!("No servers configured.");
+        }
+
+        let options: Vec<String> = config
+            .servers
+            .iter()
+            .map(|s| format!("{}:{} ({})", s.host, s.port, permission_name(s.permission)))
+            .collect();
+
+        let selection = Select::new()
+            .with_prompt("Select server to update")
+            .items(&options)
+            .interact()?;
+
+        let server = &config.servers[selection];
+        (server.host.clone(), server.port)
+    };
+
+    let server = config
+        .servers
+        .iter_mut()
+        .find(|s| s.host == final_host && s.port == final_port);
+
+    match server {
+        Some(s) => {
+            let needs_interactive = is_interactive;
+
+            // Update token
+            if let Some(t) = token {
+                s.token = t;
+            } else if needs_interactive {
+                let update_token = Confirm::new()
+                    .with_prompt("Update authentication token?")
+                    .default(false)
+                    .interact()?;
+                if update_token {
+                    s.token = Password::new()
+                        .with_prompt("New authentication token")
+                        .interact()?;
+                }
+            }
+
+            // Update permission
+            if let Some(p) = permission {
+                s.permission = p;
+            } else if needs_interactive {
+                let update_perm = Confirm::new()
+                    .with_prompt("Update permission level?")
+                    .default(false)
+                    .interact()?;
+                if update_perm {
+                    let options: Vec<&str> =
+                        PERMISSION_OPTIONS.iter().map(|(label, _)| *label).collect();
+                    let current_idx = PERMISSION_OPTIONS
+                        .iter()
+                        .position(|(_, v)| *v == s.permission)
+                        .unwrap_or(0);
+                    let selection = Select::new()
+                        .with_prompt("Permission level")
+                        .items(&options)
+                        .default(current_idx)
+                        .interact()?;
+                    s.permission = PERMISSION_OPTIONS[selection].1;
+                }
+            }
+
+            // Update TLS settings
+            if let Some(te) = tls_enabled {
+                s.tls_enabled = te;
+            } else if needs_interactive {
+                let update_tls = Confirm::new()
+                    .with_prompt("Update TLS settings?")
+                    .default(false)
+                    .interact()?;
+                if update_tls {
+                    s.tls_enabled = Confirm::new()
+                        .with_prompt("Enable TLS?")
+                        .default(s.tls_enabled)
+                        .interact()?;
+                }
+            }
+
+            if let Some(tv) = tls_verify {
+                s.tls_verify = tv;
+            } else if needs_interactive && s.tls_enabled {
+                s.tls_verify = Confirm::new()
+                    .with_prompt("Verify TLS certificate?")
+                    .default(s.tls_verify)
+                    .interact()?;
+            }
+
+            save_config(config, config_path)?;
+            println!("Server {}:{} updated successfully.", final_host, final_port);
+            println!("Restart the agent to apply changes.");
+        }
+        None => {
+            anyhow::bail!("Server {}:{} not found.", final_host, final_port);
+        }
+    }
     Ok(())
 }
 
