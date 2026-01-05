@@ -240,6 +240,66 @@ impl GrpcClient {
         Ok(response.into_inner())
     }
 
+    /// Test connection to a server without full authentication
+    ///
+    /// This method attempts to connect and authenticate with the server,
+    /// returning the server version if successful.
+    pub async fn test_server_connection(server_config: &ServerConfig) -> Result<String> {
+        let url = server_config.get_grpc_url();
+
+        let mut endpoint = Endpoint::from_shared(url.clone())
+            .context("Invalid server URL")?
+            .connect_timeout(Duration::from_secs(10))
+            .tcp_keepalive(Some(Duration::from_secs(20)));
+
+        // Configure TLS if enabled
+        if server_config.tls_enabled {
+            let tls_config = ClientTlsConfig::new();
+            endpoint = endpoint.tls_config(tls_config)?;
+        }
+
+        let channel = endpoint
+            .connect()
+            .await
+            .context("Failed to connect to server")?;
+
+        let mut client = NanoLinkServiceClient::new(channel);
+
+        // Resolve token and authenticate
+        let resolved_token = server_config
+            .resolve_token()
+            .map_err(|e| anyhow::anyhow!("Token resolution failed: {e}"))?;
+
+        let request = Request::new(AuthRequest {
+            token: resolved_token,
+            hostname: hostname::get()
+                .map(|h| h.to_string_lossy().to_string())
+                .unwrap_or_else(|_| "unknown".to_string()),
+            agent_version: env!("CARGO_PKG_VERSION").to_string(),
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+        });
+
+        let response = client
+            .authenticate(request)
+            .await
+            .context("Authentication failed")?;
+
+        let auth_response = response.into_inner();
+
+        if auth_response.success {
+            Ok(format!(
+                "Permission Level: {}",
+                auth_response.permission_level
+            ))
+        } else {
+            Err(anyhow::anyhow!(
+                "Authentication failed: {}",
+                auth_response.error_message
+            ))
+        }
+    }
+
     /// Start bidirectional streaming with layered metrics support
     ///
     /// This method uses the LayeredCollector to send different types of metrics

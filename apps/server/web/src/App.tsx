@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Loader2 } from "lucide-react"
+import { Loader2, Plus } from "lucide-react"
 import "./i18n"
 import "@/index.css"
 import { useAuth } from "@/contexts/AuthContext"
@@ -14,6 +14,8 @@ import { ShellDialog } from "@/components/shell/ShellDialog"
 import { UserManagement } from "@/components/admin/UserManagement"
 import { GroupManagement } from "@/components/admin/GroupManagement"
 import { AgentMetricsView } from "@/components/charts/AgentMetricsView"
+import { AddAgentWizard } from "@/components/agents/AddAgentWizard"
+import { Button } from "@/components/ui/button"
 
 type View = "dashboard" | "users" | "groups" | "permissions" | "settings"
 
@@ -25,6 +27,7 @@ function App() {
   const [currentView, setCurrentView] = useState<View>("dashboard")
   const [shellAgent, setShellAgent] = useState<{ id: string; name: string } | null>(null)
   const [metricsAgent, setMetricsAgent] = useState<{ id: string; name: string } | null>(null)
+  const [showAddAgentWizard, setShowAddAgentWizard] = useState(false)
 
   // Show loading while checking authentication
   if (authLoading) {
@@ -75,7 +78,13 @@ function App() {
               usedMemory={summary.usedMemory}
             />
 
-            <h2 className="text-lg font-semibold mt-8 mb-4">{t("header.agents")}</h2>
+            <div className="flex items-center justify-between mt-8 mb-4">
+              <h2 className="text-lg font-semibold">{t("header.agents")}</h2>
+              <Button onClick={() => setShowAddAgentWizard(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                {t("wizard.addAgent", "Add Agent")}
+              </Button>
+            </div>
 
             {agents.length === 0 ? (
               <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-12 text-center">
@@ -83,6 +92,10 @@ function App() {
                 <p className="text-sm text-[var(--color-muted-foreground)] mt-2">
                   {t("dashboard.noAgentsDesc")}
                 </p>
+                <Button className="mt-4" onClick={() => setShowAddAgentWizard(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  {t("wizard.addAgent", "Add Agent")}
+                </Button>
               </div>
             ) : (
               <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -112,6 +125,11 @@ function App() {
           agentName={shellAgent.name}
           onClose={() => setShellAgent(null)}
         />
+      )}
+
+      {/* Add Agent Wizard */}
+      {showAddAgentWizard && (
+        <AddAgentWizard onClose={() => setShowAddAgentWizard(false)} />
       )}
     </div>
   )

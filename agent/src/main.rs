@@ -5,6 +5,7 @@ mod connection;
 mod executor;
 #[cfg(feature = "gui")]
 mod gui;
+mod i18n;
 mod management;
 mod platform;
 mod security;
@@ -17,7 +18,7 @@ pub mod proto {
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{info, Level};
@@ -295,6 +296,11 @@ async fn main() -> Result<()> {
         return handle_command(command, &args).await;
     }
 
+    // If no subcommand and not foreground mode, enter interactive mode
+    if !args.foreground {
+        return interactive_main_menu(&args);
+    }
+
     // Run the agent - requires config file
     let config_path = match get_config_path(&args) {
         Some(path) => path,
@@ -511,9 +517,10 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
 }
 
 /// Handle server add command with interactive support
+#[allow(clippy::too_many_arguments)]
 fn handle_server_add(
     config: &mut Config,
-    config_path: &PathBuf,
+    config_path: &Path,
     host: Option<String>,
     default_port: u16,
     token: Option<String>,
@@ -528,7 +535,7 @@ fn handle_server_add(
     let needs_interactive = host.is_none() || token.is_none();
 
     let (final_host, final_port) = if let Some(ref h) = host {
-        parse_host_port(&h, default_port)
+        parse_host_port(h, default_port)
     } else {
         // Interactive: prompt for host
         let host_input: String = Input::new()
@@ -544,9 +551,7 @@ fn handle_server_add(
         .any(|s| s.host == final_host && s.port == final_port)
     {
         anyhow::bail!(
-            "Server {}:{} already exists. Use 'server update' to modify.",
-            final_host,
-            final_port
+            "Server {final_host}:{final_port} already exists. Use 'server update' to modify."
         );
     }
 
@@ -606,7 +611,7 @@ fn handle_server_add(
     });
 
     save_config(config, config_path)?;
-    println!("Server {}:{} added successfully.", final_host, final_port);
+    println!("Server {final_host}:{final_port} added successfully.");
     println!("Restart the agent to apply changes, or use the management API for hot-reload.");
     Ok(())
 }
@@ -614,7 +619,7 @@ fn handle_server_add(
 /// Handle server remove command with interactive support
 fn handle_server_remove(
     config: &mut Config,
-    config_path: &PathBuf,
+    config_path: &Path,
     host: Option<String>,
     default_port: u16,
 ) -> Result<()> {
@@ -623,7 +628,7 @@ fn handle_server_remove(
     let is_interactive = host.is_none();
 
     let (final_host, final_port) = if let Some(ref h) = host {
-        parse_host_port(&h, default_port)
+        parse_host_port(h, default_port)
     } else {
         // Interactive: show server list for selection
         if config.servers.is_empty() {
@@ -648,7 +653,7 @@ fn handle_server_remove(
     // Confirm removal in interactive mode
     if is_interactive {
         let confirm = Confirm::new()
-            .with_prompt(format!("Confirm removal of {}:{}?", final_host, final_port))
+            .with_prompt(format!("Confirm removal of {final_host}:{final_port}?"))
             .default(false)
             .interact()?;
 
@@ -664,7 +669,7 @@ fn handle_server_remove(
         .retain(|s| !(s.host == final_host && s.port == final_port));
 
     if config.servers.len() == original_len {
-        anyhow::bail!("Server {}:{} not found.", final_host, final_port);
+        anyhow::bail!("Server {final_host}:{final_port} not found.");
     }
 
     if config.servers.is_empty() {
@@ -672,15 +677,16 @@ fn handle_server_remove(
     }
 
     save_config(config, config_path)?;
-    println!("Server {}:{} removed successfully.", final_host, final_port);
+    println!("Server {final_host}:{final_port} removed successfully.");
     println!("Restart the agent to apply changes.");
     Ok(())
 }
 
 /// Handle server update command with interactive support
+#[allow(clippy::too_many_arguments)]
 fn handle_server_update(
     config: &mut Config,
-    config_path: &PathBuf,
+    config_path: &Path,
     host: Option<String>,
     default_port: u16,
     token: Option<String>,
@@ -693,7 +699,7 @@ fn handle_server_update(
     let is_interactive = host.is_none();
 
     let (final_host, final_port) = if let Some(ref h) = host {
-        parse_host_port(&h, default_port)
+        parse_host_port(h, default_port)
     } else {
         // Interactive: show server list for selection
         if config.servers.is_empty() {
@@ -789,11 +795,11 @@ fn handle_server_update(
             }
 
             save_config(config, config_path)?;
-            println!("Server {}:{} updated successfully.", final_host, final_port);
+            println!("Server {final_host}:{final_port} updated successfully.");
             println!("Restart the agent to apply changes.");
         }
         None => {
-            anyhow::bail!("Server {}:{} not found.", final_host, final_port);
+            anyhow::bail!("Server {final_host}:{final_port} not found.");
         }
     }
     Ok(())
@@ -809,7 +815,7 @@ fn permission_name(level: u8) -> &'static str {
     }
 }
 
-fn save_config(config: &Config, path: &PathBuf) -> Result<()> {
+fn save_config(config: &Config, path: &Path) -> Result<()> {
     let content = if path.extension().is_some_and(|e| e == "toml") {
         toml::to_string_pretty(config)?
     } else {
@@ -818,6 +824,485 @@ fn save_config(config: &Config, path: &PathBuf) -> Result<()> {
 
     std::fs::write(path, content)?;
     Ok(())
+}
+
+// ============================================================================
+// Interactive Menu Functions
+// ============================================================================
+
+use crate::i18n::{detect_language, t, Lang};
+
+/// Interactive main menu - entry point for interactive mode
+fn interactive_main_menu(args: &Args) -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Select};
+
+    let lang = detect_language();
+    let theme = ColorfulTheme::default();
+
+    loop {
+        // Clear screen for better UX (optional)
+        print!("\x1B[2J\x1B[1;1H");
+
+        // Print header
+        let version = env!("CARGO_PKG_VERSION");
+        println!();
+        println!("╭──────────────────────────────────────╮");
+        println!("│       {} v{}          │", t("menu.title", lang), version);
+        println!("╰──────────────────────────────────────╯");
+        println!();
+
+        let options = &[
+            t("menu.start_agent", lang),
+            t("menu.manage_servers", lang),
+            t("menu.view_status", lang),
+            t("menu.init_config", lang),
+            t("menu.exit", lang),
+        ];
+
+        let selection = Select::with_theme(&theme)
+            .with_prompt(t("menu.select_action", lang))
+            .items(options)
+            .default(0)
+            .interact()?;
+
+        match selection {
+            0 => {
+                // Start Agent
+                if let Some(config_path) = get_config_path(args) {
+                    // Create a new tokio runtime for running the agent
+                    let rt = tokio::runtime::Runtime::new()?;
+                    if let Err(e) = rt.block_on(run_agent(config_path)) {
+                        eprintln!("Error: {e}");
+                        wait_for_enter(lang);
+                    }
+                } else {
+                    println!();
+                    println!("{}", t("error.no_config", lang));
+                    wait_for_enter(lang);
+                }
+            }
+            1 => {
+                // Manage Servers
+                interactive_server_management(args, lang)?;
+            }
+            2 => {
+                // View Status
+                interactive_show_status(args, lang)?;
+                wait_for_enter(lang);
+            }
+            3 => {
+                // Initialize Config
+                interactive_init_config(lang)?;
+                wait_for_enter(lang);
+            }
+            4 => {
+                // Exit
+                break;
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    Ok(())
+}
+
+/// Interactive server management menu
+fn interactive_server_management(args: &Args, lang: Lang) -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Select};
+
+    let theme = ColorfulTheme::default();
+
+    loop {
+        print!("\x1B[2J\x1B[1;1H");
+        println!();
+        println!("╭──────────────────────────────────────╮");
+        println!(
+            "│       {}                │",
+            t("server.configured_servers", lang)
+        );
+        println!("╰──────────────────────────────────────╯");
+        println!();
+
+        // Load current config
+        let config_path = get_config_path(args);
+        let config = config_path.as_ref().and_then(|p| Config::load(p).ok());
+
+        let mut options: Vec<String> = Vec::new();
+        let mut server_indices: Vec<usize> = Vec::new();
+
+        if let Some(ref cfg) = config {
+            if cfg.servers.is_empty() {
+                println!("  {}", t("server.no_servers", lang));
+                println!();
+            } else {
+                for (i, server) in cfg.servers.iter().enumerate() {
+                    options.push(format!(
+                        "{}:{} [{}]",
+                        server.host,
+                        server.port,
+                        permission_name(server.permission)
+                    ));
+                    server_indices.push(i);
+                }
+            }
+        } else {
+            println!("  {}", t("error.no_config", lang));
+            println!();
+        }
+
+        // Add special options
+        options.push("──────────────────".to_string());
+        options.push(t("server.add_new", lang).to_string());
+        options.push(t("server.back_to_menu", lang).to_string());
+
+        let selection = Select::with_theme(&theme)
+            .with_prompt(t("menu.select_action", lang))
+            .items(&options)
+            .default(0)
+            .interact()?;
+
+        // Handle selection
+        let servers_count = server_indices.len();
+
+        if selection < servers_count {
+            // Selected a server - show server action menu
+            if let (Some(ref path), Some(ref cfg)) = (&config_path, &config) {
+                let server = &cfg.servers[server_indices[selection]];
+                interactive_server_action(path, server.host.clone(), server.port, lang)?;
+            }
+        } else if selection == servers_count + 1 {
+            // Add new server
+            if let Some(ref path) = config_path {
+                interactive_add_server(path, lang)?;
+            } else {
+                println!();
+                println!("{}", t("error.no_config", lang));
+                wait_for_enter(lang);
+            }
+        } else if selection == servers_count + 2 {
+            // Back to main menu
+            break;
+        }
+        // selection == servers_count is the separator, do nothing
+    }
+
+    Ok(())
+}
+
+/// Interactive server action menu (for a specific server)
+fn interactive_server_action(
+    config_path: &Path,
+    host: String,
+    port: u16,
+    lang: Lang,
+) -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Confirm, Select};
+
+    let theme = ColorfulTheme::default();
+
+    loop {
+        print!("\x1B[2J\x1B[1;1H");
+        println!();
+        println!("╭──────────────────────────────────────╮");
+        println!("│  {host}:{port}                     ");
+        println!("╰──────────────────────────────────────╯");
+        println!();
+
+        let options = &[
+            t("server.update_config", lang),
+            t("server.test_connection", lang),
+            t("server.delete", lang),
+            t("server.back", lang),
+        ];
+
+        let selection = Select::with_theme(&theme)
+            .with_prompt(t("server.select_action", lang))
+            .items(options)
+            .default(0)
+            .interact()?;
+
+        match selection {
+            0 => {
+                // Update config
+                let mut config = Config::load(config_path)?;
+                handle_server_update(
+                    &mut config,
+                    config_path,
+                    Some(format!("{host}:{port}")),
+                    port,
+                    None,
+                    None,
+                    None,
+                    None,
+                )?;
+                wait_for_enter(lang);
+            }
+            1 => {
+                // Test connection
+                interactive_test_connection(&host, port, config_path, lang)?;
+                wait_for_enter(lang);
+            }
+            2 => {
+                // Delete server
+                let confirm = Confirm::with_theme(&theme)
+                    .with_prompt(t("confirm.delete_server", lang))
+                    .default(false)
+                    .interact()?;
+
+                if confirm {
+                    let mut config = Config::load(config_path)?;
+                    handle_server_remove(
+                        &mut config,
+                        config_path,
+                        Some(format!("{host}:{port}")),
+                        port,
+                    )?;
+                    println!("{}", t("status.server_deleted", lang));
+                    wait_for_enter(lang);
+                    break;
+                }
+            }
+            3 => {
+                // Back
+                break;
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    Ok(())
+}
+
+/// Interactive add server
+fn interactive_add_server(config_path: &Path, lang: Lang) -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Confirm, Input, Password, Select};
+
+    let theme = ColorfulTheme::default();
+
+    println!();
+
+    // Get server address
+    let host_input: String = Input::with_theme(&theme)
+        .with_prompt(t("server.enter_address", lang))
+        .interact_text()?;
+
+    let (host, port) = parse_host_port(&host_input, 39100);
+
+    // Get token
+    let token: String = Password::with_theme(&theme)
+        .with_prompt(t("server.enter_token", lang))
+        .interact()?;
+
+    // Get permission level
+    let permission_options = &[
+        t("permission.read_only", lang),
+        t("permission.basic_write", lang),
+        t("permission.service_control", lang),
+        t("permission.system_admin", lang),
+    ];
+
+    let perm_selection = Select::with_theme(&theme)
+        .with_prompt(t("server.select_permission", lang))
+        .items(permission_options)
+        .default(0)
+        .interact()?;
+
+    let permission = perm_selection as u8;
+
+    // TLS settings
+    let tls_enabled = Confirm::with_theme(&theme)
+        .with_prompt(t("server.enable_tls", lang))
+        .default(false)
+        .interact()?;
+
+    let tls_verify = if tls_enabled {
+        Confirm::with_theme(&theme)
+            .with_prompt(t("server.verify_tls", lang))
+            .default(true)
+            .interact()?
+    } else {
+        true
+    };
+
+    // Add server
+    let mut config = Config::load(config_path)?;
+
+    // Check if server already exists
+    if config
+        .servers
+        .iter()
+        .any(|s| s.host == host && s.port == port)
+    {
+        anyhow::bail!("Server {host}:{port} already exists.");
+    }
+
+    config.servers.push(crate::config::ServerConfig {
+        host: host.clone(),
+        port,
+        token,
+        permission,
+        tls_enabled,
+        tls_verify,
+    });
+
+    save_config(&config, config_path)?;
+    println!();
+    println!("{}", t("status.server_added", lang));
+
+    Ok(())
+}
+
+/// Test connection to a server
+fn interactive_test_connection(
+    host: &str,
+    port: u16,
+    config_path: &Path,
+    lang: Lang,
+) -> Result<()> {
+    use crate::connection::grpc::GrpcClient;
+
+    println!();
+    println!("{}", t("status.testing_connection", lang));
+
+    // Load config to get server settings
+    let config = Config::load(config_path)?;
+    let server = config
+        .servers
+        .iter()
+        .find(|s| s.host == host && s.port == port)
+        .ok_or_else(|| anyhow::anyhow!("Server not found"))?
+        .clone();
+
+    // Create a tokio runtime for the async test
+    let rt = tokio::runtime::Runtime::new()?;
+
+    let result = rt.block_on(async { GrpcClient::test_server_connection(&server).await });
+
+    match result {
+        Ok(version) => {
+            println!(
+                "✓ {} {}: {}",
+                t("status.connection_success", lang),
+                t("status.server_version", lang),
+                version
+            );
+        }
+        Err(e) => {
+            println!("✗ {}: {}", t("status.connection_failed", lang), e);
+        }
+    }
+
+    Ok(())
+}
+
+/// Show status interactively
+fn interactive_show_status(args: &Args, lang: Lang) -> Result<()> {
+    println!();
+    println!("NanoLink Agent v{}", env!("CARGO_PKG_VERSION"));
+    println!();
+
+    match get_config_path(args) {
+        Some(config_path) => {
+            println!("Config file: {}", config_path.display());
+
+            match Config::load(&config_path) {
+                Ok(config) => {
+                    println!();
+                    println!("{}:", t("server.configured_servers", lang));
+                    if config.servers.is_empty() {
+                        println!("  {}", t("server.no_servers", lang));
+                    } else {
+                        for (i, server) in config.servers.iter().enumerate() {
+                            println!("  {}. {}:{}", i + 1, server.host, server.port);
+                            println!(
+                                "     Permission: {} ({})",
+                                server.permission,
+                                permission_name(server.permission)
+                            );
+                            println!(
+                                "     TLS: {}, Verify: {}",
+                                server.tls_enabled, server.tls_verify
+                            );
+                        }
+                    }
+
+                    println!();
+                    println!("Settings:");
+                    println!(
+                        "  Realtime interval: {}ms",
+                        config.collector.realtime_interval_ms
+                    );
+                    println!("  Buffer capacity: {}", config.buffer.capacity);
+                    println!(
+                        "  Management API: {} (port {})",
+                        if config.management.enabled {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        },
+                        config.management.port
+                    );
+                }
+                Err(e) => {
+                    println!("  Error loading config: {e}");
+                }
+            }
+        }
+        None => {
+            println!("{}", t("error.no_config", lang));
+        }
+    }
+
+    Ok(())
+}
+
+/// Interactive init config
+fn interactive_init_config(lang: Lang) -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Confirm, Input};
+
+    let theme = ColorfulTheme::default();
+
+    println!();
+
+    let output: String = Input::with_theme(&theme)
+        .with_prompt(t("init.output_path", lang))
+        .default("nanolink.yaml".to_string())
+        .interact_text()?;
+
+    let use_toml = Confirm::with_theme(&theme)
+        .with_prompt(t("init.use_toml", lang))
+        .default(false)
+        .interact()?;
+
+    let output_path = PathBuf::from(&output);
+
+    if output_path.exists() {
+        anyhow::bail!("Config file already exists: {}", output_path.display());
+    }
+
+    let sample_config = Config::sample();
+    let content = if use_toml {
+        toml::to_string_pretty(&sample_config)?
+    } else {
+        serde_yaml::to_string(&sample_config)?
+    };
+
+    std::fs::write(&output_path, &content)?;
+    println!();
+    println!("{}: {}", t("init.success", lang), output_path.display());
+
+    Ok(())
+}
+
+/// Wait for user to press Enter
+fn wait_for_enter(lang: Lang) {
+    use std::io::{self, Write};
+
+    println!();
+    print!("{}", t("misc.press_enter", lang));
+    io::stdout().flush().unwrap();
+    let mut input = String::new();
+    let _ = io::stdin().read_line(&mut input);
 }
 
 /// Run the agent (public for Windows service support)

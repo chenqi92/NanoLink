@@ -505,6 +505,53 @@ tail -f /var/log/nanolink/agent.log
 Get-Content "C:\ProgramData\NanoLink\logs\agent.log" -Wait
 ```
 
+### Interactive CLI Mode
+
+Running `nanolink-agent` without arguments enters an interactive mode with a user-friendly menu. The CLI automatically detects your system language (English/Chinese).
+
+```
+$ nanolink-agent
+
+╭──────────────────────────────────────╮
+│       NanoLink Agent v1.0.0          │
+╰──────────────────────────────────────╯
+
+? Select an action:
+❯ Start Agent
+  Manage Servers
+  View Status
+  Initialize Config
+  Exit
+```
+
+**Server Management Menu:**
+```
+? Configured servers:
+❯ 192.168.1.100:39100 [READ_ONLY]
+  10.0.0.5:39100 [SYSTEM_ADMIN]
+  ──────────────────
+  + Add new server
+  ← Back to main menu
+```
+
+**Server Actions:**
+```
+? Actions for 192.168.1.100:39100:
+❯ Update configuration
+  Remove server
+  Test connection
+  Back
+```
+
+The interactive mode supports:
+- **Add Server**: Step-by-step wizard to add a new server connection
+- **Update Server**: Modify token, permission, or TLS settings
+- **Remove Server**: Delete a server configuration
+- **Test Connection**: Verify connectivity to a server before use
+- **View Status**: Check agent running status and connected servers
+
+> **Note**: You can still use command-line arguments for scripting. The interactive mode is only activated when no arguments are provided.
+
 ### Multi-Server Management
 
 Agent supports connecting to multiple servers simultaneously with dynamic add/remove/update of server configurations.
@@ -536,6 +583,73 @@ curl -X DELETE "http://localhost:9101/api/servers?host=old.example.com&port=3910
 ```bash
 nanolink-agent server list
 ```
+
+### Web Dashboard - Add Agent Wizard
+
+The Dashboard provides a step-by-step wizard to help you deploy agents easily. Click the **"Add Agent"** button on the dashboard to start.
+
+**Step 1: Select Platform**
+```
+┌─────────────────────────────────────┐
+│  Add Agent - Step 1/3               │
+├─────────────────────────────────────┤
+│  Select target operating system:    │
+│                                     │
+│  ┌─────────┐ ┌─────────┐ ┌────────┐ │
+│  │  Linux  │ │ Windows │ │ macOS  │ │
+│  └─────────┘ └─────────┘ └────────┘ │
+│                                     │
+│            [Next]                   │
+└─────────────────────────────────────┘
+```
+
+**Step 2: Configure Agent**
+```
+┌─────────────────────────────────────┐
+│  Add Agent - Step 2/3               │
+├─────────────────────────────────────┤
+│  Agent Name: [optional, auto-gen]   │
+│                                     │
+│  Permission Level:                  │
+│  ○ Read Only (READ_ONLY)            │
+│  ● Basic Write (BASIC_WRITE)        │
+│  ○ Service Control                  │
+│  ○ System Admin (SYSTEM_ADMIN)      │
+│                                     │
+│  ☐ Enable Remote Shell              │
+│  ☐ Enable TLS Encryption            │
+│                                     │
+│     [Back]          [Next]          │
+└─────────────────────────────────────┘
+```
+
+**Step 3: Get Installation Command**
+```
+┌─────────────────────────────────────┐
+│  Add Agent - Step 3/3               │
+├─────────────────────────────────────┤
+│  Run this command on target server: │
+│                                     │
+│  ┌─────────────────────────────────┐│
+│  │ curl -sSL https://xxx/install  ││
+│  │   | bash -s -- \               ││
+│  │   --server "192.168.1.100:391" ││
+│  │   --token "eyJhbGci..."        ││
+│  └─────────────────────────────────┘│
+│                         [Copy]      │
+│                                     │
+│  Or download pre-configured binary: │
+│  [Linux] [Windows] [macOS]          │
+│                                     │
+│     [Done]                          │
+└─────────────────────────────────────┘
+```
+
+The wizard automatically:
+- Generates a one-time authentication token
+- Detects the server URL from your current connection
+- Creates platform-specific installation commands
+- Provides YAML configuration for manual setup
 
 ### Deploy Server with Docker
 
