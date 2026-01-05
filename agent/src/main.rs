@@ -855,6 +855,7 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
             t("menu.start_agent", lang),
             t("menu.manage_servers", lang),
             t("menu.view_status", lang),
+            t("menu.check_update", lang),
             t("menu.init_config", lang),
             t("menu.exit", lang),
         ];
@@ -891,11 +892,16 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
                 wait_for_enter(lang);
             }
             3 => {
+                // Check for Updates
+                interactive_check_update(args, lang)?;
+                wait_for_enter(lang);
+            }
+            4 => {
                 // Initialize Config
                 interactive_init_config(lang)?;
                 wait_for_enter(lang);
             }
-            4 => {
+            5 => {
                 // Exit
                 break;
             }
@@ -1035,6 +1041,8 @@ fn interactive_server_action(
                     None,
                     None,
                 )?;
+                // Prompt for restart
+                prompt_restart_after_config_change(lang)?;
                 wait_for_enter(lang);
             }
             1 => {
@@ -1058,6 +1066,8 @@ fn interactive_server_action(
                         port,
                     )?;
                     println!("{}", t("status.server_deleted", lang));
+                    // Prompt for restart
+                    prompt_restart_after_config_change(lang)?;
                     wait_for_enter(lang);
                     break;
                 }
@@ -1148,6 +1158,9 @@ fn interactive_add_server(config_path: &Path, lang: Lang) -> Result<()> {
     save_config(&config, config_path)?;
     println!();
     println!("{}", t("status.server_added", lang));
+
+    // Prompt for restart
+    prompt_restart_after_config_change(lang)?;
 
     Ok(())
 }
@@ -1290,6 +1303,220 @@ fn interactive_init_config(lang: Lang) -> Result<()> {
     std::fs::write(&output_path, &content)?;
     println!();
     println!("{}: {}", t("init.success", lang), output_path.display());
+
+    Ok(())
+}
+
+/// Interactive check for updates
+fn interactive_check_update(args: &Args, lang: Lang) -> Result<()> {
+    use crate::executor::UpdateExecutor;
+    use dialoguer::{theme::ColorfulTheme, Confirm};
+    use std::collections::HashMap;
+
+    let theme = ColorfulTheme::default();
+
+    println!();
+    println!("{}", t("update.checking", lang));
+    println!();
+
+    // Load config to get update settings
+    let config = match get_config_path(args) {
+        Some(path) => Config::load(&path)?,
+        None => Config::sample(),
+    };
+
+    // Show update source
+    let source_name = match config.update.source {
+        crate::config::UpdateSource::Github => "GitHub",
+        crate::config::UpdateSource::Cloudflare => "Cloudflare R2",
+        crate::config::UpdateSource::Custom => "Custom",
+    };
+    println!("{}: {}", t("update.source", lang), source_name);
+    println!();
+
+    // Create executor and check for updates
+    let executor = UpdateExecutor::new(config.update.clone());
+    let rt = tokio::runtime::Runtime::new()?;
+
+    let result = rt.block_on(async { executor.check_update().await });
+
+    if !result.success {
+        println!("✗ {}: {}", t("update.check_failed", lang), result.error);
+        return Ok(());
+    }
+
+    let update_info = match result.update_info {
+        Some(info) => info,
+        None => {
+            println!("✗ {}", t("update.check_failed", lang));
+            return Ok(());
+        }
+    };
+
+    println!(
+        "{}: {}",
+        t("update.current_version", lang),
+        update_info.current_version
+    );
+    println!(
+        "{}: {}",
+        t("update.latest_version", lang),
+        update_info.latest_version
+    );
+    println!();
+
+    if !update_info.update_available {
+        println!(
+            "✓ {} ({})",
+            t("update.up_to_date", lang),
+            update_info.current_version
+        );
+        return Ok(());
+    }
+
+    println!(
+        "✓ {}: {} → {}",
+        t("update.new_version", lang),
+        update_info.current_version,
+        update_info.latest_version
+    );
+
+    if !update_info.changelog.is_empty() {
+        println!();
+        println!("Changelog:");
+        for line in update_info.changelog.lines().take(10) {
+            println!("  {line}");
+        }
+    }
+    println!();
+
+    // Ask if user wants to download
+    let download = Confirm::with_theme(&theme)
+        .with_prompt(t("update.download_prompt", lang))
+        .default(true)
+        .interact()?;
+
+    if !download {
+        return Ok(());
+    }
+
+    println!();
+    println!("{}", t("update.downloading", lang));
+
+    let download_result = rt.block_on(async {
+        let mut params = HashMap::new();
+        params.insert("url".to_string(), update_info.download_url.clone());
+        executor.download_update(&params).await
+    });
+
+    if !download_result.success {
+        println!(
+            "✗ {}: {}",
+            t("update.download_failed", lang),
+            download_result.error
+        );
+        return Ok(());
+    }
+
+    println!("✓ {}", t("update.download_success", lang));
+    println!();
+
+    // Ask if user wants to apply
+    let apply = Confirm::with_theme(&theme)
+        .with_prompt(t("update.apply_prompt", lang))
+        .default(true)
+        .interact()?;
+
+    if !apply {
+        return Ok(());
+    }
+
+    println!();
+    println!("{}", t("update.applying", lang));
+
+    let apply_result = rt.block_on(async {
+        let params = HashMap::new();
+        executor.apply_update(&params).await
+    });
+
+    if !apply_result.success {
+        println!(
+            "✗ {}: {}",
+            t("update.apply_failed", lang),
+            apply_result.error
+        );
+        return Ok(());
+    }
+
+    println!("✓ {}", t("update.success", lang));
+    println!();
+    println!("{}", t("update.restart_required", lang));
+    println!();
+
+    // Ask if user wants to restart
+    let restart = Confirm::with_theme(&theme)
+        .with_prompt(t("update.restart_prompt", lang))
+        .default(true)
+        .interact()?;
+
+    if restart {
+        println!();
+        println!("{}", t("config.restarting", lang));
+        if let Err(e) = restart_agent_service() {
+            println!("✗ {}: {}", t("config.restart_failed", lang), e);
+        } else {
+            println!("✓ {}", t("config.restart_success", lang));
+        }
+    }
+
+    Ok(())
+}
+
+/// Restart the agent service (platform-specific)
+fn restart_agent_service() -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        crate::platform::restart_service()
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        crate::platform::restart_service()
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        crate::platform::restart_service()
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        Err("Restart not supported on this platform".to_string())
+    }
+}
+
+/// Prompt user to restart agent after config change
+fn prompt_restart_after_config_change(lang: Lang) -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Confirm};
+
+    let theme = ColorfulTheme::default();
+
+    println!();
+    let restart = Confirm::with_theme(&theme)
+        .with_prompt(t("config.restart_prompt", lang))
+        .default(true)
+        .interact()?;
+
+    if restart {
+        println!("{}", t("config.restarting", lang));
+        if let Err(e) = restart_agent_service() {
+            println!("✗ {}: {}", t("config.restart_failed", lang), e);
+        } else {
+            println!("✓ {}", t("config.restart_success", lang));
+        }
+    } else {
+        println!("{}", t("config.restart_manual", lang));
+    }
 
     Ok(())
 }

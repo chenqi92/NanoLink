@@ -107,8 +107,8 @@ pub fn uninstall_service() -> Result<(), String> {
 
 /// Start the service
 pub fn start_service() -> Result<(), String> {
-    let manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT).unwrap();
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+        .map_err(|e| format!("Failed to connect to service manager: {e}"))?;
 
     let service = manager
         .open_service(SERVICE_NAME, ServiceAccess::START)
@@ -124,8 +124,8 @@ pub fn start_service() -> Result<(), String> {
 
 /// Stop the service
 pub fn stop_service() -> Result<(), String> {
-    let manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT).unwrap();
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+        .map_err(|e| format!("Failed to connect to service manager: {e}"))?;
 
     let service = manager
         .open_service(
@@ -142,10 +142,80 @@ pub fn stop_service() -> Result<(), String> {
     Ok(())
 }
 
+/// Restart the service (stop then start)
+pub fn restart_service() -> Result<(), String> {
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+        .map_err(|e| format!("Failed to connect to service manager: {e}"))?;
+
+    let service = manager
+        .open_service(
+            SERVICE_NAME,
+            ServiceAccess::STOP | ServiceAccess::START | ServiceAccess::QUERY_STATUS,
+        )
+        .map_err(|e| format!("Failed to open service: {e}"))?;
+
+    // Check current status
+    let status = service
+        .query_status()
+        .map_err(|e| format!("Failed to query service status: {e}"))?;
+
+    // Stop if running
+    if status.current_state == ServiceState::Running {
+        service
+            .stop()
+            .map_err(|e| format!("Failed to stop service: {e}"))?;
+
+        // Wait for service to stop (max 10 seconds)
+        let mut stopped = false;
+        for _ in 0..20 {
+            std::thread::sleep(Duration::from_millis(500));
+            let status = service
+                .query_status()
+                .map_err(|e| format!("Failed to query service status: {e}"))?;
+            if status.current_state == ServiceState::Stopped {
+                stopped = true;
+                break;
+            }
+        }
+
+        if !stopped {
+            return Err("Service did not stop within 10 seconds".to_string());
+        }
+    }
+
+    // Start the service
+    service
+        .start::<String>(&[])
+        .map_err(|e| format!("Failed to start service: {e}"))?;
+
+    println!("Service '{SERVICE_DISPLAY_NAME}' restarted.");
+    Ok(())
+}
+
+/// Check if the agent service is running
+#[allow(dead_code)]
+pub fn is_service_running() -> bool {
+    let manager = match ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+    {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+
+    let service = match manager.open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+
+    service
+        .query_status()
+        .map(|s| s.current_state == ServiceState::Running)
+        .unwrap_or(false)
+}
+
 /// Query service status
 pub fn query_service_status() -> Result<String, String> {
-    let manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT).unwrap();
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
+        .map_err(|e| format!("Failed to connect to service manager: {e}"))?;
 
     let service = manager
         .open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS)

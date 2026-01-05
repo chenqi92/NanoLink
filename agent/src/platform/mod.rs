@@ -13,10 +13,14 @@ mod windows;
 #[allow(unused_imports)]
 pub use linux::*;
 
+#[cfg(target_os = "macos")]
+#[allow(unused_imports)]
+pub use macos::*;
+
 #[cfg(target_os = "windows")]
 pub use windows::{
-    install_service, query_service_status, run_as_service, start_service, stop_service,
-    uninstall_service,
+    install_service, query_service_status, restart_service, run_as_service, start_service,
+    stop_service, uninstall_service,
 };
 
 /// Get the current platform name

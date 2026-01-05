@@ -51,6 +51,19 @@ fn default_config_version() -> u32 {
     1 // Default to version 1 for old configs without version field
 }
 
+/// Update source for downloading updates
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateSource {
+    /// GitHub releases (default)
+    #[default]
+    Github,
+    /// Cloudflare R2 mirror
+    Cloudflare,
+    /// Custom URL
+    Custom,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateConfig {
     /// Enable automatic update check
@@ -76,6 +89,14 @@ pub struct UpdateConfig {
     /// Pre-release updates allowed
     #[serde(default)]
     pub allow_prerelease: bool,
+
+    /// Update source: github, cloudflare, or custom
+    #[serde(default)]
+    pub source: UpdateSource,
+
+    /// Custom update URL (used when source = "custom")
+    #[serde(default)]
+    pub custom_url: Option<String>,
 }
 
 impl Default for UpdateConfig {
@@ -87,6 +108,8 @@ impl Default for UpdateConfig {
             auto_download: false,
             auto_apply: false,
             allow_prerelease: false,
+            source: UpdateSource::default(),
+            custom_url: None,
         }
     }
 }
