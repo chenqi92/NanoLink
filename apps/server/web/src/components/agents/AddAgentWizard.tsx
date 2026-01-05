@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
-import { PlatformStep, Platform } from './wizard/PlatformStep';
-import { ConfigStep, AgentConfig } from './wizard/ConfigStep';
+import { PlatformStep, type Platform } from './wizard/PlatformStep';
+import { ConfigStep, type AgentConfig } from './wizard/ConfigStep';
 import { InstallStep } from './wizard/InstallStep';
 
 type WizardStep = 'platform' | 'config' | 'install';
