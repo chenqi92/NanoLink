@@ -260,8 +260,7 @@ fn print_no_config_help() {
     eprintln!("Generate sample config:        nanolink-agent --generate-config > nanolink.yaml");
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     // Initialize logging
@@ -291,14 +290,21 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Handle subcommands
+    // Handle subcommands - need async runtime
     if let Some(ref command) = args.command {
-        return handle_command(command, &args).await;
+        let rt = tokio::runtime::Runtime::new()?;
+        return rt.block_on(handle_command(command, &args));
     }
 
     // If no subcommand and not foreground mode, enter interactive mode
+    // But only if we're in a TTY (interactive terminal)
+    // Note: interactive_main_menu creates its own runtime when needed
     if !args.foreground {
-        return interactive_main_menu(&args);
+        // Check if stdin is a TTY - if not, we're likely running as a service
+        if atty::is(atty::Stream::Stdin) {
+            return interactive_main_menu(&args);
+        }
+        // Non-interactive environment (systemd, etc.) - run in foreground mode
     }
 
     // Run the agent - requires config file
@@ -320,7 +326,9 @@ async fn main() -> Result<()> {
         }
     };
 
-    run_agent(config_path).await
+    // Create runtime for foreground agent mode
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(run_agent(config_path))
 }
 
 async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
@@ -855,8 +863,17 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
             t("menu.start_agent", lang),
             t("menu.manage_servers", lang),
             t("menu.view_status", lang),
+            t("menu.separator", lang),
+            t("menu.modify_config", lang),
+            t("menu.test_all_connections", lang),
+            t("menu.realtime_metrics", lang),
+            t("menu.separator", lang),
+            t("menu.install_service", lang),
+            t("menu.diagnostics", lang),
             t("menu.check_update", lang),
             t("menu.init_config", lang),
+            t("menu.view_logs", lang),
+            t("menu.export_config", lang),
             t("menu.exit", lang),
         ];
 
@@ -870,7 +887,6 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
             0 => {
                 // Start Agent
                 if let Some(config_path) = get_config_path(args) {
-                    // Create a new tokio runtime for running the agent
                     let rt = tokio::runtime::Runtime::new()?;
                     if let Err(e) = rt.block_on(run_agent(config_path)) {
                         eprintln!("Error: {e}");
@@ -891,21 +907,57 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
                 interactive_show_status(args, lang)?;
                 wait_for_enter(lang);
             }
-            3 => {
+            3 | 7 => {
+                // Separator - skip immediately back to menu
+                continue;
+            }
+            4 => {
+                // Modify Config
+                interactive_modify_config(args, lang)?;
+            }
+            5 => {
+                // Test All Connections
+                interactive_test_all_connections(args, lang)?;
+                wait_for_enter(lang);
+            }
+            6 => {
+                // Realtime Metrics
+                interactive_realtime_metrics(lang)?;
+            }
+            8 => {
+                // Install as Service
+                interactive_service_management(args, lang)?;
+            }
+            9 => {
+                // System Diagnostics
+                interactive_diagnostics(args, lang)?;
+                wait_for_enter(lang);
+            }
+            10 => {
                 // Check for Updates
                 interactive_check_update(args, lang)?;
                 wait_for_enter(lang);
             }
-            4 => {
+            11 => {
                 // Initialize Config
                 interactive_init_config(lang)?;
                 wait_for_enter(lang);
             }
-            5 => {
+            12 => {
+                // View Logs
+                interactive_view_logs(args, lang)?;
+                wait_for_enter(lang);
+            }
+            13 => {
+                // Export Config
+                interactive_export_config(args, lang)?;
+                wait_for_enter(lang);
+            }
+            14 => {
                 // Exit
                 break;
             }
-            _ => unreachable!(),
+            _ => continue, // Unknown selection - go back to menu
         }
     }
 
@@ -1527,9 +1579,1398 @@ fn wait_for_enter(lang: Lang) {
 
     println!();
     print!("{}", t("misc.press_enter", lang));
-    io::stdout().flush().unwrap();
+    let _ = io::stdout().flush(); // Ignore flush errors (e.g., stdout closed)
     let mut input = String::new();
     let _ = io::stdin().read_line(&mut input);
+}
+
+// ============================================================================
+// New Interactive Functions
+// ============================================================================
+
+/// Interactive modify configuration
+fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+
+    let theme = ColorfulTheme::default();
+    let config_path = match get_config_path(args) {
+        Some(p) => p,
+        None => {
+            println!("{}", t("error.no_config", lang));
+            wait_for_enter(lang);
+            return Ok(());
+        }
+    };
+
+    loop {
+        print!("\x1B[2J\x1B[1;1H");
+        println!();
+        println!("╭──────────────────────────────────────╮");
+        println!("│       {}                    │", t("config.title", lang));
+        println!("╰──────────────────────────────────────╯");
+        println!();
+
+        let config = Config::load(&config_path)?;
+
+        let options = vec![
+            format!(
+                "{} ({}: {}ms)",
+                t("config.realtime_interval", lang),
+                t("config.current_value", lang),
+                config.collector.realtime_interval_ms
+            ),
+            format!(
+                "{} ({}: {})",
+                t("config.buffer_capacity", lang),
+                t("config.current_value", lang),
+                config.buffer.capacity
+            ),
+            format!(
+                "{} ({}: {})",
+                t("config.management_enabled", lang),
+                t("config.current_value", lang),
+                config.management.enabled
+            ),
+            format!(
+                "{} ({}: {})",
+                t("config.management_port", lang),
+                t("config.current_value", lang),
+                config.management.port
+            ),
+            format!(
+                "{} ({}: {}s)",
+                t("config.heartbeat_interval", lang),
+                t("config.current_value", lang),
+                config.agent.heartbeat_interval
+            ),
+            format!(
+                "{} ({}: {})",
+                t("config.log_level", lang),
+                t("config.current_value", lang),
+                config.logging.level
+            ),
+            t("server.back_to_menu", lang).to_string(),
+        ];
+
+        let selection = Select::with_theme(&theme)
+            .with_prompt(t("config.select_option", lang))
+            .items(&options)
+            .default(0)
+            .interact()?;
+
+        let mut config = Config::load(&config_path)?;
+
+        match selection {
+            0 => {
+                // Realtime interval (100ms - 1 hour)
+                let new_val: u64 = Input::with_theme(&theme)
+                    .with_prompt(format!("{} (100-3600000)", t("config.new_value", lang)))
+                    .default(config.collector.realtime_interval_ms)
+                    .validate_with(|input: &u64| {
+                        if *input >= 100 && *input <= 3600000 {
+                            Ok(())
+                        } else {
+                            Err("Value must be between 100 and 3600000 ms")
+                        }
+                    })
+                    .interact_text()?;
+                config.collector.realtime_interval_ms = new_val;
+                save_config(&config, &config_path)?;
+                println!("✓ {}", t("config.saved", lang));
+                prompt_restart_after_config_change(lang)?;
+            }
+            1 => {
+                // Buffer capacity (10 - 100000)
+                let new_val: usize = Input::with_theme(&theme)
+                    .with_prompt(format!("{} (10-100000)", t("config.new_value", lang)))
+                    .default(config.buffer.capacity)
+                    .validate_with(|input: &usize| {
+                        if *input >= 10 && *input <= 100000 {
+                            Ok(())
+                        } else {
+                            Err("Value must be between 10 and 100000")
+                        }
+                    })
+                    .interact_text()?;
+                config.buffer.capacity = new_val;
+                save_config(&config, &config_path)?;
+                println!("✓ {}", t("config.saved", lang));
+                prompt_restart_after_config_change(lang)?;
+            }
+            2 => {
+                // Management API enabled
+                let new_val = Confirm::with_theme(&theme)
+                    .with_prompt(t("config.management_enabled", lang))
+                    .default(config.management.enabled)
+                    .interact()?;
+                config.management.enabled = new_val;
+                if new_val && config.management.api_token.is_none() {
+                    let token: String = Input::with_theme(&theme)
+                        .with_prompt(t("config.management_token", lang))
+                        .interact_text()?;
+                    if !token.is_empty() {
+                        config.management.api_token = Some(token);
+                    }
+                }
+                save_config(&config, &config_path)?;
+                println!("✓ {}", t("config.saved", lang));
+                prompt_restart_after_config_change(lang)?;
+            }
+            3 => {
+                // Management port (1-65535)
+                let new_val: u16 = Input::with_theme(&theme)
+                    .with_prompt(format!("{} (1-65535)", t("config.new_value", lang)))
+                    .default(config.management.port)
+                    .validate_with(|input: &u16| {
+                        if *input >= 1 {
+                            Ok(())
+                        } else {
+                            Err("Port must be between 1 and 65535")
+                        }
+                    })
+                    .interact_text()?;
+                config.management.port = new_val;
+                save_config(&config, &config_path)?;
+                println!("✓ {}", t("config.saved", lang));
+                prompt_restart_after_config_change(lang)?;
+            }
+            4 => {
+                // Heartbeat interval (1 - 3600 seconds)
+                let new_val: u64 = Input::with_theme(&theme)
+                    .with_prompt(format!("{} (1-3600)", t("config.new_value", lang)))
+                    .default(config.agent.heartbeat_interval)
+                    .validate_with(|input: &u64| {
+                        if *input >= 1 && *input <= 3600 {
+                            Ok(())
+                        } else {
+                            Err("Value must be between 1 and 3600 seconds")
+                        }
+                    })
+                    .interact_text()?;
+                config.agent.heartbeat_interval = new_val;
+                save_config(&config, &config_path)?;
+                println!("✓ {}", t("config.saved", lang));
+                prompt_restart_after_config_change(lang)?;
+            }
+            5 => {
+                // Log level
+                let levels = ["trace", "debug", "info", "warn", "error"];
+                let current_idx = levels
+                    .iter()
+                    .position(|&l| l == config.logging.level)
+                    .unwrap_or(2);
+                let sel = Select::with_theme(&theme)
+                    .with_prompt(t("config.log_level", lang))
+                    .items(&levels)
+                    .default(current_idx)
+                    .interact()?;
+                config.logging.level = levels[sel].to_string();
+                save_config(&config, &config_path)?;
+                println!("✓ {}", t("config.saved", lang));
+                prompt_restart_after_config_change(lang)?;
+            }
+            6 => break,
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+/// Interactive test all connections
+fn interactive_test_all_connections(args: &Args, lang: Lang) -> Result<()> {
+    use crate::connection::grpc::GrpcClient;
+
+    println!();
+    println!("╭──────────────────────────────────────╮");
+    println!("│       {}              │", t("test.title", lang));
+    println!("╰──────────────────────────────────────╯");
+    println!();
+
+    let config_path = match get_config_path(args) {
+        Some(p) => p,
+        None => {
+            println!("{}", t("error.no_config", lang));
+            return Ok(());
+        }
+    };
+
+    let config = Config::load(&config_path)?;
+    let mut success_count = 0;
+    let total = config.servers.len();
+
+    let rt = tokio::runtime::Runtime::new()?;
+
+    for server in &config.servers {
+        print!(
+            "  {} {}:{}... ",
+            t("test.testing", lang),
+            server.host,
+            server.port
+        );
+        std::io::Write::flush(&mut std::io::stdout())?;
+
+        let result = rt.block_on(async { GrpcClient::test_server_connection(server).await });
+
+        match result {
+            Ok(version) => {
+                println!("✓ {} (v{})", t("test.success", lang), version);
+                success_count += 1;
+            }
+            Err(e) => {
+                println!("✗ {}: {}", t("test.failed", lang), e);
+            }
+        }
+    }
+
+    println!();
+    println!(
+        "{}: {}/{} {}",
+        t("test.summary", lang),
+        success_count,
+        total,
+        t("test.passed", lang)
+    );
+
+    Ok(())
+}
+
+/// RAII guard for terminal raw mode - ensures cleanup on drop
+struct RawModeGuard;
+
+impl RawModeGuard {
+    fn new() -> Result<Self> {
+        crossterm::terminal::enable_raw_mode()?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
+}
+
+/// Interactive realtime metrics viewer with multiple tabs
+fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
+    use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+    use std::time::Duration;
+    use sysinfo::{Disks, Networks, System};
+
+    let mut system = System::new_all();
+    let mut disks = Disks::new_with_refreshed_list();
+    let mut networks = Networks::new_with_refreshed_list();
+
+    let tabs = [
+        t("metrics.cpu_overview", lang),
+        t("metrics.cpu_cores", lang),
+        t("metrics.memory", lang),
+        t("metrics.disk_io", lang),
+        t("metrics.network", lang),
+        t("metrics.gpu", lang),
+        t("metrics.processes", lang),
+        t("metrics.ports", lang),
+    ];
+    let mut current_tab: usize = 0;
+    let mut scroll_offset: usize = 0;
+    let mut max_scroll: usize; // Track max scrollable items
+
+    // RAII guard ensures terminal is restored even on panic/error
+    let _raw_mode_guard = RawModeGuard::new()?;
+
+    loop {
+        print!("\x1B[2J\x1B[1;1H");
+
+        // Header
+        println!("╭──────────────────────────────────────────────────────────────╮");
+        println!("│  {}  │", t("metrics.title", lang));
+        println!("╰──────────────────────────────────────────────────────────────╯");
+
+        // Tab bar
+        print!("  ");
+        for (i, tab) in tabs.iter().enumerate() {
+            if i == current_tab {
+                print!("[{tab}] ");
+            } else {
+                print!(" {tab}  ");
+            }
+        }
+        println!();
+        println!("  {}", t("metrics.press_q", lang));
+        println!("  ──────────────────────────────────────────────────────────────");
+
+        // Refresh data
+        system.refresh_all();
+        disks.refresh(false);
+        networks.refresh(false);
+
+        match current_tab {
+            0 => {
+                // CPU Overview
+                let cpu_usage = system.global_cpu_usage();
+                println!();
+                println!("  CPU {} : {:.1}%", t("metrics.usage", lang), cpu_usage);
+                println!("  ├─ Logical Cores: {}", system.cpus().len());
+
+                // Progress bar
+                let bar_width = 50;
+                let filled = (cpu_usage as usize * bar_width / 100).min(bar_width);
+                print!("  │  [");
+                for i in 0..bar_width {
+                    if i < filled {
+                        print!("█");
+                    } else {
+                        print!("░");
+                    }
+                }
+                println!("]");
+
+                // Load average (Unix)
+                #[cfg(unix)]
+                {
+                    let load = System::load_average();
+                    println!(
+                        "  └─ Load Average: {:.2} {:.2} {:.2}",
+                        load.one, load.five, load.fifteen
+                    );
+                }
+            }
+            1 => {
+                // CPU Cores
+                println!();
+                let cpus = system.cpus();
+                let start = scroll_offset.min(cpus.len().saturating_sub(16));
+                let end = (start + 16).min(cpus.len());
+
+                for (i, cpu) in cpus.iter().enumerate().skip(start).take(end - start) {
+                    let usage = cpu.cpu_usage();
+                    let bar_len = (usage as usize / 5).min(20);
+                    print!("  Core {i:>2}: {usage:>5.1}% [");
+                    for j in 0..20 {
+                        if j < bar_len {
+                            print!("█");
+                        } else {
+                            print!("░");
+                        }
+                    }
+                    println!("]");
+                }
+
+                if cpus.len() > 16 {
+                    println!();
+                    println!(
+                        "  (Showing {}-{} of {}, ↑↓ to scroll)",
+                        start + 1,
+                        end,
+                        cpus.len()
+                    );
+                }
+            }
+            2 => {
+                // Memory
+                println!();
+                let total = system.total_memory();
+                let used = system.used_memory();
+                let swap_total = system.total_swap();
+                let swap_used = system.used_swap();
+
+                let mem_percent = if total > 0 {
+                    (used as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                };
+
+                println!(
+                    "  RAM: {:.1} GB / {:.1} GB ({:.1}%)",
+                    used as f64 / 1024.0 / 1024.0 / 1024.0,
+                    total as f64 / 1024.0 / 1024.0 / 1024.0,
+                    mem_percent
+                );
+
+                let bar_width = 50;
+                let filled = (mem_percent as usize * bar_width / 100).min(bar_width);
+                print!("  [");
+                for i in 0..bar_width {
+                    if i < filled {
+                        print!("█");
+                    } else {
+                        print!("░");
+                    }
+                }
+                println!("]");
+
+                if swap_total > 0 {
+                    let swap_percent = (swap_used as f64 / swap_total as f64) * 100.0;
+                    println!();
+                    println!(
+                        "  Swap: {:.1} GB / {:.1} GB ({:.1}%)",
+                        swap_used as f64 / 1024.0 / 1024.0 / 1024.0,
+                        swap_total as f64 / 1024.0 / 1024.0 / 1024.0,
+                        swap_percent
+                    );
+                }
+            }
+            3 => {
+                // Disk I/O
+                println!();
+                for disk in disks.list() {
+                    let total = disk.total_space();
+                    let available = disk.available_space();
+                    let used = total - available;
+                    let percent = if total > 0 {
+                        (used as f64 / total as f64) * 100.0
+                    } else {
+                        0.0
+                    };
+
+                    println!(
+                        "  {} [{}]",
+                        disk.mount_point().display(),
+                        disk.file_system().to_string_lossy()
+                    );
+                    println!(
+                        "    {:.1} GB / {:.1} GB ({:.1}%)",
+                        used as f64 / 1024.0 / 1024.0 / 1024.0,
+                        total as f64 / 1024.0 / 1024.0 / 1024.0,
+                        percent
+                    );
+
+                    let bar_width = 40;
+                    let filled = (percent as usize * bar_width / 100).min(bar_width);
+                    print!("    [");
+                    for i in 0..bar_width {
+                        if i < filled {
+                            if percent > 90.0 {
+                                print!("!");
+                            } else {
+                                print!("█");
+                            }
+                        } else {
+                            print!("░");
+                        }
+                    }
+                    println!("]");
+                }
+            }
+            4 => {
+                // Network
+                println!();
+                for (name, data) in networks.list() {
+                    let rx = data.received();
+                    let tx = data.transmitted();
+                    println!("  {name} :");
+                    println!(
+                        "    ↓ RX: {:.2} MB  ↑ TX: {:.2} MB",
+                        rx as f64 / 1024.0 / 1024.0,
+                        tx as f64 / 1024.0 / 1024.0
+                    );
+                }
+            }
+            5 => {
+                // GPU
+                println!();
+                let gpu_collector = crate::collector::GpuCollector::new();
+                let gpus = gpu_collector.collect();
+
+                if gpus.is_empty() {
+                    println!("  {}", t("metrics.no_gpu", lang));
+                } else {
+                    for gpu in &gpus {
+                        println!("  GPU {}: {}", gpu.index, gpu.name);
+                        println!(
+                            "    {} : {:.1}%",
+                            t("metrics.usage", lang),
+                            gpu.usage_percent
+                        );
+                        println!(
+                            "    Memory: {:.0} MB / {:.0} MB",
+                            gpu.memory_used as f64 / 1024.0 / 1024.0,
+                            gpu.memory_total as f64 / 1024.0 / 1024.0
+                        );
+                        if gpu.temperature > 0.0 {
+                            println!(
+                                "    {} : {:.0}°C",
+                                t("metrics.temperature", lang),
+                                gpu.temperature
+                            );
+                        }
+                        if gpu.power_watts > 0 {
+                            println!(
+                                "    {} : {}W / {}W",
+                                t("metrics.power", lang),
+                                gpu.power_watts,
+                                gpu.power_limit_watts
+                            );
+                        }
+                        println!();
+                    }
+                }
+            }
+            6 => {
+                // Processes
+                println!();
+                println!(
+                    "  {:>6} {:>6} {:>6} {:>10}  NAME",
+                    "PID", "CPU%", "MEM%", "MEM(MB)"
+                );
+                println!("  ────── ────── ────── ──────────  ────────────────────");
+
+                let mut procs: Vec<_> = system.processes().iter().collect();
+                procs.sort_by(|a, b| {
+                    b.1.cpu_usage()
+                        .partial_cmp(&a.1.cpu_usage())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+
+                let total_mem = system.total_memory() as f64;
+                let start = scroll_offset.min(procs.len().saturating_sub(15));
+
+                for (pid, proc) in procs.iter().skip(start).take(15) {
+                    let mem_percent = if total_mem > 0.0 {
+                        (proc.memory() as f64 / total_mem) * 100.0
+                    } else {
+                        0.0
+                    };
+                    println!(
+                        "  {:>6} {:>5.1}% {:>5.1}% {:>10.1}  {}",
+                        pid.as_u32(),
+                        proc.cpu_usage(),
+                        mem_percent,
+                        proc.memory() as f64 / 1024.0 / 1024.0,
+                        proc.name().to_string_lossy()
+                    );
+                }
+
+                if procs.len() > 15 {
+                    println!();
+                    println!(
+                        "  (Showing {}-{} of {}, ↑↓ to scroll)",
+                        start + 1,
+                        (start + 15).min(procs.len()),
+                        procs.len()
+                    );
+                }
+            }
+            7 => {
+                // Listening Ports
+                println!();
+                println!("  {:>6} {:>8} {:>22}  PROCESS", "PID", "PROTO", "ADDRESS");
+                println!("  ────── ──────── ──────────────────────  ────────────────────");
+
+                // Get listening ports using netstat/ss
+                let ports = get_listening_ports();
+                let start = scroll_offset.min(ports.len().saturating_sub(15));
+
+                for (pid, proto, addr, name) in ports.iter().skip(start).take(15) {
+                    println!("  {pid:>6} {proto:>8} {addr:>22}  {name}");
+                }
+
+                if ports.len() > 15 {
+                    println!();
+                    println!(
+                        "  (Showing {}-{} of {}, ↑↓ to scroll)",
+                        start + 1,
+                        (start + 15).min(ports.len()),
+                        ports.len()
+                    );
+                }
+            }
+            _ => {}
+        }
+
+        // Update max_scroll based on current tab content
+        max_scroll = match current_tab {
+            1 => system.cpus().len().saturating_sub(16), // CPU Cores
+            6 => system.processes().len().saturating_sub(15), // Processes
+            7 => get_listening_ports().len().saturating_sub(15), // Ports
+            _ => 0,
+        };
+
+        // Handle input
+        if event::poll(Duration::from_millis(500))? {
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => break,
+                        KeyCode::Left => {
+                            current_tab = current_tab.saturating_sub(1);
+                            scroll_offset = 0;
+                        }
+                        KeyCode::Right => {
+                            current_tab = (current_tab + 1).min(tabs.len() - 1);
+                            scroll_offset = 0;
+                        }
+                        KeyCode::Up => {
+                            scroll_offset = scroll_offset.saturating_sub(1);
+                        }
+                        KeyCode::Down => {
+                            // Limit scroll to max_scroll
+                            if scroll_offset < max_scroll {
+                                scroll_offset += 1;
+                            }
+                        }
+                        KeyCode::Tab => {
+                            current_tab = (current_tab + 1) % tabs.len();
+                            scroll_offset = 0;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    // RAII guard automatically restores terminal on drop
+    Ok(())
+}
+
+/// Get listening ports (platform-specific)
+fn get_listening_ports() -> Vec<(String, String, String, String)> {
+    let mut ports = Vec::new();
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        if let Ok(output) = Command::new("ss").args(["-tulnp"]).output() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines().skip(1) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 5 {
+                    let proto = parts[0].to_string();
+                    let addr = parts[4].to_string();
+                    let process_info = parts.get(6).unwrap_or(&"").to_string();
+
+                    // Extract PID and process name from users:(("name",pid=123,fd=4))
+                    let (pid, name) = if let Some(start) = process_info.find("pid=") {
+                        let pid_part = &process_info[start + 4..];
+                        let pid: String = pid_part.chars().take_while(|c| c.is_numeric()).collect();
+                        let name = process_info
+                            .split("((\"")
+                            .nth(1)
+                            .and_then(|s| s.split("\"").next())
+                            .unwrap_or("-")
+                            .to_string();
+                        (pid, name)
+                    } else {
+                        ("-".to_string(), "-".to_string())
+                    };
+
+                    ports.push((pid, proto, addr, name));
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        if let Ok(output) = Command::new("netstat").args(["-ano"]).output() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.contains("LISTENING") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 5 {
+                        let proto = parts[0].to_string();
+                        let addr = parts[1].to_string();
+                        let pid = parts[4].to_string();
+                        ports.push((pid, proto, addr, "-".to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        if let Ok(output) = Command::new("lsof")
+            .args(["-iTCP", "-sTCP:LISTEN", "-n", "-P"])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines().skip(1) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 9 {
+                    let name = parts[0].to_string();
+                    let pid = parts[1].to_string();
+                    let addr = parts[8].to_string();
+                    ports.push((pid, "TCP".to_string(), addr, name));
+                }
+            }
+        }
+    }
+
+    ports
+}
+
+/// Interactive service management
+fn interactive_service_management(args: &Args, lang: Lang) -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Select};
+
+    let theme = ColorfulTheme::default();
+
+    loop {
+        print!("\x1B[2J\x1B[1;1H");
+        println!();
+        println!("╭──────────────────────────────────────╮");
+        println!("│       {}          │", t("service.title", lang));
+        println!("╰──────────────────────────────────────╯");
+        println!();
+
+        let options = &[
+            t("service.install", lang),
+            t("service.uninstall", lang),
+            t("service.start", lang),
+            t("service.stop", lang),
+            t("service.status", lang),
+            t("server.back_to_menu", lang),
+        ];
+
+        let selection = Select::with_theme(&theme)
+            .with_prompt(t("menu.select_action", lang))
+            .items(options)
+            .default(0)
+            .interact()?;
+
+        match selection {
+            0 => {
+                // Install
+                println!("{}", t("service.installing", lang));
+                #[cfg(target_os = "windows")]
+                {
+                    let config_path = get_config_path(args);
+                    match crate::platform::install_service(config_path) {
+                        Ok(_) => println!("✓ {}", t("service.installed", lang)),
+                        Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
+                    }
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    match install_systemd_service(args) {
+                        Ok(_) => println!("✓ {}", t("service.installed", lang)),
+                        Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    match install_launchd_service(args) {
+                        Ok(_) => println!("✓ {}", t("service.installed", lang)),
+                        Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
+                    }
+                }
+                #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+                {
+                    println!("{}", t("service.not_supported", lang));
+                }
+                wait_for_enter(lang);
+            }
+            1 => {
+                // Uninstall
+                println!("{}", t("service.uninstalling", lang));
+                #[cfg(target_os = "windows")]
+                {
+                    match crate::platform::uninstall_service() {
+                        Ok(_) => println!("✓ {}", t("service.uninstalled", lang)),
+                        Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
+                    }
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    match uninstall_systemd_service() {
+                        Ok(_) => println!("✓ {}", t("service.uninstalled", lang)),
+                        Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    match uninstall_launchd_service() {
+                        Ok(_) => println!("✓ {}", t("service.uninstalled", lang)),
+                        Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
+                    }
+                }
+                #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+                {
+                    println!("{}", t("service.not_supported", lang));
+                }
+                wait_for_enter(lang);
+            }
+            2 => {
+                // Start
+                println!("{}", t("service.starting", lang));
+                #[cfg(target_os = "windows")]
+                {
+                    match crate::platform::start_service() {
+                        Ok(_) => println!("✓ {}", t("service.started", lang)),
+                        Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
+                    }
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    match std::process::Command::new("systemctl")
+                        .args(["start", "nanolink-agent"])
+                        .status()
+                    {
+                        Ok(s) if s.success() => println!("✓ {}", t("service.started", lang)),
+                        _ => println!("✗ {}", t("service.error", lang)),
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    match std::process::Command::new("launchctl")
+                        .args(["load", "/Library/LaunchDaemons/com.nanolink.agent.plist"])
+                        .status()
+                    {
+                        Ok(s) if s.success() => println!("✓ {}", t("service.started", lang)),
+                        _ => println!("✗ {}", t("service.error", lang)),
+                    }
+                }
+                #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+                {
+                    println!("{}", t("service.not_supported", lang));
+                }
+                wait_for_enter(lang);
+            }
+            3 => {
+                // Stop
+                println!("{}", t("service.stopping", lang));
+                #[cfg(target_os = "windows")]
+                {
+                    match crate::platform::stop_service() {
+                        Ok(_) => println!("✓ {}", t("service.stopped", lang)),
+                        Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
+                    }
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    match std::process::Command::new("systemctl")
+                        .args(["stop", "nanolink-agent"])
+                        .status()
+                    {
+                        Ok(s) if s.success() => println!("✓ {}", t("service.stopped", lang)),
+                        _ => println!("✗ {}", t("service.error", lang)),
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    match std::process::Command::new("launchctl")
+                        .args(["unload", "/Library/LaunchDaemons/com.nanolink.agent.plist"])
+                        .status()
+                    {
+                        Ok(s) if s.success() => println!("✓ {}", t("service.stopped", lang)),
+                        _ => println!("✗ {}", t("service.error", lang)),
+                    }
+                }
+                #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+                {
+                    println!("{}", t("service.not_supported", lang));
+                }
+                wait_for_enter(lang);
+            }
+            4 => {
+                // Status
+                #[cfg(target_os = "windows")]
+                {
+                    match crate::platform::query_service_status() {
+                        Ok(status) => println!("{status}"),
+                        Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
+                    }
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    let _ = std::process::Command::new("systemctl")
+                        .args(["status", "nanolink-agent"])
+                        .status();
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = std::process::Command::new("launchctl")
+                        .args(["list", "com.nanolink.agent"])
+                        .status();
+                }
+                #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+                {
+                    println!("{}", t("service.not_supported", lang));
+                }
+                wait_for_enter(lang);
+            }
+            5 => break,
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate and escape path for systemd service file
+/// Returns None if path contains invalid characters
+#[cfg(target_os = "linux")]
+fn validate_systemd_path(path: &std::path::Path) -> Option<String> {
+    let path_str = path.to_string_lossy();
+    // Reject paths with newlines, quotes, or control characters
+    if path_str
+        .chars()
+        .any(|c| c == '\n' || c == '\r' || c == '"' || c.is_control())
+    {
+        return None;
+    }
+    // Shell-escape the path for systemd ExecStart
+    Some(format!(
+        "\"{}\"",
+        path_str.replace('\\', "\\\\").replace('"', "\\\"")
+    ))
+}
+
+/// Escape string for XML plist
+#[cfg(target_os = "macos")]
+fn escape_xml(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+/// Check if running with root privileges
+#[cfg(unix)]
+fn is_root() -> bool {
+    unsafe { libc::geteuid() == 0 }
+}
+
+#[cfg(target_os = "linux")]
+fn install_systemd_service(args: &Args) -> Result<(), String> {
+    use std::fs;
+
+    // Check root permission
+    if !is_root() {
+        return Err("Root permission required. Run with sudo.".to_string());
+    }
+
+    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_escaped = validate_systemd_path(&exe_path)
+        .ok_or_else(|| "Invalid characters in executable path".to_string())?;
+
+    let config_arg = match get_config_path(args) {
+        Some(p) => {
+            let config_escaped = validate_systemd_path(&p)
+                .ok_or_else(|| "Invalid characters in config path".to_string())?;
+            format!(" -c {}", config_escaped)
+        }
+        None => String::new(),
+    };
+
+    let service_content = format!(
+        r#"[Unit]
+Description=NanoLink Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={}{} -f
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+"#,
+        exe_escaped, config_arg
+    );
+
+    fs::write(
+        "/etc/systemd/system/nanolink-agent.service",
+        service_content,
+    )
+    .map_err(|e| format!("Failed to write service file: {}", e))?;
+
+    std::process::Command::new("systemctl")
+        .args(["daemon-reload"])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    std::process::Command::new("systemctl")
+        .args(["enable", "nanolink-agent"])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn uninstall_systemd_service() -> Result<(), String> {
+    use std::fs;
+
+    let _ = std::process::Command::new("systemctl")
+        .args(["stop", "nanolink-agent"])
+        .status();
+
+    let _ = std::process::Command::new("systemctl")
+        .args(["disable", "nanolink-agent"])
+        .status();
+
+    fs::remove_file("/etc/systemd/system/nanolink-agent.service").map_err(|e| e.to_string())?;
+
+    std::process::Command::new("systemctl")
+        .args(["daemon-reload"])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn install_launchd_service(args: &Args) -> Result<(), String> {
+    use std::fs;
+
+    // Check root permission
+    if !is_root() {
+        return Err("Root permission required. Run with sudo.".to_string());
+    }
+
+    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_escaped = escape_xml(&exe_path.to_string_lossy());
+
+    let mut args_xml = String::from("        <string>-f</string>\n");
+    if let Some(ref p) = get_config_path(args) {
+        let config_escaped = escape_xml(&p.to_string_lossy());
+        args_xml.push_str(&format!(
+            "        <string>-c</string>\n        <string>{}</string>\n",
+            config_escaped
+        ));
+    }
+
+    let plist_content = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nanolink.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{}</string>
+{}    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+"#,
+        exe_escaped, args_xml
+    );
+
+    fs::write(
+        "/Library/LaunchDaemons/com.nanolink.agent.plist",
+        plist_content,
+    )
+    .map_err(|e| format!("Failed to write plist file: {}", e))?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn uninstall_launchd_service() -> Result<(), String> {
+    use std::fs;
+
+    let _ = std::process::Command::new("launchctl")
+        .args(["unload", "/Library/LaunchDaemons/com.nanolink.agent.plist"])
+        .status();
+
+    fs::remove_file("/Library/LaunchDaemons/com.nanolink.agent.plist")
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Interactive system diagnostics
+fn interactive_diagnostics(args: &Args, lang: Lang) -> Result<()> {
+    use std::net::{TcpStream, ToSocketAddrs};
+    use std::time::Duration;
+
+    println!();
+    println!("╭──────────────────────────────────────╮");
+    println!("│       {}                  │", t("diag.title", lang));
+    println!("╰──────────────────────────────────────╯");
+    println!();
+
+    // 1. Config validation
+    print!("  ● {}... ", t("diag.config_valid", lang));
+    std::io::Write::flush(&mut std::io::stdout())?;
+
+    match get_config_path(args) {
+        Some(config_path) => match Config::load(&config_path) {
+            Ok(_) => println!("✓ {}", t("diag.ok", lang)),
+            Err(e) => println!("✗ {}: {}", t("diag.error", lang), e),
+        },
+        None => println!("✗ {}", t("error.no_config", lang)),
+    }
+
+    // 2. DNS resolution
+    print!("  ● {}... ", t("diag.dns", lang));
+    std::io::Write::flush(&mut std::io::stdout())?;
+
+    match std::net::ToSocketAddrs::to_socket_addrs(&("google.com", 80)) {
+        Ok(_) => println!("✓ {}", t("diag.ok", lang)),
+        Err(e) => println!("✗ {}: {}", t("diag.error", lang), e),
+    }
+
+    // 3. Network connectivity
+    print!("  ● {}... ", t("diag.network", lang));
+    std::io::Write::flush(&mut std::io::stdout())?;
+
+    // Use a known-valid address to avoid unwrap
+    let google_dns: std::net::SocketAddr = "8.8.8.8:53".parse().expect("valid IP literal");
+    match TcpStream::connect_timeout(&google_dns, Duration::from_secs(5)) {
+        Ok(_) => println!("✓ {}", t("diag.ok", lang)),
+        Err(e) => println!("✗ {}: {}", t("diag.error", lang), e),
+    }
+
+    // 4. Disk space
+    print!("  ● {}... ", t("diag.disk_space", lang));
+    std::io::Write::flush(&mut std::io::stdout())?;
+
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let mut low_space = false;
+    for disk in disks.list() {
+        let total = disk.total_space();
+        let available = disk.available_space();
+        if total > 0 && (available as f64 / total as f64) < 0.1 {
+            low_space = true;
+        }
+    }
+    if low_space {
+        println!("! {} (<10% free)", t("diag.warning", lang));
+    } else {
+        println!("✓ {}", t("diag.ok", lang));
+    }
+
+    // 5. Server reachability
+    if let Some(config_path) = get_config_path(args) {
+        if let Ok(config) = Config::load(&config_path) {
+            println!();
+            println!("  {}:", t("diag.server_reach", lang));
+
+            for server in &config.servers {
+                print!("    ● {}:{}... ", server.host, server.port);
+                std::io::Write::flush(&mut std::io::stdout())?;
+
+                let addr = format!("{}:{}", server.host, server.port);
+                match addr.to_socket_addrs() {
+                    Ok(mut addrs) => {
+                        if let Some(addr) = addrs.next() {
+                            match TcpStream::connect_timeout(&addr, Duration::from_secs(5)) {
+                                Ok(_) => println!("✓ {}", t("diag.ok", lang)),
+                                Err(e) => println!("✗ {e}"),
+                            }
+                        } else {
+                            println!("✗ DNS resolution failed");
+                        }
+                    }
+                    Err(e) => println!("✗ {e}"),
+                }
+            }
+        }
+    }
+
+    println!();
+    println!("✓ {}", t("diag.complete", lang));
+
+    Ok(())
+}
+
+/// Interactive view logs
+fn interactive_view_logs(args: &Args, lang: Lang) -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Input, Select};
+
+    let theme = ColorfulTheme::default();
+
+    println!();
+    println!("╭──────────────────────────────────────╮");
+    println!("│       {}                    │", t("logs.title", lang));
+    println!("╰──────────────────────────────────────╯");
+    println!();
+
+    let options = &[t("logs.system", lang), t("logs.audit", lang)];
+
+    let selection = Select::with_theme(&theme)
+        .with_prompt(t("menu.select_action", lang))
+        .items(options)
+        .default(0)
+        .interact()?;
+
+    let lines: usize = Input::with_theme(&theme)
+        .with_prompt(t("logs.lines_count", lang))
+        .default(50)
+        .interact_text()?;
+
+    match selection {
+        0 => {
+            // System logs
+            #[cfg(target_os = "linux")]
+            {
+                let _ = std::process::Command::new("journalctl")
+                    .args([
+                        "-u",
+                        "nanolink-agent",
+                        "-n",
+                        &lines.to_string(),
+                        "--no-pager",
+                    ])
+                    .status();
+            }
+            #[cfg(target_os = "macos")]
+            {
+                // macOS 'log show --last' uses time duration, not line count
+                // Use a reasonable time window based on requested lines
+                let minutes = (lines / 10).max(5).min(60); // ~10 lines/min estimate
+                println!("(Showing logs from last {} minutes)", minutes);
+                let _ = std::process::Command::new("log")
+                    .args([
+                        "show",
+                        "--predicate",
+                        "process == \"nanolink-agent\"",
+                        "--last",
+                        &format!("{}m", minutes),
+                    ])
+                    .status();
+            }
+            #[cfg(target_os = "windows")]
+            {
+                println!("Check Event Viewer for NanoLink Agent logs");
+            }
+        }
+        1 => {
+            // Audit logs
+            if let Some(config_path) = get_config_path(args) {
+                if let Ok(config) = Config::load(&config_path) {
+                    let audit_file = &config.logging.audit_file;
+                    if std::path::Path::new(audit_file).exists() {
+                        let content = std::fs::read_to_string(audit_file)?;
+                        let all_lines: Vec<&str> = content.lines().collect();
+                        let start = all_lines.len().saturating_sub(lines);
+                        println!();
+                        for line in &all_lines[start..] {
+                            println!("{line}");
+                        }
+                    } else {
+                        println!("{}", t("logs.no_logs", lang));
+                    }
+                }
+            } else {
+                println!("{}", t("error.no_config", lang));
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+/// Interactive export configuration
+fn interactive_export_config(args: &Args, lang: Lang) -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Input, Select};
+
+    let theme = ColorfulTheme::default();
+
+    println!();
+    println!("╭──────────────────────────────────────╮");
+    println!("│       {}                  │", t("export.title", lang));
+    println!("╰──────────────────────────────────────╯");
+    println!();
+
+    let config_path = match get_config_path(args) {
+        Some(p) => p,
+        None => {
+            println!("{}", t("error.no_config", lang));
+            return Ok(());
+        }
+    };
+
+    let mut config = Config::load(&config_path)?;
+
+    // Warn about sensitive information
+    let has_tokens =
+        config.servers.iter().any(|s| !s.token.is_empty()) || config.management.api_token.is_some();
+
+    if has_tokens {
+        use dialoguer::Confirm;
+        println!();
+        println!("⚠️  Warning: Configuration contains sensitive tokens!");
+        println!("   Exported file will include authentication tokens in plaintext.");
+        println!();
+
+        let redact = Confirm::with_theme(&theme)
+            .with_prompt("Redact sensitive tokens? (Recommended)")
+            .default(true)
+            .interact()?;
+
+        if redact {
+            // Redact tokens
+            for server in &mut config.servers {
+                if !server.token.is_empty() {
+                    server.token = "[REDACTED]".to_string();
+                }
+            }
+            if config.management.api_token.is_some() {
+                config.management.api_token = Some("[REDACTED]".to_string());
+            }
+            println!("   Tokens will be redacted in export.");
+        } else {
+            println!("   Tokens will be included in plaintext. Handle with care!");
+        }
+        println!();
+    }
+
+    let formats = &["YAML", "TOML", "JSON"];
+    let format_sel = Select::with_theme(&theme)
+        .with_prompt(t("export.format", lang))
+        .items(formats)
+        .default(0)
+        .interact()?;
+
+    let default_ext = match format_sel {
+        0 => "yaml",
+        1 => "toml",
+        2 => "json",
+        _ => "yaml",
+    };
+
+    let output_path: String = Input::with_theme(&theme)
+        .with_prompt(t("export.path", lang))
+        .default(format!("nanolink-export.{default_ext}"))
+        .interact_text()?;
+
+    // Validate output path - prevent path traversal
+    let output_path = std::path::Path::new(&output_path);
+    if output_path.to_string_lossy().contains("..") {
+        println!("✗ Error: Path traversal not allowed");
+        return Ok(());
+    }
+
+    // Prevent writing to system directories
+    let path_str = output_path.to_string_lossy();
+    if path_str.starts_with("/etc/")
+        || path_str.starts_with("/usr/")
+        || path_str.starts_with("/bin/")
+        || path_str.starts_with("/sbin/")
+        || path_str.starts_with("C:\\Windows")
+        || path_str.starts_with("C:\\Program Files")
+    {
+        println!("✗ Error: Cannot write to system directory");
+        return Ok(());
+    }
+
+    let content = match format_sel {
+        0 => serde_yaml::to_string(&config)?,
+        1 => toml::to_string_pretty(&config)?,
+        2 => serde_json::to_string_pretty(&config)?,
+        _ => serde_yaml::to_string(&config)?,
+    };
+
+    std::fs::write(output_path, content)?;
+    println!();
+    println!("✓ {}: {}", t("export.success", lang), output_path.display());
+
+    Ok(())
 }
 
 /// Run the agent (public for Windows service support)
