@@ -44,6 +44,18 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("menu.init_config", Lang::En) => "Initialize Config",
         ("menu.exit", Lang::Zh) => "退出",
         ("menu.exit", Lang::En) => "Exit",
+        ("menu.switch_language", Lang::Zh) => "切换语言 / Switch Language",
+        ("menu.switch_language", Lang::En) => "Switch Language / 切换语言",
+        ("menu.current_language", Lang::Zh) => "当前语言",
+        ("menu.current_language", Lang::En) => "Current language",
+        ("menu.select_language", Lang::Zh) => "选择语言",
+        ("menu.select_language", Lang::En) => "Select language",
+        ("menu.language_switched", Lang::Zh) => "语言已切换",
+        ("menu.language_switched", Lang::En) => "Language switched",
+        ("lang.english", Lang::Zh) => "English (英语)",
+        ("lang.english", Lang::En) => "English",
+        ("lang.chinese", Lang::Zh) => "中文",
+        ("lang.chinese", Lang::En) => "Chinese (中文)",
 
         // Server management
         ("server.configured_servers", Lang::Zh) => "已配置的服务器",

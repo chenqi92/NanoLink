@@ -844,7 +844,7 @@ use crate::i18n::{Lang, detect_language, t};
 fn interactive_main_menu(args: &Args) -> Result<()> {
     use dialoguer::{Select, theme::ColorfulTheme};
 
-    let lang = detect_language();
+    let mut lang = detect_language();
     let theme = ColorfulTheme::default();
 
     loop {
@@ -874,6 +874,7 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
             t("menu.init_config", lang),
             t("menu.view_logs", lang),
             t("menu.export_config", lang),
+            t("menu.switch_language", lang),
             t("menu.exit", lang),
         ];
 
@@ -954,6 +955,10 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
                 wait_for_enter(lang);
             }
             14 => {
+                // Switch Language
+                lang = interactive_switch_language(lang)?;
+            }
+            15 => {
                 // Exit
                 break;
             }
@@ -962,6 +967,52 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Interactive language switch
+fn interactive_switch_language(current_lang: Lang) -> Result<Lang> {
+    use dialoguer::{Select, theme::ColorfulTheme};
+
+    let theme = ColorfulTheme::default();
+
+    println!();
+    println!(
+        "{}: {}",
+        t("menu.current_language", current_lang),
+        match current_lang {
+            Lang::En => t("lang.english", current_lang),
+            Lang::Zh => t("lang.chinese", current_lang),
+        }
+    );
+    println!();
+
+    let options = &[
+        t("lang.english", current_lang),
+        t("lang.chinese", current_lang),
+    ];
+
+    let selection = Select::with_theme(&theme)
+        .with_prompt(t("menu.select_language", current_lang))
+        .items(options)
+        .default(match current_lang {
+            Lang::En => 0,
+            Lang::Zh => 1,
+        })
+        .interact()?;
+
+    let new_lang = match selection {
+        0 => Lang::En,
+        1 => Lang::Zh,
+        _ => current_lang,
+    };
+
+    if new_lang != current_lang {
+        println!();
+        println!("✓ {}", t("menu.language_switched", new_lang));
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+
+    Ok(new_lang)
 }
 
 /// Interactive server management menu
@@ -1851,6 +1902,37 @@ impl Drop for RawModeGuard {
     }
 }
 
+/// Format bytes to human readable format (KB, MB, GB, TB)
+fn format_bytes(bytes: u64) -> (f64, &'static str) {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    const TB: u64 = GB * 1024;
+
+    if bytes >= TB {
+        (bytes as f64 / TB as f64, "TB")
+    } else if bytes >= GB {
+        (bytes as f64 / GB as f64, "GB")
+    } else if bytes >= MB {
+        (bytes as f64 / MB as f64, "MB")
+    } else if bytes >= KB {
+        (bytes as f64 / KB as f64, "KB")
+    } else {
+        (bytes as f64, "B")
+    }
+}
+
+/// Truncate string to max length with ellipsis
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else if max_len > 3 {
+        format!("{}...", &s[..max_len - 3])
+    } else {
+        s[..max_len].to_string()
+    }
+}
+
 /// Interactive realtime metrics viewer with multiple tabs
 fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -1878,26 +1960,53 @@ fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
     // RAII guard ensures terminal is restored even on panic/error
     let _raw_mode_guard = RawModeGuard::new()?;
 
+    // Helper to create progress bar
+    fn progress_bar(percent: f64, width: usize, warn_threshold: f64) -> String {
+        let filled = (percent as usize * width / 100).min(width);
+        let mut bar = String::with_capacity(width + 2);
+        bar.push('[');
+        for i in 0..width {
+            if i < filled {
+                if percent > warn_threshold {
+                    bar.push('!');
+                } else {
+                    bar.push('█');
+                }
+            } else {
+                bar.push('░');
+            }
+        }
+        bar.push(']');
+        bar
+    }
+
     loop {
         print!("\x1B[2J\x1B[1;1H");
 
+        // ═══════════════════════════════════════════════════════════════════
         // Header
-        println!("╭──────────────────────────────────────────────────────────────╮");
-        println!("│  {}  │", t("metrics.title", lang));
-        println!("╰──────────────────────────────────────────────────────────────╯");
+        // ═══════════════════════════════════════════════════════════════════
+        println!("┌─────────────────────────────────────────────────────────────────────────────┐");
+        println!(
+            "│                     🖥  {}                      │",
+            t("metrics.title", lang)
+        );
+        println!("├─────────────────────────────────────────────────────────────────────────────┤");
 
-        // Tab bar
-        print!("  ");
+        // Tab bar with better styling
+        print!("│  ");
         for (i, tab) in tabs.iter().enumerate() {
             if i == current_tab {
-                print!("[{tab}] ");
+                print!("[ \x1B[1;36m{tab}\x1B[0m ]"); // Cyan bold for active
             } else {
-                print!(" {tab}  ");
+                print!("  {tab}  ");
             }
         }
+        println!("  │");
+        println!("├─────────────────────────────────────────────────────────────────────────────┤");
+        println!("│  \x1B[90m{}\x1B[0m", t("metrics.press_q", lang));
+        println!("└─────────────────────────────────────────────────────────────────────────────┘");
         println!();
-        println!("  {}", t("metrics.press_q", lang));
-        println!("  ──────────────────────────────────────────────────────────────");
 
         // Refresh data
         system.refresh_all();
@@ -1906,69 +2015,87 @@ fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
 
         match current_tab {
             0 => {
+                // ═══════════════════════════════════════════════════════════
                 // CPU Overview
+                // ═══════════════════════════════════════════════════════════
                 let cpu_usage = system.global_cpu_usage();
-                println!();
-                println!("  CPU {} : {:.1}%", t("metrics.usage", lang), cpu_usage);
-                println!("  ├─ Logical Cores: {}", system.cpus().len());
 
-                // Progress bar
-                let bar_width = 50;
-                let filled = (cpu_usage as usize * bar_width / 100).min(bar_width);
-                print!("  │  [");
-                for i in 0..bar_width {
-                    if i < filled {
-                        print!("█");
-                    } else {
-                        print!("░");
-                    }
-                }
-                println!("]");
+                println!("  ┌─ CPU Overview ──────────────────────────────────────────────────┐");
+                println!("  │                                                                 │");
+                println!(
+                    "  │  {} : \x1B[1;33m{:>5.1}%\x1B[0m                                            │",
+                    t("metrics.usage", lang),
+                    cpu_usage
+                );
+                println!(
+                    "  │  Logical Cores: {}                                              │",
+                    system.cpus().len()
+                );
+                println!("  │                                                                 │");
+                println!("  │  {}  │", progress_bar(cpu_usage as f64, 50, 90.0));
+                println!("  │                                                                 │");
 
-                // Load average (Unix)
                 #[cfg(unix)]
                 {
                     let load = System::load_average();
                     println!(
-                        "  └─ Load Average: {:.2} {:.2} {:.2}",
+                        "  │  Load Average: \x1B[36m{:.2}\x1B[0m  \x1B[36m{:.2}\x1B[0m  \x1B[36m{:.2}\x1B[0m  (1m / 5m / 15m)       │",
                         load.one, load.five, load.fifteen
                     );
+                    println!(
+                        "  │                                                                 │"
+                    );
                 }
+
+                println!("  └─────────────────────────────────────────────────────────────────┘");
             }
             1 => {
+                // ═══════════════════════════════════════════════════════════
                 // CPU Cores
-                println!();
+                // ═══════════════════════════════════════════════════════════
                 let cpus = system.cpus();
                 let start = scroll_offset.min(cpus.len().saturating_sub(16));
                 let end = (start + 16).min(cpus.len());
 
+                println!("  ┌─ CPU Cores ─────────────────────────────────────────────────────┐");
+                println!("  │  Core       Usage                                               │");
+                println!("  ├─────────────────────────────────────────────────────────────────┤");
+
                 for (i, cpu) in cpus.iter().enumerate().skip(start).take(end - start) {
                     let usage = cpu.cpu_usage();
-                    let bar_len = (usage as usize / 5).min(20);
-                    print!("  Core {i:>2}: {usage:>5.1}% [");
-                    for j in 0..20 {
-                        if j < bar_len {
-                            print!("█");
-                        } else {
-                            print!("░");
-                        }
-                    }
-                    println!("]");
+                    let bar = progress_bar(usage as f64, 30, 90.0);
+                    let color = if usage > 90.0 {
+                        "31"
+                    } else if usage > 70.0 {
+                        "33"
+                    } else {
+                        "32"
+                    };
+                    println!(
+                        "  │  Core {i:>2}  \x1B[{color}m{usage:>5.1}%\x1B[0m  {bar}            │"
+                    );
                 }
 
+                println!("  ├─────────────────────────────────────────────────────────────────┤");
                 if cpus.len() > 16 {
-                    println!();
                     println!(
-                        "  (Showing {}-{} of {}, ↑↓ to scroll)",
+                        "  │  \x1B[90mShowing {}-{} of {} (↑↓ to scroll)\x1B[0m                         │",
                         start + 1,
                         end,
                         cpus.len()
                     );
+                } else {
+                    println!(
+                        "  │  \x1B[90mTotal {} cores\x1B[0m                                              │",
+                        cpus.len()
+                    );
                 }
+                println!("  └─────────────────────────────────────────────────────────────────┘");
             }
             2 => {
+                // ═══════════════════════════════════════════════════════════
                 // Memory
-                println!();
+                // ═══════════════════════════════════════════════════════════
                 let total = system.total_memory();
                 let used = system.used_memory();
                 let swap_total = system.total_swap();
@@ -1980,40 +2107,55 @@ fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
                     0.0
                 };
 
+                println!("  ┌─ Memory ────────────────────────────────────────────────────────┐");
+                println!("  │                                                                 │");
                 println!(
-                    "  RAM: {:.1} GB / {:.1} GB ({:.1}%)",
+                    "  │  \x1B[1mRAM\x1B[0m                                                            │"
+                );
+                println!(
+                    "  │  Used: \x1B[33m{:>6.2} GB\x1B[0m / {:>6.2} GB  (\x1B[1m{:>5.1}%\x1B[0m)                    │",
                     used as f64 / 1024.0 / 1024.0 / 1024.0,
                     total as f64 / 1024.0 / 1024.0 / 1024.0,
                     mem_percent
                 );
-
-                let bar_width = 50;
-                let filled = (mem_percent as usize * bar_width / 100).min(bar_width);
-                print!("  [");
-                for i in 0..bar_width {
-                    if i < filled {
-                        print!("█");
-                    } else {
-                        print!("░");
-                    }
-                }
-                println!("]");
+                println!(
+                    "  │  {}                               │",
+                    progress_bar(mem_percent, 40, 90.0)
+                );
+                println!("  │                                                                 │");
 
                 if swap_total > 0 {
                     let swap_percent = (swap_used as f64 / swap_total as f64) * 100.0;
-                    println!();
                     println!(
-                        "  Swap: {:.1} GB / {:.1} GB ({:.1}%)",
+                        "  ├─────────────────────────────────────────────────────────────────┤"
+                    );
+                    println!(
+                        "  │  \x1B[1mSwap\x1B[0m                                                           │"
+                    );
+                    println!(
+                        "  │  Used: \x1B[33m{:>6.2} GB\x1B[0m / {:>6.2} GB  (\x1B[1m{:>5.1}%\x1B[0m)                    │",
                         swap_used as f64 / 1024.0 / 1024.0 / 1024.0,
                         swap_total as f64 / 1024.0 / 1024.0 / 1024.0,
                         swap_percent
                     );
+                    println!(
+                        "  │  {}                               │",
+                        progress_bar(swap_percent, 40, 90.0)
+                    );
+                    println!(
+                        "  │                                                                 │"
+                    );
                 }
+
+                println!("  └─────────────────────────────────────────────────────────────────┘");
             }
             3 => {
+                // ═══════════════════════════════════════════════════════════
                 // Disk I/O
-                println!();
-                for disk in disks.list() {
+                // ═══════════════════════════════════════════════════════════
+                println!("  ┌─ Disk Storage ──────────────────────────────────────────────────┐");
+
+                for (idx, disk) in disks.list().iter().enumerate() {
                     let total = disk.total_space();
                     let available = disk.available_space();
                     let used = total - available;
@@ -2023,98 +2165,152 @@ fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
                         0.0
                     };
 
+                    if idx > 0 {
+                        println!(
+                            "  ├─────────────────────────────────────────────────────────────────┤"
+                        );
+                    }
                     println!(
-                        "  {} [{}]",
+                        "  │                                                                 │"
+                    );
+                    println!(
+                        "  │  \x1B[1m{}\x1B[0m  [{}]",
                         disk.mount_point().display(),
                         disk.file_system().to_string_lossy()
                     );
+                    let color = if percent > 90.0 {
+                        "31"
+                    } else if percent > 80.0 {
+                        "33"
+                    } else {
+                        "32"
+                    };
                     println!(
-                        "    {:.1} GB / {:.1} GB ({:.1}%)",
+                        "  │  Used: \x1B[{color}m{:>6.1} GB\x1B[0m / {:>6.1} GB  (\x1B[{color}m{:>5.1}%\x1B[0m)                   │",
                         used as f64 / 1024.0 / 1024.0 / 1024.0,
                         total as f64 / 1024.0 / 1024.0 / 1024.0,
                         percent
                     );
-
-                    let bar_width = 40;
-                    let filled = (percent as usize * bar_width / 100).min(bar_width);
-                    print!("    [");
-                    for i in 0..bar_width {
-                        if i < filled {
-                            if percent > 90.0 {
-                                print!("!");
-                            } else {
-                                print!("█");
-                            }
-                        } else {
-                            print!("░");
-                        }
-                    }
-                    println!("]");
+                    println!(
+                        "  │  {}                               │",
+                        progress_bar(percent, 40, 90.0)
+                    );
                 }
+                println!("  │                                                                 │");
+                println!("  └─────────────────────────────────────────────────────────────────┘");
             }
             4 => {
+                // ═══════════════════════════════════════════════════════════
                 // Network
-                println!();
+                // ═══════════════════════════════════════════════════════════
+                println!("  ┌─ Network Interfaces ────────────────────────────────────────────┐");
+                println!("  │  Interface            ↓ Received           ↑ Transmitted       │");
+                println!("  ├─────────────────────────────────────────────────────────────────┤");
+
                 for (name, data) in networks.list() {
                     let rx = data.received();
                     let tx = data.transmitted();
-                    println!("  {name} :");
+
+                    let (rx_val, rx_unit) = format_bytes(rx);
+                    let (tx_val, tx_unit) = format_bytes(tx);
+
                     println!(
-                        "    ↓ RX: {:.2} MB  ↑ TX: {:.2} MB",
-                        rx as f64 / 1024.0 / 1024.0,
-                        tx as f64 / 1024.0 / 1024.0
+                        "  │  {:<18}  \x1B[32m{:>8.2} {:<2}\x1B[0m         \x1B[36m{:>8.2} {:<2}\x1B[0m        │",
+                        truncate_str(name, 18),
+                        rx_val,
+                        rx_unit,
+                        tx_val,
+                        tx_unit
                     );
                 }
+
+                println!("  │                                                                 │");
+                println!("  └─────────────────────────────────────────────────────────────────┘");
             }
             5 => {
+                // ═══════════════════════════════════════════════════════════
                 // GPU
-                println!();
+                // ═══════════════════════════════════════════════════════════
                 let gpu_collector = crate::collector::GpuCollector::new();
                 let gpus = gpu_collector.collect();
 
+                println!("  ┌─ GPU Information ───────────────────────────────────────────────┐");
+
                 if gpus.is_empty() {
-                    println!("  {}", t("metrics.no_gpu", lang));
+                    println!(
+                        "  │                                                                 │"
+                    );
+                    println!(
+                        "  │  \x1B[90m{}\x1B[0m                                             │",
+                        t("metrics.no_gpu", lang)
+                    );
+                    println!(
+                        "  │                                                                 │"
+                    );
                 } else {
-                    for gpu in &gpus {
-                        println!("  GPU {}: {}", gpu.index, gpu.name);
-                        println!(
-                            "    {} : {:.1}%",
-                            t("metrics.usage", lang),
-                            gpu.usage_percent
-                        );
-                        println!(
-                            "    Memory: {:.0} MB / {:.0} MB",
-                            gpu.memory_used as f64 / 1024.0 / 1024.0,
-                            gpu.memory_total as f64 / 1024.0 / 1024.0
-                        );
-                        if gpu.temperature > 0.0 {
+                    for (idx, gpu) in gpus.iter().enumerate() {
+                        if idx > 0 {
                             println!(
-                                "    {} : {:.0}°C",
+                                "  ├─────────────────────────────────────────────────────────────────┤"
+                            );
+                        }
+                        println!(
+                            "  │                                                                 │"
+                        );
+                        println!(
+                            "  │  \x1B[1mGPU {}: {}\x1B[0m",
+                            gpu.index,
+                            truncate_str(&gpu.name, 50)
+                        );
+                        println!(
+                            "  │  {} : \x1B[33m{:>5.1}%\x1B[0m  {}                      │",
+                            t("metrics.usage", lang),
+                            gpu.usage_percent,
+                            progress_bar(gpu.usage_percent, 25, 90.0)
+                        );
+
+                        let mem_total_mb = gpu.memory_total as f64 / 1024.0 / 1024.0;
+                        let mem_used_mb = gpu.memory_used as f64 / 1024.0 / 1024.0;
+                        let mem_percent = if mem_total_mb > 0.0 {
+                            (mem_used_mb / mem_total_mb) * 100.0
+                        } else {
+                            0.0
+                        };
+                        println!(
+                            "  │  Memory: \x1B[36m{mem_used_mb:>6.0} MB\x1B[0m / {mem_total_mb:>6.0} MB  ({mem_percent:>5.1}%)                   │"
+                        );
+
+                        if gpu.temperature > 0.0 {
+                            let temp_color = if gpu.temperature > 80.0 {
+                                "31"
+                            } else if gpu.temperature > 60.0 {
+                                "33"
+                            } else {
+                                "32"
+                            };
+                            println!(
+                                "  │  {} : \x1B[{temp_color}m{:>3.0}°C\x1B[0m                                            │",
                                 t("metrics.temperature", lang),
                                 gpu.temperature
                             );
                         }
                         if gpu.power_watts > 0 {
                             println!(
-                                "    {} : {}W / {}W",
+                                "  │  {} : {:>3}W / {:>3}W                                       │",
                                 t("metrics.power", lang),
                                 gpu.power_watts,
                                 gpu.power_limit_watts
                             );
                         }
-                        println!();
                     }
                 }
+                println!("  │                                                                 │");
+                println!("  └─────────────────────────────────────────────────────────────────┘");
             }
             6 => {
+                // ═══════════════════════════════════════════════════════════
                 // Processes
-                println!();
-                println!(
-                    "  {:>6} {:>6} {:>6} {:>10}  NAME",
-                    "PID", "CPU%", "MEM%", "MEM(MB)"
-                );
-                println!("  ────── ────── ────── ──────────  ────────────────────");
-
+                // ═══════════════════════════════════════════════════════════
                 let mut procs: Vec<_> = system.processes().iter().collect();
                 procs.sort_by(|a, b| {
                     b.1.cpu_usage()
@@ -2125,55 +2321,92 @@ fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
                 let total_mem = system.total_memory() as f64;
                 let start = scroll_offset.min(procs.len().saturating_sub(15));
 
+                println!("  ┌─ Top Processes (by CPU) ───────────────────────────────────────┐");
+                println!(
+                    "  │  \x1B[1m{:>7}  {:>7}  {:>7}  {:>10}  {:<24}\x1B[0m │",
+                    "PID", "CPU%", "MEM%", "MEM(MB)", "NAME"
+                );
+                println!("  ├─────────────────────────────────────────────────────────────────┤");
+
                 for (pid, proc) in procs.iter().skip(start).take(15) {
                     let mem_percent = if total_mem > 0.0 {
                         (proc.memory() as f64 / total_mem) * 100.0
                     } else {
                         0.0
                     };
+                    let cpu_color = if proc.cpu_usage() > 50.0 {
+                        "31"
+                    } else if proc.cpu_usage() > 10.0 {
+                        "33"
+                    } else {
+                        "0"
+                    };
                     println!(
-                        "  {:>6} {:>5.1}% {:>5.1}% {:>10.1}  {}",
+                        "  │  {:>7}  \x1B[{cpu_color}m{:>6.1}%\x1B[0m  {:>6.1}%  {:>10.1}  {:<24} │",
                         pid.as_u32(),
                         proc.cpu_usage(),
                         mem_percent,
                         proc.memory() as f64 / 1024.0 / 1024.0,
-                        proc.name().to_string_lossy()
+                        truncate_str(&proc.name().to_string_lossy(), 24)
                     );
                 }
 
+                println!("  ├─────────────────────────────────────────────────────────────────┤");
                 if procs.len() > 15 {
-                    println!();
                     println!(
-                        "  (Showing {}-{} of {}, ↑↓ to scroll)",
+                        "  │  \x1B[90mShowing {}-{} of {} (↑↓ to scroll)\x1B[0m                         │",
                         start + 1,
                         (start + 15).min(procs.len()),
                         procs.len()
                     );
+                } else {
+                    println!(
+                        "  │  \x1B[90mTotal {} processes\x1B[0m                                          │",
+                        procs.len()
+                    );
                 }
+                println!("  └─────────────────────────────────────────────────────────────────┘");
             }
             7 => {
+                // ═══════════════════════════════════════════════════════════
                 // Listening Ports
-                println!();
-                println!("  {:>6} {:>8} {:>22}  PROCESS", "PID", "PROTO", "ADDRESS");
-                println!("  ────── ──────── ──────────────────────  ────────────────────");
-
-                // Get listening ports using netstat/ss
+                // ═══════════════════════════════════════════════════════════
                 let ports = get_listening_ports();
                 let start = scroll_offset.min(ports.len().saturating_sub(15));
 
+                println!("  ┌─ Listening Ports ──────────────────────────────────────────────┐");
+                println!(
+                    "  │  \x1B[1m{:>7}  {:>8}  {:>22}  {:<18}\x1B[0m │",
+                    "PID", "PROTO", "ADDRESS", "PROCESS"
+                );
+                println!("  ├─────────────────────────────────────────────────────────────────┤");
+
                 for (pid, proto, addr, name) in ports.iter().skip(start).take(15) {
-                    println!("  {pid:>6} {proto:>8} {addr:>22}  {name}");
+                    let proto_color = if proto.contains("TCP") { "32" } else { "36" };
+                    println!(
+                        "  │  {:>7}  \x1B[{proto_color}m{:>8}\x1B[0m  {:>22}  {:<18} │",
+                        pid,
+                        proto,
+                        addr,
+                        truncate_str(name, 18)
+                    );
                 }
 
+                println!("  ├─────────────────────────────────────────────────────────────────┤");
                 if ports.len() > 15 {
-                    println!();
                     println!(
-                        "  (Showing {}-{} of {}, ↑↓ to scroll)",
+                        "  │  \x1B[90mShowing {}-{} of {} (↑↓ to scroll)\x1B[0m                         │",
                         start + 1,
                         (start + 15).min(ports.len()),
                         ports.len()
                     );
+                } else {
+                    println!(
+                        "  │  \x1B[90mTotal {} listening ports\x1B[0m                                    │",
+                        ports.len()
+                    );
                 }
+                println!("  └─────────────────────────────────────────────────────────────────┘");
             }
             _ => {}
         }
