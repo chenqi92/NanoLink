@@ -87,7 +87,7 @@ impl ShellExecutor {
                     processes: vec![],
                     containers: vec![],
                     update_info: None,
-                }
+                };
             }
         };
 
@@ -148,7 +148,7 @@ impl ShellExecutor {
                         processes: vec![],
                         containers: vec![],
                         update_info: None,
-                    }
+                    };
                 }
             }
         }
@@ -177,7 +177,7 @@ impl ShellExecutor {
                     processes: vec![],
                     containers: vec![],
                     update_info: None,
-                }
+                };
             }
         };
 
@@ -238,7 +238,7 @@ impl ShellExecutor {
                         processes: vec![],
                         containers: vec![],
                         update_info: None,
-                    }
+                    };
                 }
             }
         }

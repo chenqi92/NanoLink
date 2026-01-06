@@ -279,7 +279,7 @@ impl WizardApp {
         ui.add_space(20.0);
 
         // Error message
-        if let Some(ref error) = self.state.error_message {
+        if let Some(error) = &self.state.error_message {
             ui.colored_label(egui::Color32::RED, error);
             ui.add_space(10.0);
         }
@@ -326,7 +326,7 @@ impl WizardApp {
 
             ui.add_space(20.0);
 
-            if let Some(ref path) = self.state.config_path {
+            if let Some(path) = &self.state.config_path {
                 ui.label(format!("Config file: {}", path.display()));
             }
 

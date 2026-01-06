@@ -24,9 +24,9 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Use tonic-build to generate both protobuf messages and gRPC client/server code
+    // Use tonic-prost-build to generate both protobuf messages and gRPC client/server code
     // Output goes to OUT_DIR by default
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_server(false) // Agent only needs client
         .build_client(true)
         // Suppress clippy::large_enum_variant on generated Payload enums

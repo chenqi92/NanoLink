@@ -17,10 +17,9 @@ use crate::buffer::RingBuffer;
 use crate::collector::layered::{DataRequest, LayeredCollector, LayeredMetricsMessage};
 use crate::config::{Config, ServerConfig};
 use crate::proto::{
-    metrics_stream_request, metrics_stream_response,
-    nano_link_service_client::NanoLinkServiceClient, AuthRequest, AuthResponse, Command,
-    CommandResult, DataRequestType, Heartbeat, Metrics, MetricsStreamRequest,
-    MetricsStreamResponse,
+    AuthRequest, AuthResponse, Command, CommandResult, DataRequestType, Heartbeat, Metrics,
+    MetricsStreamRequest, MetricsStreamResponse, metrics_stream_request, metrics_stream_response,
+    nano_link_service_client::NanoLinkServiceClient,
 };
 
 /// gRPC client for communicating with NanoLink server

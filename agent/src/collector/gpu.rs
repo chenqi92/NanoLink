@@ -380,11 +380,7 @@ impl GpuCollector {
                 }
             }
 
-            if gpus.is_empty() {
-                None
-            } else {
-                Some(gpus)
-            }
+            if gpus.is_empty() { None } else { Some(gpus) }
         }
         #[cfg(not(target_os = "linux"))]
         {

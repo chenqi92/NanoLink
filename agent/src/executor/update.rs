@@ -387,7 +387,7 @@ impl UpdateExecutor {
                 match self.fetch_release_info().await {
                     Ok(release) => release.download_url,
                     Err(e) => {
-                        return Self::error_result(format!("Failed to get download URL: {e}"))
+                        return Self::error_result(format!("Failed to get download URL: {e}"));
                     }
                 }
             }
@@ -718,8 +718,7 @@ del /F "%~f0"
             use std::process::Command;
 
             // Use argument array instead of string interpolation to prevent injection
-            let script =
-                "$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri $args[0] -OutFile $args[1]";
+            let script = "$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri $args[0] -OutFile $args[1]";
 
             let output = Command::new("powershell")
                 .args(["-Command", script, url, &dest_str])

@@ -1,6 +1,5 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-use lazy_static::lazy_static;
 use regex::Regex;
 use subtle::ConstantTimeEq;
 use tracing::warn;
@@ -147,36 +146,58 @@ impl PermissionChecker {
 
     /// 使用正则表达式检测危险模式，返回匹配的模式名称
     fn contains_dangerous_pattern(command: &str) -> Option<&'static str> {
-        lazy_static! {
-            static ref DANGEROUS_PATTERNS: Vec<(Regex, &'static str)> = vec![
+        static DANGEROUS_PATTERNS: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+
+        let patterns = DANGEROUS_PATTERNS.get_or_init(|| {
+            vec![
                 // 破坏性命令
-                (Regex::new(r"\brm\s+(-[rfv]+\s+)*[/\*]").unwrap(), "rm with root/wildcard"),
+                (
+                    Regex::new(r"\brm\s+(-[rfv]+\s+)*[/\*]").unwrap(),
+                    "rm with root/wildcard",
+                ),
                 (Regex::new(r"\bmkfs\b").unwrap(), "mkfs"),
                 (Regex::new(r"\bdd\s+if=").unwrap(), "dd"),
-                (Regex::new(r">\s*/dev/(sd|hd|nvme|vd)").unwrap(), "write to device"),
-
+                (
+                    Regex::new(r">\s*/dev/(sd|hd|nvme|vd)").unwrap(),
+                    "write to device",
+                ),
                 // 权限提升
                 (Regex::new(r"\bchmod\s+[0-7]*777").unwrap(), "chmod 777"),
                 (Regex::new(r"\bchown\s+root").unwrap(), "chown root"),
-
                 // 网络后门/反向shell
                 (Regex::new(r"\bnc\s+-[el]").unwrap(), "netcat listener/exec"),
-                (Regex::new(r"\bbash\s+-i\s+>&").unwrap(), "bash reverse shell"),
-                (Regex::new(r"/dev/tcp/").unwrap(), "bash network redirection"),
+                (
+                    Regex::new(r"\bbash\s+-i\s+>&").unwrap(),
+                    "bash reverse shell",
+                ),
+                (
+                    Regex::new(r"/dev/tcp/").unwrap(),
+                    "bash network redirection",
+                ),
                 (Regex::new(r"python.*-c.*socket").unwrap(), "python socket"),
                 (Regex::new(r"perl.*-e.*socket").unwrap(), "perl socket"),
-
                 // 敏感文件访问
-                (Regex::new(r"\bcat\s+.*/(etc/(shadow|sudoers)|\.ssh/)").unwrap(), "sensitive file read"),
-
+                (
+                    Regex::new(r"\bcat\s+.*/(etc/(shadow|sudoers)|\.ssh/)").unwrap(),
+                    "sensitive file read",
+                ),
                 // Fork炸弹和相关
-                (Regex::new(r":\s*\(\s*\)\s*\{").unwrap(), "fork bomb pattern"),
-                (Regex::new(r"\bwhile\s+true\s*;?\s*do").unwrap(), "infinite loop"),
-                (Regex::new(r"\bfor\s*\(\s*;\s*;\s*\)").unwrap(), "infinite for loop"),
-            ];
-        }
+                (
+                    Regex::new(r":\s*\(\s*\)\s*\{").unwrap(),
+                    "fork bomb pattern",
+                ),
+                (
+                    Regex::new(r"\bwhile\s+true\s*;?\s*do").unwrap(),
+                    "infinite loop",
+                ),
+                (
+                    Regex::new(r"\bfor\s*\(\s*;\s*;\s*\)").unwrap(),
+                    "infinite for loop",
+                ),
+            ]
+        });
 
-        for (regex, name) in DANGEROUS_PATTERNS.iter() {
+        for (regex, name) in patterns.iter() {
             if regex.is_match(command) {
                 return Some(name);
             }

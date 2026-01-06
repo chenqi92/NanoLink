@@ -4,7 +4,7 @@ use sysinfo::Networks;
 use crate::config::CollectorConfig;
 use crate::proto::NetworkMetrics;
 #[allow(unused_imports)]
-use crate::utils::safe_command::{exec_with_timeout, DEFAULT_COMMAND_TIMEOUT};
+use crate::utils::safe_command::{DEFAULT_COMMAND_TIMEOUT, exec_with_timeout};
 use std::process::Command;
 use std::time::Duration;
 

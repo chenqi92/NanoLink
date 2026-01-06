@@ -138,11 +138,7 @@ impl NpuCollector {
             }
         }
 
-        if npus.is_empty() {
-            None
-        } else {
-            Some(npus)
-        }
+        if npus.is_empty() { None } else { Some(npus) }
     }
 
     fn get_intel_device_stats(&self, device_id: u32) -> Option<(f64, u64, u64, f64, u32)> {
@@ -223,11 +219,7 @@ impl NpuCollector {
             }
         }
 
-        if npus.is_empty() {
-            None
-        } else {
-            Some(npus)
-        }
+        if npus.is_empty() { None } else { Some(npus) }
     }
 
     fn collect_huawei(&self) -> Option<Vec<NpuMetrics>> {
@@ -263,7 +255,7 @@ impl NpuCollector {
                 });
             }
 
-            if let Some(ref mut npu) = current_npu {
+            if let Some(npu) = &mut current_npu {
                 if line.contains("Chip Name") {
                     npu.name = line
                         .split(':')
@@ -284,11 +276,7 @@ impl NpuCollector {
             npus.push(npu);
         }
 
-        if npus.is_empty() {
-            None
-        } else {
-            Some(npus)
-        }
+        if npus.is_empty() { None } else { Some(npus) }
     }
 
     fn extract_number(line: &str) -> f64 {

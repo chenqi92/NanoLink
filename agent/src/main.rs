@@ -20,8 +20,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
-use tracing::{info, Level};
+use tokio::sync::{RwLock, broadcast};
+use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
 use crate::buffer::RingBuffer;
@@ -226,7 +226,7 @@ fn find_config() -> Option<PathBuf> {
 
 /// Get config path from args or auto-detect
 fn get_config_path(args: &Args) -> Option<PathBuf> {
-    if let Some(ref path) = args.config {
+    if let Some(path) = &args.config {
         Some(path.clone())
     } else {
         find_config()
@@ -291,7 +291,7 @@ fn main() -> Result<()> {
     }
 
     // Handle subcommands - need async runtime
-    if let Some(ref command) = args.command {
+    if let Some(command) = &args.command {
         let rt = tokio::runtime::Runtime::new()?;
         return rt.block_on(handle_command(command, &args));
     }
@@ -542,7 +542,7 @@ fn handle_server_add(
     // Determine if we need interactive mode
     let needs_interactive = host.is_none() || token.is_none();
 
-    let (final_host, final_port) = if let Some(ref h) = host {
+    let (final_host, final_port) = if let Some(h) = &host {
         parse_host_port(h, default_port)
     } else {
         // Interactive: prompt for host
@@ -635,7 +635,7 @@ fn handle_server_remove(
 
     let is_interactive = host.is_none();
 
-    let (final_host, final_port) = if let Some(ref h) = host {
+    let (final_host, final_port) = if let Some(h) = &host {
         parse_host_port(h, default_port)
     } else {
         // Interactive: show server list for selection
@@ -706,7 +706,7 @@ fn handle_server_update(
 
     let is_interactive = host.is_none();
 
-    let (final_host, final_port) = if let Some(ref h) = host {
+    let (final_host, final_port) = if let Some(h) = &host {
         parse_host_port(h, default_port)
     } else {
         // Interactive: show server list for selection
@@ -838,11 +838,11 @@ fn save_config(config: &Config, path: &Path) -> Result<()> {
 // Interactive Menu Functions
 // ============================================================================
 
-use crate::i18n::{detect_language, t, Lang};
+use crate::i18n::{Lang, detect_language, t};
 
 /// Interactive main menu - entry point for interactive mode
 fn interactive_main_menu(args: &Args) -> Result<()> {
-    use dialoguer::{theme::ColorfulTheme, Select};
+    use dialoguer::{Select, theme::ColorfulTheme};
 
     let lang = detect_language();
     let theme = ColorfulTheme::default();
@@ -966,7 +966,7 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
 
 /// Interactive server management menu
 fn interactive_server_management(args: &Args, lang: Lang) -> Result<()> {
-    use dialoguer::{theme::ColorfulTheme, Select};
+    use dialoguer::{Select, theme::ColorfulTheme};
 
     let theme = ColorfulTheme::default();
 
@@ -988,7 +988,7 @@ fn interactive_server_management(args: &Args, lang: Lang) -> Result<()> {
         let mut options: Vec<String> = Vec::new();
         let mut server_indices: Vec<usize> = Vec::new();
 
-        if let Some(ref cfg) = config {
+        if let Some(cfg) = &config {
             if cfg.servers.is_empty() {
                 println!("  {}", t("server.no_servers", lang));
                 println!();
@@ -1024,13 +1024,13 @@ fn interactive_server_management(args: &Args, lang: Lang) -> Result<()> {
 
         if selection < servers_count {
             // Selected a server - show server action menu
-            if let (Some(ref path), Some(ref cfg)) = (&config_path, &config) {
+            if let (Some(path), Some(cfg)) = (&config_path, &config) {
                 let server = &cfg.servers[server_indices[selection]];
                 interactive_server_action(path, server.host.clone(), server.port, lang)?;
             }
         } else if selection == servers_count + 1 {
             // Add new server
-            if let Some(ref path) = config_path {
+            if let Some(path) = &config_path {
                 interactive_add_server(path, lang)?;
             } else {
                 println!();
@@ -1054,7 +1054,7 @@ fn interactive_server_action(
     port: u16,
     lang: Lang,
 ) -> Result<()> {
-    use dialoguer::{theme::ColorfulTheme, Confirm, Select};
+    use dialoguer::{Confirm, Select, theme::ColorfulTheme};
 
     let theme = ColorfulTheme::default();
 
@@ -1137,7 +1137,7 @@ fn interactive_server_action(
 
 /// Interactive add server
 fn interactive_add_server(config_path: &Path, lang: Lang) -> Result<()> {
-    use dialoguer::{theme::ColorfulTheme, Confirm, Input, Password, Select};
+    use dialoguer::{Confirm, Input, Password, Select, theme::ColorfulTheme};
 
     let theme = ColorfulTheme::default();
 
@@ -1323,7 +1323,7 @@ fn interactive_show_status(args: &Args, lang: Lang) -> Result<()> {
 
 /// Interactive init config
 fn interactive_init_config(lang: Lang) -> Result<()> {
-    use dialoguer::{theme::ColorfulTheme, Confirm, Input};
+    use dialoguer::{Confirm, Input, theme::ColorfulTheme};
 
     let theme = ColorfulTheme::default();
 
@@ -1362,7 +1362,7 @@ fn interactive_init_config(lang: Lang) -> Result<()> {
 /// Interactive check for updates
 fn interactive_check_update(args: &Args, lang: Lang) -> Result<()> {
     use crate::executor::UpdateExecutor;
-    use dialoguer::{theme::ColorfulTheme, Confirm};
+    use dialoguer::{Confirm, theme::ColorfulTheme};
     use std::collections::HashMap;
 
     let theme = ColorfulTheme::default();
@@ -1549,7 +1549,7 @@ fn restart_agent_service() -> Result<(), String> {
 
 /// Prompt user to restart agent after config change
 fn prompt_restart_after_config_change(lang: Lang) -> Result<()> {
-    use dialoguer::{theme::ColorfulTheme, Confirm};
+    use dialoguer::{Confirm, theme::ColorfulTheme};
 
     let theme = ColorfulTheme::default();
 
@@ -1590,7 +1590,7 @@ fn wait_for_enter(lang: Lang) {
 
 /// Interactive modify configuration
 fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
-    use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+    use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
 
     let theme = ColorfulTheme::default();
     let config_path = match get_config_path(args) {
@@ -1761,7 +1761,7 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                     .unwrap_or(2);
                 let sel = Select::with_theme(&theme)
                     .with_prompt(t("config.log_level", lang))
-                    .items(&levels)
+                    .items(levels)
                     .default(current_idx)
                     .interact()?;
                 config.logging.level = levels[sel].to_string();
@@ -2305,7 +2305,7 @@ fn get_listening_ports() -> Vec<(String, String, String, String)> {
 
 /// Interactive service management
 fn interactive_service_management(args: &Args, lang: Lang) -> Result<()> {
-    use dialoguer::{theme::ColorfulTheme, Select};
+    use dialoguer::{Select, theme::ColorfulTheme};
 
     let theme = ColorfulTheme::default();
 
@@ -2629,7 +2629,7 @@ fn install_launchd_service(args: &Args) -> Result<(), String> {
     let exe_escaped = escape_xml(&exe_path.to_string_lossy());
 
     let mut args_xml = String::from("        <string>-f</string>\n");
-    if let Some(ref p) = get_config_path(args) {
+    if let Some(p) = get_config_path(args) {
         let config_escaped = escape_xml(&p.to_string_lossy());
         args_xml.push_str(&format!(
             "        <string>-c</string>\n        <string>{}</string>\n",
@@ -2779,7 +2779,7 @@ fn interactive_diagnostics(args: &Args, lang: Lang) -> Result<()> {
 
 /// Interactive view logs
 fn interactive_view_logs(args: &Args, lang: Lang) -> Result<()> {
-    use dialoguer::{theme::ColorfulTheme, Input, Select};
+    use dialoguer::{Input, Select, theme::ColorfulTheme};
 
     let theme = ColorfulTheme::default();
 
@@ -2867,7 +2867,7 @@ fn interactive_view_logs(args: &Args, lang: Lang) -> Result<()> {
 
 /// Interactive export configuration
 fn interactive_export_config(args: &Args, lang: Lang) -> Result<()> {
-    use dialoguer::{theme::ColorfulTheme, Input, Select};
+    use dialoguer::{Input, Select, theme::ColorfulTheme};
 
     let theme = ColorfulTheme::default();
 
