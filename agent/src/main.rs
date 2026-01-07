@@ -9,6 +9,7 @@ mod i18n;
 mod management;
 mod platform;
 mod security;
+mod tui;
 mod utils;
 
 #[allow(clippy::large_enum_variant)]
@@ -844,7 +845,21 @@ use crate::i18n::{Lang, detect_language, t};
 fn interactive_main_menu(args: &Args) -> Result<()> {
     use dialoguer::{Select, theme::ColorfulTheme};
 
-    let mut lang = detect_language();
+    // Load language from config if available, otherwise detect from system
+    let mut lang = if let Some(config_path) = get_config_path(args) {
+        if let Ok(config) = Config::load(&config_path) {
+            config
+                .agent
+                .language
+                .as_ref()
+                .and_then(|s| Lang::from_str(s))
+                .unwrap_or_else(detect_language)
+        } else {
+            detect_language()
+        }
+    } else {
+        detect_language()
+    };
     let theme = ColorfulTheme::default();
 
     loop {
@@ -922,8 +937,8 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
                 wait_for_enter(lang);
             }
             6 => {
-                // Realtime Metrics
-                interactive_realtime_metrics(lang)?;
+                // Realtime Metrics (using ratatui TUI)
+                tui::interactive_realtime_metrics(lang)?;
             }
             8 => {
                 // Install as Service
@@ -956,7 +971,7 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
             }
             14 => {
                 // Switch Language
-                lang = interactive_switch_language(lang)?;
+                lang = interactive_switch_language(args, lang)?;
             }
             15 => {
                 // Exit
@@ -969,8 +984,8 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
     Ok(())
 }
 
-/// Interactive language switch
-fn interactive_switch_language(current_lang: Lang) -> Result<Lang> {
+/// Interactive language switch - saves preference to config
+fn interactive_switch_language(args: &Args, current_lang: Lang) -> Result<Lang> {
     use dialoguer::{Select, theme::ColorfulTheme};
 
     let theme = ColorfulTheme::default();
@@ -1007,6 +1022,16 @@ fn interactive_switch_language(current_lang: Lang) -> Result<Lang> {
     };
 
     if new_lang != current_lang {
+        // Save language preference to config
+        if let Some(config_path) = get_config_path(args) {
+            if let Ok(mut config) = Config::load(&config_path) {
+                config.agent.language = Some(new_lang.as_str().to_string());
+                if let Err(e) = save_config(&config, &config_path) {
+                    eprintln!("{}: {e}", t("error.save_failed", new_lang));
+                }
+            }
+        }
+
         println!();
         println!("✓ {}", t("menu.language_switched", new_lang));
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -1933,8 +1958,9 @@ fn truncate_str(s: &str, max_len: usize) -> String {
     }
 }
 
-/// Interactive realtime metrics viewer with multiple tabs
-fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
+/// Interactive realtime metrics viewer with multiple tabs (legacy, replaced by tui module)
+#[allow(dead_code)]
+fn interactive_realtime_metrics_legacy(lang: Lang) -> Result<()> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
     use std::time::Duration;
     use sysinfo::{Disks, Networks, System};
@@ -2371,7 +2397,7 @@ fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
                 // ═══════════════════════════════════════════════════════════
                 // Listening Ports
                 // ═══════════════════════════════════════════════════════════
-                let ports = get_listening_ports();
+                let ports = get_listening_ports_legacy();
                 let start = scroll_offset.min(ports.len().saturating_sub(15));
 
                 println!("  ┌─ Listening Ports ──────────────────────────────────────────────┐");
@@ -2415,7 +2441,7 @@ fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
         max_scroll = match current_tab {
             1 => system.cpus().len().saturating_sub(16), // CPU Cores
             6 => system.processes().len().saturating_sub(15), // Processes
-            7 => get_listening_ports().len().saturating_sub(15), // Ports
+            7 => get_listening_ports_legacy().len().saturating_sub(15), // Ports
             _ => 0,
         };
 
@@ -2457,8 +2483,9 @@ fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
     Ok(())
 }
 
-/// Get listening ports (platform-specific)
-fn get_listening_ports() -> Vec<(String, String, String, String)> {
+/// Get listening ports (platform-specific) - legacy, moved to tui module
+#[allow(dead_code)]
+fn get_listening_ports_legacy() -> Vec<(String, String, String, String)> {
     let mut ports = Vec::new();
 
     #[cfg(target_os = "linux")]

@@ -2,14 +2,35 @@
 //!
 //! Provides bilingual support (English/Chinese) with automatic language detection.
 
+use serde::{Deserialize, Serialize};
 use sys_locale::get_locale;
 
 /// Supported languages
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Lang {
     #[default]
     En,
     Zh,
+}
+
+impl Lang {
+    /// Convert from string (for config loading)
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "en" | "english" => Some(Lang::En),
+            "zh" | "chinese" | "zh-cn" | "zh-tw" => Some(Lang::Zh),
+            _ => None,
+        }
+    }
+
+    /// Convert to string (for config saving)
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Lang::En => "en",
+            Lang::Zh => "zh",
+        }
+    }
 }
 
 /// Detect system language and return the appropriate Lang variant

@@ -303,6 +303,10 @@ pub struct AgentConfig {
     /// Maximum reconnect delay in seconds
     #[serde(default = "default_max_reconnect_delay")]
     pub max_reconnect_delay: u64,
+
+    /// Preferred language (en/zh). If not set, auto-detect from system locale.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 }
 
 impl Default for AgentConfig {
@@ -312,6 +316,7 @@ impl Default for AgentConfig {
             heartbeat_interval: default_heartbeat_interval(),
             reconnect_delay: default_reconnect_delay(),
             max_reconnect_delay: default_max_reconnect_delay(),
+            language: None,
         }
     }
 }

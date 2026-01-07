@@ -64,6 +64,9 @@ sys-locale = "0.3"
 crossterm = "0.29"
 atty = "0.2"
 
+# TUI (Terminal User Interface)
+ratatui = "0.29"
+
 # GUI (optional)
 eframe = { version = "0.33", optional = true, default-features = false, features = ["default_fonts", "glow"] }
 
