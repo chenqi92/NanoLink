@@ -1,5 +1,6 @@
 use parking_lot::RwLock;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::proto::Metrics;
 
@@ -12,6 +13,8 @@ use crate::proto::Metrics;
 pub struct RingBuffer {
     buffer: RwLock<VecDeque<Metrics>>,
     capacity: usize,
+    /// Timestamp of the last successfully synced metrics
+    last_sync_timestamp: AtomicU64,
 }
 
 #[allow(dead_code)]
@@ -21,6 +24,7 @@ impl RingBuffer {
         Self {
             buffer: RwLock::new(VecDeque::with_capacity(capacity)),
             capacity,
+            last_sync_timestamp: AtomicU64::new(0),
         }
     }
 
@@ -88,6 +92,44 @@ impl RingBuffer {
     pub fn usage_percent(&self) -> f64 {
         let len = self.buffer.read().len();
         (len as f64 / self.capacity as f64) * 100.0
+    }
+
+    /// Get the last sync timestamp
+    pub fn get_last_sync_timestamp(&self) -> u64 {
+        self.last_sync_timestamp.load(Ordering::Relaxed)
+    }
+
+    /// Update the last sync timestamp
+    pub fn set_last_sync_timestamp(&self, timestamp: u64) {
+        self.last_sync_timestamp.store(timestamp, Ordering::Relaxed);
+    }
+
+    /// Get all unsynced metrics (metrics with timestamp > last_sync_timestamp)
+    pub fn get_unsynced(&self) -> Vec<Metrics> {
+        let last_sync = self.last_sync_timestamp.load(Ordering::Relaxed);
+        self.buffer
+            .read()
+            .iter()
+            .filter(|m| m.timestamp > last_sync)
+            .cloned()
+            .collect()
+    }
+
+    /// Get unsynced metrics count
+    pub fn unsynced_count(&self) -> usize {
+        let last_sync = self.last_sync_timestamp.load(Ordering::Relaxed);
+        self.buffer
+            .read()
+            .iter()
+            .filter(|m| m.timestamp > last_sync)
+            .count()
+    }
+
+    /// Mark all current data as synced (set last_sync_timestamp to newest)
+    pub fn mark_all_synced(&self) {
+        if let Some(ts) = self.newest_timestamp() {
+            self.last_sync_timestamp.store(ts, Ordering::Relaxed);
+        }
     }
 }
 

@@ -243,6 +243,22 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("config.realtime_interval", Lang::En) => "Realtime interval (ms)",
         ("config.buffer_capacity", Lang::Zh) => "缓冲区容量",
         ("config.buffer_capacity", Lang::En) => "Buffer capacity",
+        ("config.data_compensation", Lang::Zh) => "数据补偿发送",
+        ("config.data_compensation", Lang::En) => "Data Compensation",
+        ("config.data_compensation_prompt", Lang::Zh) => "启用断线重连后补发缓冲数据",
+        ("config.data_compensation_prompt", Lang::En) => {
+            "Enable resending buffered data after reconnection"
+        }
+        ("config.data_compensation_info", Lang::Zh) => {
+            "提示: 重连后将自动发送断线期间缓存的指标数据"
+        }
+        ("config.data_compensation_info", Lang::En) => {
+            "Note: Buffered metrics during disconnection will be automatically resent after reconnection"
+        }
+        ("common.enabled", Lang::Zh) => "已启用",
+        ("common.enabled", Lang::En) => "Enabled",
+        ("common.disabled", Lang::Zh) => "已禁用",
+        ("common.disabled", Lang::En) => "Disabled",
         ("config.management_enabled", Lang::Zh) => "启用管理 API",
         ("config.management_enabled", Lang::En) => "Enable Management API",
         ("config.management_port", Lang::Zh) => "管理 API 端口",
@@ -393,6 +409,22 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("export.failed", Lang::En) => "Export failed",
         ("export.format", Lang::Zh) => "导出格式",
         ("export.format", Lang::En) => "Export format",
+
+        // Immediate send / Connection control
+        ("config.immediate_send", Lang::Zh) => "立即发送数据",
+        ("config.immediate_send", Lang::En) => "Send Data Immediately",
+        ("config.immediate_send_desc", Lang::Zh) => "立即触发重连并发送缓冲数据",
+        ("config.immediate_send_desc", Lang::En) => {
+            "Trigger immediate reconnection and send buffered data"
+        }
+        ("config.send_triggered", Lang::Zh) => "已触发立即发送",
+        ("config.send_triggered", Lang::En) => "Immediate send triggered",
+        ("config.send_failed", Lang::Zh) => "发送触发失败",
+        ("config.send_failed", Lang::En) => "Failed to trigger send",
+        ("config.agent_not_running", Lang::Zh) => "Agent 未运行，请先启动 Agent",
+        ("config.agent_not_running", Lang::En) => "Agent not running, please start Agent first",
+        ("config.management_required", Lang::Zh) => "请先启用管理 API",
+        ("config.management_required", Lang::En) => "Please enable Management API first",
 
         // Default fallback - return empty string for unknown keys
         _ => "",

@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, broadcast};
 use tracing::{error, info};
 
+use crate::buffer::RingBuffer;
 use crate::config::{Config, DEFAULT_GRPC_PORT, ServerConfig};
+use crate::connection::{ConnectionSignal, ConnectionStatus};
 
 /// Server change event for dynamic server management
 #[derive(Debug, Clone)]
@@ -39,6 +41,12 @@ pub struct ManagementState {
     config_path: PathBuf,
     /// Channel to notify about server changes
     event_tx: broadcast::Sender<ServerEvent>,
+    /// Channel to send connection control signals
+    connection_signal_tx: Option<broadcast::Sender<ConnectionSignal>>,
+    /// Connection status for each server
+    connection_status: Option<Arc<RwLock<Vec<ConnectionStatus>>>>,
+    /// Ring buffer reference for buffer stats
+    buffer: Option<Arc<RingBuffer>>,
 }
 
 /// Configuration for the management API
@@ -93,6 +101,32 @@ impl ManagementServer {
             config,
             config_path,
             event_tx,
+            connection_signal_tx: None,
+            connection_status: None,
+            buffer: None,
+        });
+
+        (Self { state, port }, event_rx)
+    }
+
+    /// Create a new management server with connection control capabilities
+    pub fn new_with_connection_control(
+        config: Arc<RwLock<Config>>,
+        config_path: PathBuf,
+        port: u16,
+        connection_signal_tx: broadcast::Sender<ConnectionSignal>,
+        connection_status: Arc<RwLock<Vec<ConnectionStatus>>>,
+        buffer: Arc<RingBuffer>,
+    ) -> (Self, broadcast::Receiver<ServerEvent>) {
+        let (event_tx, event_rx) = broadcast::channel(16);
+
+        let state = Arc::new(ManagementState {
+            config,
+            config_path,
+            event_tx,
+            connection_signal_tx: Some(connection_signal_tx),
+            connection_status: Some(connection_status),
+            buffer: Some(buffer),
         });
 
         (Self { state, port }, event_rx)
@@ -107,6 +141,9 @@ impl ManagementServer {
             .route("/api/servers", post(add_server))
             .route("/api/servers", delete(remove_server))
             .route("/api/servers/update", post(update_server))
+            .route("/api/connection/status", get(connection_status))
+            .route("/api/connection/reconnect", post(trigger_reconnect))
+            .route("/api/buffer/status", get(buffer_status))
             .with_state(self.state);
 
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
@@ -431,4 +468,131 @@ fn save_config(config: &Config, path: &PathBuf) -> anyhow::Result<()> {
 
     std::fs::write(path, content)?;
     Ok(())
+}
+
+// Connection control handlers
+
+#[derive(Debug, Serialize)]
+struct ConnectionStatusResponse {
+    servers: Vec<ConnectionStatusInfo>,
+}
+
+#[derive(Debug, Serialize)]
+struct ConnectionStatusInfo {
+    server: String,
+    connected: bool,
+    last_error: Option<String>,
+    reconnect_delay_secs: u64,
+    connection_attempts: u32,
+}
+
+async fn connection_status(
+    State(state): State<Arc<ManagementState>>,
+) -> (StatusCode, Json<ConnectionStatusResponse>) {
+    match &state.connection_status {
+        Some(status) => {
+            let status_guard = status.read().await;
+            let servers: Vec<ConnectionStatusInfo> = status_guard
+                .iter()
+                .map(|s| ConnectionStatusInfo {
+                    server: s.server.clone(),
+                    connected: s.connected,
+                    last_error: s.last_error.clone(),
+                    reconnect_delay_secs: s.reconnect_delay_secs,
+                    connection_attempts: s.connection_attempts,
+                })
+                .collect();
+            (StatusCode::OK, Json(ConnectionStatusResponse { servers }))
+        }
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ConnectionStatusResponse { servers: vec![] }),
+        ),
+    }
+}
+
+async fn trigger_reconnect(
+    State(state): State<Arc<ManagementState>>,
+) -> (StatusCode, Json<ApiResponse>) {
+    match &state.connection_signal_tx {
+        Some(tx) => match tx.send(ConnectionSignal::ImmediateReconnect) {
+            Ok(receivers) => {
+                info!(
+                    "Triggered immediate reconnect, {} receivers notified",
+                    receivers
+                );
+                (
+                    StatusCode::OK,
+                    Json(ApiResponse {
+                        success: true,
+                        message: format!(
+                            "Immediate reconnect triggered, {} connections notified",
+                            receivers
+                        ),
+                    }),
+                )
+            }
+            Err(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse {
+                    success: false,
+                    message: "Failed to send reconnect signal (no active receivers)".to_string(),
+                }),
+            ),
+        },
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiResponse {
+                success: false,
+                message: "Connection control not available".to_string(),
+            }),
+        ),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct BufferStatusResponse {
+    capacity: usize,
+    current_size: usize,
+    usage_percent: f64,
+    oldest_timestamp: Option<u64>,
+    newest_timestamp: Option<u64>,
+    last_sync_timestamp: u64,
+    unsynced_count: usize,
+    data_compensation_enabled: bool,
+}
+
+async fn buffer_status(
+    State(state): State<Arc<ManagementState>>,
+) -> (StatusCode, Json<BufferStatusResponse>) {
+    let config = state.config.read().await;
+
+    match &state.buffer {
+        Some(buffer) => (
+            StatusCode::OK,
+            Json(BufferStatusResponse {
+                capacity: buffer.capacity(),
+                current_size: buffer.len(),
+                usage_percent: buffer.usage_percent(),
+                oldest_timestamp: buffer.oldest_timestamp(),
+                newest_timestamp: buffer.newest_timestamp(),
+                last_sync_timestamp: buffer.get_last_sync_timestamp(),
+                unsynced_count: buffer.unsynced_count(),
+                data_compensation_enabled: config.buffer.data_compensation,
+            }),
+        ),
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(BufferStatusResponse {
+                capacity: 0,
+                current_size: 0,
+                usage_percent: 0.0,
+                oldest_timestamp: None,
+                newest_timestamp: None,
+                last_sync_timestamp: 0,
+                unsynced_count: 0,
+                data_compensation_enabled: config.buffer.data_compensation,
+            }),
+        ),
+    }
 }

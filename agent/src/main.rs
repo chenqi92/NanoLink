@@ -1703,6 +1703,16 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
             ),
             format!(
                 "{} ({}: {})",
+                t("config.data_compensation", lang),
+                t("config.current_value", lang),
+                if config.buffer.data_compensation {
+                    t("common.enabled", lang)
+                } else {
+                    t("common.disabled", lang)
+                }
+            ),
+            format!(
+                "{} ({}: {})",
                 t("config.management_enabled", lang),
                 t("config.current_value", lang),
                 config.management.enabled
@@ -1726,6 +1736,7 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                 config.logging.level
             ),
             t("server.back_to_menu", lang).to_string(),
+            t("config.immediate_send", lang).to_string(),
         ];
 
         let selection = Select::with_theme(&theme)
@@ -1774,6 +1785,20 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                 prompt_restart_after_config_change(lang)?;
             }
             2 => {
+                // Data compensation enabled
+                let new_val = Confirm::with_theme(&theme)
+                    .with_prompt(t("config.data_compensation_prompt", lang))
+                    .default(config.buffer.data_compensation)
+                    .interact()?;
+                config.buffer.data_compensation = new_val;
+                save_config(&config, &config_path)?;
+                println!("✓ {}", t("config.saved", lang));
+                if new_val {
+                    println!("{}", t("config.data_compensation_info", lang));
+                }
+                prompt_restart_after_config_change(lang)?;
+            }
+            3 => {
                 // Management API enabled
                 let new_val = Confirm::with_theme(&theme)
                     .with_prompt(t("config.management_enabled", lang))
@@ -1792,7 +1817,7 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                 println!("✓ {}", t("config.saved", lang));
                 prompt_restart_after_config_change(lang)?;
             }
-            3 => {
+            4 => {
                 // Management port (1-65535)
                 let new_val: u16 = Input::with_theme(&theme)
                     .with_prompt(format!("{} (1-65535)", t("config.new_value", lang)))
@@ -1810,7 +1835,7 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                 println!("✓ {}", t("config.saved", lang));
                 prompt_restart_after_config_change(lang)?;
             }
-            4 => {
+            5 => {
                 // Heartbeat interval (1 - 3600 seconds)
                 let new_val: u64 = Input::with_theme(&theme)
                     .with_prompt(format!("{} (1-3600)", t("config.new_value", lang)))
@@ -1828,7 +1853,7 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                 println!("✓ {}", t("config.saved", lang));
                 prompt_restart_after_config_change(lang)?;
             }
-            5 => {
+            6 => {
                 // Log level
                 let levels = ["trace", "debug", "info", "warn", "error"];
                 let current_idx = levels
@@ -1845,7 +1870,60 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                 println!("✓ {}", t("config.saved", lang));
                 prompt_restart_after_config_change(lang)?;
             }
-            6 => break,
+            7 => {
+                // Immediate send - trigger management API
+                if !config.management.enabled {
+                    println!();
+                    println!("✗ {}", t("config.management_required", lang));
+                    wait_for_enter(lang);
+                    continue;
+                }
+
+                println!();
+                println!("  {}", t("config.immediate_send_desc", lang));
+
+                let confirm = Confirm::with_theme(&theme)
+                    .with_prompt(t("config.immediate_send", lang))
+                    .default(true)
+                    .interact()?;
+
+                if confirm {
+                    // Call management API to trigger immediate reconnect
+                    use std::io::{Read, Write};
+                    use std::net::TcpStream;
+
+                    let addr = format!("127.0.0.1:{}", config.management.port);
+                    match TcpStream::connect_timeout(
+                        &addr.parse().unwrap(),
+                        std::time::Duration::from_secs(5),
+                    ) {
+                        Ok(mut stream) => {
+                            let request = format!(
+                                "POST /api/connection/reconnect HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Length: 0\r\n\r\n",
+                                config.management.port
+                            );
+                            if stream.write_all(request.as_bytes()).is_ok() {
+                                let mut response = [0u8; 512];
+                                if stream.read(&mut response).is_ok() {
+                                    let response_str = String::from_utf8_lossy(&response);
+                                    if response_str.contains("200")
+                                        || response_str.contains("success")
+                                    {
+                                        println!("✓ {}", t("config.send_triggered", lang));
+                                    } else {
+                                        println!("✗ {}", t("config.send_failed", lang));
+                                    }
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            println!("✗ {}", t("config.agent_not_running", lang));
+                        }
+                    }
+                    wait_for_enter(lang);
+                }
+            }
+            8 => break,
             _ => {}
         }
     }
@@ -2937,8 +3015,6 @@ fn uninstall_launchd_service() -> Result<(), String> {
 
     fs::remove_file("/Library/LaunchDaemons/com.nanolink.agent.plist")
         .map_err(|e| e.to_string())?;
-
-    Ok(())
 }
 
 /// Interactive system diagnostics
@@ -3252,10 +3328,24 @@ pub async fn run_agent(config_path: PathBuf) -> Result<()> {
     // Create shutdown channel
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
 
-    // Start management API if enabled
+    // Create connection manager first to get signal sender and status
+    let connection_manager = {
+        let config_guard = config.read().await;
+        ConnectionManager::new(Arc::new((*config_guard).clone()), ring_buffer.clone())
+    };
+    let connection_signal_tx = connection_manager.get_signal_sender();
+    let connection_status = connection_manager.get_status();
+
+    // Start management API if enabled (with connection control)
     let management_handle = if management_enabled {
-        let (management_server, _event_rx) =
-            ManagementServer::new(config.clone(), config_path.clone(), management_port);
+        let (management_server, _event_rx) = ManagementServer::new_with_connection_control(
+            config.clone(),
+            config_path.clone(),
+            management_port,
+            connection_signal_tx,
+            connection_status,
+            ring_buffer.clone(),
+        );
 
         let mut shutdown_rx = shutdown_tx.subscribe();
         Some(tokio::spawn(async move {
@@ -3288,12 +3378,7 @@ pub async fn run_agent(config_path: PathBuf) -> Result<()> {
         })
     };
 
-    // Start connection manager
-    let connection_manager = {
-        let config_guard = config.read().await;
-        ConnectionManager::new(Arc::new((*config_guard).clone()), ring_buffer.clone())
-    };
-
+    // Start connection manager (already created above)
     let connection_handle = {
         let mut shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(async move {

@@ -495,12 +495,28 @@ pub struct BufferConfig {
     /// Default: 720 (1 hour at 5-second interval)
     #[serde(default = "default_buffer_capacity")]
     pub capacity: usize,
+
+    /// Enable data compensation (resend buffered data after reconnection)
+    /// Default: false
+    #[serde(default)]
+    pub data_compensation: bool,
+
+    /// Maximum number of metrics to send in one compensation batch
+    /// Default: 100
+    #[serde(default = "default_compensation_batch_size")]
+    pub compensation_batch_size: usize,
+}
+
+fn default_compensation_batch_size() -> usize {
+    100
 }
 
 impl Default for BufferConfig {
     fn default() -> Self {
         Self {
             capacity: default_buffer_capacity(),
+            data_compensation: false,
+            compensation_batch_size: default_compensation_batch_size(),
         }
     }
 }
