@@ -20,10 +20,7 @@ impl ServiceExecutor {
             success: false,
             output: String::new(),
             error,
-            file_content: vec![],
-            processes: vec![],
-            containers: vec![],
-            update_info: None,
+            ..Default::default()
         }
     }
 
@@ -98,20 +95,14 @@ impl ServiceExecutor {
                 success: output.status.success(),
                 output: String::from_utf8_lossy(&output.stdout).to_string(),
                 error: String::from_utf8_lossy(&output.stderr).to_string(),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
             Err(e) => CommandResult {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
                 error: format!("Failed to execute systemctl: {}", e),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
         }
     }
@@ -137,20 +128,14 @@ impl ServiceExecutor {
                         success: output.status.success(),
                         output: String::from_utf8_lossy(&output.stdout).to_string(),
                         error: String::from_utf8_lossy(&output.stderr).to_string(),
-                        file_content: vec![],
-                        processes: vec![],
-                        containers: vec![],
-                        update_info: None,
+                        ..Default::default()
                     },
                     Err(e) => CommandResult {
                         command_id: String::new(),
                         success: false,
                         output: String::new(),
                         error: format!("Failed to restart service: {}", e),
-                        file_content: vec![],
-                        processes: vec![],
-                        containers: vec![],
-                        update_info: None,
+                        ..Default::default()
                     },
                 };
             }
@@ -163,20 +148,14 @@ impl ServiceExecutor {
                 success: output.status.success(),
                 output: String::from_utf8_lossy(&output.stdout).to_string(),
                 error: String::from_utf8_lossy(&output.stderr).to_string(),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
             Err(e) => CommandResult {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
                 error: format!("Failed to execute launchctl: {}", e),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
         }
     }
@@ -205,20 +184,14 @@ impl ServiceExecutor {
                 success: output.status.success(),
                 output: String::from_utf8_lossy(&output.stdout).to_string(),
                 error: String::from_utf8_lossy(&output.stderr).to_string(),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
             Err(e) => CommandResult {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
                 error: format!("Failed to execute sc: {e}"),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
         }
     }

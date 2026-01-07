@@ -29,10 +29,7 @@ impl DockerExecutor {
             success: false,
             output: String::new(),
             error,
-            file_content: vec![],
-            processes: vec![],
-            containers: vec![],
-            update_info: None,
+            ..Default::default()
         }
     }
 
@@ -44,10 +41,7 @@ impl DockerExecutor {
                 success: false,
                 output: String::new(),
                 error: e,
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             };
         }
 
@@ -84,10 +78,8 @@ impl DockerExecutor {
                     success: true,
                     output: format!("Found {} containers", containers.len()),
                     error: String::new(),
-                    file_content: vec![],
-                    processes: vec![],
                     containers,
-                    update_info: None,
+                    ..Default::default()
                 }
             }
             Ok(output) => CommandResult {
@@ -95,20 +87,14 @@ impl DockerExecutor {
                 success: false,
                 output: String::new(),
                 error: String::from_utf8_lossy(&output.stderr).to_string(),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
             Err(e) => CommandResult {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
                 error: format!("Failed to list containers: {e}"),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
         }
     }
@@ -162,10 +148,7 @@ impl DockerExecutor {
                     success: output.status.success(),
                     output: combined,
                     error: String::new(),
-                    file_content: vec![],
-                    processes: vec![],
-                    containers: vec![],
-                    update_info: None,
+                    ..Default::default()
                 }
             }
             Err(e) => CommandResult {
@@ -173,10 +156,7 @@ impl DockerExecutor {
                 success: false,
                 output: String::new(),
                 error: format!("Failed to get container logs: {e}"),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
         }
     }
@@ -200,20 +180,14 @@ impl DockerExecutor {
                 success: output.status.success(),
                 output: String::from_utf8_lossy(&output.stdout).to_string(),
                 error: String::from_utf8_lossy(&output.stderr).to_string(),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
             Err(e) => CommandResult {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
                 error: format!("Failed to {action} container: {e}"),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
         }
     }

@@ -79,6 +79,7 @@ func main() {
 	authService := service.NewAuthService(database.GetDB(), authConfig, sugar)
 	groupService := service.NewGroupService(database.GetDB(), sugar)
 	permService := service.NewPermissionService(database.GetDB(), sugar)
+	auditService := service.NewAuditService(database.GetDB(), sugar)
 
 	// Setup Gin router
 	if cfg.Server.Mode == "release" {
@@ -158,6 +159,14 @@ func main() {
 				admin.POST("/permissions", permHandler.SetUserPermission)
 				admin.DELETE("/permissions/:userId/:agentId", permHandler.RemoveUserPermission)
 				admin.GET("/permissions/:userId", permHandler.GetUserPermissions)
+
+				// Audit log routes (super admin only)
+				auditHandler := handler.NewAuditHandler(auditService, sugar)
+				admin.GET("/audit/logs", auditHandler.QueryAuditLogs)
+				admin.GET("/audit/logs/user/:userId", auditHandler.GetUserAuditLogs)
+				admin.GET("/audit/logs/agent/:agentId", auditHandler.GetAgentAuditLogs)
+				admin.GET("/audit/stats", auditHandler.GetAuditStats)
+				admin.GET("/audit/recent", auditHandler.GetRecentLogs)
 			}
 		}
 
@@ -236,6 +245,26 @@ func main() {
 		dataRequestApi.POST("/agents/data-request",
 			handler.RequireSuperAdmin(),
 			dataRequestHandler.RequestDataFromAll)
+	}
+
+	// Register log query API (after gRPC server is available)
+	logQueryHandler := handler.NewLogQueryHandler(grpcServer, auditService, sugar)
+	logQueryApi := router.Group("/api")
+	logQueryApi.Use(handler.AuthMiddleware(authService))
+	{
+		// Log query endpoints - query logs from agents
+		// SERVICE_LOGS: Level 0+ (all users can query, output sanitized)
+		logQueryApi.POST("/agents/:id/logs/service",
+			handler.RequireAgentPermission(permService, database.PermissionReadOnly),
+			logQueryHandler.QueryServiceLogs)
+		// SYSTEM_LOGS: Level 1+ (BASIC_WRITE required)
+		logQueryApi.POST("/agents/:id/logs/system",
+			handler.RequireAgentPermission(permService, database.PermissionBasicWrite),
+			logQueryHandler.QuerySystemLogs)
+		// AUDIT_LOGS: Level 2+ (SERVICE_CONTROL required)
+		logQueryApi.POST("/agents/:id/logs/audit",
+			handler.RequireAgentPermission(permService, database.PermissionServiceControl),
+			logQueryHandler.QueryAuditLogs)
 	}
 
 	// Connect gRPC command results to shell WebSocket sessions

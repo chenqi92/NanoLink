@@ -105,3 +105,25 @@ func (AgentGroup) TableName() string {
 func (UserAgentPermission) TableName() string {
 	return "user_agent_permissions"
 }
+
+// AuditLog represents an operation audit record
+type AuditLog struct {
+	ID            uint      `gorm:"primarykey" json:"id"`
+	Timestamp     time.Time `gorm:"index;not null" json:"timestamp"`
+	UserID        uint      `gorm:"index" json:"userId"`
+	Username      string    `gorm:"size:50;index" json:"username"`
+	AgentID       string    `gorm:"size:50;index" json:"agentId"`
+	AgentHostname string    `gorm:"size:255" json:"agentHostname"`
+	CommandType   string    `gorm:"size:50;index" json:"commandType"`
+	CommandID     string    `gorm:"size:50;index" json:"commandId"`
+	Target        string    `gorm:"size:500" json:"target"`        // What was operated on (service name, file path, etc.)
+	Params        string    `gorm:"type:text" json:"params"`       // JSON params
+	Success       bool      `gorm:"default:false" json:"success"`
+	Error         string    `gorm:"type:text" json:"error"`
+	DurationMs    int64     `gorm:"default:0" json:"durationMs"`
+	IPAddress     string    `gorm:"size:50" json:"ipAddress"`
+}
+
+func (AuditLog) TableName() string {
+	return "audit_logs"
+}

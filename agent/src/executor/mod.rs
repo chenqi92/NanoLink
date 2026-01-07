@@ -1,13 +1,21 @@
+mod config_mgr;
 mod docker_ops;
 mod file_ops;
+mod log_ops;
+mod package_mgr;
 mod process_mgr;
+mod script_executor;
 mod service_mgr;
 mod shell;
 mod update;
 
+pub use config_mgr::ConfigManager;
 pub use docker_ops::DockerExecutor;
 pub use file_ops::FileExecutor;
+pub use log_ops::LogExecutor;
+pub use package_mgr::PackageManager;
 pub use process_mgr::ProcessExecutor;
+pub use script_executor::ScriptExecutor;
 pub use service_mgr::ServiceExecutor;
 pub use shell::ShellExecutor;
 pub use update::UpdateExecutor;

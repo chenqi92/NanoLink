@@ -388,6 +388,35 @@ enum CommandType {
   AGENT_DOWNLOAD_UPDATE = 61; // Download update package
   AGENT_APPLY_UPDATE = 62;    // Apply update and restart agent
   AGENT_GET_VERSION = 63;     // Get current agent version info
+
+  // ========== DevOps Extension Commands ==========
+  // Log Query Commands (Level 0/1+ with sanitization)
+  SERVICE_LOGS = 70;          // Query journald/systemd service logs
+  SYSTEM_LOGS = 71;           // Query /var/log system logs
+  AUDIT_LOGS = 72;            // Query auditd audit logs
+  LOG_STREAM = 73;            // Realtime log stream (tail -f)
+
+  // Package Management Commands
+  PACKAGE_LIST = 80;          // List installed packages
+  PACKAGE_CHECK_UPDATES = 81; // Check for available updates
+  PACKAGE_UPDATE = 82;        // Update specific package (SYSTEM_ADMIN)
+  SYSTEM_UPDATE = 83;         // Full system update (SYSTEM_ADMIN)
+
+  // Script Execution Commands
+  SCRIPT_LIST = 90;           // List available scripts
+  SCRIPT_EXECUTE = 91;        // Execute predefined script
+  SCRIPT_UPLOAD = 92;         // Upload new script (SYSTEM_ADMIN)
+
+  // Config Management Commands
+  CONFIG_READ = 100;          // Read config file
+  CONFIG_WRITE = 101;         // Write config file (with backup)
+  CONFIG_VALIDATE = 102;      // Validate config syntax
+  CONFIG_ROLLBACK = 103;      // Rollback to previous version
+  CONFIG_LIST_BACKUPS = 104;  // List available backups
+
+  // Health Check Commands
+  HEALTH_CHECK = 110;         // Custom health check
+  CONNECTIVITY_TEST = 111;    // Network connectivity test
 }
 
 message CommandResult {
@@ -399,6 +428,95 @@ message CommandResult {
   repeated ProcessInfo processes = 6;  // Used for PROCESS_LIST
   repeated ContainerInfo containers = 7;  // Used for DOCKER_LIST
   UpdateInfo update_info = 8;  // Used for AGENT_CHECK_UPDATE/GET_VERSION
+  // DevOps extension result fields
+  LogQueryResult log_result = 10;           // For SERVICE_LOGS/SYSTEM_LOGS/AUDIT_LOGS
+  repeated PackageInfo packages = 11;       // For PACKAGE_LIST/PACKAGE_CHECK_UPDATES
+  repeated ScriptInfo scripts = 12;         // For SCRIPT_LIST
+  ConfigResult config_result = 13;          // For CONFIG_READ/CONFIG_WRITE/CONFIG_ROLLBACK
+  HealthCheckResult health_result = 14;     // For HEALTH_CHECK/CONNECTIVITY_TEST
+}
+
+// ========== DevOps Extension Messages ==========
+
+// LogQueryResult contains log query results with sanitization info
+message LogQueryResult {
+  repeated LogEntry lines = 1;
+  int64 total_lines = 2;           // Total matching lines (before limit)
+  string log_source = 3;           // Source: "journald", "syslog", "audit"
+  bool sanitized = 4;              // Whether sensitive data was redacted
+  int32 sanitized_count = 5;       // Number of redacted entries
+  string start_time = 6;           // Query start time (ISO 8601)
+  string end_time = 7;             // Query end time (ISO 8601)
+}
+
+// LogEntry represents a single log line
+message LogEntry {
+  string timestamp = 1;            // Log timestamp (ISO 8601)
+  string level = 2;                // Log level: debug, info, warning, error, critical
+  string source = 3;               // Source unit/service/file
+  string message = 4;              // Log message (sanitized if needed)
+  map<string, string> metadata = 5; // Additional metadata (PID, hostname, etc.)
+}
+
+// PackageInfo contains information about a system package
+message PackageInfo {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+  string architecture = 4;
+  int64 installed_size = 5;        // Size in bytes
+  string install_date = 6;         // Install date (ISO 8601)
+  bool update_available = 7;
+  string new_version = 8;          // New version if update available
+  string repository = 9;           // Package repository/source
+  string package_manager = 10;     // apt, yum, dnf, pacman, brew, etc.
+}
+
+// ScriptInfo contains information about a predefined script
+message ScriptInfo {
+  string name = 1;
+  string description = 2;
+  string category = 3;             // Category: maintenance, monitoring, backup, etc.
+  repeated string required_args = 4;  // Required argument names
+  int32 required_permission = 5;   // Minimum permission level required
+  string checksum = 6;             // SHA256 checksum for verification
+  int64 file_size = 7;
+  string last_modified = 8;        // Last modified time (ISO 8601)
+  bool signature_verified = 9;     // Whether signature is verified
+}
+
+// ConfigResult contains config operation results
+message ConfigResult {
+  string path = 1;                 // Config file path
+  string content = 2;              // Config content (for read)
+  bool sanitized = 3;              // Whether sensitive data was redacted
+  string backup_path = 4;          // Backup file path (for write)
+  repeated ConfigBackup backups = 5;  // Available backups (for list)
+  bool valid = 6;                  // Syntax validation result
+  string validation_error = 7;     // Syntax error message if invalid
+}
+
+// ConfigBackup represents a config backup
+message ConfigBackup {
+  string path = 1;
+  string created_at = 2;           // Backup creation time (ISO 8601)
+  int64 size = 3;
+  string checksum = 4;             // SHA256 checksum
+}
+
+// HealthCheckResult contains health check results
+message HealthCheckResult {
+  bool healthy = 1;
+  repeated HealthCheckItem checks = 2;
+}
+
+// HealthCheckItem represents a single health check
+message HealthCheckItem {
+  string name = 1;
+  bool passed = 2;
+  string message = 3;
+  int64 duration_ms = 4;           // Check duration
+  map<string, string> details = 5; // Additional details
 }
 
 // UpdateInfo contains agent version and update information

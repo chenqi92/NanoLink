@@ -4,7 +4,8 @@ use tracing::{info, warn};
 use crate::buffer::RingBuffer;
 use crate::config::Config;
 use crate::executor::{
-    DockerExecutor, FileExecutor, ProcessExecutor, ServiceExecutor, ShellExecutor, UpdateExecutor,
+    ConfigManager, DockerExecutor, FileExecutor, LogExecutor, PackageManager, ProcessExecutor,
+    ScriptExecutor, ServiceExecutor, ShellExecutor, UpdateExecutor,
 };
 use crate::proto::{Command, CommandResult, CommandType};
 use crate::security::PermissionChecker;
@@ -23,6 +24,10 @@ pub struct MessageHandler {
     docker_executor: DockerExecutor,
     shell_executor: ShellExecutor,
     update_executor: UpdateExecutor,
+    log_executor: LogExecutor,
+    script_executor: ScriptExecutor,
+    config_manager: ConfigManager,
+    package_manager: PackageManager,
 }
 
 impl MessageHandler {
@@ -39,6 +44,10 @@ impl MessageHandler {
             docker_executor: DockerExecutor::new(),
             shell_executor: ShellExecutor::new(config.clone()),
             update_executor: UpdateExecutor::new(config.update.clone()),
+            log_executor: LogExecutor::new(),
+            script_executor: ScriptExecutor::new(config.clone()),
+            config_manager: ConfigManager::new(config.clone()),
+            package_manager: PackageManager::new(config.clone()),
         }
     }
 
@@ -72,10 +81,7 @@ impl MessageHandler {
                     self.permission_checker.required_level(command_type),
                     self.permission_level
                 ),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             };
         }
 
@@ -157,15 +163,46 @@ impl MessageHandler {
             }
             CommandType::AgentGetVersion => self.update_executor.get_version().await,
 
+            // Log query commands
+            CommandType::ServiceLogs => self.log_executor.get_service_logs(&command.params).await,
+            CommandType::SystemLogs => self.log_executor.get_system_logs(&command.params).await,
+            CommandType::AuditLogs => self.log_executor.get_audit_logs(&command.params).await,
+
+            // Script execution commands
+            CommandType::ScriptList => self.script_executor.list_scripts(&command.params).await,
+            CommandType::ScriptExecute => {
+                self.script_executor.execute_script(&command.params).await
+            }
+
+            // Config management commands
+            CommandType::ConfigRead => self.config_manager.read_config(&command.params).await,
+            CommandType::ConfigWrite => self.config_manager.write_config(&command.params).await,
+            CommandType::ConfigValidate => {
+                self.config_manager.validate_config(&command.params).await
+            }
+            CommandType::ConfigRollback => {
+                self.config_manager.rollback_config(&command.params).await
+            }
+            CommandType::ConfigListBackups => {
+                self.config_manager.list_backups(&command.params).await
+            }
+
+            // Package management commands
+            CommandType::PackageList => self.package_manager.list_packages(&command.params).await,
+            CommandType::PackageCheckUpdates => {
+                self.package_manager.check_updates(&command.params).await
+            }
+            CommandType::PackageUpdate => {
+                self.package_manager.update_package(&command.params).await
+            }
+            CommandType::SystemUpdate => self.package_manager.system_update(&command.params).await,
+
             _ => CommandResult {
                 command_id: command.command_id.clone(),
                 success: false,
                 output: String::new(),
                 error: format!("Unknown command type: {command_type:?}"),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
         };
 
@@ -185,20 +222,14 @@ impl MessageHandler {
                     success: output.status.success(),
                     output: String::from_utf8_lossy(&output.stdout).to_string(),
                     error: String::from_utf8_lossy(&output.stderr).to_string(),
-                    file_content: vec![],
-                    processes: vec![],
-                    containers: vec![],
-                    update_info: None,
+                    ..Default::default()
                 },
                 Err(e) => CommandResult {
                     command_id: String::new(),
                     success: false,
                     output: String::new(),
                     error: format!("Failed to execute reboot: {}", e),
-                    file_content: vec![],
-                    processes: vec![],
-                    containers: vec![],
-                    update_info: None,
+                    ..Default::default()
                 },
             }
         }
@@ -214,20 +245,14 @@ impl MessageHandler {
                     success: output.status.success(),
                     output: String::from_utf8_lossy(&output.stdout).to_string(),
                     error: String::from_utf8_lossy(&output.stderr).to_string(),
-                    file_content: vec![],
-                    processes: vec![],
-                    containers: vec![],
-                    update_info: None,
+                    ..Default::default()
                 },
                 Err(e) => CommandResult {
                     command_id: String::new(),
                     success: false,
                     output: String::new(),
                     error: format!("Failed to execute shutdown: {e}"),
-                    file_content: vec![],
-                    processes: vec![],
-                    containers: vec![],
-                    update_info: None,
+                    ..Default::default()
                 },
             }
         }

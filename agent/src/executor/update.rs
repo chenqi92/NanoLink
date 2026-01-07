@@ -199,9 +199,6 @@ impl UpdateExecutor {
             success: true,
             output: format!("Agent version: {AGENT_VERSION}"),
             error: String::new(),
-            file_content: vec![],
-            processes: vec![],
-            containers: vec![],
             update_info: Some(UpdateInfo {
                 current_version: AGENT_VERSION.to_string(),
                 latest_version: String::new(),
@@ -213,6 +210,7 @@ impl UpdateExecutor {
                 checksum: String::new(),
                 min_version: String::new(),
             }),
+            ..Default::default()
         }
     }
 
@@ -236,9 +234,6 @@ impl UpdateExecutor {
                         format!("Agent is up to date ({AGENT_VERSION})")
                     },
                     error: String::new(),
-                    file_content: vec![],
-                    processes: vec![],
-                    containers: vec![],
                     update_info: Some(UpdateInfo {
                         current_version: AGENT_VERSION.to_string(),
                         latest_version: release.version.clone(),
@@ -250,6 +245,7 @@ impl UpdateExecutor {
                         checksum: String::new(),
                         min_version: String::new(),
                     }),
+                    ..Default::default()
                 }
             }
             Err(e) => Self::error_result(format!("Failed to check for updates: {e}")),
@@ -412,9 +408,6 @@ impl UpdateExecutor {
                 success: true,
                 output: format!("Downloaded {} bytes to {}", size, download_path.display()),
                 error: String::new(),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
                 update_info: Some(UpdateInfo {
                     current_version: AGENT_VERSION.to_string(),
                     latest_version: String::new(),
@@ -426,6 +419,7 @@ impl UpdateExecutor {
                     checksum: String::new(),
                     min_version: String::new(),
                 }),
+                ..Default::default()
             },
             Err(e) => Self::error_result(format!("Failed to download update: {e}")),
         }
@@ -546,10 +540,7 @@ impl UpdateExecutor {
             success: true,
             output: "Update applied successfully. Agent will restart.".to_string(),
             error: String::new(),
-            file_content: vec![],
-            processes: vec![],
-            containers: vec![],
-            update_info: None,
+            ..Default::default()
         }
     }
 
@@ -624,10 +615,7 @@ del /F "%~f0"
                 success: true,
                 output: "Update scheduled. Agent will restart shortly.".to_string(),
                 error: String::new(),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
             Err(e) => Self::error_result(format!("Failed to launch update script: {e}")),
         }
@@ -906,10 +894,7 @@ del /F "%~f0"
             success: false,
             output: String::new(),
             error,
-            file_content: vec![],
-            processes: vec![],
-            containers: vec![],
-            update_info: None,
+            ..Default::default()
         }
     }
 }

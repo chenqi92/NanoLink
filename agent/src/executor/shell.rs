@@ -35,10 +35,7 @@ impl ShellExecutor {
                 success: false,
                 output: String::new(),
                 error: e,
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             };
         }
 
@@ -83,10 +80,7 @@ impl ShellExecutor {
                     success: false,
                     output: String::new(),
                     error: format!("Failed to spawn shell: {}", e),
-                    file_content: vec![],
-                    processes: vec![],
-                    containers: vec![],
-                    update_info: None,
+                    ..Default::default()
                 };
             }
         };
@@ -114,10 +108,7 @@ impl ShellExecutor {
                         success: status.success(),
                         output: stdout,
                         error: stderr,
-                        file_content: vec![],
-                        processes: vec![],
-                        containers: vec![],
-                        update_info: None,
+                        ..Default::default()
                     };
                 }
                 Ok(None) => {
@@ -130,10 +121,7 @@ impl ShellExecutor {
                             success: false,
                             output: String::new(),
                             error: format!("Command timed out after {} seconds", timeout_secs),
-                            file_content: vec![],
-                            processes: vec![],
-                            containers: vec![],
-                            update_info: None,
+                            ..Default::default()
                         };
                     }
                     std::thread::sleep(Duration::from_millis(100));
@@ -144,10 +132,7 @@ impl ShellExecutor {
                         success: false,
                         output: String::new(),
                         error: format!("Failed to wait for process: {}", e),
-                        file_content: vec![],
-                        processes: vec![],
-                        containers: vec![],
-                        update_info: None,
+                        ..Default::default()
                     };
                 }
             }
@@ -173,10 +158,7 @@ impl ShellExecutor {
                     success: false,
                     output: String::new(),
                     error: format!("Failed to spawn shell: {e}"),
-                    file_content: vec![],
-                    processes: vec![],
-                    containers: vec![],
-                    update_info: None,
+                    ..Default::default()
                 };
             }
         };
@@ -204,10 +186,7 @@ impl ShellExecutor {
                         success: status.success(),
                         output: stdout,
                         error: stderr,
-                        file_content: vec![],
-                        processes: vec![],
-                        containers: vec![],
-                        update_info: None,
+                        ..Default::default()
                     };
                 }
                 Ok(None) => {
@@ -220,10 +199,7 @@ impl ShellExecutor {
                             success: false,
                             output: String::new(),
                             error: format!("Command timed out after {timeout_secs} seconds"),
-                            file_content: vec![],
-                            processes: vec![],
-                            containers: vec![],
-                            update_info: None,
+                            ..Default::default()
                         };
                     }
                     std::thread::sleep(Duration::from_millis(100));
@@ -234,10 +210,7 @@ impl ShellExecutor {
                         success: false,
                         output: String::new(),
                         error: format!("Failed to wait for process: {e}"),
-                        file_content: vec![],
-                        processes: vec![],
-                        containers: vec![],
-                        update_info: None,
+                        ..Default::default()
                     };
                 }
             }

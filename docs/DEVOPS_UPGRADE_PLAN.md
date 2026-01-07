@@ -34,15 +34,15 @@
 | 分层数据传输 | ✅ | Static/Realtime/Periodic 三层架构 |
 | 权限控制 | ✅ | 4 级权限 (READ_ONLY/BASIC_WRITE/SERVICE_CONTROL/SYSTEM_ADMIN) |
 
-### 待升级功能
+### 已升级功能
 
 | 功能类别 | 状态 | 说明 |
 |----------|:----:|------|
-| 日志查询 | ⚠️ | 需扩展 journald/系统日志/审计日志 |
-| 版本管理 | ❌ | 包更新、系统更新 |
-| 预定义脚本 | ❌ | 比 Shell 更安全的运维脚本 |
-| 操作审计 | ❌ | 完整的操作日志追踪 |
-| 配置管理 | ❌ | 远程配置读写和回滚 |
+| 日志查询 | ✅ | journald/系统日志/审计日志查询 + 敏感信息脱敏 |
+| 版本管理 | ✅ | 包列表/检查更新/更新包/系统更新 (多平台支持) |
+| 预定义脚本 | ✅ | 安全的脚本执行框架 + 参数验证 + 可选签名验证 |
+| 操作审计 | ✅ | Server 端完整的操作日志追踪 + REST API |
+| 配置管理 | ✅ | 远程配置读写 + 自动备份 + 回滚支持 |
 
 ---
 
@@ -374,58 +374,92 @@ PUT  /agents/:id/config            # 写入配置
 
 ## 实施路线图
 
-### Phase 1: 日志查询
+### Phase 1: 日志查询 ✅
 
 **Agent:**
-- [ ] 新增 `log_ops.rs` 模块
-- [ ] 实现 journald 日志查询
-- [ ] 实现 /var/log 日志查询
-- [ ] 实现日志脱敏
-- [ ] 添加输入验证
+- [x] 新增 `log_ops.rs` 模块
+- [x] 实现 journald 日志查询
+- [x] 实现 /var/log 日志查询
+- [x] 实现日志脱敏 (密码、API 密钥、Token、AWS 凭证等)
+- [x] 添加输入验证
 
 **Server:**
-- [ ] 新增日志查询 REST API
-- [ ] 更新 gRPC 服务
+- [x] 新增日志查询 REST API (`log_query.go`)
+- [x] 更新 gRPC 服务
 
 **SDK:**
-- [ ] 更新 Proto 并重新生成
-- [ ] 添加日志命令辅助函数
+- [x] 更新 Proto 并重新生成
+- [x] 添加日志命令 (SERVICE_LOGS=70, SYSTEM_LOGS=71, AUDIT_LOGS=72)
 
-### Phase 2: 操作审计
+### Phase 2: 操作审计 ✅
 
 **Server:**
-- [ ] 新增 `audit.go` 服务
-- [ ] 数据库迁移 (audit_logs 表)
-- [ ] 在 SendCommand 中记录审计日志
-- [ ] 新增审计日志 REST API
+- [x] 新增 `audit.go` 服务
+- [x] 数据库迁移 (audit_logs 表)
+- [x] 在日志查询中记录审计日志
+- [x] 新增审计日志 REST API
 
-**Dashboard:**
-- [ ] 审计日志查询界面
-- [ ] 操作历史面板
+**REST API:**
+```
+GET /api/audit/logs              # 查询审计日志
+GET /api/audit/logs/user/:userId # 查询用户操作
+GET /api/audit/logs/agent/:agentId # 查询 Agent 操作
+GET /api/audit/stats             # 获取审计统计
+GET /api/audit/recent            # 获取最近日志
+```
 
-### Phase 3: 脚本执行
-
-**Agent:**
-- [ ] 新增 `script_executor.rs` 模块
-- [ ] 实现脚本目录管理
-- [ ] 实现脚本执行 (含参数验证)
-- [ ] 可选: 脚本签名验证
-
-### Phase 4: 配置管理
+### Phase 3: 脚本执行 ✅
 
 **Agent:**
-- [ ] 新增 `config_mgr.rs` 模块
-- [ ] 实现配置读取 (含脱敏)
-- [ ] 实现配置写入 (带备份)
-- [ ] 实现配置回滚
+- [x] 新增 `script_executor.rs` 模块
+- [x] 实现脚本目录管理
+- [x] 实现脚本执行 (含参数验证)
+- [x] 实现脚本签名验证
+- [x] 添加危险字符过滤
 
-### Phase 5: 包管理
+**配置:**
+```yaml
+scripts:
+  enabled: true
+  scripts_dir: /opt/nanolink/scripts
+  require_signature: false
+  timeout_seconds: 60
+```
+
+### Phase 4: 配置管理 ✅
 
 **Agent:**
-- [ ] 新增 `package_mgr.rs` 模块
-- [ ] 实现多平台包管理器适配
-- [ ] 实现包列表/检查更新
-- [ ] 实现包更新 (高权限)
+- [x] 新增 `config_mgr.rs` 模块
+- [x] 实现配置读取 (含脱敏)
+- [x] 实现配置写入 (带自动备份)
+- [x] 实现配置回滚
+- [x] 实现备份清理
+
+**配置:**
+```yaml
+config_management:
+  enabled: true
+  allowed_configs: [/etc/nginx/nginx.conf]
+  backup_on_change: true
+  max_backups: 10
+```
+
+### Phase 5: 包管理 ✅
+
+**Agent:**
+- [x] 新增 `package_mgr.rs` 模块
+- [x] 实现多平台包管理器适配 (apt/yum/dnf/pacman/brew/winget/choco)
+- [x] 实现包列表/检查更新
+- [x] 实现包更新 (高权限)
+- [x] 实现系统更新 (需 SYSTEM_ADMIN)
+
+**配置:**
+```yaml
+package_management:
+  enabled: true
+  allow_update: false
+  allow_system_update: false
+```
 
 ---
 
@@ -435,10 +469,10 @@ PUT  /agents/:id/config            # 写入配置
 
 | 组件 | 新增文件 | 修改文件 | 状态 |
 |------|----------|----------|:----:|
-| **Proto** | - | `nanolink.proto` | 待完成 |
-| **Agent** | `log_ops.rs`, `package_mgr.rs`, `script_executor.rs`, `config_mgr.rs` | `permission.rs`, `validation.rs`, `handler.rs` | 待完成 |
-| **Server** | `audit.go`, `command_permission.go` | `server.go`, `handler.go`, `main.go` | 部分完成 |
-| **SDK** | 各语言 Command 辅助类 | 重新生成 Proto | 待完成 |
+| **Proto** | - | `nanolink.proto` | ✅ 完成 |
+| **Agent** | `log_ops.rs`, `package_mgr.rs`, `script_executor.rs`, `config_mgr.rs` | `permission.rs`, `handler.rs`, `mod.rs`, `config.rs` | ✅ 完成 |
+| **Server** | `audit.go`, `log_query.go` | `main.go`, `models.go`, `database.go` | ✅ 完成 |
+| **SDK** | - | Proto 重新生成 (Go) | ✅ 完成 |
 
 ### 已完成变更
 
@@ -447,7 +481,17 @@ PUT  /agents/:id/config            # 写入配置
 | 2026-01-07 | Server | 新增 `data_request.go` - DataRequest HTTP API |
 | 2026-01-07 | Server | `server.go` 新增 `RequestDataFromAgent()` 方法 |
 | 2026-01-07 | Docs | 新增 `FEATURE_COMPARISON.md` 功能对比文档 |
+| 2026-01-07 | Proto | 升级协议添加 DevOps 命令 (70-111) |
+| 2026-01-07 | Agent | 新增 `log_ops.rs` - 日志查询模块 |
+| 2026-01-07 | Server | 新增 `log_query.go` - 日志查询 HTTP API |
+| 2026-01-07 | Server | 新增 `audit.go` - 操作审计服务 |
+| 2026-01-07 | Server | `models.go` 新增 AuditLog 模型 |
+| 2026-01-07 | Agent | 新增 `script_executor.rs` - 脚本执行模块 |
+| 2026-01-07 | Agent | 新增 `config_mgr.rs` - 配置管理模块 |
+| 2026-01-07 | Agent | 新增 `package_mgr.rs` - 包管理模块 |
+| 2026-01-07 | Agent | `config.rs` 新增 ScriptsConfig/ConfigManagementConfig/PackageManagementConfig |
 
 ---
 
 *文档更新时间: 2026-01-07*
+*DevOps 功能升级完成: 2026-01-07*

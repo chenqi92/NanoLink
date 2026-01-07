@@ -45,6 +45,18 @@ pub struct Config {
     /// Update settings
     #[serde(default)]
     pub update: UpdateConfig,
+
+    /// Scripts configuration
+    #[serde(default)]
+    pub scripts: ScriptsConfig,
+
+    /// Config management settings
+    #[serde(default)]
+    pub config_management: ConfigManagementConfig,
+
+    /// Package management settings
+    #[serde(default)]
+    pub package_management: PackageManagementConfig,
 }
 
 fn default_config_version() -> u32 {
@@ -120,6 +132,122 @@ fn default_update_check_interval() -> u64 {
 
 fn default_update_repo() -> String {
     "chenqi92/NanoLink".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptsConfig {
+    /// Enable script execution
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Scripts directory path
+    #[serde(default = "default_scripts_dir")]
+    pub scripts_dir: String,
+
+    /// Require signature verification for scripts
+    #[serde(default)]
+    pub require_signature: bool,
+
+    /// Allowed script categories (empty = all allowed)
+    #[serde(default)]
+    pub allowed_categories: Vec<String>,
+
+    /// Script execution timeout in seconds
+    #[serde(default = "default_script_timeout")]
+    pub timeout_seconds: u64,
+
+    /// Maximum script output size in bytes
+    #[serde(default = "default_max_output_size")]
+    pub max_output_size: usize,
+}
+
+impl Default for ScriptsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            scripts_dir: default_scripts_dir(),
+            require_signature: false,
+            allowed_categories: Vec::new(),
+            timeout_seconds: default_script_timeout(),
+            max_output_size: default_max_output_size(),
+        }
+    }
+}
+
+fn default_scripts_dir() -> String {
+    #[cfg(unix)]
+    return "/opt/nanolink/scripts".to_string();
+    #[cfg(windows)]
+    return "C:\\ProgramData\\nanolink\\scripts".to_string();
+}
+
+fn default_script_timeout() -> u64 {
+    60
+}
+
+fn default_max_output_size() -> usize {
+    1024 * 1024 // 1MB
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigManagementConfig {
+    /// Enable config management
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Allowed config file paths (whitelist)
+    #[serde(default)]
+    pub allowed_configs: Vec<String>,
+
+    /// Automatically backup before changes
+    #[serde(default = "default_true")]
+    pub backup_on_change: bool,
+
+    /// Maximum number of backups to keep
+    #[serde(default = "default_max_backups")]
+    pub max_backups: u32,
+
+    /// Backup directory
+    #[serde(default = "default_backup_dir")]
+    pub backup_dir: String,
+}
+
+impl Default for ConfigManagementConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            allowed_configs: Vec::new(),
+            backup_on_change: true,
+            max_backups: default_max_backups(),
+            backup_dir: default_backup_dir(),
+        }
+    }
+}
+
+fn default_max_backups() -> u32 {
+    10
+}
+
+fn default_backup_dir() -> String {
+    #[cfg(unix)]
+    return "/var/lib/nanolink/backups".to_string();
+    #[cfg(windows)]
+    return "C:\\ProgramData\\nanolink\\backups".to_string();
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PackageManagementConfig {
+    /// Enable package management
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Allow package updates (dangerous)
+    #[serde(default)]
+    pub allow_update: bool,
+
+    /// Allow system updates (very dangerous)
+    #[serde(default)]
+    pub allow_system_update: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -714,6 +842,9 @@ impl Config {
             logging: LoggingConfig::default(),
             management: ManagementConfig::default(),
             security: SecurityConfig::default(),
+            scripts: ScriptsConfig::default(),
+            config_management: ConfigManagementConfig::default(),
+            package_management: PackageManagementConfig::default(),
         }
     }
 

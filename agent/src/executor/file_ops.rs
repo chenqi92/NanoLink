@@ -124,10 +124,7 @@ impl FileExecutor {
             success: false,
             output: String::new(),
             error,
-            file_content: vec![],
-            processes: vec![],
-            containers: vec![],
-            update_info: None,
+            ..Default::default()
         }
     }
 
@@ -167,10 +164,7 @@ impl FileExecutor {
                     success: true,
                     output,
                     error: String::new(),
-                    file_content: vec![],
-                    processes: vec![],
-                    containers: vec![],
-                    update_info: None,
+                    ..Default::default()
                 }
             }
             Err(e) => Self::error_result(format!("Failed to read file: {e}")),
@@ -223,9 +217,7 @@ impl FileExecutor {
                 output: format!("Downloaded {} bytes", content.len()),
                 error: String::new(),
                 file_content: content,
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
             Err(e) => Self::error_result(format!("Failed to read file: {e}")),
         }
@@ -284,10 +276,7 @@ impl FileExecutor {
                     validated_path.display()
                 ),
                 error: String::new(),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
             Err(e) => Self::error_result(format!("Failed to write file: {e}")),
         }
@@ -317,10 +306,7 @@ impl FileExecutor {
                 success: true,
                 output: format!("Truncated file: {}", validated_path.display()),
                 error: String::new(),
-                file_content: vec![],
-                processes: vec![],
-                containers: vec![],
-                update_info: None,
+                ..Default::default()
             },
             Err(e) => Self::error_result(format!("Failed to truncate file: {e}")),
         }

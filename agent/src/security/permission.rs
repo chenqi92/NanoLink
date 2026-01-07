@@ -66,6 +66,34 @@ impl PermissionChecker {
             CommandType::AgentApplyUpdate => 3,
             CommandType::AgentGetVersion => 0, // Version info is read-only
 
+            // Log query commands (level 0-2 with sanitization)
+            CommandType::ServiceLogs => 0, // All levels can query, but output is sanitized
+            CommandType::SystemLogs => 1,  // Requires BASIC_WRITE, path whitelist enforced
+            CommandType::AuditLogs => 2,   // Requires SERVICE_CONTROL
+            CommandType::LogStream => 1,   // Realtime log stream
+
+            // Package management commands
+            CommandType::PackageList => 0, // Read-only, all levels
+            CommandType::PackageCheckUpdates => 0, // Read-only, all levels
+            CommandType::PackageUpdate => 3, // SYSTEM_ADMIN only
+            CommandType::SystemUpdate => 3, // SYSTEM_ADMIN only
+
+            // Script execution commands
+            CommandType::ScriptList => 0,    // Read-only, all levels
+            CommandType::ScriptExecute => 2, // SERVICE_CONTROL for whitelisted scripts
+            CommandType::ScriptUpload => 3,  // SYSTEM_ADMIN only
+
+            // Config management commands
+            CommandType::ConfigRead => 0, // All levels can read (with sanitization)
+            CommandType::ConfigWrite => 2, // SERVICE_CONTROL with auto-backup
+            CommandType::ConfigValidate => 0, // All levels can validate
+            CommandType::ConfigRollback => 2, // SERVICE_CONTROL
+            CommandType::ConfigListBackups => 0, // Read-only
+
+            // Health check commands
+            CommandType::HealthCheck => 0,      // All levels
+            CommandType::ConnectivityTest => 0, // All levels
+
             // Unknown commands require highest level
             _ => 3,
         }
