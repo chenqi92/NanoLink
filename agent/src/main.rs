@@ -44,7 +44,7 @@ const CONFIG_SEARCH_PATHS: &[&str] = &[
 #[derive(Parser, Debug)]
 #[command(name = "nanolink-agent")]
 #[command(author = "NanoLink Team")]
-#[command(version = "0.3.7")]
+#[command(version = "0.3.8")]
 #[command(about = "Lightweight server monitoring agent", long_about = None)]
 struct Args {
     /// Path to configuration file (auto-detected if not specified)
