@@ -708,6 +708,62 @@ func (s *Server) SendCommandToAgent(agentID string, cmd *pb.Command) error {
 	}
 }
 
+// RequestDataFromAgent sends a data request to a specific agent
+// This allows the server to request specific data types on demand
+func (s *Server) RequestDataFromAgent(agentID string, requestType pb.DataRequestType, target string) error {
+	s.agentsMu.RLock()
+	agent, exists := s.agents[agentID]
+	s.agentsMu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	// Create data request message
+	dataReq := &pb.DataRequest{
+		RequestType: requestType,
+		Target:      target,
+	}
+
+	resp := &pb.MetricsStreamResponse{
+		Response: &pb.MetricsStreamResponse_DataRequest{
+			DataRequest: dataReq,
+		},
+	}
+
+	// Send via stream
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+
+	if agent.stream == nil {
+		return fmt.Errorf("agent stream not available: %s", agentID)
+	}
+
+	if err := agent.stream.Send(resp); err != nil {
+		s.logger.Errorf("Failed to send data request to %s: %v", agent.Hostname, err)
+		return err
+	}
+
+	s.logger.Infof("Sent data request (type=%v) to agent %s", requestType, agent.Hostname)
+	return nil
+}
+
+// RequestDataFromAllAgents sends a data request to all connected agents
+func (s *Server) RequestDataFromAllAgents(requestType pb.DataRequestType, target string) map[string]error {
+	s.agentsMu.RLock()
+	agentIDs := make([]string, 0, len(s.agents))
+	for id := range s.agents {
+		agentIDs = append(agentIDs, id)
+	}
+	s.agentsMu.RUnlock()
+
+	results := make(map[string]error)
+	for _, agentID := range agentIDs {
+		results[agentID] = s.RequestDataFromAgent(agentID, requestType, target)
+	}
+	return results
+}
+
 // Conversion functions between proto and service types
 
 func convertProtoMetrics(m *pb.Metrics) *service.MetricsData {

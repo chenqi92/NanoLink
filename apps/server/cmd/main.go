@@ -224,6 +224,20 @@ func main() {
 	shellHandler := handler.NewShellHandler(sugar, authService, grpcServer)
 	router.GET("/ws/shell/:id", shellHandler.HandleShellWS)
 
+	// Register data request API (after gRPC server is available)
+	dataRequestHandler := handler.NewDataRequestHandler(grpcServer, sugar)
+	dataRequestApi := router.Group("/api")
+	dataRequestApi.Use(handler.AuthMiddleware(authService))
+	{
+		// Data request endpoints - request specific data from agents on demand
+		dataRequestApi.POST("/agents/:id/data-request",
+			handler.RequireAgentPermission(permService, database.PermissionReadOnly),
+			dataRequestHandler.RequestData)
+		dataRequestApi.POST("/agents/data-request",
+			handler.RequireSuperAdmin(),
+			dataRequestHandler.RequestDataFromAll)
+	}
+
 	// Connect gRPC command results to shell WebSocket sessions
 	grpcServer.SetCommandResultHandler(func(agentID, commandID, output string, success bool) {
 		shellHandler.SendOutputToSession(agentID, commandID, output)
