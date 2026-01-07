@@ -139,9 +139,9 @@ func (h *ConfigGenHandler) GenerateAddServerCommand(c *gin.Context) {
 		req.ServerURL, req.Token, req.Permission, req.TLSVerify,
 	)
 
-	// Alternative: using curl to agent's local API
+	// Alternative: using curl to agent's local API (requires api_token if configured)
 	curlCmd := fmt.Sprintf(
-		`curl -X POST http://localhost:9101/api/servers -H "Content-Type: application/json" -d '{"url":"%s","token":"%s","permission":%d,"tls_verify":%v}'`,
+		`curl -X POST http://localhost:9101/api/servers -H "Content-Type: application/json" -H "Authorization: Bearer <api_token>" -d '{"url":"%s","token":"%s","permission":%d,"tls_verify":%v}'`,
 		req.ServerURL, req.Token, req.Permission, req.TLSVerify,
 	)
 
@@ -170,7 +170,7 @@ func (h *ConfigGenHandler) GenerateRemoveServerCommand(c *gin.Context) {
 
 	unixCmd := fmt.Sprintf(`nanolink-agent server remove --url "%s"`, req.ServerURL)
 	windowsCmd := fmt.Sprintf(`nanolink-agent.exe server remove --url "%s"`, req.ServerURL)
-	curlCmd := fmt.Sprintf(`curl -X DELETE "http://localhost:9101/api/servers?url=%s"`, url.QueryEscape(req.ServerURL))
+	curlCmd := fmt.Sprintf(`curl -X DELETE -H "Authorization: Bearer <api_token>" "http://localhost:9101/api/servers?url=%s"`, url.QueryEscape(req.ServerURL))
 
 	c.JSON(http.StatusOK, gin.H{
 		"unixCommand":    unixCmd,
@@ -195,11 +195,11 @@ func (h *ConfigGenHandler) GetServerURLInfo(c *gin.Context) {
 	wsURL := fmt.Sprintf("%s://%s:%d", scheme, stripPort(host), wsPort)
 
 	c.JSON(http.StatusOK, gin.H{
-		"wsUrl":     wsURL,
-		"wsPort":    wsPort,
-		"httpPort":  h.cfg.Server.HTTPPort,
-		"host":      host,
-		"scheme":    scheme,
+		"wsUrl":       wsURL,
+		"wsPort":      wsPort,
+		"httpPort":    h.cfg.Server.HTTPPort,
+		"host":        host,
+		"scheme":      scheme,
 		"authEnabled": h.cfg.Auth.Enabled,
 	})
 }

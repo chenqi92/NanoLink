@@ -10,12 +10,14 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
+    response::Response,
     routing::{delete, get, post},
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, broadcast};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::buffer::RingBuffer;
 use crate::config::{Config, DEFAULT_GRPC_PORT, ServerConfig};
@@ -134,8 +136,11 @@ impl ManagementServer {
 
     /// Run the management server
     pub async fn run(self) {
-        let app = Router::new()
-            .route("/api/health", get(health))
+        // Clone state for auth middleware
+        let auth_state = self.state.clone();
+
+        // Protected routes (require authentication if api_token is set)
+        let protected_routes = Router::new()
             .route("/api/config", get(get_config))
             .route("/api/servers", get(list_servers))
             .route("/api/servers", post(add_server))
@@ -144,19 +149,81 @@ impl ManagementServer {
             .route("/api/connection/status", get(connection_status))
             .route("/api/connection/reconnect", post(trigger_reconnect))
             .route("/api/buffer/status", get(buffer_status))
+            .layer(middleware::from_fn_with_state(
+                auth_state.clone(),
+                auth_middleware,
+            ));
+
+        // Public routes (no authentication required)
+        let app = Router::new()
+            .route("/api/health", get(health))
+            .merge(protected_routes)
             .with_state(self.state);
 
         let addr = SocketAddr::from(([127, 0, 0, 1], self.port));
         info!("Management API listening on http://{}", addr);
 
-        if let Err(e) = axum::serve(
-            tokio::net::TcpListener::bind(addr).await.unwrap(),
-            app.into_make_service(),
-        )
-        .await
-        {
-            error!("Management API error: {}", e);
+        match tokio::net::TcpListener::bind(addr).await {
+            Ok(listener) => {
+                if let Err(e) = axum::serve(listener, app.into_make_service()).await {
+                    error!("Management API error: {}", e);
+                }
+            }
+            Err(e) => {
+                error!("Failed to bind Management API to {}: {}", addr, e);
+            }
         }
+    }
+}
+
+/// Authentication middleware - validates Bearer token against config api_token
+async fn auth_middleware(
+    State(state): State<Arc<ManagementState>>,
+    headers: HeaderMap,
+    request: axum::extract::Request,
+    next: Next,
+) -> Result<Response, (StatusCode, Json<ApiResponse>)> {
+    let config = state.config.read().await;
+
+    // If no token is configured, allow all requests (for backward compatibility)
+    let Some(ref expected_token) = config.management.api_token else {
+        return Ok(next.run(request).await);
+    };
+
+    // Skip auth if token is empty
+    if expected_token.is_empty() {
+        return Ok(next.run(request).await);
+    }
+
+    // Extract Authorization header
+    let auth_header = headers.get("Authorization").and_then(|v| v.to_str().ok());
+
+    match auth_header {
+        Some(header) if header.starts_with("Bearer ") => {
+            let token = &header[7..]; // Skip "Bearer "
+            // Use constant-time comparison to prevent timing attacks
+            if subtle::ConstantTimeEq::ct_eq(token.as_bytes(), expected_token.as_bytes()).into() {
+                Ok(next.run(request).await)
+            } else {
+                warn!("Management API: invalid token attempted");
+                Err((
+                    StatusCode::UNAUTHORIZED,
+                    Json(ApiResponse {
+                        success: false,
+                        message: "Invalid API token".to_string(),
+                    }),
+                ))
+            }
+        }
+        _ => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ApiResponse {
+                success: false,
+                message:
+                    "Missing or invalid Authorization header. Use: Authorization: Bearer <token>"
+                        .to_string(),
+            }),
+        )),
     }
 }
 

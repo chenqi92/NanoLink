@@ -1893,23 +1893,43 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                     use std::net::TcpStream;
 
                     let addr = format!("127.0.0.1:{}", config.management.port);
+                    let socket_addr: std::net::SocketAddr = match addr.parse() {
+                        Ok(a) => a,
+                        Err(_) => {
+                            println!("✗ {}", t("config.send_failed", lang));
+                            wait_for_enter(lang);
+                            continue;
+                        }
+                    };
                     match TcpStream::connect_timeout(
-                        &addr.parse().unwrap(),
+                        &socket_addr,
                         std::time::Duration::from_secs(5),
                     ) {
                         Ok(mut stream) => {
+                            // Build request with auth header if token is configured
+                            let auth_header = match &config.management.api_token {
+                                Some(token) if !token.is_empty() => {
+                                    format!("Authorization: Bearer {}\r\n", token)
+                                }
+                                _ => String::new(),
+                            };
                             let request = format!(
-                                "POST /api/connection/reconnect HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Length: 0\r\n\r\n",
-                                config.management.port
+                                "POST /api/connection/reconnect HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n{}Content-Length: 0\r\n\r\n",
+                                config.management.port, auth_header
                             );
                             if stream.write_all(request.as_bytes()).is_ok() {
                                 let mut response = [0u8; 512];
                                 if stream.read(&mut response).is_ok() {
                                     let response_str = String::from_utf8_lossy(&response);
-                                    if response_str.contains("200")
-                                        || response_str.contains("success")
-                                    {
+                                    // Check HTTP status line (e.g., "HTTP/1.1 200 OK")
+                                    let first_line = response_str.lines().next().unwrap_or("");
+                                    if first_line.contains(" 200 ") {
                                         println!("✓ {}", t("config.send_triggered", lang));
+                                    } else if first_line.contains(" 401 ") {
+                                        println!(
+                                            "✗ {}: Unauthorized",
+                                            t("config.send_failed", lang)
+                                        );
                                     } else {
                                         println!("✗ {}", t("config.send_failed", lang));
                                     }
@@ -3015,6 +3035,8 @@ fn uninstall_launchd_service() -> Result<(), String> {
 
     fs::remove_file("/Library/LaunchDaemons/com.nanolink.agent.plist")
         .map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 /// Interactive system diagnostics
