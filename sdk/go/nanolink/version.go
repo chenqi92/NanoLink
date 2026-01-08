@@ -1,4 +1,4 @@
 package nanolink
 
 // Version is the current version of the NanoLink Go SDK
-const Version = "0.3.8"
+const Version = "0.3.9"
