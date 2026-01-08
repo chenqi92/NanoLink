@@ -1440,7 +1440,7 @@ fn interactive_init_config(lang: Lang) -> Result<()> {
 /// Interactive check for updates
 fn interactive_check_update(args: &Args, lang: Lang) -> Result<()> {
     use crate::executor::UpdateExecutor;
-    use dialoguer::{Confirm, theme::ColorfulTheme};
+    use dialoguer::{Confirm, Select, theme::ColorfulTheme};
     use std::collections::HashMap;
 
     let theme = ColorfulTheme::default();
@@ -1530,13 +1530,29 @@ fn interactive_check_update(args: &Args, lang: Lang) -> Result<()> {
         return Ok(());
     }
 
+    // Ask user to select download source
+    let source_options = &["GitHub", "Cloudflare R2 (国内加速 / China Optimized)"];
+
+    let source_selection = Select::with_theme(&theme)
+        .with_prompt(t("update.select_source", lang))
+        .items(source_options)
+        .default(0)
+        .interact()?;
+
+    // Create executor with selected source
+    let mut download_config = config.update.clone();
+    download_config.source = match source_selection {
+        0 => crate::config::UpdateSource::Github,
+        _ => crate::config::UpdateSource::Cloudflare,
+    };
+    let download_executor = UpdateExecutor::new(download_config);
+
     println!();
     println!("{}", t("update.downloading", lang));
 
     let download_result = rt.block_on(async {
-        let mut params = HashMap::new();
-        params.insert("url".to_string(), update_info.download_url.clone());
-        executor.download_update(&params).await
+        let params = HashMap::new();
+        download_executor.download_update(&params).await
     });
 
     if !download_result.success {

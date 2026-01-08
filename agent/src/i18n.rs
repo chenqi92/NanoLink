@@ -205,6 +205,8 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("update.apply_failed", Lang::En) => "Failed to apply update",
         ("update.source", Lang::Zh) => "更新源",
         ("update.source", Lang::En) => "Update source",
+        ("update.select_source", Lang::Zh) => "选择下载源",
+        ("update.select_source", Lang::En) => "Select download source",
 
         // Config change restart
         ("config.restart_prompt", Lang::Zh) => "配置已更新，是否立即重启 Agent?",
