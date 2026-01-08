@@ -77,6 +77,7 @@ impl WizardState {
             host: self.host.trim().to_string(),
             port: self.port.trim().parse().unwrap(),
             token: self.token.clone(),
+            management_token: None,
             permission: PERMISSION_LEVELS[self.permission].1,
             tls_enabled: self.tls_enabled,
             tls_verify: self.tls_verify,

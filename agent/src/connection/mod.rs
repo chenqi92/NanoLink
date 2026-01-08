@@ -18,6 +18,7 @@ pub use handler::MessageHandler;
 
 /// Signal types for connection control
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ConnectionSignal {
     /// Trigger immediate reconnection attempt
     ImmediateReconnect,

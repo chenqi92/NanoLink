@@ -614,6 +614,7 @@ fn handle_server_add(
         host: final_host.clone(),
         port: final_port,
         token: final_token,
+        management_token: None,
         permission: final_permission,
         tls_enabled: final_tls_enabled,
         tls_verify: final_tls_verify,
@@ -1278,6 +1279,7 @@ fn interactive_add_server(config_path: &Path, lang: Lang) -> Result<()> {
         host: host.clone(),
         port,
         token,
+        management_token: None,
         permission,
         tls_enabled,
         tls_verify,
@@ -1909,7 +1911,7 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                             // Build request with auth header if token is configured
                             let auth_header = match &config.management.api_token {
                                 Some(token) if !token.is_empty() => {
-                                    format!("Authorization: Bearer {}\r\n", token)
+                                    format!("Authorization: Bearer {token}\r\n")
                                 }
                                 _ => String::new(),
                             };

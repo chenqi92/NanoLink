@@ -264,17 +264,131 @@ pub struct ManagementConfig {
     #[serde(default = "default_bind_address")]
     pub bind_address: String,
 
-    /// API token for authentication (启用时必须设置)
+    /// API token for authentication (已废弃，改用 ServerConfig.management_token)
+    #[serde(default)]
     pub api_token: Option<String>,
+
+    /// Enable TLS encryption
+    #[serde(default)]
+    pub tls_enabled: bool,
+
+    /// TLS certificate path
+    #[serde(default)]
+    pub tls_cert: Option<String>,
+
+    /// TLS private key path
+    #[serde(default)]
+    pub tls_key: Option<String>,
+
+    /// Rate limiting configuration
+    #[serde(default)]
+    pub rate_limit: RateLimitConfig,
+
+    /// Audit logging configuration
+    #[serde(default)]
+    pub audit: AuditConfig,
+}
+
+/// Rate limiting configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RateLimitConfig {
+    /// Enable rate limiting
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Default requests per minute
+    #[serde(default = "default_requests_per_minute")]
+    pub requests_per_minute: u32,
+
+    /// Default burst size
+    #[serde(default = "default_burst")]
+    pub burst: u32,
+
+    /// Per-endpoint rate limits (endpoint path -> config)
+    #[serde(default)]
+    pub endpoints: std::collections::HashMap<String, EndpointRateLimit>,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            requests_per_minute: default_requests_per_minute(),
+            burst: default_burst(),
+            endpoints: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndpointRateLimit {
+    pub requests_per_minute: u32,
+    pub burst: u32,
+}
+
+fn default_requests_per_minute() -> u32 {
+    60
+}
+
+fn default_burst() -> u32 {
+    10
+}
+
+/// Audit logging configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditConfig {
+    /// Enable audit logging
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Maximum log file size in MB
+    #[serde(default = "default_max_size_mb")]
+    pub max_size_mb: u32,
+
+    /// Maximum age of log files in days
+    #[serde(default = "default_max_age_days")]
+    pub max_age_days: u32,
+
+    /// Maximum number of log files to keep
+    #[serde(default = "default_max_files")]
+    pub max_files: u32,
+}
+
+impl Default for AuditConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_size_mb: default_max_size_mb(),
+            max_age_days: default_max_age_days(),
+            max_files: default_max_files(),
+        }
+    }
+}
+
+fn default_max_size_mb() -> u32 {
+    100
+}
+
+fn default_max_age_days() -> u32 {
+    30
+}
+
+fn default_max_files() -> u32 {
+    10
 }
 
 impl Default for ManagementConfig {
     fn default() -> Self {
         Self {
-            enabled: false, // 默认禁用
+            enabled: false,
             port: default_management_port(),
             bind_address: default_bind_address(),
             api_token: None,
+            tls_enabled: false,
+            tls_cert: None,
+            tls_key: None,
+            rate_limit: RateLimitConfig::default(),
+            audit: AuditConfig::default(),
         }
     }
 }
@@ -284,7 +398,7 @@ fn default_management_port() -> u16 {
 }
 
 fn default_bind_address() -> String {
-    "127.0.0.1".to_string() // 仅绑定本地回环地址
+    "127.0.0.1".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,6 +453,11 @@ pub struct ServerConfig {
     /// 2. Environment variable reference: "${ENV_VAR_NAME}"
     /// 3. File reference: "file:///path/to/token"
     pub token: String,
+
+    /// Management API token for this server to call Agent remotely
+    /// Only valid when permission >= 1, bound to server's IP address
+    #[serde(default)]
+    pub management_token: Option<String>,
 
     /// Permission level for this connection
     /// 0 = READ_ONLY, 1 = BASIC_WRITE, 2 = SERVICE_CONTROL, 3 = SYSTEM_ADMIN
@@ -824,6 +943,7 @@ impl Config {
                 host: "localhost".to_string(),
                 port: DEFAULT_GRPC_PORT,
                 token: "your_token_here".to_string(),
+                management_token: None,
                 permission: 0,
                 tls_enabled: false,
                 tls_verify: true,

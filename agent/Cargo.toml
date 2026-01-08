@@ -18,6 +18,8 @@ futures-util = "0.3"
 
 # HTTP server for management API
 axum = "0.8"
+axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors"] }
 
