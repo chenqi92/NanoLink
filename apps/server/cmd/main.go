@@ -16,6 +16,7 @@ import (
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	grpcserver "github.com/chenqi92/NanoLink/apps/server/internal/grpc"
 	"github.com/chenqi92/NanoLink/apps/server/internal/handler"
+	"github.com/chenqi92/NanoLink/apps/server/internal/mcp"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -281,12 +282,47 @@ func main() {
 		dashboardWSHandler.BroadcastMetrics(agentID, metrics)
 	})
 
+	// Start MCP server if enabled
+	var mcpServer *mcp.Server
+	if cfg.MCP.Enabled {
+		sugar.Info("MCP server enabled, starting...")
+		var transport mcp.Transport
+		switch cfg.MCP.Transport {
+		case "sse":
+			transport = mcp.NewSSETransport(fmt.Sprintf(":%d", cfg.MCP.SSEPort), sugar)
+			sugar.Infof("MCP server using SSE transport on port %d", cfg.MCP.SSEPort)
+		default:
+			transport = mcp.NewStdioTransport(sugar)
+			sugar.Info("MCP server using stdio transport")
+		}
+		mcpServer = mcp.NewServer(
+			agentService,
+			metricsService,
+			sugar,
+			mcp.WithTransport(transport),
+			mcp.WithAuditService(auditService),
+			mcp.WithGRPCServer(grpcServer),
+		)
+		go func() {
+			if err := mcpServer.Serve(context.Background()); err != nil {
+				sugar.Errorf("MCP server error: %v", err)
+			}
+		}()
+	}
+
 	sugar.Infof("NanoLink Server started successfully")
 	sugar.Infof("  Dashboard: http://localhost:%d/dashboard", cfg.Server.HTTPPort)
 	sugar.Infof("  API: http://localhost:%d/api", cfg.Server.HTTPPort)
 	sugar.Infof("  Dashboard WS: ws://localhost:%d/ws/dashboard", cfg.Server.HTTPPort)
 	sugar.Infof("  Agent WS: ws://localhost:%d", cfg.Server.WSPort)
 	sugar.Infof("  gRPC: grpc://localhost:%d", cfg.Server.GRPCPort)
+	if cfg.MCP.Enabled {
+		if cfg.MCP.Transport == "sse" {
+			sugar.Infof("  MCP (SSE): http://localhost:%d/mcp", cfg.MCP.SSEPort)
+		} else {
+			sugar.Infof("  MCP: stdio (use with Claude Desktop or other MCP clients)")
+		}
+	}
 
 	// Wait for shutdown signal
 	quit := make(chan os.Signal, 1)
@@ -304,6 +340,12 @@ func main() {
 
 	if err := wsServer.Shutdown(ctx); err != nil {
 		sugar.Errorf("WebSocket server shutdown error: %v", err)
+	}
+
+	// Stop MCP server if enabled
+	if mcpServer != nil {
+		mcpServer.Stop()
+		sugar.Info("MCP server stopped")
 	}
 
 	grpcServer.Stop()

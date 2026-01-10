@@ -893,6 +893,70 @@ All static info plus realtime: CPU usage/temp, memory used, disk IO, network IO,
 | Security | Read-only | Requires authentication + permission |
 | Risk Level | Low | High (can modify system) |
 
+## MCP Integration (AI/LLM)
+
+NanoLink supports the **Model Context Protocol (MCP)** for AI-driven operations. This allows tools like Claude Desktop to query metrics, diagnose issues, and automate responses.
+
+### Enable MCP Server
+
+```yaml
+# Server config.yaml
+mcp:
+  enabled: true
+  transport: stdio  # or "sse"
+  sse_port: 8081
+```
+
+### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `list_agents` | List connected monitoring agents |
+| `get_agent_metrics` | Get metrics for a specific agent |
+| `get_system_summary` | Get cluster-wide statistics |
+| `find_high_cpu_agents` | Find agents with high CPU usage |
+| `find_low_disk_agents` | Find agents with low disk space |
+
+### SDK MCP Wrappers
+
+All three SDKs include MCP server wrappers:
+
+**Go:**
+```go
+srv := nanolink.NewServer(config)
+mcp := nanolink.NewMCPServer(srv, nanolink.WithDefaultTools())
+mcp.ServeStdio(ctx)
+```
+
+**Python:**
+```python
+from nanolink import NanoLinkServer, MCPServer
+srv = NanoLinkServer(config)
+mcp = MCPServer(srv)
+await mcp.serve_stdio()
+```
+
+**Java:**
+```java
+NanoLinkServer server = new NanoLinkServer(config);
+MCPServer mcp = new MCPServer(server);
+mcp.registerDefaults();
+mcp.serveStdio();
+```
+
+### Claude Desktop Configuration
+
+```json
+{
+  "mcpServers": {
+    "nanolink": {
+      "command": "/path/to/nanolink-server",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
 ## Project Structure
 
 ```

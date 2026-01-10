@@ -23,6 +23,7 @@ from .metrics import (
     DataRequestType,
 )
 from .command import Command, CommandType, CommandResult
+from .mcp_server import MCPServer, MCPTool, MCPResource, MCPPrompt
 
 __all__ = [
     "__version__",
@@ -44,4 +45,8 @@ __all__ = [
     "Command",
     "CommandType",
     "CommandResult",
+    "MCPServer",
+    "MCPTool",
+    "MCPResource",
+    "MCPPrompt",
 ]

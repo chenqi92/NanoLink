@@ -893,6 +893,94 @@ server.requestData(agentId, DataRequestType.DATA_REQUEST_STATIC);
 | 安全性 | 只读 | 需要认证 + 权限 |
 | 风险级别 | 低 | 高（可修改系统） |
 
+## MCP 集成 (Model Context Protocol)
+
+NanoLink 支持 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 规范，使其能够与 AI 应用（如 Claude Desktop、Cursor 等）无缝集成，实现智能运维能力。
+
+### 支持的 MCP 功能
+
+| 功能 | 描述 |
+|------|------|
+| **Tools** | AI 可调用的操作工具 |
+| **Resources** | AI 可读取的数据资源 |
+| **Prompts** | 预定义的提示词模板 |
+
+### Server 端 MCP Tools
+
+| Tool | 描述 |
+|------|------|
+| `list_agents` | 列出所有连接的 Agent |
+| `get_agent_metrics` | 获取特定 Agent 的指标 |
+| `get_system_summary` | 获取集群摘要（Agent 数量、平均 CPU、内存使用率） |
+| `find_high_cpu_agents` | 查找高 CPU 使用率的 Agent |
+| `find_low_disk_agents` | 查找低磁盘空间的 Agent |
+| `query_audit_logs` | 查询审计日志 |
+| `get_audit_stats` | 获取审计统计 |
+| `request_agent_data` | 主动请求 Agent 数据 |
+
+### SDK MCP Tools
+
+SDK 包装器提供以下 tools：
+
+| Tool | 描述 |
+|------|------|
+| `list_agents` | 列出所有连接的 Agent |
+| `get_agent_metrics` | 获取特定 Agent 的指标 |
+| `get_system_summary` | 获取集群摘要 |
+| `find_high_cpu_agents` | 查找高 CPU 使用率的 Agent |
+
+### 配置 MCP Server
+
+**Server 配置 (config.yaml):**
+```yaml
+mcp:
+  enabled: true
+  transport: sse       # stdio 或 sse
+  sse_port: 3001       # SSE 传输端口
+```
+
+**Claude Desktop 配置 (claude_desktop_config.json):**
+```json
+{
+  "mcpServers": {
+    "nanolink": {
+      "command": "/path/to/nanolink-server",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+### SDK MCP 使用示例
+
+**Go:**
+```go
+mcpServer := nanolink.NewMCPServer(nanoServer)
+mcpServer.Serve(ctx) // stdio 模式
+```
+
+**Python:**
+```python
+mcp_server = MCPServer(nano_server)
+await mcp_server.serve_stdio()
+```
+
+**Java:**
+```java
+MCPServer mcpServer = new MCPServer(nanoServer);
+mcpServer.serveStdio();
+```
+
+### 安全加固
+
+MCP 实现包含以下安全措施：
+
+| 措施 | 描述 |
+|------|------|
+| 消息大小限制 | 最大 1MB，防止 OOM 攻击 |
+| 工具执行超时 | 默认 30 秒超时 |
+| Panic/异常恢复 | 防止单个工具崩溃影响整体 |
+
 ## 项目结构
 
 ```

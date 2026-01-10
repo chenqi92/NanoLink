@@ -19,6 +19,7 @@ type Config struct {
 	TimeSeries TimeSeriesConfig `mapstructure:"timeseries"`
 	JWT        JWTConfig        `mapstructure:"jwt"`
 	SuperAdmin SuperAdminConfig `mapstructure:"superadmin"`
+	MCP        MCPConfig        `mapstructure:"mcp"`
 }
 
 // ServerConfig holds server configuration
@@ -99,6 +100,13 @@ type SuperAdminConfig struct {
 	Password string `mapstructure:"password"` // From NANOLINK_ADMIN_PASSWORD
 }
 
+// MCPConfig holds MCP (Model Context Protocol) configuration
+type MCPConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`   // Enable MCP server
+	Transport string `mapstructure:"transport"` // "stdio" or "sse"
+	SSEPort   int    `mapstructure:"sse_port"`  // Port for SSE transport
+}
+
 // Default returns default configuration
 func Default() *Config {
 	return &Config{
@@ -134,6 +142,11 @@ func Default() *Config {
 			ExpireHour: 24,
 		},
 		SuperAdmin: SuperAdminConfig{},
+		MCP: MCPConfig{
+			Enabled:   false,
+			Transport: "stdio",
+			SSEPort:   8081,
+		},
 	}
 }
 
