@@ -584,6 +584,12 @@ pub struct CollectorConfig {
     /// Send full metrics on initial connection
     #[serde(default = "default_true")]
     pub send_initial_full: bool,
+
+    // ========== Idle mode (when not connected to any server) ==========
+    /// Metrics collection interval when not connected to any server (milliseconds)
+    /// This reduces CPU usage when idle. Default: 30 seconds
+    #[serde(default = "default_idle_interval")]
+    pub idle_interval_ms: u64,
 }
 
 impl Default for CollectorConfig {
@@ -604,6 +610,7 @@ impl Default for CollectorConfig {
             enable_per_core_cpu: true,
             enable_layered_metrics: true,
             send_initial_full: true,
+            idle_interval_ms: default_idle_interval(),
         }
     }
 }
@@ -805,6 +812,9 @@ fn default_ip_check_interval() -> u64 {
 }
 fn default_health_check_interval() -> u64 {
     300000 // 5 minutes for S.M.A.R.T health
+}
+fn default_idle_interval() -> u64 {
+    30000 // 30 seconds when not connected to any server (reduces CPU usage)
 }
 fn default_buffer_capacity() -> usize {
     720 // 1 hour at 5-second interval

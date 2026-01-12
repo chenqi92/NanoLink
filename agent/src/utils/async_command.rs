@@ -176,7 +176,7 @@ fn execute_command_sync(program: &str, args: &[String], timeout: Duration) -> Co
                     let _ = child.wait();
                     return CommandResult::Timeout;
                 }
-                std::thread::sleep(Duration::from_millis(20));
+                std::thread::sleep(Duration::from_millis(50));
             }
             Err(e) => {
                 return CommandResult::Error(format!("try_wait failed: {e}"));

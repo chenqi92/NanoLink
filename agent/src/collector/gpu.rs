@@ -1,7 +1,12 @@
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use parking_lot::RwLock;
 
 use crate::utils::safe_command::exec_with_timeout;
+
+/// Default cache duration for GPU metrics (5 seconds)
+const GPU_CACHE_DURATION: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Default)]
 pub struct GpuMetrics {
@@ -32,6 +37,8 @@ pub struct GpuCollector {
     nvidia_available: bool,
     amd_available: bool,
     driver_version: String,
+    /// Cached metrics with timestamp for reducing nvidia-smi calls
+    cached_metrics: RwLock<Option<(Vec<GpuMetrics>, Instant)>>,
 }
 
 impl GpuCollector {
@@ -48,6 +55,7 @@ impl GpuCollector {
             nvidia_available,
             amd_available,
             driver_version,
+            cached_metrics: RwLock::new(None),
         }
     }
 
@@ -93,6 +101,17 @@ impl GpuCollector {
     }
 
     pub fn collect(&self) -> Vec<GpuMetrics> {
+        // Check cache first to avoid expensive nvidia-smi calls
+        {
+            let cache = self.cached_metrics.read();
+            if let Some((metrics, cached_at)) = cache.as_ref() {
+                if cached_at.elapsed() < GPU_CACHE_DURATION {
+                    return metrics.clone();
+                }
+            }
+        }
+
+        // Cache miss or expired - collect fresh metrics
         let mut gpus = Vec::new();
 
         if self.nvidia_available {
@@ -110,6 +129,9 @@ impl GpuCollector {
         if let Some(intel_gpus) = self.collect_intel() {
             gpus.extend(intel_gpus);
         }
+
+        // Update cache
+        *self.cached_metrics.write() = Some((gpus.clone(), Instant::now()));
 
         gpus
     }

@@ -24,6 +24,8 @@ use std::io;
 use std::time::Duration;
 use sysinfo::{Disks, Networks, System};
 
+use crate::collector::GpuCollector;
+
 /// App state for the TUI
 struct App<'a> {
     tabs: Vec<&'a str>,
@@ -33,6 +35,8 @@ struct App<'a> {
     system: System,
     disks: Disks,
     networks: Networks,
+    /// Cached GPU collector to avoid re-checking availability on every frame
+    gpu_collector: GpuCollector,
 }
 
 impl<'a> App<'a> {
@@ -45,6 +49,7 @@ impl<'a> App<'a> {
             system: System::new_all(),
             disks: Disks::new_with_refreshed_list(),
             networks: Networks::new_with_refreshed_list(),
+            gpu_collector: GpuCollector::new(),
         }
     }
 
@@ -119,7 +124,8 @@ fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut A
         terminal.draw(|f| ui(f, app))?;
 
         // Poll for events with timeout (allows refresh)
-        if event::poll(Duration::from_millis(500))? {
+        // 1000ms provides good balance between responsiveness and CPU usage
+        if event::poll(Duration::from_millis(1000))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     match key.code {
@@ -549,8 +555,8 @@ fn render_network(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_gpu(f: &mut Frame, app: &App, area: Rect) {
-    let gpu_collector = crate::collector::GpuCollector::new();
-    let gpus = gpu_collector.collect();
+    // Use cached collector from App state (avoids re-checking GPU availability every frame)
+    let gpus = app.gpu_collector.collect();
 
     let block = Block::default()
         .borders(Borders::ALL)
