@@ -33,9 +33,16 @@ const GPU_COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
 /// Fast GPU availability check timeout
 const GPU_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// GPU metrics collector
+/// Supports NVIDIA (via nvidia-smi), AMD (via rocm-smi), and Intel (via xpu-smi/intel_gpu_top/sysfs)
+#[allow(dead_code)]
 pub struct GpuCollector {
     nvidia_available: bool,
     amd_available: bool,
+    /// Intel GPU monitoring via intel_gpu_top (requires root on Linux)
+    intel_gpu_top_available: bool,
+    /// Intel GPU monitoring via xpu-smi (for Arc/Data Center GPUs on Linux)
+    xpu_smi_available: bool,
     driver_version: String,
     /// Cached metrics with timestamp for reducing nvidia-smi calls
     cached_metrics: RwLock<Option<(Vec<GpuMetrics>, Instant)>>,
@@ -51,9 +58,15 @@ impl GpuCollector {
             String::new()
         };
 
+        // Check Intel GPU tools availability (Linux only, non-blocking)
+        let intel_gpu_top_available = Self::check_intel_gpu_top_available();
+        let xpu_smi_available = Self::check_xpu_smi_available();
+
         Self {
             nvidia_available,
             amd_available,
+            intel_gpu_top_available,
+            xpu_smi_available,
             driver_version,
             cached_metrics: RwLock::new(None),
         }
@@ -72,6 +85,42 @@ impl GpuCollector {
         {
             let mut cmd = Command::new("rocm-smi");
             cmd.arg("--showproductname");
+            exec_with_timeout(cmd, GPU_CHECK_TIMEOUT)
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    }
+
+    /// Check if intel_gpu_top is available (Linux only, requires root/CAP_PERFMON)
+    fn check_intel_gpu_top_available() -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            // Quick check if intel_gpu_top exists and can output JSON
+            // Use very short timeout to avoid blocking startup
+            let mut cmd = Command::new("intel_gpu_top");
+            cmd.args(["-J", "-s", "100", "-o", "-"]);
+            // Just check if the command exists, don't wait for full output
+            match Command::new("which").arg("intel_gpu_top").output() {
+                Ok(output) => output.status.success(),
+                Err(_) => false,
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    }
+
+    /// Check if xpu-smi is available (Linux only, for Intel Arc/Data Center GPUs)
+    fn check_xpu_smi_available() -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            let mut cmd = Command::new("xpu-smi");
+            cmd.arg("discovery");
             exec_with_timeout(cmd, GPU_CHECK_TIMEOUT)
                 .map(|o| o.status.success())
                 .unwrap_or(false)
@@ -355,59 +404,344 @@ impl GpuCollector {
     fn collect_intel(&self) -> Option<Vec<GpuMetrics>> {
         #[cfg(target_os = "linux")]
         {
-            use std::fs;
-            use std::path::Path;
-
-            let drm_path = Path::new("/sys/class/drm");
-            if !drm_path.exists() {
-                return None;
+            // Try xpu-smi first (for Arc/Data Center GPUs - provides most complete data)
+            if self.xpu_smi_available {
+                if let Some(gpus) = self.collect_intel_xpu_smi() {
+                    if !gpus.is_empty() {
+                        return Some(gpus);
+                    }
+                }
             }
 
-            let mut gpus = Vec::new();
-            let mut index = 0u32;
+            // Try intel_gpu_top next (for integrated GPUs - requires root)
+            if self.intel_gpu_top_available {
+                if let Some(gpus) = self.collect_intel_gpu_top() {
+                    if !gpus.is_empty() {
+                        return Some(gpus);
+                    }
+                }
+            }
 
-            if let Ok(entries) = fs::read_dir(drm_path) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    let name = path.file_name()?.to_str()?;
+            // Fallback to sysfs-based detection (basic info only, no usage metrics)
+            self.collect_intel_sysfs()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
+    }
 
-                    if name.starts_with("card") && !name.contains('-') {
-                        let device_path = path.join("device");
-                        let vendor_path = device_path.join("vendor");
+    /// Collect Intel GPU metrics using xpu-smi (for Arc/Data Center GPUs)
+    #[cfg(target_os = "linux")]
+    fn collect_intel_xpu_smi(&self) -> Option<Vec<GpuMetrics>> {
+        use std::collections::HashMap;
 
-                        if let Ok(vendor) = fs::read_to_string(&vendor_path) {
-                            if vendor.trim() == "0x8086" {
-                                let mut gpu = GpuMetrics {
-                                    index,
-                                    vendor: "Intel".to_string(),
-                                    ..Default::default()
-                                };
+        // Get device list first
+        let mut cmd = Command::new("xpu-smi");
+        cmd.args(["discovery", "-j"]);
+        let discovery_output = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT)?;
 
-                                if let Ok(product) =
-                                    fs::read_to_string(device_path.join("product_name"))
-                                {
-                                    gpu.name = product.trim().to_string();
-                                } else {
-                                    gpu.name = "Intel Integrated Graphics".to_string();
-                                }
+        if !discovery_output.status.success() {
+            return None;
+        }
 
-                                // Note: intel_gpu_top requires root and can hang, skip it
-                                // GPU usage monitoring for Intel requires different approach
+        let stdout = String::from_utf8_lossy(&discovery_output.stdout);
 
-                                gpus.push(gpu);
-                                index += 1;
+        // Parse JSON to get device IDs
+        // xpu-smi discovery -j returns: {"device_list":[{"device_id":0,"device_name":"..."},...]}
+        let mut gpus = Vec::new();
+        let mut device_ids: Vec<u32> = Vec::new();
+
+        // Simple JSON parsing for device_id
+        for line in stdout.lines() {
+            if line.contains("\"device_id\"") {
+                if let Some(id_str) = line.split(':').nth(1) {
+                    let id = id_str
+                        .trim()
+                        .trim_matches(',')
+                        .trim_matches('}')
+                        .parse()
+                        .unwrap_or(0);
+                    device_ids.push(id);
+                }
+            }
+        }
+
+        // Collect stats for each device
+        for device_id in device_ids {
+            let mut gpu = GpuMetrics {
+                index: device_id,
+                vendor: "Intel".to_string(),
+                ..Default::default()
+            };
+
+            // Get device stats
+            let mut cmd = Command::new("xpu-smi");
+            cmd.args(["stats", "-d", &device_id.to_string()]);
+            if let Some(output) = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT) {
+                let stats = String::from_utf8_lossy(&output.stdout);
+
+                for line in stats.lines() {
+                    let line = line.trim();
+                    if line.contains("GPU Utilization (%)") {
+                        if let Some(val) = Self::extract_xpu_smi_value(line) {
+                            gpu.usage_percent = val.parse().unwrap_or(0.0);
+                        }
+                    } else if line.contains("GPU Memory Utilization (%)")
+                        || line.contains("Memory Used")
+                    {
+                        // Memory in MB
+                        if let Some(val) = Self::extract_xpu_smi_value(line) {
+                            gpu.memory_used = Self::parse_memory_string(&val);
+                        }
+                    } else if line.contains("GPU Temperature") {
+                        if let Some(val) = Self::extract_xpu_smi_value(line) {
+                            gpu.temperature = val.trim_end_matches(" C").parse().unwrap_or(0.0);
+                        }
+                    } else if line.contains("GPU Power") {
+                        if let Some(val) = Self::extract_xpu_smi_value(line) {
+                            gpu.power_watts =
+                                val.split_whitespace()
+                                    .next()
+                                    .unwrap_or("0")
+                                    .parse::<f64>()
+                                    .unwrap_or(0.0) as u32;
+                        }
+                    } else if line.contains("Device Name") {
+                        if let Some(val) = Self::extract_xpu_smi_value(line) {
+                            gpu.name = val;
+                        }
+                    }
+                }
+            }
+
+            // Get memory total from discovery if not set
+            if gpu.memory_total == 0 {
+                let mut cmd = Command::new("xpu-smi");
+                cmd.args(["discovery", "-d", &device_id.to_string()]);
+                if let Some(output) = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT) {
+                    let info = String::from_utf8_lossy(&output.stdout);
+                    for line in info.lines() {
+                        if line.contains("Memory Physical Size") {
+                            if let Some(val) = Self::extract_xpu_smi_value(line) {
+                                gpu.memory_total = Self::parse_memory_string(&val);
                             }
                         }
                     }
                 }
             }
 
-            if gpus.is_empty() { None } else { Some(gpus) }
+            gpus.push(gpu);
         }
-        #[cfg(not(target_os = "linux"))]
-        {
+
+        if gpus.is_empty() { None } else { Some(gpus) }
+    }
+
+    /// Extract value from xpu-smi output line (format: "Label: Value" or "Label Value")
+    #[cfg(target_os = "linux")]
+    fn extract_xpu_smi_value(line: &str) -> Option<String> {
+        if let Some(val) = line.split(':').nth(1) {
+            Some(val.trim().to_string())
+        } else {
             None
         }
+    }
+
+    /// Collect Intel GPU metrics using intel_gpu_top (for integrated GPUs)
+    /// Note: Requires root privileges or CAP_PERFMON capability
+    #[cfg(target_os = "linux")]
+    fn collect_intel_gpu_top(&self) -> Option<Vec<GpuMetrics>> {
+        // intel_gpu_top -J -s 500 outputs JSON with GPU usage
+        // We run it briefly and capture one sample
+        let mut cmd = Command::new("intel_gpu_top");
+        cmd.args(["-J", "-s", "500", "-o", "-"]);
+
+        // Use shorter timeout - intel_gpu_top streams continuously
+        let output = exec_with_timeout(cmd, Duration::from_secs(2))?;
+
+        // Even if the command is killed (expected), we may have partial output
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        if stdout.is_empty() {
+            return None;
+        }
+
+        let mut gpu = GpuMetrics {
+            index: 0,
+            vendor: "Intel".to_string(),
+            name: "Intel Integrated Graphics".to_string(),
+            ..Default::default()
+        };
+
+        // Parse JSON output - intel_gpu_top outputs one JSON object per line
+        // Format: {"period":{"duration":500.123},"frequency":{"requested":0,"actual":1200},"engines":{"Render/3D/0":{"busy":45.2},...}}
+        for line in stdout.lines() {
+            if line.starts_with('{') {
+                // Simple JSON field extraction
+                // Get overall "busy" percentage from engines
+                let mut total_busy = 0.0;
+                let mut engine_count = 0;
+
+                // Extract busy values from engines
+                if let Some(engines_start) = line.find("\"engines\"") {
+                    if let Some(engines_section) = line.get(engines_start..) {
+                        // Find all "busy" values
+                        let mut search_pos = 0;
+                        while let Some(busy_pos) = engines_section[search_pos..].find("\"busy\":") {
+                            let start = search_pos + busy_pos + 7;
+                            if let Some(end_pos) =
+                                engines_section[start..].find(|c: char| c == ',' || c == '}')
+                            {
+                                if let Some(val_str) = engines_section.get(start..start + end_pos) {
+                                    if let Ok(val) = val_str.trim().parse::<f64>() {
+                                        total_busy += val;
+                                        engine_count += 1;
+                                    }
+                                }
+                                search_pos = start + end_pos;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Use max engine busy as overall usage (or average if preferred)
+                if engine_count > 0 {
+                    gpu.usage_percent = total_busy / engine_count as f64;
+                }
+
+                // Extract frequency
+                if let Some(freq_pos) = line.find("\"actual\":") {
+                    let start = freq_pos + 9;
+                    if let Some(end_pos) = line[start..].find(|c: char| c == ',' || c == '}') {
+                        if let Some(val_str) = line.get(start..start + end_pos) {
+                            gpu.clock_core_mhz = val_str.trim().parse().unwrap_or(0);
+                        }
+                    }
+                }
+
+                // Extract power if available
+                if let Some(power_pos) = line.find("\"power\"") {
+                    if let Some(gpu_power_pos) = line[power_pos..].find("\"GPU\":") {
+                        let start = power_pos + gpu_power_pos + 6;
+                        if let Some(end_pos) = line[start..].find(|c: char| c == ',' || c == '}') {
+                            if let Some(val_str) = line.get(start..start + end_pos) {
+                                gpu.power_watts =
+                                    val_str.trim().parse::<f64>().unwrap_or(0.0) as u32;
+                            }
+                        }
+                    }
+                }
+
+                break; // Only need first complete JSON line
+            }
+        }
+
+        // Get GPU name from sysfs
+        if let Some(name) = Self::get_intel_gpu_name_from_sysfs(0) {
+            gpu.name = name;
+        }
+
+        Some(vec![gpu])
+    }
+
+    /// Get Intel GPU name from sysfs
+    #[cfg(target_os = "linux")]
+    fn get_intel_gpu_name_from_sysfs(card_index: u32) -> Option<String> {
+        use std::fs;
+
+        let card_path = format!("/sys/class/drm/card{}/device", card_index);
+        let product_name_path = format!("{}/product_name", card_path);
+
+        if let Ok(name) = fs::read_to_string(&product_name_path) {
+            return Some(name.trim().to_string());
+        }
+
+        // Try to get device name from PCI info
+        let device_path = format!("{}/device", card_path);
+        if let Ok(device_id) = fs::read_to_string(&device_path) {
+            return Some(format!("Intel GPU ({})", device_id.trim()));
+        }
+
+        None
+    }
+
+    /// Fallback: Collect basic Intel GPU info from sysfs (no usage metrics)
+    #[cfg(target_os = "linux")]
+    fn collect_intel_sysfs(&self) -> Option<Vec<GpuMetrics>> {
+        use std::fs;
+        use std::path::Path;
+
+        let drm_path = Path::new("/sys/class/drm");
+        if !drm_path.exists() {
+            return None;
+        }
+
+        let mut gpus = Vec::new();
+        let mut index = 0u32;
+
+        let entries = fs::read_dir(drm_path).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+
+            if name.starts_with("card") && !name.contains('-') {
+                let device_path = path.join("device");
+                let vendor_path = device_path.join("vendor");
+
+                if let Ok(vendor) = fs::read_to_string(&vendor_path) {
+                    if vendor.trim() == "0x8086" {
+                        let mut gpu = GpuMetrics {
+                            index,
+                            vendor: "Intel".to_string(),
+                            ..Default::default()
+                        };
+
+                        // Try to get product name
+                        if let Ok(product) = fs::read_to_string(device_path.join("product_name")) {
+                            gpu.name = product.trim().to_string();
+                        } else if let Ok(device_id) = fs::read_to_string(device_path.join("device"))
+                        {
+                            gpu.name = format!("Intel GPU ({})", device_id.trim());
+                        } else {
+                            gpu.name = "Intel Integrated Graphics".to_string();
+                        }
+
+                        // Try to get current frequency from gt directory
+                        let gt_path = path.join("gt");
+                        if gt_path.exists() {
+                            // Try gt0, gt1, etc.
+                            for gt_entry in fs::read_dir(&gt_path).ok()?.flatten() {
+                                let gt_name = gt_entry.file_name();
+                                if gt_name
+                                    .to_str()
+                                    .map(|s| s.starts_with("gt"))
+                                    .unwrap_or(false)
+                                {
+                                    let freq_path = gt_entry.path().join("gt_cur_freq_mhz");
+                                    if let Ok(freq) = fs::read_to_string(&freq_path) {
+                                        gpu.clock_core_mhz = freq.trim().parse().unwrap_or(0);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Try to get memory info for discrete GPUs
+                        let lmem_path = device_path.join("lmem_total_bytes");
+                        if let Ok(mem) = fs::read_to_string(&lmem_path) {
+                            gpu.memory_total = mem.trim().parse().unwrap_or(0);
+                        }
+
+                        gpus.push(gpu);
+                        index += 1;
+                    }
+                }
+            }
+        }
+
+        if gpus.is_empty() { None } else { Some(gpus) }
     }
 
     fn parse_mib_to_bytes(mib_str: &str) -> u64 {
