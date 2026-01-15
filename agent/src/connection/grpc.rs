@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio::time;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
@@ -21,6 +22,38 @@ use crate::proto::{
     MetricsStreamRequest, MetricsStreamResponse, metrics_stream_request, metrics_stream_response,
     nano_link_service_client::NanoLinkServiceClient,
 };
+
+/// Guard that ensures spawned tasks are aborted when dropped.
+/// This is critical for cleanup when stream errors cause early returns via `?`.
+struct TaskCleanupGuard {
+    handles: Vec<JoinHandle<()>>,
+}
+
+impl TaskCleanupGuard {
+    fn new() -> Self {
+        Self {
+            handles: Vec::new(),
+        }
+    }
+
+    fn add(&mut self, handle: JoinHandle<()>) {
+        self.handles.push(handle);
+    }
+}
+
+impl Drop for TaskCleanupGuard {
+    fn drop(&mut self) {
+        for handle in &self.handles {
+            handle.abort();
+        }
+        if !self.handles.is_empty() {
+            debug!(
+                "TaskCleanupGuard: aborted {} background tasks",
+                self.handles.len()
+            );
+        }
+    }
+}
 
 /// gRPC client for communicating with NanoLink server
 pub struct GrpcClient {
@@ -135,10 +168,13 @@ impl GrpcClient {
 
         let mut response_stream: Streaming<MetricsStreamResponse> = response.into_inner();
 
-        // Spawn task to send metrics
+        // Spawn task to send metrics with cleanup guard
         let tx_clone = tx.clone();
         let config = self.config.clone();
         let buffer_clone = buffer.clone();
+
+        // Use cleanup guard to ensure task is aborted on any exit (including ? early returns)
+        let mut cleanup_guard = TaskCleanupGuard::new();
 
         let sender_handle = tokio::spawn(async move {
             let mut interval =
@@ -174,8 +210,10 @@ impl GrpcClient {
                 }
             }
         });
+        cleanup_guard.add(sender_handle);
 
         // Handle responses from server
+        // Note: cleanup_guard will abort tasks when dropped (including on ? early return)
         while let Some(response) = response_stream.message().await? {
             match response.response {
                 Some(metrics_stream_response::Response::Command(cmd)) => {
@@ -206,7 +244,7 @@ impl GrpcClient {
             }
         }
 
-        sender_handle.abort();
+        // cleanup_guard is dropped here and aborts the task
         Ok(())
     }
 
@@ -243,7 +281,11 @@ impl GrpcClient {
     ///
     /// This method attempts to connect and authenticate with the server,
     /// returning the server version if successful.
-    pub async fn test_server_connection(server_config: &ServerConfig) -> Result<String> {
+    /// Now also takes the locally configured permission level to show comparison.
+    pub async fn test_server_connection(
+        server_config: &ServerConfig,
+        configured_permission: u8,
+    ) -> Result<String> {
         let url = server_config.get_grpc_url();
 
         let mut endpoint = Endpoint::from_shared(url.clone())
@@ -287,9 +329,10 @@ impl GrpcClient {
         let auth_response = response.into_inner();
 
         if auth_response.success {
+            // Show configured permission vs server-granted permission
             Ok(format!(
-                "Permission Level: {}",
-                auth_response.permission_level
+                "Configured: {}, Server: {}",
+                configured_permission, auth_response.permission_level
             ))
         } else {
             Err(anyhow::anyhow!(
@@ -321,17 +364,21 @@ impl GrpcClient {
 
         let mut response_stream: Streaming<MetricsStreamResponse> = response.into_inner();
 
-        // Create layered collector
+        // Create layered collector with cleanup guard
         let (metrics_tx, mut metrics_rx) = mpsc::channel::<LayeredMetricsMessage>(100);
         let (request_tx, request_rx) = mpsc::channel::<DataRequest>(10);
 
         let config = self.config.clone();
         let collector = LayeredCollector::new(config.clone());
 
-        // Spawn the layered collector and keep the handle for cleanup
+        // Use cleanup guard to ensure tasks are aborted on any exit (including ? early returns)
+        let mut cleanup_guard = TaskCleanupGuard::new();
+
+        // Spawn the layered collector
         let collector_handle = tokio::spawn(async move {
             collector.run(metrics_tx, request_rx).await;
         });
+        cleanup_guard.add(collector_handle);
 
         // Spawn task to forward layered messages to gRPC stream
         let tx_clone = tx.clone();
@@ -390,8 +437,10 @@ impl GrpcClient {
                 }
             }
         });
+        cleanup_guard.add(sender_handle);
 
         // Handle responses from server
+        // Note: cleanup_guard will abort tasks when dropped (including on ? early return)
         while let Some(response) = response_stream.message().await? {
             match response.response {
                 Some(metrics_stream_response::Response::Command(cmd)) => {
@@ -424,10 +473,8 @@ impl GrpcClient {
             }
         }
 
-        // Clean up all spawned tasks
-        sender_handle.abort();
-        collector_handle.abort();
-        debug!("Cleaned up layered metrics stream tasks");
+        // cleanup_guard is dropped here and aborts both tasks
+        debug!("Layered metrics stream ended, cleanup guard will abort tasks");
         Ok(())
     }
 }

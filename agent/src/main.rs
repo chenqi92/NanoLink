@@ -1319,7 +1319,8 @@ fn interactive_test_connection(
     // Create a tokio runtime for the async test
     let rt = tokio::runtime::Runtime::new()?;
 
-    let result = rt.block_on(async { GrpcClient::test_server_connection(&server).await });
+    let result =
+        rt.block_on(async { GrpcClient::test_server_connection(&server, server.permission).await });
 
     match result {
         Ok(version) => {
@@ -1888,7 +1889,8 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                 println!("✓ {}", t("config.saved", lang));
                 prompt_restart_after_config_change(lang)?;
             }
-            7 => {
+            7 => break, // 返回主菜单
+            8 => {
                 // Immediate send - trigger management API
                 if !config.management.enabled {
                     println!();
@@ -1961,7 +1963,6 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                     wait_for_enter(lang);
                 }
             }
-            8 => break,
             _ => {}
         }
     }
@@ -2002,7 +2003,9 @@ fn interactive_test_all_connections(args: &Args, lang: Lang) -> Result<()> {
         );
         std::io::Write::flush(&mut std::io::stdout())?;
 
-        let result = rt.block_on(async { GrpcClient::test_server_connection(server).await });
+        let result = rt.block_on(async {
+            GrpcClient::test_server_connection(server, server.permission).await
+        });
 
         match result {
             Ok(version) => {
