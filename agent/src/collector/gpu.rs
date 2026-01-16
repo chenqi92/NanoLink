@@ -554,11 +554,7 @@ impl GpuCollector {
     /// Extract value from xpu-smi output line (format: "Label: Value" or "Label Value")
     #[cfg(target_os = "linux")]
     fn extract_xpu_smi_value(line: &str) -> Option<String> {
-        if let Some(val) = line.split(':').nth(1) {
-            Some(val.trim().to_string())
-        } else {
-            None
-        }
+        line.split(':').nth(1).map(|val| val.trim().to_string())
     }
 
     /// Collect Intel GPU metrics using intel_gpu_top (for integrated GPUs)
@@ -603,9 +599,7 @@ impl GpuCollector {
                         let mut search_pos = 0;
                         while let Some(busy_pos) = engines_section[search_pos..].find("\"busy\":") {
                             let start = search_pos + busy_pos + 7;
-                            if let Some(end_pos) =
-                                engines_section[start..].find(|c: char| c == ',' || c == '}')
-                            {
+                            if let Some(end_pos) = engines_section[start..].find([',', '}']) {
                                 if let Some(val_str) = engines_section.get(start..start + end_pos) {
                                     if let Ok(val) = val_str.trim().parse::<f64>() {
                                         total_busy += val;
@@ -628,7 +622,7 @@ impl GpuCollector {
                 // Extract frequency
                 if let Some(freq_pos) = line.find("\"actual\":") {
                     let start = freq_pos + 9;
-                    if let Some(end_pos) = line[start..].find(|c: char| c == ',' || c == '}') {
+                    if let Some(end_pos) = line[start..].find([',', '}']) {
                         if let Some(val_str) = line.get(start..start + end_pos) {
                             gpu.clock_core_mhz = val_str.trim().parse().unwrap_or(0);
                         }
@@ -639,7 +633,7 @@ impl GpuCollector {
                 if let Some(power_pos) = line.find("\"power\"") {
                     if let Some(gpu_power_pos) = line[power_pos..].find("\"GPU\":") {
                         let start = power_pos + gpu_power_pos + 6;
-                        if let Some(end_pos) = line[start..].find(|c: char| c == ',' || c == '}') {
+                        if let Some(end_pos) = line[start..].find([',', '}']) {
                             if let Some(val_str) = line.get(start..start + end_pos) {
                                 gpu.power_watts =
                                     val_str.trim().parse::<f64>().unwrap_or(0.0) as u32;
@@ -1097,9 +1091,9 @@ impl GpuCollector {
                 if let Some(colon_pos) = json[abs_pos..].find(':') {
                     let after_colon = &json[abs_pos + colon_pos + 1..];
                     let trimmed = after_colon.trim_start();
-                    if trimmed.starts_with('"') {
-                        if let Some(end) = trimmed[1..].find('"') {
-                            let value = &trimmed[1..end + 1];
+                    if let Some(stripped) = trimmed.strip_prefix('"') {
+                        if let Some(end) = stripped.find('"') {
+                            let value = &stripped[..end];
                             // Filter out non-GPU entries
                             if !value.is_empty()
                                 && !value.contains("Display")
