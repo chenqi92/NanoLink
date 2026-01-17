@@ -728,17 +728,27 @@ impl GpuCollector {
                         let gt_path = path.join("gt");
                         if gt_path.exists() {
                             // Try gt0, gt1, etc.
-                            for gt_entry in fs::read_dir(&gt_path).ok()?.flatten() {
+                            'gt_loop: for gt_entry in fs::read_dir(&gt_path).ok()?.flatten() {
                                 let gt_name = gt_entry.file_name();
                                 if gt_name
                                     .to_str()
-                                    .map(|s| s.starts_with("gt"))
+                                    .map(|s| s.starts_with("gt") && !s.contains('.'))
                                     .unwrap_or(false)
                                 {
-                                    let freq_path = gt_entry.path().join("gt_cur_freq_mhz");
-                                    if let Ok(freq) = fs::read_to_string(&freq_path) {
-                                        gpu.clock_core_mhz = freq.trim().parse().unwrap_or(0);
-                                        break;
+                                    // Try multiple frequency file names (different driver versions)
+                                    let freq_files = [
+                                        "rps_cur_freq_mhz", // Modern Intel drivers (Meteor Lake, etc.)
+                                        "rps_act_freq_mhz", // Actual frequency
+                                        "gt_cur_freq_mhz",  // Older drivers
+                                    ];
+                                    for freq_file in &freq_files {
+                                        let freq_path = gt_entry.path().join(freq_file);
+                                        if let Ok(freq) = fs::read_to_string(&freq_path) {
+                                            gpu.clock_core_mhz = freq.trim().parse().unwrap_or(0);
+                                            if gpu.clock_core_mhz > 0 {
+                                                break 'gt_loop;
+                                            }
+                                        }
                                     }
                                 }
                             }

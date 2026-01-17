@@ -1158,21 +1158,104 @@ fn interactive_server_action(
 
         match selection {
             0 => {
-                // Update config
+                // Update config - implement interactive editing directly
+                use dialoguer::{Confirm, Input, Password, Select as DSelect};
+
                 let mut config = Config::load(config_path)?;
-                handle_server_update(
-                    &mut config,
-                    config_path,
-                    Some(format!("{host}:{port}")),
-                    port,
-                    None,
-                    None,
-                    None,
-                    None,
-                )?;
-                // Prompt for restart
-                prompt_restart_after_config_change(lang)?;
-                wait_for_enter(lang);
+                let server = config
+                    .servers
+                    .iter_mut()
+                    .find(|s| s.host == host && s.port == port);
+
+                if let Some(s) = server {
+                    println!();
+                    println!("{}", t("server.current_config", lang));
+                    println!("  Host: {}:{}", s.host, s.port);
+                    println!(
+                        "  Token: {}...",
+                        &s.token.chars().take(8).collect::<String>()
+                    );
+                    println!(
+                        "  Permission: {} ({})",
+                        s.permission,
+                        permission_name(s.permission)
+                    );
+                    println!("  TLS: {}, Verify: {}", s.tls_enabled, s.tls_verify);
+                    println!();
+
+                    // Update host
+                    let update_host = Confirm::with_theme(&theme)
+                        .with_prompt(t("server.update_host", lang))
+                        .default(false)
+                        .interact()?;
+                    if update_host {
+                        let new_host: String = Input::with_theme(&theme)
+                            .with_prompt(t("server.new_host", lang))
+                            .default(format!("{}:{}", s.host, s.port))
+                            .interact_text()?;
+                        let (parsed_host, parsed_port) = parse_host_port(&new_host, s.port);
+                        s.host = parsed_host;
+                        s.port = parsed_port;
+                    }
+
+                    // Update token
+                    let update_token = Confirm::with_theme(&theme)
+                        .with_prompt(t("server.update_token", lang))
+                        .default(false)
+                        .interact()?;
+                    if update_token {
+                        s.token = Password::with_theme(&theme)
+                            .with_prompt(t("server.new_token", lang))
+                            .interact()?;
+                    }
+
+                    // Update permission
+                    let update_perm = Confirm::with_theme(&theme)
+                        .with_prompt(t("server.update_permission", lang))
+                        .default(false)
+                        .interact()?;
+                    if update_perm {
+                        let options: Vec<&str> =
+                            PERMISSION_OPTIONS.iter().map(|(label, _)| *label).collect();
+                        let current_idx = PERMISSION_OPTIONS
+                            .iter()
+                            .position(|(_, v)| *v == s.permission)
+                            .unwrap_or(0);
+                        let perm_selection = DSelect::with_theme(&theme)
+                            .with_prompt(t("server.permission_level", lang))
+                            .items(&options)
+                            .default(current_idx)
+                            .interact()?;
+                        s.permission = PERMISSION_OPTIONS[perm_selection].1;
+                    }
+
+                    // Update TLS
+                    let update_tls = Confirm::with_theme(&theme)
+                        .with_prompt(t("server.update_tls", lang))
+                        .default(false)
+                        .interact()?;
+                    if update_tls {
+                        s.tls_enabled = Confirm::with_theme(&theme)
+                            .with_prompt(t("server.enable_tls", lang))
+                            .default(s.tls_enabled)
+                            .interact()?;
+                        if s.tls_enabled {
+                            s.tls_verify = Confirm::with_theme(&theme)
+                                .with_prompt(t("server.verify_tls", lang))
+                                .default(s.tls_verify)
+                                .interact()?;
+                        }
+                    }
+
+                    save_config(&config, config_path)?;
+                    println!("✓ {}", t("config.saved", lang));
+
+                    // Prompt for restart
+                    prompt_restart_after_config_change(lang)?;
+                } else {
+                    println!("✗ Server not found");
+                    wait_for_enter(lang);
+                }
             }
             1 => {
                 // Test connection

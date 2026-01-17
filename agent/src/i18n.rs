@@ -140,6 +140,24 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("status.config_saved", Lang::Zh) => "配置已保存",
         ("status.config_saved", Lang::En) => "Configuration saved",
 
+        // Server update prompts
+        ("server.current_config", Lang::Zh) => "当前配置:",
+        ("server.current_config", Lang::En) => "Current configuration:",
+        ("server.update_host", Lang::Zh) => "修改服务器地址?",
+        ("server.update_host", Lang::En) => "Update server address?",
+        ("server.new_host", Lang::Zh) => "新地址 (host:port)",
+        ("server.new_host", Lang::En) => "New address (host:port)",
+        ("server.update_token", Lang::Zh) => "修改 Token?",
+        ("server.update_token", Lang::En) => "Update Token?",
+        ("server.new_token", Lang::Zh) => "新 Token",
+        ("server.new_token", Lang::En) => "New Token",
+        ("server.update_permission", Lang::Zh) => "修改权限级别?",
+        ("server.update_permission", Lang::En) => "Update permission level?",
+        ("server.permission_level", Lang::Zh) => "选择权限级别",
+        ("server.permission_level", Lang::En) => "Select permission level",
+        ("server.update_tls", Lang::Zh) => "修改 TLS 设置?",
+        ("server.update_tls", Lang::En) => "Update TLS settings?",
+
         // Confirmations
         ("confirm.delete_server", Lang::Zh) => "确定要删除这个服务器吗?",
         ("confirm.delete_server", Lang::En) => "Are you sure you want to delete this server?",
