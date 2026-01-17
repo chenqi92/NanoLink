@@ -44,10 +44,18 @@ const formatValue = (value: number, unit?: string) => {
     if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`
     if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`
     if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`
-    return `${value} B`
+    return `${value.toFixed(0)} B`
+  }
+  // Auto-adapt bytes per second unit
+  if (unit === "B/s" || unit === "bytes/s") {
+    if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB/s`
+    if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(2)} MB/s`
+    if (value >= 1024) return `${(value / 1024).toFixed(1)} KB/s`
+    return `${value.toFixed(0)} B/s`
   }
   if (unit === "%") return `${value.toFixed(1)}%`
   if (unit === "MB/s") return `${value.toFixed(2)} MB/s`
+  if (unit === "°C") return `${value.toFixed(1)}°C`
   return value.toFixed(2)
 }
 

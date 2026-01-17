@@ -73,6 +73,7 @@
     "memoryUsage": "内存使用率",
     "networkIO": "网络 I/O",
     "diskIO": "磁盘 I/O",
+    "gpuUsage": "GPU 使用率",
     "anomalyDetected": "检测到异常"
   },
   "system": {

@@ -73,6 +73,7 @@
     "memoryUsage": "Memory Usage",
     "networkIO": "Network I/O",
     "diskIO": "Disk I/O",
+    "gpuUsage": "GPU Usage",
     "anomalyDetected": "Anomaly Detected"
   },
   "system": {

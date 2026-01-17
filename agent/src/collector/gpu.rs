@@ -180,6 +180,14 @@ impl GpuCollector {
                 }
             }
 
+            // AMD APU via sysfs (fallback for APUs without ROCm support)
+            // Only try if rocm-smi is not available or didn't find any GPUs
+            if !self.amd_available || gpus.iter().all(|g| g.vendor != "AMD") {
+                if let Some(amd_apu_gpus) = self.collect_amd_apu_sysfs() {
+                    gpus.extend(amd_apu_gpus);
+                }
+            }
+
             // Intel via xpu-smi/intel_gpu_top/sysfs (Linux only)
             if let Some(intel_gpus) = self.collect_intel() {
                 gpus.extend(intel_gpus);
@@ -750,6 +758,240 @@ impl GpuCollector {
         }
 
         if gpus.is_empty() { None } else { Some(gpus) }
+    }
+
+    /// Collect AMD APU/integrated GPU metrics via sysfs
+    /// This is a fallback for AMD APUs (like Radeon 780M) that don't have ROCm support
+    #[cfg(target_os = "linux")]
+    fn collect_amd_apu_sysfs(&self) -> Option<Vec<GpuMetrics>> {
+        use std::fs;
+        use std::path::Path;
+
+        let drm_path = Path::new("/sys/class/drm");
+        if !drm_path.exists() {
+            return None;
+        }
+
+        let mut gpus = Vec::new();
+        let mut index = 0u32;
+
+        let entries = fs::read_dir(drm_path).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+
+            // Look for card devices (card0, card1, etc.)
+            if name.starts_with("card") && !name.contains('-') {
+                let device_path = path.join("device");
+                let vendor_path = device_path.join("vendor");
+
+                // Check if it's an AMD device (vendor 0x1002)
+                if let Ok(vendor) = fs::read_to_string(&vendor_path) {
+                    if vendor.trim() == "0x1002" {
+                        let mut gpu = GpuMetrics {
+                            index,
+                            vendor: "AMD".to_string(),
+                            ..Default::default()
+                        };
+
+                        // Get GPU name from product_name or marketing_name
+                        gpu.name = Self::get_amd_gpu_name(&device_path);
+
+                        // Get current GPU frequency from pp_dpm_sclk
+                        gpu.clock_core_mhz = Self::get_amd_sclk_frequency(&device_path);
+
+                        // Get temperature from hwmon
+                        gpu.temperature = Self::get_amd_temperature(&path);
+
+                        // Get VRAM info (for discrete GPUs/APUs with dedicated memory)
+                        let (vram_used, vram_total) = Self::get_amd_vram_info(&device_path);
+                        gpu.memory_used = vram_used;
+                        gpu.memory_total = vram_total;
+
+                        // Get GPU busy percentage if available
+                        gpu.usage_percent = Self::get_amd_gpu_busy(&device_path);
+
+                        // Get power usage if available
+                        gpu.power_watts = Self::get_amd_power(&path);
+
+                        gpus.push(gpu);
+                        index += 1;
+                    }
+                }
+            }
+        }
+
+        if gpus.is_empty() { None } else { Some(gpus) }
+    }
+
+    /// Get AMD GPU name from sysfs
+    #[cfg(target_os = "linux")]
+    fn get_amd_gpu_name(device_path: &std::path::Path) -> String {
+        use std::fs;
+
+        // Try marketing_name first (more user-friendly)
+        if let Ok(name) = fs::read_to_string(device_path.join("product_name")) {
+            let name = name.trim();
+            if !name.is_empty() {
+                return name.to_string();
+            }
+        }
+
+        // Try PCI subsystem info
+        if let Ok(device_id) = fs::read_to_string(device_path.join("device")) {
+            let device_id = device_id.trim();
+            // Map common AMD APU device IDs to names
+            return match device_id {
+                "0x15bf" => "AMD Radeon 780M".to_string(),
+                "0x15c8" => "AMD Radeon 760M".to_string(),
+                "0x164c" => "AMD Radeon 680M".to_string(),
+                "0x164d" => "AMD Radeon 660M".to_string(),
+                "0x1681" => "AMD Radeon Vega 8 Graphics".to_string(),
+                "0x1636" => "AMD Radeon Vega 7 Graphics".to_string(),
+                _ => format!("AMD GPU ({})", device_id),
+            };
+        }
+
+        "AMD Integrated Graphics".to_string()
+    }
+
+    /// Get current GPU SCLK frequency from pp_dpm_sclk
+    #[cfg(target_os = "linux")]
+    fn get_amd_sclk_frequency(device_path: &std::path::Path) -> u64 {
+        use std::fs;
+
+        let sclk_path = device_path.join("pp_dpm_sclk");
+        if let Ok(content) = fs::read_to_string(&sclk_path) {
+            // Format: "0: 500Mhz\n1: 800Mhz *\n2: 1800Mhz"
+            // The active frequency has a '*' marker
+            for line in content.lines() {
+                if line.contains('*') {
+                    // Extract frequency value
+                    if let Some(freq_str) = line.split(':').nth(1) {
+                        let freq_str = freq_str.trim().trim_end_matches('*').trim();
+                        if let Some(mhz_pos) = freq_str.to_lowercase().find("mhz") {
+                            if let Ok(freq) = freq_str[..mhz_pos].trim().parse::<u64>() {
+                                return freq;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        0
+    }
+
+    /// Get AMD GPU temperature from hwmon
+    #[cfg(target_os = "linux")]
+    fn get_amd_temperature(card_path: &std::path::Path) -> f64 {
+        use std::fs;
+
+        // First try hwmon in device path
+        let device_path = card_path.join("device");
+        let hwmon_path = device_path.join("hwmon");
+
+        if hwmon_path.exists() {
+            if let Ok(entries) = fs::read_dir(&hwmon_path) {
+                for entry in entries.flatten() {
+                    // Try edge temperature (temp1_input is typically edge temp for AMD)
+                    let temp_path = entry.path().join("temp1_input");
+                    if let Ok(temp_str) = fs::read_to_string(&temp_path) {
+                        if let Ok(temp_mc) = temp_str.trim().parse::<i64>() {
+                            return temp_mc as f64 / 1000.0;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: scan all hwmon devices for amdgpu
+        let hwmon_base = std::path::Path::new("/sys/class/hwmon");
+        if let Ok(entries) = fs::read_dir(hwmon_base) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Ok(name) = fs::read_to_string(path.join("name")) {
+                    if name.trim() == "amdgpu" {
+                        if let Ok(temp_str) = fs::read_to_string(path.join("temp1_input")) {
+                            if let Ok(temp_mc) = temp_str.trim().parse::<i64>() {
+                                return temp_mc as f64 / 1000.0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        0.0
+    }
+
+    /// Get AMD VRAM info
+    #[cfg(target_os = "linux")]
+    fn get_amd_vram_info(device_path: &std::path::Path) -> (u64, u64) {
+        use std::fs;
+
+        let mut used = 0u64;
+        let mut total = 0u64;
+
+        // Try mem_info_vram_used and mem_info_vram_total
+        if let Ok(used_str) = fs::read_to_string(device_path.join("mem_info_vram_used")) {
+            used = used_str.trim().parse().unwrap_or(0);
+        }
+        if let Ok(total_str) = fs::read_to_string(device_path.join("mem_info_vram_total")) {
+            total = total_str.trim().parse().unwrap_or(0);
+        }
+
+        // For APUs, VRAM might be reported as GTT (graphics translation table) memory
+        if total == 0 {
+            if let Ok(total_str) = fs::read_to_string(device_path.join("mem_info_gtt_total")) {
+                total = total_str.trim().parse().unwrap_or(0);
+            }
+            if let Ok(used_str) = fs::read_to_string(device_path.join("mem_info_gtt_used")) {
+                used = used_str.trim().parse().unwrap_or(0);
+            }
+        }
+
+        (used, total)
+    }
+
+    /// Get AMD GPU busy percentage
+    #[cfg(target_os = "linux")]
+    fn get_amd_gpu_busy(device_path: &std::path::Path) -> f64 {
+        use std::fs;
+
+        // Try gpu_busy_percent
+        let busy_path = device_path.join("gpu_busy_percent");
+        if let Ok(busy_str) = fs::read_to_string(&busy_path) {
+            if let Ok(busy) = busy_str.trim().parse::<f64>() {
+                return busy;
+            }
+        }
+
+        0.0
+    }
+
+    /// Get AMD GPU power usage from hwmon
+    #[cfg(target_os = "linux")]
+    fn get_amd_power(card_path: &std::path::Path) -> u32 {
+        use std::fs;
+
+        let device_path = card_path.join("device");
+        let hwmon_path = device_path.join("hwmon");
+
+        if hwmon_path.exists() {
+            if let Ok(entries) = fs::read_dir(&hwmon_path) {
+                for entry in entries.flatten() {
+                    // power1_average is in microwatts
+                    let power_path = entry.path().join("power1_average");
+                    if let Ok(power_str) = fs::read_to_string(&power_path) {
+                        if let Ok(power_uw) = power_str.trim().parse::<u64>() {
+                            return (power_uw / 1_000_000) as u32; // Convert to watts
+                        }
+                    }
+                }
+            }
+        }
+
+        0
     }
 
     fn parse_mib_to_bytes(mib_str: &str) -> u64 {

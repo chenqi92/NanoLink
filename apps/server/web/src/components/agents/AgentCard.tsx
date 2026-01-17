@@ -45,7 +45,7 @@ export function AgentCard({ agent, metrics, onOpenShell, onViewMetrics }: AgentC
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">v{agent.version}</Badge>
+            <Badge variant="secondary">{agent.version ? `v${agent.version}` : '--'}</Badge>
             {onViewMetrics && (
               <Button size="sm" variant="outline" onClick={() => onViewMetrics(agent.id)}>
                 <BarChart3 className="mr-1 h-4 w-4" />
@@ -53,7 +53,13 @@ export function AgentCard({ agent, metrics, onOpenShell, onViewMetrics }: AgentC
               </Button>
             )}
             {onOpenShell && (
-              <Button size="sm" variant="outline" onClick={() => onOpenShell(agent.id)}>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={() => onOpenShell(agent.id)}
+                disabled={agent.permission === 0}
+                title={agent.permission === 0 ? 'Read-only permission - shell access disabled' : ''}
+              >
                 <Terminal className="mr-1 h-4 w-4" />
                 {t("agent.openShell")}
               </Button>

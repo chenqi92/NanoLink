@@ -73,8 +73,8 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
       const totalTx = m.networks?.reduce((sum, n) => sum + (n.txBytesPerSec || 0), 0) || 0
       return {
         timestamp: m.timestamp,
-        value: totalRx / (1024 * 1024), // MB/s
-        value2: totalTx / (1024 * 1024), // MB/s
+        value: totalRx, // Raw bytes, will be formatted by chart
+        value2: totalTx,
       }
     })
   }, [history])
@@ -85,10 +85,40 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
       const totalWrite = m.disks?.reduce((sum, d) => sum + (d.writeBytesPerSec || 0), 0) || 0
       return {
         timestamp: m.timestamp,
-        value: totalRead / (1024 * 1024), // MB/s
-        value2: totalWrite / (1024 * 1024), // MB/s
+        value: totalRead, // Raw bytes, will be formatted by chart
+        value2: totalWrite,
       }
     })
+  }, [history])
+
+  // GPU usage data - aggregate all GPUs or show first GPU
+  const gpuData: ChartDataPoint[] = useMemo(() => {
+    // Check if any metrics have GPU data
+    const hasGpu = history.some((m) => m.gpus && m.gpus.length > 0)
+    if (!hasGpu) return []
+    
+    return history.map((m) => {
+      if (!m.gpus || m.gpus.length === 0) {
+        return { timestamp: m.timestamp, value: 0 }
+      }
+      // Use average GPU usage if multiple GPUs
+      const avgUsage = m.gpus.reduce((sum, g) => sum + (g.usagePercent || 0), 0) / m.gpus.length
+      const avgTemp = m.gpus.reduce((sum, g) => sum + (g.temperature || 0), 0) / m.gpus.length
+      return {
+        timestamp: m.timestamp,
+        value: avgUsage,
+        value2: avgTemp, // Temperature as secondary value
+      }
+    })
+  }, [history])
+
+  // Get GPU name for chart title
+  const gpuName = useMemo(() => {
+    const latestWithGpu = [...history].reverse().find((m) => m.gpus && m.gpus.length > 0)
+    if (latestWithGpu?.gpus?.[0]?.name) {
+      return latestWithGpu.gpus[0].name
+    }
+    return null
   }, [history])
 
   // Detect anomalies (CPU > 90% or Memory > 90%)
@@ -213,13 +243,29 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
           <MetricsChart
             data={diskData}
             title={t("metrics.diskIO")}
-            unit="MB/s"
+            unit="B/s"
             color="#06b6d4"
             color2="#ec4899"
             height={220}
             label="Read"
             label2="Write"
           />
+          {/* GPU Usage Chart - only shown when GPU data is available */}
+          {gpuData.length > 0 && (
+            <MetricsChart
+              data={gpuData}
+              title={gpuName ? `${t("metrics.gpuUsage")} (${gpuName})` : t("metrics.gpuUsage")}
+              unit="%"
+              color="#f97316"
+              color2="#ef4444"
+              threshold={90}
+              thresholdLabel="90%"
+              showArea
+              height={220}
+              label={t("metrics.usage")}
+              label2={t("metrics.temperature")}
+            />
+          )}
         </div>
       )}
     </div>
