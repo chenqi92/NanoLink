@@ -60,8 +60,12 @@ type StorageConfig struct {
 
 // MetricsConfig holds metrics configuration
 type MetricsConfig struct {
-	RetentionDays int `mapstructure:"retention_days"`
-	MaxAgents     int `mapstructure:"max_agents"`
+	RetentionDays       int  `mapstructure:"retention_days"`        // Raw data retention (default 7 days)
+	HourlyRetentionDays int  `mapstructure:"hourly_retention_days"` // Hourly data retention (default 30 days)
+	DailyRetentionDays  int  `mapstructure:"daily_retention_days"`  // Daily data retention (default 365 days)
+	MaxAgents           int  `mapstructure:"max_agents"`
+	PersistToDB         bool `mapstructure:"persist_to_db"`      // Enable DB persistence (default true)
+	MaxMemoryHistory    int  `mapstructure:"max_memory_history"` // Max entries in memory per agent (default 600)
 }
 
 // DatabaseConfig holds database configuration
@@ -126,8 +130,12 @@ func Default() *Config {
 			Path: "./data/nanolink.db",
 		},
 		Metrics: MetricsConfig{
-			RetentionDays: 7,
-			MaxAgents:     100,
+			RetentionDays:       7,
+			HourlyRetentionDays: 30,
+			DailyRetentionDays:  365,
+			MaxAgents:           100,
+			PersistToDB:         true,
+			MaxMemoryHistory:    600,
 		},
 		Database: DatabaseConfig{
 			Type: "sqlite",
@@ -165,7 +173,11 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("storage.type", "memory")
 	viper.SetDefault("storage.path", "./data/nanolink.db")
 	viper.SetDefault("metrics.retention_days", 7)
+	viper.SetDefault("metrics.hourly_retention_days", 30)
+	viper.SetDefault("metrics.daily_retention_days", 365)
 	viper.SetDefault("metrics.max_agents", 100)
+	viper.SetDefault("metrics.persist_to_db", true)
+	viper.SetDefault("metrics.max_memory_history", 600)
 
 	// Environment variable support
 	viper.SetEnvPrefix("NANOLINK")

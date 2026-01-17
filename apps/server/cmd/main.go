@@ -66,6 +66,26 @@ func main() {
 	metricsService := service.NewMetricsService(sugar)
 	agentService := service.NewAgentService(sugar, metricsService)
 
+	// Initialize metrics persistence if enabled
+	// Default to true if not explicitly set
+	var metricsPersistence *service.MetricsPersistence
+	persistEnabled := cfg.Metrics.PersistToDB
+	// If config file was not loaded, default to enabled
+	if cfg.Metrics.RetentionDays == 0 {
+		persistEnabled = true
+		cfg.Metrics.RetentionDays = 7
+		cfg.Metrics.HourlyRetentionDays = 30
+		cfg.Metrics.DailyRetentionDays = 365
+	}
+	sugar.Infof("Metrics persistence config: enabled=%v, retention=%d days", persistEnabled, cfg.Metrics.RetentionDays)
+	if persistEnabled {
+		metricsPersistence = service.NewMetricsPersistence(database.GetDB(), cfg.Metrics, sugar)
+		metricsService.SetPersistence(metricsPersistence)
+		metricsPersistence.Start()
+		defer metricsPersistence.Stop()
+		sugar.Info("Metrics persistence enabled")
+	}
+
 	// Initialize auth services
 	jwtExpire := time.Duration(cfg.JWT.ExpireHour) * time.Hour
 	if jwtExpire == 0 {
@@ -107,6 +127,9 @@ func main() {
 
 		// Health check (public)
 		h := handler.NewHandlerWithPermissions(agentService, metricsService, permService, sugar)
+		if metricsPersistence != nil {
+			h.SetMetricsPersistence(metricsPersistence)
+		}
 		api.GET("/health", h.Health)
 
 		// Protected routes (require authentication)

@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 	"github.com/gin-gonic/gin"
@@ -11,10 +12,11 @@ import (
 
 // Handler handles HTTP API requests
 type Handler struct {
-	agentService   *service.AgentService
-	metricsService *service.MetricsService
-	permService    *service.PermissionService
-	logger         *zap.SugaredLogger
+	agentService       *service.AgentService
+	metricsService     *service.MetricsService
+	permService        *service.PermissionService
+	metricsPersistence *service.MetricsPersistence
+	logger             *zap.SugaredLogger
 }
 
 // NewHandler creates a new handler
@@ -34,6 +36,11 @@ func NewHandlerWithPermissions(as *service.AgentService, ms *service.MetricsServ
 		permService:    ps,
 		logger:         logger,
 	}
+}
+
+// SetMetricsPersistence sets the metrics persistence service for DB queries
+func (h *Handler) SetMetricsPersistence(mp *service.MetricsPersistence) {
+	h.metricsPersistence = mp
 }
 
 // Health returns health status
@@ -224,35 +231,114 @@ func (h *Handler) GetAllMetrics(c *gin.Context) {
 }
 
 // GetMetricsHistory returns historical metrics
+// Query params:
+// - agentId: required agent ID
+// - limit: max number of records (default 60, for memory-only queries)
+// - start: start timestamp (ISO8601 or Unix ms) for DB queries
+// - end: end timestamp (ISO8601 or Unix ms) for DB queries
+// - interval: aggregation interval (1m, 5m, 1h, 1d, auto)
 func (h *Handler) GetMetricsHistory(c *gin.Context) {
 	agentID := c.Query("agentId")
 	limitStr := c.DefaultQuery("limit", "60")
+	startStr := c.Query("start")
+	endStr := c.Query("end")
+	interval := c.DefaultQuery("interval", "auto")
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
 		limit = 60
 	}
 
-	if agentID != "" {
-		// Check permission if service is available
-		if h.permService != nil {
-			user := GetCurrentUser(c)
-			if user != nil && !user.IsSuperAdmin {
-				canAccess, err := h.permService.CanUserAccessAgent(user.ID, agentID)
-				if err != nil || !canAccess {
-					c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
-					return
-				}
+	if agentID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "agentId is required"})
+		return
+	}
+
+	// Check permission if service is available
+	if h.permService != nil {
+		user := GetCurrentUser(c)
+		if user != nil && !user.IsSuperAdmin {
+			canAccess, err := h.permService.CanUserAccessAgent(user.ID, agentID)
+			if err != nil || !canAccess {
+				c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+				return
 			}
 		}
-
-		history := h.metricsService.GetMetricsHistory(agentID, limit)
-		c.JSON(http.StatusOK, history)
-	} else {
-		history := h.metricsService.GetAllMetricsHistory(limit)
-		// TODO: Filter by visible agents if needed
-		c.JSON(http.StatusOK, history)
 	}
+
+	// If start/end provided and persistence is available, query from DB
+	if startStr != "" && endStr != "" && h.metricsPersistence != nil {
+		start, err := parseTimestamp(startStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid start timestamp"})
+			return
+		}
+
+		end, err := parseTimestamp(endStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid end timestamp"})
+			return
+		}
+
+		// Query aggregated data from DB
+		history, err := h.metricsPersistence.QueryAggregated(agentID, start, end, interval)
+		if err != nil {
+			h.logger.Errorf("Failed to query metrics history: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query history"})
+			return
+		}
+
+		// Convert to frontend-compatible format
+		result := make([]gin.H, 0, len(history))
+		for _, m := range history {
+			result = append(result, gin.H{
+				"timestamp": m.Timestamp,
+				"agentId":   m.AgentID,
+				"cpu":       gin.H{"usagePercent": m.CPUPercent},
+				"memory":    gin.H{"used": uint64(m.MemPercent * 100), "total": 10000}, // Percentage as ratio
+				"networks": []gin.H{
+					{"interface": "total", "rxBytesPerSec": m.NetRxPS, "txBytesPerSec": m.NetTxPS},
+				},
+				"disks": []gin.H{
+					{"device": "total", "readBytesPerSec": m.DiskReadPS, "writeBytesPerSec": m.DiskWritePS},
+				},
+				"gpus":        []gin.H{{"usagePercent": m.GPUPercent}},
+				"loadAverage": []float64{m.LoadAvg1},
+			})
+		}
+
+		c.JSON(http.StatusOK, result)
+		return
+	}
+
+	// Fall back to in-memory history
+	history := h.metricsService.GetMetricsHistory(agentID, limit)
+	c.JSON(http.StatusOK, history)
+}
+
+// parseTimestamp parses a timestamp string (ISO8601 or Unix milliseconds)
+func parseTimestamp(s string) (time.Time, error) {
+	// Try Unix milliseconds first
+	if ms, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return time.UnixMilli(ms), nil
+	}
+
+	// Try ISO8601 formats
+	formats := []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	}
+
+	for _, format := range formats {
+		if t, err := time.Parse(format, s); err == nil {
+			return t, nil
+		}
+	}
+
+	return time.Time{}, nil // ignore: unable to parse timestamp
 }
 
 // GetSummary returns a summary of all metrics

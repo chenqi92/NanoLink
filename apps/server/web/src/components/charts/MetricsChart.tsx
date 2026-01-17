@@ -23,6 +23,7 @@ export interface MetricsChartProps {
   data: ChartDataPoint[]
   title: string
   unit?: string
+  unit2?: string  // Unit for value2 (e.g. "°C" for temperature)
   color?: string
   color2?: string
   threshold?: number
@@ -63,6 +64,7 @@ export function MetricsChart({
   data,
   title,
   unit = "%",
+  unit2,
   color = "#3b82f6",
   color2 = "#22c55e",
   threshold,
@@ -87,7 +89,9 @@ export function MetricsChart({
   const textColor = isDark ? "#a1a1aa" : "#71717a"
   const bgColor = isDark ? "#09090b" : "#ffffff"
 
-  const CustomTooltip = ({ active, payload, label: tooltipLabel }: { active?: boolean; payload?: Array<{ value: number; dataKey: string; color: string }>; label?: string }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const renderTooltip = (props: any) => {
+    const { active, payload, label: tooltipLabel } = props
     if (!active || !payload) return null
     return (
       <div
@@ -95,11 +99,16 @@ export function MetricsChart({
         style={{ backgroundColor: bgColor }}
       >
         <p className="text-xs text-[var(--color-muted-foreground)] mb-1">{tooltipLabel}</p>
-        {payload.map((entry, i) => (
-          <p key={i} className="text-sm font-medium" style={{ color: entry.color }}>
-            {entry.dataKey === "value" ? label : label2}: {formatValue(entry.value, unit)}
-          </p>
-        ))}
+        {payload.map((entry: { value: number; dataKey: string; color: string }, i: number) => {
+          const isValue2 = entry.dataKey === "value2"
+          const displayUnit = isValue2 && unit2 ? unit2 : unit
+          const displayLabel = isValue2 ? (label2 || "Value 2") : label
+          return (
+            <p key={i} className="text-sm font-medium" style={{ color: entry.color }}>
+              {displayLabel}: {formatValue(entry.value, displayUnit)}
+            </p>
+          )
+        })}
       </div>
     )
   }
@@ -127,7 +136,7 @@ export function MetricsChart({
             tickFormatter={(v) => formatValue(v, unit)}
             width={50}
           />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={renderTooltip} />
           {threshold && (
             <ReferenceLine
               y={threshold}

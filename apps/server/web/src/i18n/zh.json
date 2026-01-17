@@ -74,7 +74,13 @@
     "networkIO": "网络 I/O",
     "diskIO": "磁盘 I/O",
     "gpuUsage": "GPU 使用率",
-    "anomalyDetected": "检测到异常"
+    "anomalyDetected": "检测到异常",
+    "custom": "自定义",
+    "startDate": "开始时间",
+    "endDate": "结束时间",
+    "apply": "应用",
+    "realtime": "实时",
+    "dataPoints": "数据点"
   },
   "system": {
     "info": "系统信息",

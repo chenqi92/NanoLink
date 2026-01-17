@@ -148,6 +148,9 @@ type MetricsService struct {
 
 	// Broadcast callback for real-time push to dashboard clients
 	broadcastCallback func(agentID string, metrics interface{})
+
+	// Persistence service for database storage
+	persistence *MetricsPersistence
 }
 
 // NewMetricsService creates a new metrics service
@@ -158,6 +161,13 @@ func NewMetricsService(logger *zap.SugaredLogger) *MetricsService {
 		maxHistory: 600, // 10 minutes at 1-second intervals
 		logger:     logger,
 	}
+}
+
+// SetPersistence sets the persistence service for database storage
+func (s *MetricsService) SetPersistence(p *MetricsPersistence) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.persistence = p
 }
 
 // StoreMetrics stores metrics for an agent
@@ -188,6 +198,15 @@ func (s *MetricsService) StoreMetrics(agentID string, data *MetricsData) {
 	}
 
 	s.history[agentID] = append(history, data)
+
+	// Persist to database (async to not block)
+	if s.persistence != nil {
+		go func(aid string, d *MetricsData) {
+			if err := s.persistence.SaveMetrics(aid, d); err != nil {
+				s.logger.Warnf("Failed to persist metrics for %s: %v", aid, err)
+			}
+		}(agentID, data)
+	}
 }
 
 // SetBroadcastCallback sets the callback for broadcasting metrics to dashboard clients
@@ -609,10 +628,24 @@ func (s *MetricsService) addToHistory(agentID string, data *MetricsData) {
 	}
 
 	// Make a copy for history
-	copy := *data
+	dataCopy := *data
 	history := s.history[agentID]
 	if len(history) >= s.maxHistory {
 		history = history[1:]
 	}
-	s.history[agentID] = append(history, &copy)
+	s.history[agentID] = append(history, &dataCopy)
+
+	// Broadcast to dashboard clients if callback is set
+	if s.broadcastCallback != nil {
+		go s.broadcastCallback(agentID, &dataCopy)
+	}
+
+	// Persist to database (async to not block)
+	if s.persistence != nil {
+		go func(aid string, d *MetricsData) {
+			if err := s.persistence.SaveMetrics(aid, d); err != nil {
+				s.logger.Warnf("Failed to persist metrics for %s: %v", aid, err)
+			}
+		}(agentID, &dataCopy)
+	}
 }

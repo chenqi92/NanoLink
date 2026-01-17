@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { ArrowLeft, RefreshCw, Clock, AlertTriangle } from "lucide-react"
+import { ArrowLeft, RefreshCw, Calendar, AlertTriangle, Wifi, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { MetricsChart, type ChartDataPoint } from "./MetricsChart"
 import { api, type Metrics } from "@/lib/api"
+import { useData } from "@/contexts/DataContext"
 
 interface AgentMetricsViewProps {
   agentId: string
@@ -11,41 +12,146 @@ interface AgentMetricsViewProps {
   onBack: () => void
 }
 
-type TimeRange = "5m" | "10m" | "30m" | "1h"
+type TimeRange = "5m" | "10m" | "30m" | "1h" | "6h" | "1d" | "7d" | "30d" | "custom"
 
-const timeRangeToLimit: Record<TimeRange, number> = {
-  "5m": 300,
-  "10m": 600,
-  "30m": 1800,
-  "1h": 3600,
+// Map time range to milliseconds for API query
+const timeRangeToMs: Record<Exclude<TimeRange, "custom">, number> = {
+  "5m": 5 * 60 * 1000,
+  "10m": 10 * 60 * 1000,
+  "30m": 30 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
+  "6h": 6 * 60 * 60 * 1000,
+  "1d": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
 }
+
+// Map time range to aggregation interval
+const timeRangeToInterval: Record<Exclude<TimeRange, "custom">, string> = {
+  "5m": "auto",
+  "10m": "auto",
+  "30m": "1m",
+  "1h": "1m",
+  "6h": "5m",
+  "1d": "15m",
+  "7d": "1h",
+  "30d": "1h",
+}
+
+// Max history points to keep in memory for real-time mode
+const MAX_REALTIME_HISTORY = 300
 
 export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsViewProps) {
   const { t } = useTranslation()
+  const { metrics: wsMetrics, wsStatus } = useData()
+  
   const [history, setHistory] = useState<Metrics[]>([])
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<TimeRange>("10m")
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [showCustomRange, setShowCustomRange] = useState(false)
+  const [customStart, setCustomStart] = useState("")
+  const [customEnd, setCustomEnd] = useState("")
+  
+  // Track if we're in real-time mode (using WebSocket data)
+  const isRealtimeMode = autoRefresh && timeRange !== "custom" && (timeRange === "5m" || timeRange === "10m")
+  
+  // Ref to track last processed metrics timestamp to avoid duplicates
+  const lastMetricsTimestamp = useRef<string | null>(null)
 
+  // Handle real-time WebSocket metrics updates
+  useEffect(() => {
+    if (!isRealtimeMode) return
+    
+    const currentMetrics = wsMetrics[agentId]
+    if (!currentMetrics) {
+      console.log('[Metrics] No metrics for agent:', agentId)
+      return
+    }
+    
+    // Generate unique key from timestamp or CPU usage change
+    let metricsKey: string
+    if (typeof currentMetrics.timestamp === 'string' && currentMetrics.timestamp) {
+      metricsKey = currentMetrics.timestamp
+    } else {
+      // Use a combination of values that change frequently as key
+      const cpuUsage = currentMetrics.cpu?.usagePercent ?? 0
+      const memUsage = currentMetrics.memory?.used ?? 0
+      metricsKey = `${cpuUsage.toFixed(2)}-${memUsage}`
+    }
+    
+    // Check if this is a new metrics update
+    if (lastMetricsTimestamp.current === metricsKey) {
+      return
+    }
+    
+    console.log('[Metrics] New data point, key:', metricsKey, 'prev:', lastMetricsTimestamp.current)
+    lastMetricsTimestamp.current = metricsKey
+    
+    // Add new metrics to history
+    setHistory(prev => {
+      const newHistory = [...prev, currentMetrics]
+      // Keep only last N entries
+      if (newHistory.length > MAX_REALTIME_HISTORY) {
+        return newHistory.slice(-MAX_REALTIME_HISTORY)
+      }
+      return newHistory
+    })
+    setLoading(false)
+  }, [wsMetrics, agentId, isRealtimeMode])
+
+  // Fetch historical data from database
   const fetchHistory = useCallback(async () => {
+    if (isRealtimeMode) {
+      // In real-time mode, don't fetch from DB, just wait for WebSocket
+      setLoading(false)
+      return
+    }
+    
     try {
-      const limit = timeRangeToLimit[timeRange]
-      const response = await api.get<Metrics[]>(`/metrics/history?agentId=${agentId}&limit=${limit}`)
+      setLoading(true)
+      let start: number
+      let end: number
+      let interval: string
+
+      if (timeRange === "custom" && customStart && customEnd) {
+        start = new Date(customStart).getTime()
+        end = new Date(customEnd).getTime()
+        const rangeMs = end - start
+        if (rangeMs <= 60 * 60 * 1000) interval = "1m"
+        else if (rangeMs <= 24 * 60 * 60 * 1000) interval = "15m"
+        else interval = "1h"
+      } else if (timeRange !== "custom") {
+        const now = Date.now()
+        const rangeMs = timeRangeToMs[timeRange]
+        start = now - rangeMs
+        end = now
+        interval = timeRangeToInterval[timeRange]
+      } else {
+        return
+      }
+      
+      const response = await api.get<Metrics[]>(
+        `/metrics/history?agentId=${agentId}&start=${start}&end=${end}&interval=${interval}`
+      )
       setHistory(response)
     } catch (e) {
       console.error("Failed to fetch metrics history:", e)
     } finally {
       setLoading(false)
     }
-  }, [agentId, timeRange])
+  }, [agentId, timeRange, customStart, customEnd, isRealtimeMode])
 
+  // Fetch historical data when switching to history mode or changing time range
   useEffect(() => {
-    fetchHistory()
-    if (autoRefresh) {
-      const interval = setInterval(fetchHistory, 2000)
-      return () => clearInterval(interval)
+    if (!isRealtimeMode) {
+      fetchHistory()
+    } else {
+      // Reset history when switching to real-time mode
+      setHistory([])
+      lastMetricsTimestamp.current = null
     }
-  }, [fetchHistory, autoRefresh])
+  }, [isRealtimeMode, fetchHistory])
 
   // Transform data for charts
   const cpuData: ChartDataPoint[] = useMemo(() => {
@@ -147,20 +253,34 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
           </Button>
           <div>
             <h2 className="text-xl font-semibold">{agentName}</h2>
-            <p className="text-sm text-[var(--color-muted-foreground)]">
-              {t("metrics.historicalData")} - {history.length} data points
+            <p className="text-sm text-[var(--color-muted-foreground)] flex items-center gap-2">
+              {isRealtimeMode ? (
+                <>
+                  {wsStatus === 'connected' ? (
+                    <Wifi className="h-3 w-3 text-green-500" />
+                  ) : (
+                    <WifiOff className="h-3 w-3 text-red-500" />
+                  )}
+                  <span>{t("metrics.realtime") || "实时"} - {history.length} {t("metrics.dataPoints") || "数据点"}</span>
+                </>
+              ) : (
+                <span>{t("metrics.historicalData")} - {history.length} {t("metrics.dataPoints") || "数据点"}</span>
+              )}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* Time Range Selector */}
+          {/* Time Range Selector - Short ranges */}
           <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] p-1">
-            {(["5m", "10m", "30m", "1h"] as TimeRange[]).map((range) => (
+            {(["5m", "10m", "30m", "1h", "6h"] as TimeRange[]).map((range) => (
               <button
                 key={range}
-                onClick={() => setTimeRange(range)}
-                className={`px-3 py-1 text-sm rounded transition-colors ${
-                  timeRange === range
+                onClick={() => {
+                  setTimeRange(range)
+                  setShowCustomRange(false)
+                }}
+                className={`px-2 py-1 text-xs sm:text-sm rounded transition-colors ${
+                  timeRange === range && !showCustomRange
                     ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
                     : "hover:bg-[var(--color-accent)]"
                 }`}
@@ -169,6 +289,36 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
               </button>
             ))}
           </div>
+          {/* Long ranges */}
+          <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] p-1">
+            {(["1d", "7d", "30d"] as TimeRange[]).map((range) => (
+              <button
+                key={range}
+                onClick={() => {
+                  setTimeRange(range)
+                  setShowCustomRange(false)
+                  setAutoRefresh(false) // Disable auto-refresh for long ranges
+                }}
+                className={`px-2 py-1 text-xs sm:text-sm rounded transition-colors ${
+                  timeRange === range && !showCustomRange
+                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                    : "hover:bg-[var(--color-accent)]"
+                }`}
+              >
+                {range}
+              </button>
+            ))}
+          </div>
+          {/* Custom Date Range */}
+          <Button
+            variant={showCustomRange ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowCustomRange(!showCustomRange)}
+            className="gap-1"
+          >
+            <Calendar className="h-4 w-4" />
+            <span className="hidden sm:inline">{t("metrics.custom") || "自定义"}</span>
+          </Button>
           {/* Auto Refresh Toggle */}
           <Button
             variant={autoRefresh ? "default" : "outline"}
@@ -179,11 +329,44 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
             <RefreshCw className={`h-4 w-4 ${autoRefresh ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">Auto</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={fetchHistory}>
-            <Clock className="h-4 w-4" />
-          </Button>
         </div>
       </div>
+
+      {/* Custom Date Range Picker */}
+      {showCustomRange && (
+        <div className="flex flex-wrap items-center gap-3 p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-[var(--color-muted-foreground)]">{t("metrics.startDate") || "开始"}</label>
+            <input
+              type="datetime-local"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="px-2 py-1 text-sm rounded border border-[var(--color-border)] bg-transparent"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-[var(--color-muted-foreground)]">{t("metrics.endDate") || "结束"}</label>
+            <input
+              type="datetime-local"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="px-2 py-1 text-sm rounded border border-[var(--color-border)] bg-transparent"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              if (customStart && customEnd) {
+                setTimeRange("custom")
+                fetchHistory()
+              }
+            }}
+            disabled={!customStart || !customEnd}
+          >
+            {t("metrics.apply") || "应用"}
+          </Button>
+        </div>
+      )}
 
       {/* Anomaly Alert */}
       {anomalies.length > 0 && (
@@ -233,7 +416,7 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
           <MetricsChart
             data={networkData}
             title={t("metrics.networkIO")}
-            unit="MB/s"
+            unit="B/s"
             color="#22c55e"
             color2="#f59e0b"
             height={220}
@@ -256,6 +439,7 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
               data={gpuData}
               title={gpuName ? `${t("metrics.gpuUsage")} (${gpuName})` : t("metrics.gpuUsage")}
               unit="%"
+              unit2="°C"
               color="#f97316"
               color2="#ef4444"
               threshold={90}

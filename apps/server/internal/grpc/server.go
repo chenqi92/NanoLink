@@ -1064,12 +1064,12 @@ type RealtimeData struct {
 	NPUUsage     []service.NPUData
 }
 
-func convertRealtimeMetrics(r *pb.RealtimeMetrics) *RealtimeData {
+func convertRealtimeMetrics(r *pb.RealtimeMetrics) *service.RealtimeUpdate {
 	if r == nil {
 		return nil
 	}
 
-	data := &RealtimeData{
+	data := &service.RealtimeUpdate{
 		CPUUsage:     r.CpuUsagePercent,
 		CPUPerCore:   r.CpuPerCore,
 		CPUTemp:      r.CpuTemperature,
