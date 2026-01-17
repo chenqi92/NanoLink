@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"log"
+	"os"
 
 	"github.com/spf13/viper"
 )
@@ -183,16 +184,30 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("superadmin.username", "NANOLINK_ADMIN_USERNAME")
 	_ = viper.BindEnv("superadmin.password", "NANOLINK_ADMIN_PASSWORD")
 
-	if err := viper.ReadInConfig(); err != nil {
-		return Default(), err
-	}
+	// Try to read config file (optional - environment variables take precedence)
+	configErr := viper.ReadInConfig()
 
+	// Always unmarshal to pick up environment variables and defaults
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return Default(), err
 	}
 
-	return &cfg, nil
+	// Manually override with environment variables (viper's nested struct handling is unreliable)
+	if username := os.Getenv("NANOLINK_ADMIN_USERNAME"); username != "" {
+		cfg.SuperAdmin.Username = username
+	}
+	if password := os.Getenv("NANOLINK_ADMIN_PASSWORD"); password != "" {
+		cfg.SuperAdmin.Password = password
+	}
+	if jwtSecret := os.Getenv("NANOLINK_JWT_SECRET"); jwtSecret != "" {
+		cfg.JWT.Secret = jwtSecret
+	}
+	if dbPath := os.Getenv("NANOLINK_DATABASE_PATH"); dbPath != "" {
+		cfg.Database.Path = dbPath
+	}
+
+	return &cfg, configErr
 }
 
 // ValidateAndSecure performs security validations and auto-generates missing secrets

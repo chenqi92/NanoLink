@@ -41,7 +41,7 @@ func main() {
 	cfg, err := config.Load(*configFile)
 	if err != nil {
 		sugar.Warnf("Failed to load config file, using defaults: %v", err)
-		cfg = config.Default()
+		// Note: Do NOT use config.Default() here as Load() already populated cfg with environment variables
 	}
 
 	// Perform security validations
@@ -76,6 +76,12 @@ func main() {
 		JWTExpire: jwtExpire,
 		AdminUser: cfg.SuperAdmin.Username,
 		AdminPass: cfg.SuperAdmin.Password,
+	}
+	// Debug log for super admin configuration
+	if cfg.SuperAdmin.Username != "" {
+		sugar.Infof("Super admin configured: username=%s, password_len=%d", cfg.SuperAdmin.Username, len(cfg.SuperAdmin.Password))
+	} else {
+		sugar.Warn("No super admin username configured from NANOLINK_ADMIN_USERNAME")
 	}
 	authService := service.NewAuthService(database.GetDB(), authConfig, sugar)
 	groupService := service.NewGroupService(database.GetDB(), sugar)

@@ -262,11 +262,23 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	}
 
 	// Check if current user is superadmin or changing own password
-	currentUserID, _ := c.Get("userID")
-	isSuperAdmin, _ := c.Get("isSuperAdmin")
+	// Safe type assertion to prevent panic when auth is disabled
+	var currentUserIDVal uint
+	var isSuperAdminVal bool
 
-	isOwnPassword := currentUserID.(uint) == uint(id)
-	canForce := isSuperAdmin.(bool) && req.ForceChange
+	if val, exists := c.Get("userID"); exists {
+		if id, ok := val.(uint); ok {
+			currentUserIDVal = id
+		}
+	}
+	if val, exists := c.Get("isSuperAdmin"); exists {
+		if isAdmin, ok := val.(bool); ok {
+			isSuperAdminVal = isAdmin
+		}
+	}
+
+	isOwnPassword := currentUserIDVal == uint(id)
+	canForce := isSuperAdminVal && req.ForceChange
 
 	if !isOwnPassword && !canForce {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Cannot change another user's password"})

@@ -653,19 +653,79 @@ The wizard automatically:
 
 ### Deploy Server with Docker
 
-```bash
-# Using docker-compose
-cd apps/docker
-docker-compose up -d
+**Quick Start (docker run):**
 
-# Or run directly
+```bash
 docker run -d \
+  --name nanolink-server \
+  --restart unless-stopped \
   -p 8080:8080 \
   -p 9100:9100 \
+  -p 9200:9200 \
+  -v nanolink-data:/app/data \
+  -e NANOLINK_ADMIN_USERNAME=admin \
+  -e NANOLINK_ADMIN_PASSWORD=changeme \
+  -e NANOLINK_JWT_SECRET=your-secret-key \
   ghcr.io/chenqi92/nanolink-server:latest
 ```
 
-Access Dashboard: http://localhost:8080/dashboard
+**Using docker-compose (Recommended):**
+
+Create a `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  nanolink-server:
+    image: ghcr.io/chenqi92/nanolink-server:latest
+    container_name: nanolink-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # HTTP API & Dashboard
+      - "9100:9100"   # WebSocket for Dashboard real-time
+      - "9200:9200"   # gRPC for Agents
+    volumes:
+      - nanolink-data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+      - NANOLINK_ADMIN_USERNAME=admin
+      - NANOLINK_ADMIN_PASSWORD=changeme  # ⚠️ Change in production!
+      - NANOLINK_JWT_SECRET=your-secret-key-change-me  # ⚠️ Change in production!
+      - NANOLINK_DATABASE_PATH=/app/data/nanolink.db
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  nanolink-data:
+```
+
+Run with: `docker-compose up -d`
+
+**Environment Variables:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NANOLINK_ADMIN_USERNAME` | Super admin username | `admin` |
+| `NANOLINK_ADMIN_PASSWORD` | Super admin password | (required) |
+| `NANOLINK_JWT_SECRET` | JWT signing secret | (auto-generated, not recommended) |
+| `NANOLINK_DATABASE_PATH` | SQLite database path | `/app/data/nanolink.db` |
+| `NANOLINK_AUTH_ENABLED` | Enable authentication | `true` |
+
+**Port Mapping:**
+
+| Internal | External (Example) | Protocol | Purpose |
+|----------|-------------------|----------|---------|
+| 8080 | 8080 or 39100 | HTTP | Dashboard & REST API |
+| 9100 | 9100 or 39101 | WebSocket | Dashboard real-time updates |
+| 9200 | 9200 or 39102 | gRPC | Agent connections |
+
+> **Tip:** For production, map to non-standard ports like `39100:8080`, `39101:9100`, `39102:9200`
+
+Access Dashboard: `http://<server-ip>:8080` (or your mapped port)
 
 ### Agent Configuration
 

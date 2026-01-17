@@ -653,19 +653,79 @@ Dashboard 提供分步向导帮助你轻松部署代理。点击仪表盘上的 
 
 ### 使用 Docker 部署服务端
 
-```bash
-# 使用 docker-compose
-cd apps/docker
-docker-compose up -d
+**快速启动 (docker run):**
 
-# 或直接运行
+```bash
 docker run -d \
+  --name nanolink-server \
+  --restart unless-stopped \
   -p 8080:8080 \
   -p 9100:9100 \
+  -p 9200:9200 \
+  -v nanolink-data:/app/data \
+  -e NANOLINK_ADMIN_USERNAME=admin \
+  -e NANOLINK_ADMIN_PASSWORD=changeme \
+  -e NANOLINK_JWT_SECRET=your-secret-key \
   ghcr.io/chenqi92/nanolink-server:latest
 ```
 
-访问 Dashboard: http://localhost:8080/dashboard
+**使用 docker-compose（推荐）:**
+
+创建 `docker-compose.yml`：
+
+```yaml
+version: '3.8'
+
+services:
+  nanolink-server:
+    image: ghcr.io/chenqi92/nanolink-server:latest
+    container_name: nanolink-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # HTTP API 和 Dashboard
+      - "9100:9100"   # Dashboard 实时 WebSocket
+      - "9200:9200"   # Agent gRPC 连接
+    volumes:
+      - nanolink-data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+      - NANOLINK_ADMIN_USERNAME=admin
+      - NANOLINK_ADMIN_PASSWORD=changeme  # ⚠️ 生产环境请修改！
+      - NANOLINK_JWT_SECRET=your-secret-key-change-me  # ⚠️ 生产环境请修改！
+      - NANOLINK_DATABASE_PATH=/app/data/nanolink.db
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  nanolink-data:
+```
+
+运行命令：`docker-compose up -d`
+
+**环境变量说明：**
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `NANOLINK_ADMIN_USERNAME` | 超级管理员用户名 | `admin` |
+| `NANOLINK_ADMIN_PASSWORD` | 超级管理员密码 | （必填） |
+| `NANOLINK_JWT_SECRET` | JWT 签名密钥 | （自动生成，不推荐） |
+| `NANOLINK_DATABASE_PATH` | SQLite 数据库路径 | `/app/data/nanolink.db` |
+| `NANOLINK_AUTH_ENABLED` | 启用认证 | `true` |
+
+**端口映射说明：**
+
+| 容器内部端口 | 外部端口（示例） | 协议 | 用途 |
+|-------------|-----------------|------|------|
+| 8080 | 8080 或 39100 | HTTP | Dashboard 和 REST API |
+| 9100 | 9100 或 39101 | WebSocket | Dashboard 实时更新 |
+| 9200 | 9200 或 39102 | gRPC | Agent 连接 |
+
+> **提示：** 生产环境建议映射到非标准端口，如 `39100:8080`、`39101:9100`、`39102:9200`
+
+访问 Dashboard：`http://<服务器IP>:8080`（或你映射的端口）
 
 ### Agent 配置
 
