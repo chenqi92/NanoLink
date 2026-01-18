@@ -13,7 +13,8 @@ pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Execute a command with a timeout
 ///
-/// Returns None if the command fails to start, times out, or returns non-zero exit code.
+/// Returns None if the command fails to start or times out with no output.
+/// For streaming commands, partial output is returned even on timeout.
 /// This prevents hanging subprocesses from blocking the async runtime.
 pub fn exec_with_timeout(mut cmd: Command, timeout: Duration) -> Option<Output> {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -71,9 +72,46 @@ pub fn exec_with_timeout(mut cmd: Command, timeout: Duration) -> Option<Output> 
             Ok(None) => {
                 // Still running
                 if start.elapsed() > timeout {
-                    // Timeout - kill the process
+                    // Timeout - kill first, then read output
+                    // This is critical: read_to_end() blocks until EOF.
+                    // For streaming commands, we must kill first to close the pipe.
                     let _ = child.kill();
                     let _ = child.wait(); // Reap the zombie
+
+                    // Now read output after process is terminated
+                    let stdout = child
+                        .stdout
+                        .take()
+                        .map(|mut s| {
+                            use std::io::Read;
+                            let mut buf = Vec::new();
+                            let _ = s.read_to_end(&mut buf);
+                            buf
+                        })
+                        .unwrap_or_default();
+
+                    let stderr = child
+                        .stderr
+                        .take()
+                        .map(|mut s| {
+                            use std::io::Read;
+                            let mut buf = Vec::new();
+                            let _ = s.read_to_end(&mut buf);
+                            buf
+                        })
+                        .unwrap_or_default();
+
+                    // If we got some output, return it with a fake success status
+                    // This is important for streaming commands like intel_gpu_top
+                    if !stdout.is_empty() {
+                        use std::os::unix::process::ExitStatusExt;
+                        return Some(Output {
+                            status: std::process::ExitStatus::from_raw(0),
+                            stdout,
+                            stderr,
+                        });
+                    }
+
                     warn!("Command timed out after {:?}, killed", timeout);
                     return None;
                 }

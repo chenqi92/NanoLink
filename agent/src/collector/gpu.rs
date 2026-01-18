@@ -62,6 +62,14 @@ impl GpuCollector {
         let intel_gpu_top_available = Self::check_intel_gpu_top_available();
         let xpu_smi_available = Self::check_xpu_smi_available();
 
+        tracing::info!(
+            "GpuCollector initialized: nvidia={}, amd={}, intel_gpu_top={}, xpu_smi={}",
+            nvidia_available,
+            amd_available,
+            intel_gpu_top_available,
+            xpu_smi_available
+        );
+
         Self {
             nvidia_available,
             amd_available,
@@ -431,10 +439,17 @@ impl GpuCollector {
 
     #[cfg(target_os = "linux")]
     fn collect_intel(&self) -> Option<Vec<GpuMetrics>> {
+        tracing::info!(
+            "collect_intel: xpu_smi={}, intel_gpu_top={}",
+            self.xpu_smi_available,
+            self.intel_gpu_top_available
+        );
+
         // Try xpu-smi first (for Arc/Data Center GPUs - provides most complete data)
         if self.xpu_smi_available {
             if let Some(gpus) = self.collect_intel_xpu_smi() {
                 if !gpus.is_empty() {
+                    tracing::info!("Using xpu-smi for Intel GPU");
                     return Some(gpus);
                 }
             }
@@ -442,14 +457,21 @@ impl GpuCollector {
 
         // Try intel_gpu_top next (for integrated GPUs - requires root)
         if self.intel_gpu_top_available {
+            tracing::info!("Trying intel_gpu_top");
             if let Some(gpus) = self.collect_intel_gpu_top() {
                 if !gpus.is_empty() {
+                    tracing::info!(
+                        "Using intel_gpu_top, found {} GPUs, usage={:.1}%",
+                        gpus.len(),
+                        gpus.first().map(|g| g.usage_percent).unwrap_or(0.0)
+                    );
                     return Some(gpus);
                 }
             }
         }
 
         // Fallback to sysfs-based detection (basic info only, no usage metrics)
+        tracing::info!("Falling back to sysfs for Intel GPU");
         self.collect_intel_sysfs()
     }
 
@@ -569,18 +591,30 @@ impl GpuCollector {
     /// Note: Requires root privileges or CAP_PERFMON capability
     #[cfg(target_os = "linux")]
     fn collect_intel_gpu_top(&self) -> Option<Vec<GpuMetrics>> {
-        // intel_gpu_top -J -s 500 outputs JSON with GPU usage
+        // intel_gpu_top -J -s 500 outputs formatted JSON (multi-line) with GPU usage
         // We run it briefly and capture one sample
         let mut cmd = Command::new("intel_gpu_top");
         cmd.args(["-J", "-s", "500", "-o", "-"]);
 
         // Use shorter timeout - intel_gpu_top streams continuously
-        let output = exec_with_timeout(cmd, Duration::from_secs(2))?;
+        let output = match exec_with_timeout(cmd, Duration::from_secs(2)) {
+            Some(o) => o,
+            None => {
+                tracing::info!("intel_gpu_top: exec_with_timeout returned None");
+                return None;
+            }
+        };
 
         // Even if the command is killed (expected), we may have partial output
         let stdout = String::from_utf8_lossy(&output.stdout);
+        tracing::info!(
+            "intel_gpu_top stdout len={}, stderr len={}",
+            output.stdout.len(),
+            output.stderr.len()
+        );
 
         if stdout.is_empty() {
+            tracing::info!("intel_gpu_top: stdout is empty");
             return None;
         }
 
@@ -591,66 +625,77 @@ impl GpuCollector {
             ..Default::default()
         };
 
-        // Parse JSON output - intel_gpu_top outputs one JSON object per line
-        // Format: {"period":{"duration":500.123},"frequency":{"requested":0,"actual":1200},"engines":{"Render/3D/0":{"busy":45.2},...}}
-        for line in stdout.lines() {
-            if line.starts_with('{') {
-                // Simple JSON field extraction
-                // Get overall "busy" percentage from engines
-                let mut total_busy = 0.0;
-                let mut engine_count = 0;
+        // Parse multi-line formatted JSON output from intel_gpu_top
+        // The output is pretty-printed, so we search the entire string
 
-                // Extract busy values from engines
-                if let Some(engines_start) = line.find("\"engines\"") {
-                    if let Some(engines_section) = line.get(engines_start..) {
-                        // Find all "busy" values
-                        let mut search_pos = 0;
-                        while let Some(busy_pos) = engines_section[search_pos..].find("\"busy\":") {
-                            let start = search_pos + busy_pos + 7;
-                            if let Some(end_pos) = engines_section[start..].find([',', '}']) {
-                                if let Some(val_str) = engines_section.get(start..start + end_pos) {
-                                    if let Ok(val) = val_str.trim().parse::<f64>() {
-                                        total_busy += val;
-                                        engine_count += 1;
-                                    }
-                                }
-                                search_pos = start + end_pos;
-                            } else {
-                                break;
+        // Extract rc6 value (GPU idle percentage) - look for "rc6": { "value": X.XX }
+        // usage = 100 - rc6
+        if let Some(rc6_pos) = stdout.find("\"rc6\"") {
+            if let Some(value_pos) = stdout[rc6_pos..].find("\"value\":") {
+                let start = rc6_pos + value_pos + 8;
+                // Find the number after "value":
+                if let Some(rest) = stdout.get(start..) {
+                    let trimmed = rest.trim_start();
+                    if let Some(end) =
+                        trimmed.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+                    {
+                        if let Ok(rc6_val) = trimmed[..end].parse::<f64>() {
+                            gpu.usage_percent = (100.0 - rc6_val).max(0.0);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Extract actual frequency from "frequency": { ... "actual": X.XX }
+        if let Some(freq_pos) = stdout.find("\"frequency\"") {
+            if let Some(actual_pos) = stdout[freq_pos..].find("\"actual\":") {
+                let start = freq_pos + actual_pos + 9;
+                if let Some(rest) = stdout.get(start..) {
+                    let trimmed = rest.trim_start();
+                    if let Some(end) =
+                        trimmed.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+                    {
+                        if let Ok(freq) = trimmed[..end].parse::<f64>() {
+                            gpu.clock_core_mhz = freq as u64;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Extract power from "power": { "GPU": X.XX, "Package": Y.YY }
+        if let Some(power_pos) = stdout.find("\"power\"") {
+            // First try GPU-specific power
+            if let Some(gpu_power_pos) = stdout[power_pos..].find("\"GPU\":") {
+                let start = power_pos + gpu_power_pos + 6;
+                if let Some(rest) = stdout.get(start..) {
+                    let trimmed = rest.trim_start();
+                    if let Some(end) =
+                        trimmed.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+                    {
+                        if let Ok(power) = trimmed[..end].parse::<f64>() {
+                            gpu.power_watts = power.round() as u32;
+                        }
+                    }
+                }
+            }
+            // Fall back to Package power if GPU power is 0
+            if gpu.power_watts == 0 {
+                if let Some(pkg_power_pos) = stdout[power_pos..].find("\"Package\":") {
+                    let start = power_pos + pkg_power_pos + 10;
+                    if let Some(rest) = stdout.get(start..) {
+                        let trimmed = rest.trim_start();
+                        if let Some(end) =
+                            trimmed.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+                        {
+                            if let Ok(power) = trimmed[..end].parse::<f64>() {
+                                // Package power includes CPU, estimate GPU as ~30%
+                                gpu.power_watts = (power * 0.3).round() as u32;
                             }
                         }
                     }
                 }
-
-                // Use max engine busy as overall usage (or average if preferred)
-                if engine_count > 0 {
-                    gpu.usage_percent = total_busy / engine_count as f64;
-                }
-
-                // Extract frequency
-                if let Some(freq_pos) = line.find("\"actual\":") {
-                    let start = freq_pos + 9;
-                    if let Some(end_pos) = line[start..].find([',', '}']) {
-                        if let Some(val_str) = line.get(start..start + end_pos) {
-                            gpu.clock_core_mhz = val_str.trim().parse().unwrap_or(0);
-                        }
-                    }
-                }
-
-                // Extract power if available
-                if let Some(power_pos) = line.find("\"power\"") {
-                    if let Some(gpu_power_pos) = line[power_pos..].find("\"GPU\":") {
-                        let start = power_pos + gpu_power_pos + 6;
-                        if let Some(end_pos) = line[start..].find([',', '}']) {
-                            if let Some(val_str) = line.get(start..start + end_pos) {
-                                gpu.power_watts =
-                                    val_str.trim().parse::<f64>().unwrap_or(0.0) as u32;
-                            }
-                        }
-                    }
-                }
-
-                break; // Only need first complete JSON line
             }
         }
 
