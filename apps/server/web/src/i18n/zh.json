@@ -44,7 +44,11 @@
     "connectedAt": "连接时间",
     "lastHeartbeat": "最后心跳",
     "openShell": "打开终端",
-    "viewMetrics": "查看指标"
+    "viewMetrics": "查看指标",
+    "viewDetails": "详情",
+    "agentDetails": "代理详情",
+    "realtimeData": "实时数据",
+    "historyCharts": "历史图表"
   },
   "metrics": {
     "cpu": "CPU",

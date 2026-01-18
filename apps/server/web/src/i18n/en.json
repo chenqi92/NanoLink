@@ -44,7 +44,11 @@
     "connectedAt": "Connected At",
     "lastHeartbeat": "Last Heartbeat",
     "openShell": "Open Shell",
-    "viewMetrics": "View Metrics"
+    "viewMetrics": "View Metrics",
+    "viewDetails": "Details",
+    "agentDetails": "Agent Details",
+    "realtimeData": "Real-time",
+    "historyCharts": "Charts"
   },
   "metrics": {
     "cpu": "CPU",

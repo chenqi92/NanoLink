@@ -9,7 +9,8 @@ import { useTheme } from "@/hooks/use-theme"
 import { LoginForm } from "@/components/auth/LoginForm"
 import { Header } from "@/components/layout/Header"
 import { SummaryCards } from "@/components/dashboard/SummaryCards"
-import { AgentCard } from "@/components/agents/AgentCard"
+import { AgentCardCompact } from "@/components/agents/AgentCardCompact"
+import { AgentDetailDialog } from "@/components/agents/AgentDetailDialog"
 import { ShellDialog } from "@/components/shell/ShellDialog"
 import { UserManagement } from "@/components/admin/UserManagement"
 import { GroupManagement } from "@/components/admin/GroupManagement"
@@ -28,6 +29,7 @@ function App() {
   const [shellAgent, setShellAgent] = useState<{ id: string; name: string } | null>(null)
   const [metricsAgent, setMetricsAgent] = useState<{ id: string; name: string } | null>(null)
   const [showAddAgentWizard, setShowAddAgentWizard] = useState(false)
+  const [detailAgent, setDetailAgent] = useState<{ id: string; name: string } | null>(null)
 
   // Show loading while checking authentication
   if (authLoading) {
@@ -98,14 +100,13 @@ function App() {
                 </Button>
               </div>
             ) : (
-              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {agents.map((agent) => (
-                  <AgentCard
+                  <AgentCardCompact
                     key={agent.id}
                     agent={agent}
                     metrics={metrics[agent.id]}
-                    onOpenShell={(id) => setShellAgent({ id, name: agent.hostname })}
-                    onViewMetrics={(id) => setMetricsAgent({ id, name: agent.hostname })}
+                    onViewDetails={(a) => setDetailAgent({ id: a.id, name: a.hostname })}
                   />
                 ))}
               </div>
@@ -130,6 +131,19 @@ function App() {
       {/* Add Agent Wizard */}
       {showAddAgentWizard && (
         <AddAgentWizard onClose={() => setShowAddAgentWizard(false)} />
+      )}
+
+      {/* Agent Detail Dialog */}
+      {detailAgent && (
+        <AgentDetailDialog
+          agent={agents.find(a => a.id === detailAgent.id)!}
+          initialMetrics={metrics[detailAgent.id]}
+          onClose={() => setDetailAgent(null)}
+          onOpenShell={(id) => {
+            setDetailAgent(null)
+            setShellAgent({ id, name: detailAgent.name })
+          }}
+        />
       )}
     </div>
   )
