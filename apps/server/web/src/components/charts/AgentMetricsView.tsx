@@ -54,18 +54,21 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
   const [customEnd, setCustomEnd] = useState("")
   
   // Track if we're in real-time mode (using WebSocket data)
-  const isRealtimeMode = autoRefresh && timeRange !== "custom" && (timeRange === "5m" || timeRange === "10m")
+  // Real-time mode: autoRefresh enabled and not custom range
+  const isRealtimeMode = autoRefresh && timeRange !== "custom"
   
   // Ref to track last processed metrics timestamp to avoid duplicates
   const lastMetricsTimestamp = useRef<string | null>(null)
+  
+  // Ref to track if initial history has been loaded
 
-  // Handle real-time WebSocket metrics updates
+
+  // Handle real-time WebSocket metrics updates - append to existing history
   useEffect(() => {
     if (!isRealtimeMode) return
     
     const currentMetrics = wsMetrics[agentId]
     if (!currentMetrics) {
-      console.log('[Metrics] No metrics for agent:', agentId)
       return
     }
     
@@ -85,29 +88,35 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
       return
     }
     
-    console.log('[Metrics] New data point, key:', metricsKey, 'prev:', lastMetricsTimestamp.current)
     lastMetricsTimestamp.current = metricsKey
     
-    // Add new metrics to history
+    // Append new metrics to history and trim old data based on time window
     setHistory(prev => {
       const newHistory = [...prev, currentMetrics]
-      // Keep only last N entries
-      if (newHistory.length > MAX_REALTIME_HISTORY) {
-        return newHistory.slice(-MAX_REALTIME_HISTORY)
+      
+      // Calculate time window based on selected time range
+      const windowMs = timeRangeToMs[timeRange as Exclude<TimeRange, "custom">] ?? 10 * 60 * 1000
+      const cutoffTime = Date.now() - windowMs
+      
+      // Filter out entries older than the time window
+      const filteredHistory = newHistory.filter(m => {
+        const timestamp = typeof m.timestamp === 'string' 
+          ? new Date(m.timestamp).getTime() 
+          : m.timestamp
+        return timestamp >= cutoffTime
+      })
+      
+      // Also limit to MAX_REALTIME_HISTORY as a safety cap
+      if (filteredHistory.length > MAX_REALTIME_HISTORY) {
+        return filteredHistory.slice(-MAX_REALTIME_HISTORY)
       }
-      return newHistory
+      return filteredHistory
     })
     setLoading(false)
-  }, [wsMetrics, agentId, isRealtimeMode])
+  }, [wsMetrics, agentId, isRealtimeMode, timeRange])
 
   // Fetch historical data from database
   const fetchHistory = useCallback(async () => {
-    if (isRealtimeMode) {
-      // In real-time mode, don't fetch from DB, just wait for WebSocket
-      setLoading(false)
-      return
-    }
-    
     try {
       setLoading(true)
       let start: number
@@ -140,18 +149,18 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
     } finally {
       setLoading(false)
     }
-  }, [agentId, timeRange, customStart, customEnd, isRealtimeMode])
+  }, [agentId, timeRange, customStart, customEnd])
 
-  // Fetch historical data when switching to history mode or changing time range
+  // Fetch historical data when time range changes or on mount
+  // In real-time mode, we first load history then append new data
+  // In history mode, we just show the history data
   useEffect(() => {
-    if (!isRealtimeMode) {
-      fetchHistory()
-    } else {
-      // Reset history when switching to real-time mode
-      setHistory([])
-      lastMetricsTimestamp.current = null
-    }
-  }, [isRealtimeMode, fetchHistory])
+    // Always load historical data first for the selected time range
+    fetchHistory()
+    // Reset the last timestamp to allow new data to be added
+    lastMetricsTimestamp.current = null
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRange, agentId, customStart, customEnd])
 
   // Transform data for charts
   const cpuData: ChartDataPoint[] = useMemo(() => {

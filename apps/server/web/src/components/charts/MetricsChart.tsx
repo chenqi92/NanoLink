@@ -134,7 +134,7 @@ export function MetricsChart({
             tickLine={false}
             axisLine={false}
             tickFormatter={(v) => formatValue(v, unit)}
-            width={50}
+            width={70}
           />
           <Tooltip content={renderTooltip} />
           {threshold && (
