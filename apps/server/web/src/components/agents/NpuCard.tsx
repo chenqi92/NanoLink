@@ -52,19 +52,24 @@ export function NpuCard({ npus }: NpuCardProps) {
                 />
               </div>
 
-              {/* Memory */}
+              {/* Memory - show "Shared Memory" for NPUs without dedicated memory reporting */}
               <div className="mb-2">
                 <div className="flex justify-between text-xs mb-1">
                   <span>{t("metrics.memory")}</span>
                   <span>
-                    {formatBytes(npu.memoryUsed)} / {formatBytes(npu.memoryTotal)}
+                    {npu.memoryTotal > 0 
+                      ? `${formatBytes(npu.memoryUsed)} / ${formatBytes(npu.memoryTotal)}`
+                      : t("metrics.sharedMemory", "共享内存")
+                    }
                   </span>
                 </div>
-                <Progress 
-                  value={memUsage} 
-                  className="h-1.5" 
-                  indicatorClassName={getProgressColor(memUsage)} 
-                />
+                {npu.memoryTotal > 0 && (
+                  <Progress 
+                    value={memUsage} 
+                    className="h-1.5" 
+                    indicatorClassName={getProgressColor(memUsage)} 
+                  />
+                )}
               </div>
 
               {/* Stats */}

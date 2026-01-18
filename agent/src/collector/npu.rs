@@ -1,12 +1,15 @@
 //! NPU (Neural Processing Unit) collector
 //!
 //! Collects information about AI accelerators across platforms:
-//! - Intel NPU (via xpu-smi)
+//! - Intel NPU (via sysfs npu_busy_time_us on Linux 6.10+)
+//! - Intel NPU (via xpu-smi for data center)
 //! - Huawei Ascend (via npu-smi)
 //! - Other accelerators
 
+use std::collections::HashMap;
 use std::process::Command;
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use crate::utils::safe_command::exec_with_timeout;
 
@@ -29,10 +32,20 @@ pub struct NpuMetrics {
     pub driver_version: String,
 }
 
+/// Cache for NPU usage calculation (stores last busy_time and timestamp per device)
+#[derive(Debug, Default)]
+struct NpuUsageCache {
+    /// Maps device path to (last_busy_time_us, last_sample_time)
+    samples: HashMap<String, (u64, Instant)>,
+}
+
 /// NPU collector
 pub struct NpuCollector {
     intel_available: bool,
     huawei_available: bool,
+    /// Cache for calculating NPU usage from busy_time delta
+    #[cfg(target_os = "linux")]
+    usage_cache: Mutex<NpuUsageCache>,
 }
 
 impl NpuCollector {
@@ -40,6 +53,8 @@ impl NpuCollector {
         Self {
             intel_available: Self::check_intel_npu_available(),
             huawei_available: Self::check_huawei_npu_available(),
+            #[cfg(target_os = "linux")]
+            usage_cache: Mutex::new(NpuUsageCache::default()),
         }
     }
 
@@ -186,11 +201,14 @@ impl NpuCollector {
 
         let mut npus = Vec::new();
         let mut index = 0u32;
+        let now = Instant::now();
 
         if let Ok(entries) = fs::read_dir(accel_path) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let name = path.file_name()?.to_str()?;
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
 
                 if name.starts_with("accel") {
                     let device_path = path.join("device");
@@ -205,10 +223,59 @@ impl NpuCollector {
                                 ..Default::default()
                             };
 
+                            // Read device name if available
                             if let Ok(device_name) =
                                 fs::read_to_string(device_path.join("device_name"))
                             {
                                 npu.name = device_name.trim().to_string();
+                            }
+
+                            // Read npu_busy_time_us (Linux 6.10+) and calculate usage
+                            let busy_time_path = device_path.join("npu_busy_time_us");
+                            if let Ok(busy_time_str) = fs::read_to_string(&busy_time_path) {
+                                if let Ok(busy_time_us) = busy_time_str.trim().parse::<u64>() {
+                                    let device_key = busy_time_path.to_string_lossy().to_string();
+
+                                    // Calculate usage from delta busy_time / delta_elapsed_time
+                                    if let Ok(mut cache) = self.usage_cache.lock() {
+                                        if let Some((last_busy, last_time)) =
+                                            cache.samples.get(&device_key)
+                                        {
+                                            let elapsed_us =
+                                                now.duration_since(*last_time).as_micros() as u64;
+                                            if elapsed_us > 0 {
+                                                let delta_busy =
+                                                    busy_time_us.saturating_sub(*last_busy);
+                                                // Usage = (busy_delta / elapsed_delta) * 100
+                                                let usage =
+                                                    (delta_busy as f64 / elapsed_us as f64) * 100.0;
+                                                npu.usage_percent = usage.clamp(0.0, 100.0);
+                                            }
+                                        }
+                                        // Update cache with current sample
+                                        cache.samples.insert(device_key, (busy_time_us, now));
+                                    }
+                                }
+                            }
+
+                            // Read memory utilization if available (Linux 6.14+)
+                            if let Ok(mem_str) =
+                                fs::read_to_string(device_path.join("npu_memory_utilization"))
+                            {
+                                if let Ok(mem_bytes) = mem_str.trim().parse::<u64>() {
+                                    npu.memory_used = mem_bytes;
+                                }
+                            }
+
+                            // Read frequency if available (Linux 6.16+)
+                            // Note: frequency files may not exist on older kernels
+                            if let Ok(freq_str) =
+                                fs::read_to_string(device_path.join("npu_current_frequency_mhz"))
+                            {
+                                if let Ok(_freq) = freq_str.trim().parse::<u32>() {
+                                    // Currently NpuMetrics doesn't have a frequency field,
+                                    // but we could add it in the future
+                                }
                             }
 
                             npus.push(npu);

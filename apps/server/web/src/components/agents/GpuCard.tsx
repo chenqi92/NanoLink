@@ -25,8 +25,19 @@ export function GpuCard({ gpus }: GpuCardProps) {
             gpu.name.toLowerCase().includes("apple") ||
             /^m[1-4]/i.test(gpu.name)
           
+          // Check if this is an Intel integrated GPU (uses shared system memory)
+          const isIntelIntegrated = gpu.vendor === "Intel" &&
+            (gpu.name.toLowerCase().includes("integrated") ||
+             gpu.name.toLowerCase().includes("graphics") ||
+             gpu.name.toLowerCase().includes("uhd") ||
+             gpu.name.toLowerCase().includes("iris") ||
+             gpu.name.toLowerCase().includes("0x"))  // Device ID format like "Intel GPU (0x7d55)"
+          
           // Check if VRAM is available (not 0)
           const hasVram = gpu.memoryTotal > 0
+          
+          // Both Apple and Intel integrated GPUs use unified/shared memory
+          const usesUnifiedMemory = isAppleGpu || isIntelIntegrated
 
           return (
             <div key={gpu.index} className="rounded-lg bg-muted p-3">
@@ -59,14 +70,14 @@ export function GpuCard({ gpus }: GpuCardProps) {
                 />
               </div>
 
-              {/* Memory - show "Unified Memory" for Apple GPUs */}
+              {/* Memory - show "Unified Memory" for integrated GPUs */}
               <div className="mb-2">
                 <div className="flex justify-between text-xs mb-1">
                   <span>VRAM</span>
                   <span>
                     {hasVram 
                       ? `${formatBytes(gpu.memoryUsed)} / ${formatBytes(gpu.memoryTotal)}`
-                      : isAppleGpu 
+                      : usesUnifiedMemory 
                         ? t("metrics.unifiedMemory", "统一内存")
                         : "N/A"
                     }
