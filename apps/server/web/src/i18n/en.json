@@ -48,7 +48,8 @@
     "viewDetails": "Details",
     "agentDetails": "Agent Details",
     "realtimeData": "Real-time",
-    "historyCharts": "Charts"
+    "historyCharts": "Charts",
+    "terminal": "Terminal"
   },
   "metrics": {
     "cpu": "CPU",

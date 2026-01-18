@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { ArrowLeft, RefreshCw, Calendar, AlertTriangle, Wifi, WifiOff } from "lucide-react"
+import { ArrowLeft, RefreshCw, AlertTriangle, Wifi, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { MetricsChart, type ChartDataPoint } from "./MetricsChart"
 import { api, type Metrics } from "@/lib/api"
@@ -10,6 +10,7 @@ interface AgentMetricsViewProps {
   agentId: string
   agentName: string
   onBack: () => void
+  embedded?: boolean  // When true, hides header for use in tabbed pages
 }
 
 type TimeRange = "5m" | "10m" | "30m" | "1h" | "6h" | "1d" | "7d" | "30d" | "custom"
@@ -41,7 +42,7 @@ const timeRangeToInterval: Record<Exclude<TimeRange, "custom">, string> = {
 // Max history points to keep in memory for real-time mode
 const MAX_REALTIME_HISTORY = 300
 
-export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsViewProps) {
+export function AgentMetricsView({ agentId, agentName, onBack, embedded = false }: AgentMetricsViewProps) {
   const { t } = useTranslation()
   const { metrics: wsMetrics, wsStatus } = useData()
   
@@ -49,7 +50,7 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<TimeRange>("10m")
   const [autoRefresh, setAutoRefresh] = useState(true)
-  const [showCustomRange, setShowCustomRange] = useState(false)
+  // showCustomRange state removed - custom date picker is always visible
   const [customStart, setCustomStart] = useState("")
   const [customEnd, setCustomEnd] = useState("")
   
@@ -254,114 +255,91 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onBack}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h2 className="text-xl font-semibold">{agentName}</h2>
-            <p className="text-sm text-[var(--color-muted-foreground)] flex items-center gap-2">
-              {isRealtimeMode ? (
-                <>
-                  {wsStatus === 'connected' ? (
-                    <Wifi className="h-3 w-3 text-green-500" />
-                  ) : (
-                    <WifiOff className="h-3 w-3 text-red-500" />
-                  )}
-                  <span>{t("metrics.realtime") || "实时"} - {history.length} {t("metrics.dataPoints") || "数据点"}</span>
-                </>
+      {/* Header - hidden when embedded */}
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={onBack}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <h2 className="text-xl font-semibold">{agentName}</h2>
+              <p className="text-sm text-[var(--color-muted-foreground)] flex items-center gap-2">
+                {isRealtimeMode ? (
+                  <>
+                    {wsStatus === 'connected' ? (
+                      <Wifi className="h-3 w-3 text-green-500" />
+                    ) : (
+                      <WifiOff className="h-3 w-3 text-red-500" />
+                    )}
+                    <span>{t("metrics.realtime") || "实时"} - {history.length} {t("metrics.dataPoints") || "数据点"}</span>
+                  </>
+                ) : (
+                  <span>{t("metrics.historicalData")} - {history.length} {t("metrics.dataPoints") || "数据点"}</span>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Status bar (always shown) */}
+      {embedded && (
+        <div className="flex items-center gap-2 text-sm text-[var(--color-muted-foreground)]">
+          {isRealtimeMode ? (
+            <>
+              {wsStatus === 'connected' ? (
+                <Wifi className="h-3 w-3 text-green-500" />
               ) : (
-                <span>{t("metrics.historicalData")} - {history.length} {t("metrics.dataPoints") || "数据点"}</span>
+                <WifiOff className="h-3 w-3 text-red-500" />
               )}
-            </p>
-          </div>
+              <span>{t("metrics.realtime") || "实时"} - {history.length} {t("metrics.dataPoints") || "数据点"}</span>
+            </>
+          ) : (
+            <span>{t("metrics.historicalData")} - {history.length} {t("metrics.dataPoints") || "数据点"}</span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          {/* Time Range Selector - Short ranges */}
-          <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] p-1">
-            {(["5m", "10m", "30m", "1h", "6h"] as TimeRange[]).map((range) => (
-              <button
-                key={range}
-                onClick={() => {
-                  setTimeRange(range)
-                  setShowCustomRange(false)
-                }}
-                className={`px-2 py-1 text-xs sm:text-sm rounded transition-colors ${
-                  timeRange === range && !showCustomRange
-                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
-                    : "hover:bg-[var(--color-accent)]"
-                }`}
-              >
-                {range}
-              </button>
-            ))}
-          </div>
-          {/* Long ranges */}
-          <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] p-1">
-            {(["1d", "7d", "30d"] as TimeRange[]).map((range) => (
-              <button
-                key={range}
-                onClick={() => {
-                  setTimeRange(range)
-                  setShowCustomRange(false)
+      )}
+      
+      {/* Time Range Controls */}
+      <div className="flex items-center flex-wrap gap-3">
+        {/* All preset time ranges in one group */}
+        <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] p-1">
+          {(["5m", "10m", "30m", "1h", "6h", "1d", "7d", "30d"] as TimeRange[]).map((range) => (
+            <button
+              key={range}
+              onClick={() => {
+                setTimeRange(range)
+                if (["1d", "7d", "30d"].includes(range)) {
                   setAutoRefresh(false) // Disable auto-refresh for long ranges
-                }}
-                className={`px-2 py-1 text-xs sm:text-sm rounded transition-colors ${
-                  timeRange === range && !showCustomRange
-                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
-                    : "hover:bg-[var(--color-accent)]"
-                }`}
-              >
-                {range}
-              </button>
-            ))}
-          </div>
-          {/* Custom Date Range */}
-          <Button
-            variant={showCustomRange ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowCustomRange(!showCustomRange)}
-            className="gap-1"
-          >
-            <Calendar className="h-4 w-4" />
-            <span className="hidden sm:inline">{t("metrics.custom") || "自定义"}</span>
-          </Button>
-          {/* Auto Refresh Toggle */}
-          <Button
-            variant={autoRefresh ? "default" : "outline"}
-            size="sm"
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className="gap-1"
-          >
-            <RefreshCw className={`h-4 w-4 ${autoRefresh ? "animate-spin" : ""}`} />
-            <span className="hidden sm:inline">Auto</span>
-          </Button>
+                }
+              }}
+              className={`px-2 py-1 text-xs sm:text-sm rounded transition-colors ${
+                timeRange === range
+                  ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                  : "hover:bg-[var(--color-accent)]"
+              }`}
+            >
+              {range}
+            </button>
+          ))}
         </div>
-      </div>
 
-      {/* Custom Date Range Picker */}
-      {showCustomRange && (
-        <div className="flex flex-wrap items-center gap-3 p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)]">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-[var(--color-muted-foreground)]">{t("metrics.startDate") || "开始"}</label>
-            <input
-              type="datetime-local"
-              value={customStart}
-              onChange={(e) => setCustomStart(e.target.value)}
-              className="px-2 py-1 text-sm rounded border border-[var(--color-border)] bg-transparent"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-[var(--color-muted-foreground)]">{t("metrics.endDate") || "结束"}</label>
-            <input
-              type="datetime-local"
-              value={customEnd}
-              onChange={(e) => setCustomEnd(e.target.value)}
-              className="px-2 py-1 text-sm rounded border border-[var(--color-border)] bg-transparent"
-            />
-          </div>
+        {/* Custom Date Range - Always visible */}
+        <div className="flex items-center gap-2">
+          <input
+            type="datetime-local"
+            value={customStart}
+            onChange={(e) => setCustomStart(e.target.value)}
+            className="px-2 py-1 text-sm rounded border border-[var(--color-border)] bg-transparent"
+          />
+          <span className="text-[var(--color-muted-foreground)]">~</span>
+          <input
+            type="datetime-local"
+            value={customEnd}
+            onChange={(e) => setCustomEnd(e.target.value)}
+            className="px-2 py-1 text-sm rounded border border-[var(--color-border)] bg-transparent"
+          />
           <Button
             size="sm"
             onClick={() => {
@@ -375,7 +353,18 @@ export function AgentMetricsView({ agentId, agentName, onBack }: AgentMetricsVie
             {t("metrics.apply") || "应用"}
           </Button>
         </div>
-      )}
+
+        {/* Auto Refresh Toggle */}
+        <Button
+          variant={autoRefresh ? "default" : "outline"}
+          size="sm"
+          onClick={() => setAutoRefresh(!autoRefresh)}
+          className="gap-1 ml-auto"
+        >
+          <RefreshCw className={`h-4 w-4 ${autoRefresh ? "animate-spin" : ""}`} />
+          <span className="hidden sm:inline">Auto</span>
+        </Button>
+      </div>
 
       {/* Anomaly Alert */}
       {anomalies.length > 0 && (

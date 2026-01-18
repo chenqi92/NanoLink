@@ -136,6 +136,10 @@ export function UserManagement() {
 
   const handleChangePassword = async () => {
     if (!changingPassword) return
+    if (!newPassword || newPassword.length < 6) {
+      setError("Password must be at least 6 characters")
+      return
+    }
     try {
       const res = await fetch(`/api/users/${changingPassword.id}/password`, {
         method: "PUT",
@@ -145,9 +149,13 @@ export function UserManagement() {
         },
         body: JSON.stringify({ newPassword, forceChange: true })
       })
-      if (!res.ok) throw new Error("Failed to change password")
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || `Failed to change password (${res.status})`)
+      }
       setChangingPassword(null)
       setNewPassword("")
+      setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error")
     }

@@ -5,6 +5,7 @@ mod connection;
 mod executor;
 #[cfg(feature = "gui")]
 mod gui;
+mod hardware_id;
 mod i18n;
 mod management;
 mod platform;

@@ -48,7 +48,8 @@
     "viewDetails": "详情",
     "agentDetails": "代理详情",
     "realtimeData": "实时数据",
-    "historyCharts": "历史图表"
+    "historyCharts": "历史图表",
+    "terminal": "终端"
   },
   "metrics": {
     "cpu": "CPU",

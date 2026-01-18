@@ -893,14 +893,32 @@ impl Config {
             }
         }
 
-        // Generate persistent agent_id if not present
-        // This ensures the same agent ID is used across restarts for data continuity
-        if config.agent.agent_id.is_none() {
-            config.agent.agent_id = Some(uuid::Uuid::new_v4().to_string());
-            eprintln!(
-                "Generated new agent_id: {}",
-                config.agent.agent_id.as_ref().unwrap()
-            );
+        // Generate hardware-based agent_id
+        // Always use hardware-derived ID for consistency across restarts
+        // The ID is derived from machine-specific identifiers (machine-id, IOPlatformUUID, etc.)
+        let hardware_id = crate::hardware_id::generate_hardware_agent_id();
+
+        // Check if we need to update the stored agent_id
+        let should_update = match &config.agent.agent_id {
+            None => true,
+            Some(existing) => {
+                // If existing ID is a UUID (old format), migrate to hardware ID
+                // UUID format: 8-4-4-4-12 = 36 chars with hyphens
+                existing.len() == 36 && existing.chars().filter(|c| *c == '-').count() == 4
+            }
+        };
+
+        if should_update {
+            let old_id = config.agent.agent_id.take();
+            config.agent.agent_id = Some(hardware_id.clone());
+            if let Some(old) = old_id {
+                eprintln!(
+                    "Migrated agent_id from UUID ({}) to hardware-based: {}",
+                    old, hardware_id
+                );
+            } else {
+                eprintln!("Generated hardware-based agent_id: {}", hardware_id);
+            }
             // Save config with the new agent_id
             if let Err(e) = config.save(path) {
                 eprintln!("Warning: Failed to save config with new agent_id: {e}");

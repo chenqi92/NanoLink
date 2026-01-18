@@ -10,11 +10,10 @@ import { LoginForm } from "@/components/auth/LoginForm"
 import { Header } from "@/components/layout/Header"
 import { SummaryCards } from "@/components/dashboard/SummaryCards"
 import { AgentCardCompact } from "@/components/agents/AgentCardCompact"
-import { AgentDetailDialog } from "@/components/agents/AgentDetailDialog"
+import { AgentDetailPage } from "@/components/agents/AgentDetailPage"
 import { ShellDialog } from "@/components/shell/ShellDialog"
 import { UserManagement } from "@/components/admin/UserManagement"
 import { GroupManagement } from "@/components/admin/GroupManagement"
-import { AgentMetricsView } from "@/components/charts/AgentMetricsView"
 import { AddAgentWizard } from "@/components/agents/AddAgentWizard"
 import { Button } from "@/components/ui/button"
 
@@ -27,7 +26,6 @@ function App() {
   useTheme() // Initialize theme
   const [currentView, setCurrentView] = useState<View>("dashboard")
   const [shellAgent, setShellAgent] = useState<{ id: string; name: string } | null>(null)
-  const [metricsAgent, setMetricsAgent] = useState<{ id: string; name: string } | null>(null)
   const [showAddAgentWizard, setShowAddAgentWizard] = useState(false)
   const [detailAgent, setDetailAgent] = useState<{ id: string; name: string } | null>(null)
 
@@ -48,6 +46,9 @@ function App() {
     return <LoginForm />
   }
 
+  // Find the agent object for detail page
+  const detailAgentObj = detailAgent ? agents.find(a => a.id === detailAgent.id) : null
+
   return (
     <div className="min-h-screen bg-[var(--color-background)]">
       <Header onNavigate={setCurrentView} />
@@ -63,12 +64,12 @@ function App() {
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
           </div>
-        ) : metricsAgent ? (
-          /* Agent Metrics Detail View */
-          <AgentMetricsView
-            agentId={metricsAgent.id}
-            agentName={metricsAgent.name}
-            onBack={() => setMetricsAgent(null)}
+        ) : detailAgent && detailAgentObj ? (
+          /* Full Page Agent Detail View with tabs */
+          <AgentDetailPage
+            agent={detailAgentObj}
+            initialMetrics={metrics[detailAgent.id]}
+            onBack={() => setDetailAgent(null)}
           />
         ) : currentView === "dashboard" ? (
           <>
@@ -119,7 +120,7 @@ function App() {
         ) : null}
       </main>
 
-      {/* Shell Dialog */}
+      {/* Shell Dialog - still available for header menu or other access points */}
       {shellAgent && (
         <ShellDialog
           agentId={shellAgent.id}
@@ -131,19 +132,6 @@ function App() {
       {/* Add Agent Wizard */}
       {showAddAgentWizard && (
         <AddAgentWizard onClose={() => setShowAddAgentWizard(false)} />
-      )}
-
-      {/* Agent Detail Dialog */}
-      {detailAgent && (
-        <AgentDetailDialog
-          agent={agents.find(a => a.id === detailAgent.id)!}
-          initialMetrics={metrics[detailAgent.id]}
-          onClose={() => setDetailAgent(null)}
-          onOpenShell={(id) => {
-            setDetailAgent(null)
-            setShellAgent({ id, name: detailAgent.name })
-          }}
-        />
       )}
     </div>
   )
