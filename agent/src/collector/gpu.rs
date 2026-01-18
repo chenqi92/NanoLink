@@ -625,22 +625,61 @@ impl GpuCollector {
             ..Default::default()
         };
 
-        // Parse multi-line formatted JSON output from intel_gpu_top
-        // The output is pretty-printed, so we search the entire string
+        // Parse engine busy values to get actual GPU workload
+        // Look for engines like: "Render/3D": { "busy": X.XX }, "Compute": { "busy": X.XX }
+        // Use the maximum engine busy as GPU usage
+        let mut max_engine_busy: f64 = 0.0;
+        let engine_names = ["Render/3D", "Compute", "Video", "VideoEnhance", "Blitter"];
 
-        // Extract rc6 value (GPU idle percentage) - look for "rc6": { "value": X.XX }
-        // usage = 100 - rc6
-        if let Some(rc6_pos) = stdout.find("\"rc6\"") {
-            if let Some(value_pos) = stdout[rc6_pos..].find("\"value\":") {
-                let start = rc6_pos + value_pos + 8;
-                // Find the number after "value":
-                if let Some(rest) = stdout.get(start..) {
-                    let trimmed = rest.trim_start();
-                    if let Some(end) =
-                        trimmed.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
-                    {
-                        if let Ok(rc6_val) = trimmed[..end].parse::<f64>() {
-                            gpu.usage_percent = (100.0 - rc6_val).max(0.0);
+        for engine_name in &engine_names {
+            // Find the engine section
+            let search_pattern = format!("\"{}\":", engine_name);
+            if let Some(engine_pos) = stdout.find(&search_pattern) {
+                // Find "busy": value within this engine section
+                if let Some(busy_pos) = stdout[engine_pos..].find("\"busy\":") {
+                    let start = engine_pos + busy_pos + 7;
+                    if let Some(rest) = stdout.get(start..) {
+                        let trimmed = rest.trim_start();
+                        if let Some(end) =
+                            trimmed.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+                        {
+                            if let Ok(busy_val) = trimmed[..end].parse::<f64>() {
+                                if busy_val > max_engine_busy {
+                                    max_engine_busy = busy_val;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // If any engine has busy > 0, use the max engine busy as usage
+        // Otherwise, fall back to (100 - rc6) as a rough estimate
+        if max_engine_busy > 0.0 {
+            gpu.usage_percent = max_engine_busy.clamp(0.0, 100.0);
+        } else {
+            // Extract rc6 value (GPU idle percentage) - look for "rc6": { "value": X.XX }
+            // Note: rc6 is power state residency, not actual GPU load
+            // When all engines are idle but rc6 < 50%, it usually means display is active
+            if let Some(rc6_pos) = stdout.find("\"rc6\"") {
+                if let Some(value_pos) = stdout[rc6_pos..].find("\"value\":") {
+                    let start = rc6_pos + value_pos + 8;
+                    if let Some(rest) = stdout.get(start..) {
+                        let trimmed = rest.trim_start();
+                        if let Some(end) =
+                            trimmed.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+                        {
+                            if let Ok(rc6_val) = trimmed[..end].parse::<f64>() {
+                                // Only show non-zero usage if rc6 < 95% (some activity)
+                                // This prevents showing high usage when GPU is truly idle
+                                if rc6_val < 95.0 {
+                                    // Scale: rc6=0% -> usage=5% (max display overhead)
+                                    // rc6=50% -> usage=2.5%, rc6=95% -> usage=0%
+                                    gpu.usage_percent =
+                                        ((95.0 - rc6_val) / 95.0 * 5.0).clamp(0.0, 5.0);
+                                }
+                            }
                         }
                     }
                 }
