@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
 import { Monitor, Server, Cpu, HardDrive, Clock } from "lucide-react"
-import { formatUptime, formatDate } from "@/lib/utils"
+import { formatUptime } from "@/lib/utils"
 import type { SystemInfo } from "@/lib/api"
 
 interface SystemInfoCardProps {
@@ -22,14 +22,14 @@ export function SystemInfoCard({ systemInfo }: SystemInfoCardProps) {
   return (
     <div>
       <div className="text-sm font-medium mb-2">{t("system.info")}</div>
-      <div className="rounded-lg bg-[var(--color-muted)] p-3">
+      <div className="rounded-lg bg-muted p-3">
         <div className="grid grid-cols-2 gap-2 text-xs">
           {items.map((item, index) => (
             <div key={index} className="flex items-start gap-2">
-              <item.icon className="h-3 w-3 mt-0.5 text-[var(--color-muted-foreground)]" />
+              <item.icon className="h-3 w-3 mt-0.5 text-muted-foreground" />
               <div>
-                <div className="text-[var(--color-muted-foreground)]">{item.label}</div>
-                <div className="font-medium truncate max-w-[140px]">{item.value}</div>
+                <div className="text-muted-foreground">{item.label}</div>
+                <div className="font-medium break-words">{item.value}</div>
               </div>
             </div>
           ))}

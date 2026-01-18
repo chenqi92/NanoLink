@@ -280,3 +280,40 @@ export const usersApi = {
   list: () => api.get<User[]>("/users"),
   delete: (id: number) => api.delete(`/users/${id}`),
 }
+
+// Agent Token types and API
+export interface AgentToken {
+  id: number
+  tokenHint: string
+  name: string
+  agentId?: string
+  hostname?: string
+  os?: string
+  arch?: string
+  version?: string
+  permission: number
+  sortOrder: number
+  isOnline: boolean
+  createdAt: number
+  firstSeenAt?: number
+  lastSeenAt?: number
+  expiresAt?: number
+}
+
+export interface CreateAgentTokenRequest {
+  name: string
+  permission: number
+}
+
+export interface CreateAgentTokenResponse extends AgentToken {
+  token: string // Full token, only returned on creation
+}
+
+export const agentTokensApi = {
+  list: () => api.get<AgentToken[]>("/agent-tokens"),
+  create: (data: CreateAgentTokenRequest) => api.post<CreateAgentTokenResponse>("/agent-tokens", data),
+  update: (id: number, data: { name: string; permission: number }) => api.put(`/agent-tokens/${id}`, data),
+  delete: (id: number) => api.delete(`/agent-tokens/${id}`),
+  regenerate: (id: number) => api.post<{ token: string }>(`/agent-tokens/${id}/regenerate`),
+  reorder: (order: number[]) => api.put("/agent-tokens/reorder", { order }),
+}

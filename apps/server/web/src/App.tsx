@@ -14,10 +14,11 @@ import { AgentDetailPage } from "@/components/agents/AgentDetailPage"
 import { ShellDialog } from "@/components/shell/ShellDialog"
 import { UserManagement } from "@/components/admin/UserManagement"
 import { GroupManagement } from "@/components/admin/GroupManagement"
+import { AgentManagement } from "@/components/admin/AgentManagement"
 import { AddAgentWizard } from "@/components/agents/AddAgentWizard"
 import { Button } from "@/components/ui/button"
 
-type View = "dashboard" | "users" | "groups" | "permissions" | "settings"
+type View = "dashboard" | "users" | "groups" | "agents-manage" | "permissions" | "settings"
 
 function App() {
   const { t } = useTranslation()
@@ -117,6 +118,8 @@ function App() {
           <UserManagement />
         ) : currentView === "groups" ? (
           <GroupManagement />
+        ) : currentView === "agents-manage" ? (
+          <AgentManagement />
         ) : null}
       </main>
 

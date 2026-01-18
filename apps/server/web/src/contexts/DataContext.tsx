@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useCallback, useEffect, useState, useRef } from 'react'
-import { agentsApi, metricsApi, type Agent, type Metrics, type Summary } from '@/lib/api'
+import { agentsApi, metricsApi, agentTokensApi, type Agent, type Metrics, type Summary, type AgentToken } from '@/lib/api'
 import { useAuth } from './AuthContext'
 import { useWebSocket, type WebSocketStatus } from '@/hooks/use-websocket'
 
@@ -22,6 +22,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const { token, isAuthenticated } = useAuth()
 
   const [agents, setAgents] = useState<Agent[]>([])
+  const [agentOrder, setAgentOrder] = useState<Map<string, number>>(new Map()) // AgentID -> SortOrder
   const [metrics, setMetrics] = useState<Record<string, Metrics>>({})
   const [summary, setSummary] = useState<Summary>({
     connectedAgents: 0,
@@ -36,12 +37,38 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const wsDataReceived = useRef(false)
 
+  // Fetch agent order from database
+  const fetchAgentOrder = useCallback(async () => {
+    try {
+      const tokens = await agentTokensApi.list()
+      const orderMap = new Map<string, number>()
+      tokens.forEach((t: AgentToken) => {
+        if (t.agentId) {
+          orderMap.set(t.agentId, t.sortOrder)
+        }
+      })
+      setAgentOrder(orderMap)
+    } catch (e) {
+      console.error('Failed to fetch agent order:', e)
+    }
+  }, [])
+
+  // Sort agents by database order
+  const sortAgentsByDBOrder = useCallback((agentList: Agent[]): Agent[] => {
+    if (agentOrder.size === 0) return agentList
+    return [...agentList].sort((a, b) => {
+      const orderA = agentOrder.get(a.id) ?? 999999
+      const orderB = agentOrder.get(b.id) ?? 999999
+      return orderA - orderB
+    })
+  }, [agentOrder])
+
   const handleAgents = useCallback((newAgents: Agent[]) => {
-    setAgents(newAgents)
+    setAgents(sortAgentsByDBOrder(newAgents))
     setIsLoading(false)
     wsDataReceived.current = true
     setError(null)
-  }, [])
+  }, [sortAgentsByDBOrder])
 
   const handleMetrics = useCallback((newMetrics: Record<string, Metrics>) => {
     setMetrics(prev => ({ ...prev, ...newMetrics }))
@@ -150,7 +177,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       wsDataReceived.current = false
       setIsLoading(true)
       setError(null)
+      setAgentOrder(new Map())
+    } else {
+      // Fetch agent order when authenticated
+      fetchAgentOrder()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated])
 
   const clearError = useCallback(() => {

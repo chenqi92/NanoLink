@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next"
-import { Sun, Moon, Monitor, Globe, LogOut, Users, Shield, Wifi, WifiOff } from "lucide-react"
+import { Sun, Moon, Monitor, Globe, LogOut, Users, Shield, Wifi, WifiOff, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useTheme } from "@/hooks/use-theme"
 import { useAuth } from "@/contexts/AuthContext"
@@ -7,7 +7,7 @@ import { useData } from "@/contexts/DataContext"
 import { setLanguage, getLanguage } from "@/i18n"
 
 interface HeaderProps {
-  onNavigate: (view: "dashboard" | "users" | "groups" | "permissions" | "settings") => void
+  onNavigate: (view: "dashboard" | "users" | "groups" | "agents-manage" | "permissions" | "settings") => void
 }
 
 export function Header({ onNavigate }: HeaderProps) {
@@ -79,6 +79,10 @@ export function Header({ onNavigate }: HeaderProps) {
               <Button variant="ghost" size="sm" onClick={() => onNavigate("groups")}>
                 <Shield className="mr-1 h-4 w-4" />
                 {t("admin.groups")}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => onNavigate("agents-manage")}>
+                <Settings className="mr-1 h-4 w-4" />
+                代理管理
               </Button>
             </>
           )}

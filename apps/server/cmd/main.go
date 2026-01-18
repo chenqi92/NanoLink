@@ -107,6 +107,8 @@ func main() {
 	groupService := service.NewGroupService(database.GetDB(), sugar)
 	permService := service.NewPermissionService(database.GetDB(), sugar)
 	auditService := service.NewAuditService(database.GetDB(), sugar)
+	agentTokenService := service.NewAgentTokenService(database.GetDB(), sugar)
+	agentTokenService.StartCleanupJob() // Auto-cleanup expired tokens
 
 	// Setup Gin router
 	if cfg.Server.Mode == "release" {
@@ -197,6 +199,15 @@ func main() {
 				admin.GET("/audit/logs/agent/:agentId", auditHandler.GetAgentAuditLogs)
 				admin.GET("/audit/stats", auditHandler.GetAuditStats)
 				admin.GET("/audit/recent", auditHandler.GetRecentLogs)
+
+				// Agent token management (super admin only)
+				agentTokenHandler := handler.NewAgentTokenHandler(agentTokenService, sugar)
+				admin.GET("/agent-tokens", agentTokenHandler.ListAgentTokens)
+				admin.POST("/agent-tokens", agentTokenHandler.CreateAgentToken)
+				admin.PUT("/agent-tokens/:id", agentTokenHandler.UpdateAgentToken)
+				admin.DELETE("/agent-tokens/:id", agentTokenHandler.DeleteAgentToken)
+				admin.POST("/agent-tokens/:id/regenerate", agentTokenHandler.RegenerateAgentToken)
+				admin.PUT("/agent-tokens/reorder", agentTokenHandler.ReorderAgentTokens)
 			}
 		}
 
@@ -251,7 +262,7 @@ func main() {
 
 	// Start gRPC server with auth interceptor
 	grpcAuthInterceptor := grpcserver.NewAuthInterceptor(authService, permService, sugar)
-	grpcServer := grpcserver.NewServerWithAuth(cfg, agentService, metricsService, grpcAuthInterceptor, sugar)
+	grpcServer := grpcserver.NewServerWithAuth(cfg, agentService, agentTokenService, metricsService, grpcAuthInterceptor, sugar)
 	go func() {
 		sugar.Infof("gRPC server starting on port %d", cfg.Server.GRPCPort)
 		if err := grpcServer.Start(cfg.Server.GRPCPort, cfg.Server.TLSCert, cfg.Server.TLSKey); err != nil {

@@ -38,10 +38,11 @@ type Server struct {
 	pb.UnimplementedNanoLinkServiceServer
 	pb.UnimplementedDashboardServiceServer
 
-	config         *config.Config
-	agentService   *service.AgentService
-	metricsService *service.MetricsService
-	logger         *zap.SugaredLogger
+	config            *config.Config
+	agentService      *service.AgentService
+	agentTokenService *service.AgentTokenService
+	metricsService    *service.MetricsService
+	logger            *zap.SugaredLogger
 
 	grpcServer      *grpc.Server
 	authInterceptor *AuthInterceptor
@@ -61,12 +62,14 @@ type Server struct {
 func NewServer(
 	cfg *config.Config,
 	agentService *service.AgentService,
+	agentTokenService *service.AgentTokenService,
 	metricsService *service.MetricsService,
 	logger *zap.SugaredLogger,
 ) *Server {
 	return &Server{
 		config:             cfg,
 		agentService:       agentService,
+		agentTokenService:  agentTokenService,
 		metricsService:     metricsService,
 		logger:             logger,
 		agents:             make(map[string]*GrpcAgent),
@@ -78,6 +81,7 @@ func NewServer(
 func NewServerWithAuth(
 	cfg *config.Config,
 	agentService *service.AgentService,
+	agentTokenService *service.AgentTokenService,
 	metricsService *service.MetricsService,
 	authInterceptor *AuthInterceptor,
 	logger *zap.SugaredLogger,
@@ -85,6 +89,7 @@ func NewServerWithAuth(
 	return &Server{
 		config:             cfg,
 		agentService:       agentService,
+		agentTokenService:  agentTokenService,
 		metricsService:     metricsService,
 		logger:             logger,
 		authInterceptor:    authInterceptor,
@@ -271,6 +276,15 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		Version:  agent.Version,
 	}, int(agent.PermissionLevel))
 
+	// Auto-sync agent to database for persistence
+	if s.agentTokenService != nil {
+		if _, err := s.agentTokenService.EnsureAgentExists(
+			agentID, agent.Hostname, agent.OS, agent.Arch, agent.Version, int(agent.PermissionLevel),
+		); err != nil {
+			s.logger.Warnf("Failed to sync agent to database: %v", err)
+		}
+	}
+
 	s.logger.Infof("gRPC agent connected: %s (%s)", agent.Hostname, agentID)
 
 	// Notify subscribers
@@ -349,6 +363,11 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 
 		// Notify metrics subscribers
 		s.notifyMetrics(agent.AgentID, req.Metrics)
+
+		// Update last seen in database for online status
+		if s.agentTokenService != nil {
+			s.agentTokenService.UpdateLastSeen(agent.AgentID)
+		}
 
 	case *pb.MetricsStreamRequest_Realtime:
 		agent.LastMetricsAt = time.Now()
