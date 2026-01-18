@@ -18,9 +18,9 @@ use crate::buffer::RingBuffer;
 use crate::collector::layered::{DataRequest, LayeredCollector, LayeredMetricsMessage};
 use crate::config::{Config, ServerConfig};
 use crate::proto::{
-    AuthRequest, AuthResponse, Command, CommandResult, DataRequestType, Heartbeat, Metrics,
-    MetricsStreamRequest, MetricsStreamResponse, metrics_stream_request, metrics_stream_response,
-    nano_link_service_client::NanoLinkServiceClient,
+    AgentInit, AuthRequest, AuthResponse, Command, CommandResult, DataRequestType, Heartbeat,
+    Metrics, MetricsStreamRequest, MetricsStreamResponse, metrics_stream_request,
+    metrics_stream_response, nano_link_service_client::NanoLinkServiceClient,
 };
 
 /// Guard that ensures spawned tasks are aborted when dropped.
@@ -363,6 +363,22 @@ impl GrpcClient {
             .context("Failed to start metrics stream")?;
 
         let mut response_stream: Streaming<MetricsStreamResponse> = response.into_inner();
+
+        // Send AgentInit as the FIRST message to identify this agent with its persistent ID
+        let agent_init = AgentInit {
+            agent_id: self.config.agent.agent_id.clone().unwrap_or_default(),
+            hostname: self.config.get_hostname(),
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+            agent_version: env!("CARGO_PKG_VERSION").to_string(),
+        };
+        info!("Sending AgentInit with agent_id: {}", agent_init.agent_id);
+        let init_request = MetricsStreamRequest {
+            request: Some(metrics_stream_request::Request::AgentInit(agent_init)),
+        };
+        tx.send(init_request)
+            .await
+            .context("Failed to send AgentInit")?;
 
         // Create layered collector with cleanup guard
         let (metrics_tx, mut metrics_rx) = mpsc::channel::<LayeredMetricsMessage>(100);

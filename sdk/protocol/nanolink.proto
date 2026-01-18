@@ -592,6 +592,16 @@ service NanoLinkService {
 
 // ========== gRPC Request/Response Messages ==========
 
+// AgentInit is sent as the first message when agent connects
+// Contains the persistent agent ID for data continuity
+message AgentInit {
+  string agent_id = 1;           // Agent's persistent UUID (generated once, stored in config)
+  string hostname = 2;           // Machine hostname
+  string os = 3;                 // Operating system name
+  string arch = 4;               // Architecture (x86_64, aarch64, etc.)
+  string agent_version = 5;      // Agent software version
+}
+
 // MetricsStreamRequest is sent by agent in the bidirectional stream
 message MetricsStreamRequest {
   oneof request {
@@ -601,6 +611,7 @@ message MetricsStreamRequest {
     RealtimeMetrics realtime = 4;      // Realtime metrics (sent every second)
     StaticInfo static_info = 5;        // Static hardware info (on connect or request)
     PeriodicData periodic = 6;         // Periodic data (disk usage, sessions)
+    AgentInit agent_init = 7;          // Agent initialization (MUST be first message)
   }
 }
 

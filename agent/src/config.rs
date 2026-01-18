@@ -403,6 +403,11 @@ fn default_bind_address() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
+    /// Persistent agent ID (auto-generated on first run, used for data continuity)
+    /// This ID is sent to the server to associate metrics with the same agent across restarts
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+
     /// Hostname override (defaults to system hostname)
     pub hostname: Option<String>,
 
@@ -426,6 +431,7 @@ pub struct AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
+            agent_id: None,
             hostname: None,
             heartbeat_interval: default_heartbeat_interval(),
             reconnect_delay: default_reconnect_delay(),
@@ -884,6 +890,20 @@ impl Config {
             // Optionally save migrated config
             if let Err(e) = config.save(path) {
                 eprintln!("Warning: Failed to save migrated config: {e}");
+            }
+        }
+
+        // Generate persistent agent_id if not present
+        // This ensures the same agent ID is used across restarts for data continuity
+        if config.agent.agent_id.is_none() {
+            config.agent.agent_id = Some(uuid::Uuid::new_v4().to_string());
+            eprintln!(
+                "Generated new agent_id: {}",
+                config.agent.agent_id.as_ref().unwrap()
+            );
+            // Save config with the new agent_id
+            if let Err(e) = config.save(path) {
+                eprintln!("Warning: Failed to save config with new agent_id: {e}");
             }
         }
 

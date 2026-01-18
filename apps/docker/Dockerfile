@@ -11,14 +11,26 @@ RUN npm run build
 # Build stage - Go server
 FROM golang:1.24-alpine AS go-builder
 
-RUN apk add --no-cache gcc musl-dev
+RUN apk add --no-cache gcc musl-dev protoc
+
+# Install Go protobuf plugins
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
+  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
 WORKDIR /app
 COPY apps/server/go.mod apps/server/go.sum ./
 RUN go mod download
 
 COPY apps/server/ ./
+COPY sdk/protocol/nanolink.proto ./sdk/protocol/
 COPY --from=web-builder /app/web/dist ./web/dist
+
+# Generate proto code from the updated .proto file
+RUN mkdir -p internal/proto && \
+  protoc --proto_path=./sdk/protocol \
+  --go_out=./internal/proto --go_opt=paths=source_relative \
+  --go-grpc_out=./internal/proto --go-grpc_opt=paths=source_relative \
+  ./sdk/protocol/nanolink.proto
 
 RUN go mod tidy
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o nanolink-server ./cmd

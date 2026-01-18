@@ -180,11 +180,10 @@ func (s *Server) Authenticate(ctx context.Context, req *pb.AuthRequest) (*pb.Aut
 func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) error {
 	s.logger.Info("StreamMetrics: New connection started")
 
-	// Generate agent ID for this connection
-	agentID := uuid.New().String()
+	// Will be populated from AgentInit or generated if old agent
+	var agentID string
 
 	agent := &GrpcAgent{
-		AgentID:     agentID,
 		ConnectedAt: time.Now(),
 		stream:      stream,
 		commandChan: make(chan *pb.Command, 10),
@@ -213,22 +212,51 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 	}
 	s.logger.Infof("StreamMetrics: Received first message type: %T", firstMsg.GetRequest())
 
-	// Extract agent info from first message (can be Metrics, StaticInfo, or Realtime)
+	// Extract agent info from first message
+	// AgentInit is the preferred first message (contains persistent agent_id)
 	switch req := firstMsg.GetRequest().(type) {
+	case *pb.MetricsStreamRequest_AgentInit:
+		// New agent protocol: use the persistent agent_id from config
+		if req.AgentInit.AgentId != "" {
+			agentID = req.AgentInit.AgentId
+			s.logger.Infof("StreamMetrics: Using agent's persistent ID: %s", agentID)
+		} else {
+			// Agent sent empty ID, generate a new one (shouldn't happen normally)
+			agentID = uuid.New().String()
+			s.logger.Warnf("StreamMetrics: Agent sent empty agent_id, generated new: %s", agentID)
+		}
+		agent.Hostname = req.AgentInit.Hostname
+		agent.OS = req.AgentInit.Os
+		agent.Arch = req.AgentInit.Arch
+		agent.Version = req.AgentInit.AgentVersion
 	case *pb.MetricsStreamRequest_Metrics:
+		// Legacy: old agent without AgentInit support
+		agentID = uuid.New().String()
+		s.logger.Infof("StreamMetrics: Legacy agent, generated new ID: %s", agentID)
 		agent.Hostname = req.Metrics.Hostname
 		if req.Metrics.SystemInfo != nil {
 			agent.OS = req.Metrics.SystemInfo.OsName
 		}
 	case *pb.MetricsStreamRequest_StaticInfo:
+		// Legacy: old agent sending StaticInfo first
+		agentID = uuid.New().String()
+		s.logger.Infof("StreamMetrics: Legacy agent (StaticInfo), generated new ID: %s", agentID)
 		if req.StaticInfo.SystemInfo != nil {
 			agent.Hostname = req.StaticInfo.SystemInfo.Hostname
 			agent.OS = req.StaticInfo.SystemInfo.OsName
 		}
 	case *pb.MetricsStreamRequest_Realtime:
-		// Realtime doesn't contain hostname, just continue
-		// Agent info will be filled in when we get a Metrics or StaticInfo message
+		// Legacy: old agent sending Realtime first
+		agentID = uuid.New().String()
+		s.logger.Infof("StreamMetrics: Legacy agent (Realtime), generated new ID: %s", agentID)
+		// Realtime doesn't contain hostname, will be filled in later
+	default:
+		// Unknown first message type, generate ID anyway
+		agentID = uuid.New().String()
+		s.logger.Warnf("StreamMetrics: Unknown first message type, generated new ID: %s", agentID)
 	}
+
+	agent.AgentID = agentID
 
 	// Register agent in gRPC server's internal map
 	s.agentsMu.Lock()
