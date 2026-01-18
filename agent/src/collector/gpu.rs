@@ -1332,8 +1332,9 @@ impl GpuCollector {
     fn extract_macos_gpu_models(json: &str) -> Vec<String> {
         let mut models = Vec::new();
 
-        // Look for "sppci_model" or "chipset_model" fields
-        for field in ["sppci_model", "chipset_model", "_name"] {
+        // Only look for "sppci_model" and "chipset_model" fields - these are GPU models
+        // DO NOT use "_name" - in spdisplays_ndrvs array, _name is the display/monitor name!
+        for field in ["sppci_model", "chipset_model"] {
             let pattern = format!("\"{}\"", field);
             let mut search_pos = 0;
 
@@ -1373,40 +1374,64 @@ impl GpuCollector {
             return;
         }
 
-        // Try to get GPU power usage via powermetrics
+        // Try to get GPU metrics via powermetrics
         // This requires root privileges and may fail silently
         let mut cmd = Command::new("powermetrics");
         cmd.args(["--samplers", "gpu_power", "-n", "1", "-i", "500"]);
 
-        if let Some(output) = exec_with_timeout(cmd, Duration::from_secs(2)) {
+        if let Some(output) = exec_with_timeout(cmd, Duration::from_secs(3)) {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
 
-                // Parse powermetrics output for GPU power
-                // Format varies but often includes "GPU Power: X.XX W"
                 for line in stdout.lines() {
-                    if line.contains("GPU Power") || line.contains("GPU Active") {
-                        // Extract power value
-                        if let Some(power_str) = line.split_whitespace().rev().nth(1) {
-                            if let Ok(power) = power_str.parse::<f64>() {
-                                if let Some(gpu) = gpus.first_mut() {
-                                    gpu.power_watts = power as u32;
+                    // GPU frequency: "GPU HW active frequency: 882 MHz"
+                    if line.contains("GPU HW active frequency:") {
+                        if let Some(freq_str) = line.split(':').nth(1) {
+                            let freq_str = freq_str.trim();
+                            // Extract number before "MHz"
+                            if let Some(mhz_str) = freq_str.split_whitespace().next() {
+                                if let Ok(mhz) = mhz_str.parse::<u64>() {
+                                    if let Some(gpu) = gpus.first_mut() {
+                                        gpu.clock_core_mhz = mhz;
+                                    }
                                 }
                             }
                         }
                     }
-                    // Try to extract GPU busy percentage
-                    if line.contains("GPU Active") || line.contains("GPU Busy") {
-                        if let Some(pct_pos) = line.rfind('%') {
-                            // Find the number before %
-                            let before_pct = &line[..pct_pos];
-                            if let Some(last_space) =
-                                before_pct.rfind(|c: char| c.is_whitespace() || c == ':')
-                            {
-                                let value_str = before_pct[last_space + 1..].trim();
-                                if let Ok(usage) = value_str.parse::<f64>() {
+
+                    // GPU usage: "GPU HW active residency:  13.12% (...)"
+                    if line.contains("GPU HW active residency:") {
+                        // Find the percentage value
+                        if let Some(colon_pos) = line.find(':') {
+                            let after_colon = &line[colon_pos + 1..];
+                            // Find first '%' and extract number before it
+                            if let Some(pct_pos) = after_colon.find('%') {
+                                let before_pct = after_colon[..pct_pos].trim();
+                                if let Ok(usage) = before_pct.parse::<f64>() {
                                     if let Some(gpu) = gpus.first_mut() {
                                         gpu.usage_percent = usage;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // GPU Power: "GPU Power: 183 mW" or "GPU Power: 5.2 W"
+                    if line.contains("GPU Power:") {
+                        if let Some(power_part) = line.split(':').nth(1) {
+                            let power_str = power_part.trim();
+                            let parts: Vec<&str> = power_str.split_whitespace().collect();
+                            if parts.len() >= 2 {
+                                if let Ok(power_value) = parts[0].parse::<f64>() {
+                                    let unit = parts[1].to_lowercase();
+                                    let power_watts = if unit.contains("mw") {
+                                        power_value / 1000.0 // Convert mW to W
+                                    } else {
+                                        power_value // Already in W
+                                    };
+                                    if let Some(gpu) = gpus.first_mut() {
+                                        // Use round() instead of truncation for low-power devices
+                                        gpu.power_watts = power_watts.round() as u32;
                                     }
                                 }
                             }
