@@ -1,7 +1,7 @@
-name: desktop
-description: "NanoLink Desktop - Multi-server agent monitoring"
+name: nanolink_app
+description: "NanoLink - Cross-platform agent monitoring"
 publish_to: 'none'
-version: 0.4.1
+version: 0.5.0
 
 environment:
   sdk: ^3.5.0

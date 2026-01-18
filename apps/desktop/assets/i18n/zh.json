@@ -85,5 +85,38 @@
     "title": "语言",
     "english": "英文",
     "chinese": "中文"
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "agents": "代理",
+    "ai": "AI",
+    "settings": "设置"
+  },
+  "dashboard": {
+    "totalAgents": "代理总数",
+    "avgCpu": "平均 CPU",
+    "avgMemory": "平均内存",
+    "alerts": "告警"
+  },
+  "welcome": {
+    "subtitle": "连接服务器以开始监控",
+    "scanQr": "扫描二维码",
+    "scanQrDesc": "从 Web 控制台扫描",
+    "enterCode": "输入配对码",
+    "enterCodeDesc": "控制台显示的 6 位数字",
+    "manualEntry": "手动输入",
+    "manualEntryDesc": "输入服务器地址和令牌"
+  },
+  "mcp": {
+    "title": "MCP AI 助手",
+    "comingSoon": "智能自动化功能即将推出"
+  },
+  "settings": {
+    "appearance": "外观",
+    "theme": "主题",
+    "language": "语言",
+    "about": "关于",
+    "version": "版本",
+    "sourceCode": "源代码"
   }
 }

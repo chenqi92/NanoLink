@@ -4,7 +4,8 @@ import 'package:easy_localization/easy_localization.dart';
 import 'providers/app_provider.dart';
 import 'providers/theme_provider.dart';
 import 'theme/app_theme.dart';
-import 'screens/home_screen.dart';
+import 'widgets/app_shell.dart';
+import 'screens/server_welcome_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,7 +42,22 @@ class NanoLinkApp extends StatelessWidget {
             localizationsDelegates: context.localizationDelegates,
             supportedLocales: context.supportedLocales,
             locale: context.locale,
-            home: const HomeScreen(),
+            home: Consumer<AppProvider>(
+              builder: (context, appProvider, _) {
+                // Show loading while initializing
+                if (appProvider.isLoading) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                // Show welcome screen if no servers configured
+                if (appProvider.servers.isEmpty) {
+                  return const ServerWelcomeScreen();
+                }
+                // Otherwise show main app shell
+                return const AppShell();
+              },
+            ),
           );
         },
       ),

@@ -15,6 +15,7 @@ class AppTheme {
   static const primaryBlue = Color(0xFF3B82F6);
   static const secondaryBlue = Color(0xFF60A5FA);
   static const accentCyan = Color(0xFF22D3EE);
+  static const accentPurple = Color(0xFF8B5CF6);
 
   // Status colors
   static const successGreen = Color(0xFF22C55E);

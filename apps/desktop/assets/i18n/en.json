@@ -85,5 +85,38 @@
     "title": "Language",
     "english": "English",
     "chinese": "Chinese"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "agents": "Agents",
+    "ai": "AI",
+    "settings": "Settings"
+  },
+  "dashboard": {
+    "totalAgents": "Total Agents",
+    "avgCpu": "Avg CPU",
+    "avgMemory": "Avg Memory",
+    "alerts": "Alerts"
+  },
+  "welcome": {
+    "subtitle": "Connect to your server to start monitoring",
+    "scanQr": "Scan QR Code",
+    "scanQrDesc": "Scan from the web dashboard",
+    "enterCode": "Enter Pairing Code",
+    "enterCodeDesc": "6-digit code from the dashboard",
+    "manualEntry": "Manual Entry",
+    "manualEntryDesc": "Enter server URL and token"
+  },
+  "mcp": {
+    "title": "MCP AI Assistant",
+    "comingSoon": "Intelligent automation coming soon"
+  },
+  "settings": {
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "language": "Language",
+    "about": "About",
+    "version": "Version",
+    "sourceCode": "Source Code"
   }
 }
