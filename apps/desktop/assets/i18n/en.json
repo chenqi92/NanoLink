@@ -55,7 +55,25 @@
     "passwordHint": "Enter your password",
     "passwordRequired": "Password is required",
     "loginFailed": "Login failed. Please check your credentials.",
-    "invalidQrCode": "Invalid QR code format"
+    "invalidQrCode": "Invalid QR code format",
+    "chooseMethod": "Connect to Server",
+    "chooseMethodDesc": "Choose how you'd like to add your NanoLink server",
+    "scanQrCode": "Scan QR Code",
+    "scanQrCodeDesc": "Scan the code from the web dashboard",
+    "enterPairingCode": "Pairing Code",
+    "pairingCodeDesc": "Enter the 6-digit code from the dashboard",
+    "manualEntry": "Manual Setup",
+    "manualEntryDesc": "Enter server URL and token manually",
+    "accountLoginDesc": "Sign in with your account credentials",
+    "positionQrCode": "Position the QR code within the frame",
+    "qrNotSupported": "QR code scanning is not available on this device",
+    "usePairingCodeInstead": "Use pairing code instead",
+    "enterPairingCodeTitle": "Enter Pairing Code",
+    "enterPairingCodeHint": "Get the code from Admin > Device Pairing",
+    "verifyCode": "Verify Code",
+    "pairingCodeInvalid": "Please enter a valid 6-digit code",
+    "pairingCodeExpired": "Pairing code expired or invalid",
+    "login": "Sign In"
   },
   "metrics": {
     "cpu": "CPU",
@@ -101,7 +119,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "agents": "Agents",
-    "ai": "AI",
+    "terminal": "Terminal",
     "settings": "Settings"
   },
   "dashboard": {
@@ -112,6 +130,7 @@
   },
   "welcome": {
     "subtitle": "Connect to your server to start monitoring",
+    "chooseMethodHint": "Scan a QR code, enter a pairing code, or connect manually",
     "scanQr": "Scan QR Code",
     "scanQrDesc": "Scan from the web dashboard",
     "enterCode": "Enter Pairing Code",
@@ -119,9 +138,13 @@
     "manualEntry": "Manual Entry",
     "manualEntryDesc": "Enter server URL and token"
   },
-  "mcp": {
-    "title": "MCP AI Assistant",
-    "comingSoon": "Intelligent automation coming soon"
+  "terminal": {
+    "title": "Terminal",
+    "switchAgent": "Switch",
+    "noOnlineAgents": "No online agents available",
+    "connected": "Connected to {}",
+    "enterCommand": "Enter command...",
+    "notImplemented": "Remote command execution is not yet implemented"
   },
   "settings": {
     "appearance": "Appearance",

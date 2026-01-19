@@ -15,6 +15,7 @@ dependencies:
   uuid: ^4.4.0
   web_socket_channel: ^3.0.0
   easy_localization: ^3.0.7
+  mobile_scanner: ^6.0.0
 
 dev_dependencies:
   flutter_test:

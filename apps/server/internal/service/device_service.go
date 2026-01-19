@@ -6,10 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -62,9 +62,13 @@ func generateSecureToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-// generatePairingCode creates an 8-character pairing code
+// generatePairingCode creates a 6-digit numeric pairing code
 func generatePairingCode() string {
-	return uuid.New().String()[:8] // Use first 8 chars of UUID
+	bytes := make([]byte, 3)
+	_, _ = rand.Read(bytes)
+	// Convert to 6-digit number (0-999999)
+	num := (int(bytes[0])<<16 | int(bytes[1])<<8 | int(bytes[2])) % 1000000
+	return fmt.Sprintf("%06d", num)
 }
 
 // CreateDeviceToken generates a new device token

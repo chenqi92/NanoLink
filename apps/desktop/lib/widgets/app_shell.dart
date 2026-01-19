@@ -4,7 +4,7 @@ import 'package:easy_localization/easy_localization.dart';
 import '../providers/app_provider.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/agents_screen.dart';
-import '../screens/mcp_screen.dart';
+import '../screens/terminal_screen.dart';
 import '../screens/settings_screen.dart';
 import '../theme/app_theme.dart';
 import 'dart:ui';
@@ -24,7 +24,7 @@ class _AppShellState extends State<AppShell> {
   final List<Widget> _screens = [
     const DashboardScreen(),
     const AgentsScreen(),
-    const McpScreen(),
+    const TerminalScreen(),
     const SettingsScreen(),
   ];
 
@@ -83,34 +83,38 @@ class _AppShellState extends State<AppShell> {
           ),
           child: SafeArea(
             top: false,
-            child: NavigationBar(
-              backgroundColor: Colors.transparent,
-              indicatorColor: AppTheme.primaryBlue.withValues(alpha: 0.2),
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: (index) => setState(() => _selectedIndex = index),
-              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-              destinations: [
-                NavigationDestination(
-                  icon: const Icon(Icons.dashboard_outlined),
-                  selectedIcon: Icon(Icons.dashboard_rounded, color: AppTheme.primaryBlue),
-                  label: 'nav.dashboard'.tr(),
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.devices_other_outlined),
-                  selectedIcon: Icon(Icons.devices_other_rounded, color: AppTheme.primaryBlue),
-                  label: 'nav.agents'.tr(),
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.psychology_outlined),
-                  selectedIcon: Icon(Icons.psychology_rounded, color: AppTheme.primaryBlue),
-                  label: 'nav.ai'.tr(),
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.settings_outlined),
-                  selectedIcon: Icon(Icons.settings_rounded, color: AppTheme.primaryBlue),
-                  label: 'nav.settings'.tr(),
-                ),
-              ],
+            child: SizedBox(
+              height: 65, // Standard mobile navigation bar height
+              child: NavigationBar(
+                backgroundColor: Colors.transparent,
+                indicatorColor: AppTheme.primaryBlue.withValues(alpha: 0.2),
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: (index) => setState(() => _selectedIndex = index),
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                height: 65,
+                destinations: [
+                  NavigationDestination(
+                    icon: const Icon(Icons.dashboard_outlined, size: 22),
+                    selectedIcon: Icon(Icons.dashboard_rounded, color: AppTheme.primaryBlue, size: 22),
+                    label: 'nav.dashboard'.tr(),
+                  ),
+                  NavigationDestination(
+                    icon: const Icon(Icons.devices_other_outlined, size: 22),
+                    selectedIcon: Icon(Icons.devices_other_rounded, color: AppTheme.primaryBlue, size: 22),
+                    label: 'nav.agents'.tr(),
+                  ),
+                  NavigationDestination(
+                    icon: const Icon(Icons.terminal_outlined, size: 22),
+                    selectedIcon: Icon(Icons.terminal_rounded, color: AppTheme.primaryBlue, size: 22),
+                    label: 'nav.terminal'.tr(),
+                  ),
+                  NavigationDestination(
+                    icon: const Icon(Icons.settings_outlined, size: 22),
+                    selectedIcon: Icon(Icons.settings_rounded, color: AppTheme.primaryBlue, size: 22),
+                    label: 'nav.settings'.tr(),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -173,7 +177,7 @@ class _AppShellState extends State<AppShell> {
                   children: [
                     _buildNavItem(0, Icons.dashboard_outlined, Icons.dashboard_rounded, 'nav.dashboard'.tr(), isDark),
                     _buildNavItem(1, Icons.devices_other_outlined, Icons.devices_other_rounded, 'nav.agents'.tr(), isDark),
-                    _buildNavItem(2, Icons.psychology_outlined, Icons.psychology_rounded, 'nav.ai'.tr(), isDark),
+                    _buildNavItem(2, Icons.terminal_outlined, Icons.terminal_rounded, 'nav.terminal'.tr(), isDark),
                     _buildNavItem(3, Icons.settings_outlined, Icons.settings_rounded, 'nav.settings'.tr(), isDark),
                   ],
                 ),

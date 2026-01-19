@@ -102,7 +102,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
           padding: const EdgeInsets.all(24),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
-            childAspectRatio: 1.15,
+            childAspectRatio: 0.95, // Taller cards to fit GPU info
             crossAxisSpacing: 16,
             mainAxisSpacing: 16,
           ),

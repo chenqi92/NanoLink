@@ -45,5 +45,7 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>NanoLink needs camera access to scan QR codes for server pairing</string>
 </dict>
 </plist>

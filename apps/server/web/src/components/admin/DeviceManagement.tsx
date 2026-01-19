@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react"
 import { Plus, Trash2, QrCode, Smartphone, Monitor, Tablet, Check, X, Power, PowerOff, Edit2, Copy } from "lucide-react"
+import { QRCodeSVG } from "qrcode.react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { API_BASE_URL } from "@/lib/api"
+import { api } from "@/lib/api"
 
 interface DeviceToken {
   id: number
@@ -62,12 +63,7 @@ export function DeviceManagement() {
   const fetchDevices = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem("token")
-      const res = await fetch(`${API_BASE_URL}/devices`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error("Failed to fetch devices")
-      const data = await res.json()
+      const data = await api.get<DeviceToken[]>("/devices")
       setDevices(data || [])
       setError(null)
     } catch (e) {
@@ -84,17 +80,7 @@ export function DeviceManagement() {
 
   const handleGenerateToken = async () => {
     try {
-      const token = localStorage.getItem("token")
-      const res = await fetch(`${API_BASE_URL}/devices/token`, {
-        method: "POST",
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ serverName: "NanoLink" })
-      })
-      if (!res.ok) throw new Error("Failed to generate token")
-      const data: GenerateTokenResponse = await res.json()
+      const data = await api.post<GenerateTokenResponse>("/devices/token", { serverName: "NanoLink" })
       setQrData(data.qrData)
       setPairingCode(data.pairingCode)
       setShowQrModal(true)
@@ -108,20 +94,14 @@ export function DeviceManagement() {
   const handleUpdateDevice = async () => {
     if (!editDevice) return
     try {
-      const token = localStorage.getItem("token")
-      const res = await fetch(`${API_BASE_URL}/devices/${editDevice.id}`, {
+      await api.fetch(`/devices/${editDevice.id}`, {
         method: "PATCH",
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
         body: JSON.stringify({
           deviceName: editForm.deviceName,
           permissionLevel: editForm.permission,
           isActive: editForm.isActive
         })
       })
-      if (!res.ok) throw new Error("Failed to update device")
       setEditDevice(null)
       fetchDevices()
     } catch (e) {
@@ -135,11 +115,7 @@ export function DeviceManagement() {
       message: `确定要删除设备 "${device.deviceName}" 吗？该设备将无法再连接到服务器。`,
       onConfirm: async () => {
         try {
-          const token = localStorage.getItem("token")
-          await fetch(`${API_BASE_URL}/devices/${device.id}`, {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${token}` }
-          })
+          await api.delete(`/devices/${device.id}`)
           fetchDevices()
         } catch (e) {
           console.error(e)
@@ -215,14 +191,21 @@ export function DeviceManagement() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-center p-4 bg-white rounded-lg">
-                {/* QR Code rendered using QRCode library or image */}
-                <div className="w-48 h-48 flex items-center justify-center border-2 border-dashed border-gray-300 rounded">
-                  <div className="text-center text-sm text-muted-foreground">
-                    <QrCode className="h-16 w-16 mx-auto mb-2 text-gray-400" />
-                    <p>使用手机扫描</p>
-                    <p className="text-xs">或输入配对码</p>
+                {qrData ? (
+                  <QRCodeSVG 
+                    value={qrData} 
+                    size={192}
+                    level="M"
+                    includeMargin={true}
+                  />
+                ) : (
+                  <div className="w-48 h-48 flex items-center justify-center border-2 border-dashed border-gray-300 rounded">
+                    <div className="text-center text-sm text-muted-foreground">
+                      <QrCode className="h-16 w-16 mx-auto mb-2 text-gray-400" />
+                      <p>生成中...</p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
               
               <div className="text-center">

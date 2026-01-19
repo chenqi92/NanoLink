@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../providers/app_provider.dart';
 import '../theme/app_theme.dart';
-import '../widgets/add_server_dialog.dart';
+import 'add_server_page.dart';
 
 /// Dashboard screen showing aggregate health and server overview.
 class DashboardScreen extends StatelessWidget {
@@ -31,11 +31,11 @@ class DashboardScreen extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
-                  // Add Server Button
+                  // Add Server Button - navigates to full AddServerPage
                   IconButton.filledTonal(
-                    onPressed: () => showDialog(
-                      context: context,
-                      builder: (_) => const AddServerDialog(),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AddServerPage()),
                     ),
                     icon: const Icon(Icons.add_rounded),
                     tooltip: 'server.addServer'.tr(),
@@ -129,7 +129,10 @@ class DashboardScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: () => showDialog(context: context, builder: (_) => const AddServerDialog()),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AddServerPage()),
+            ),
             icon: const Icon(Icons.add_rounded),
             label: Text('server.addServer'.tr()),
           ),

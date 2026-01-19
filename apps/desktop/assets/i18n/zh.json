@@ -55,7 +55,25 @@
     "passwordHint": "输入密码",
     "passwordRequired": "请输入密码",
     "loginFailed": "登录失败，请检查用户名和密码。",
-    "invalidQrCode": "无效的二维码格式"
+    "invalidQrCode": "无效的二维码格式",
+    "chooseMethod": "连接服务器",
+    "chooseMethodDesc": "选择添加 NanoLink 服务器的方式",
+    "scanQrCode": "扫描二维码",
+    "scanQrCodeDesc": "扫描网页控制台上的二维码",
+    "enterPairingCode": "配对码",
+    "pairingCodeDesc": "输入控制台上的6位配对码",
+    "manualEntry": "手动配置",
+    "manualEntryDesc": "手动输入服务器地址和令牌",
+    "accountLoginDesc": "使用帐号密码登录",
+    "positionQrCode": "将二维码置于框内",
+    "qrNotSupported": "此设备不支持二维码扫描",
+    "usePairingCodeInstead": "使用配对码",
+    "enterPairingCodeTitle": "输入配对码",
+    "enterPairingCodeHint": "从管理后台 > 设备配对获取",
+    "verifyCode": "验证配对码",
+    "pairingCodeInvalid": "请输入有效的6位配对码",
+    "pairingCodeExpired": "配对码已过期或无效",
+    "login": "登录"
   },
   "metrics": {
     "cpu": "CPU",
@@ -101,7 +119,7 @@
   "nav": {
     "dashboard": "仪表盘",
     "agents": "代理",
-    "ai": "AI",
+    "terminal": "终端",
     "settings": "设置"
   },
   "dashboard": {
@@ -112,6 +130,7 @@
   },
   "welcome": {
     "subtitle": "连接服务器以开始监控",
+    "chooseMethodHint": "扫描二维码、输入配对码或手动连接",
     "scanQr": "扫描二维码",
     "scanQrDesc": "从 Web 控制台扫描",
     "enterCode": "输入配对码",
@@ -119,9 +138,13 @@
     "manualEntry": "手动输入",
     "manualEntryDesc": "输入服务器地址和令牌"
   },
-  "mcp": {
-    "title": "MCP AI 助手",
-    "comingSoon": "智能自动化功能即将推出"
+  "terminal": {
+    "title": "终端",
+    "switchAgent": "切换",
+    "noOnlineAgents": "没有在线的代理",
+    "connected": "已连接到 {}",
+    "enterCommand": "输入命令...",
+    "notImplemented": "远程命令执行功能尚未实现"
   },
   "settings": {
     "appearance": "外观",
