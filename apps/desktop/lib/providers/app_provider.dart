@@ -116,6 +116,40 @@ class AppProvider extends ChangeNotifier {
     return false;
   }
 
+  /// Add a new server connection using username/password credentials
+  Future<bool> addServerWithCredentials({
+    required String name,
+    required String url,
+    required String username,
+    required String password,
+  }) async {
+    final server = ServerConnection(
+      id: _uuid.v4(),
+      name: name,
+      url: url,
+      username: username,
+    );
+
+    // Test connection with login
+    final service = ServerService(connection: server);
+    final token = await service.login(username, password);
+
+    if (token != null) {
+      _servers.add(server.copyWith(
+        isConnected: true,
+        lastConnected: DateTime.now(),
+        userToken: token,
+      ));
+      await _storageService.saveServers(_servers);
+      await _connectToServer(server.copyWith(userToken: token));
+      notifyListeners();
+      return true;
+    }
+
+    service.dispose();
+    return false;
+  }
+
   /// Connect to a server and start listening for updates
   Future<void> _connectToServer(ServerConnection server) async {
     final service = ServerService(connection: server);

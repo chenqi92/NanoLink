@@ -159,8 +159,8 @@ class ServerService {
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
-        if (connection.token != null && connection.token!.isNotEmpty)
-          'Authorization': 'Bearer ${connection.token}',
+        if (connection.authToken != null && connection.authToken!.isNotEmpty)
+          'Authorization': 'Bearer ${connection.authToken}',
       };
 
   String _buildUrl(String path) {
@@ -182,8 +182,32 @@ class ServerService {
       baseUrl = 'ws://${baseUrl.substring(7)}';
     }
 
-    final token = connection.token ?? '';
+    final token = connection.authToken ?? '';
     return '$baseUrl/ws/dashboard?token=${Uri.encodeComponent(token)}';
+  }
+
+  /// Login with username and password, returns JWT token on success
+  Future<String?> login(String username, String password) async {
+    try {
+      final response = await _client.post(
+        Uri.parse(_buildUrl('/auth/login')),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': username,
+          'password': password,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['token'] as String?;
+      }
+      debugPrint('[Auth] Login failed: ${response.statusCode}');
+      return null;
+    } catch (e) {
+      debugPrint('[Auth] Login error: $e');
+      return null;
+    }
   }
 
   /// Test connection to server

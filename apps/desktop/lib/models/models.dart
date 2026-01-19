@@ -3,7 +3,9 @@ class ServerConnection {
   final String id;
   final String name;
   final String url;
-  final String? token;
+  final String? token;           // Device token (read-only)
+  final String? userToken;       // JWT from user login (full permissions)
+  final String? username;        // Username for credential auth
   final bool isConnected;
   final DateTime? lastConnected;
 
@@ -12,15 +14,25 @@ class ServerConnection {
     required this.name,
     required this.url,
     this.token,
+    this.userToken,
+    this.username,
     this.isConnected = false,
     this.lastConnected,
   });
+
+  /// Get the best available auth token
+  String? get authToken => userToken ?? token;
+
+  /// Check if using user credentials (has full permissions)
+  bool get hasFullPermissions => userToken != null;
 
   ServerConnection copyWith({
     String? id,
     String? name,
     String? url,
     String? token,
+    String? userToken,
+    String? username,
     bool? isConnected,
     DateTime? lastConnected,
   }) {
@@ -29,6 +41,8 @@ class ServerConnection {
       name: name ?? this.name,
       url: url ?? this.url,
       token: token ?? this.token,
+      userToken: userToken ?? this.userToken,
+      username: username ?? this.username,
       isConnected: isConnected ?? this.isConnected,
       lastConnected: lastConnected ?? this.lastConnected,
     );
@@ -39,6 +53,8 @@ class ServerConnection {
         'name': name,
         'url': url,
         'token': token,
+        'userToken': userToken,
+        'username': username,
         'lastConnected': lastConnected?.toIso8601String(),
       };
 
@@ -48,6 +64,8 @@ class ServerConnection {
       name: json['name'] as String,
       url: json['url'] as String,
       token: json['token'] as String?,
+      userToken: json['userToken'] as String?,
+      username: json['username'] as String?,
       lastConnected: json['lastConnected'] != null
           ? DateTime.parse(json['lastConnected'] as String)
           : null,

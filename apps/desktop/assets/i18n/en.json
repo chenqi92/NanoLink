@@ -43,7 +43,19 @@
     "serverUrlInvalid": "Please enter a valid URL (e.g., http://...)",
     "authToken": "Auth Token (optional)",
     "authTokenHint": "JWT token for authentication",
-    "connectionFailed": "Failed to connect. Please check the URL and token."
+    "connectionFailed": "Failed to connect. Please check the URL and token.",
+    "deviceToken": "Device Token",
+    "accountLogin": "Account Login",
+    "tokenModeHint": "Use device token for read-only access (obtained from QR code or pairing code)",
+    "accountModeHint": "Use account credentials for full access including write operations",
+    "username": "Username",
+    "usernameHint": "Enter your username",
+    "usernameRequired": "Username is required",
+    "password": "Password",
+    "passwordHint": "Enter your password",
+    "passwordRequired": "Password is required",
+    "loginFailed": "Login failed. Please check your credentials.",
+    "invalidQrCode": "Invalid QR code format"
   },
   "metrics": {
     "cpu": "CPU",

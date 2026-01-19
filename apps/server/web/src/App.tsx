@@ -15,10 +15,11 @@ import { ShellDialog } from "@/components/shell/ShellDialog"
 import { UserManagement } from "@/components/admin/UserManagement"
 import { GroupManagement } from "@/components/admin/GroupManagement"
 import { AgentManagement } from "@/components/admin/AgentManagement"
+import { DeviceManagement } from "@/components/admin/DeviceManagement"
 import { AddAgentWizard } from "@/components/agents/AddAgentWizard"
 import { Button } from "@/components/ui/button"
 
-type View = "dashboard" | "users" | "groups" | "agents-manage" | "permissions" | "settings"
+type View = "dashboard" | "users" | "groups" | "agents-manage" | "devices" | "permissions" | "settings"
 
 function App() {
   const { t } = useTranslation()
@@ -120,6 +121,8 @@ function App() {
           <GroupManagement />
         ) : currentView === "agents-manage" ? (
           <AgentManagement />
+        ) : currentView === "devices" ? (
+          <DeviceManagement />
         ) : null}
       </main>
 

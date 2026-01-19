@@ -43,7 +43,19 @@
     "serverUrlInvalid": "请输入有效的 URL（例如：http://...）",
     "authToken": "认证令牌（可选）",
     "authTokenHint": "用于认证的 JWT 令牌",
-    "connectionFailed": "连接失败，请检查 URL 和令牌。"
+    "connectionFailed": "连接失败，请检查 URL 和令牌。",
+    "deviceToken": "设备令牌",
+    "accountLogin": "帐号登录",
+    "tokenModeHint": "使用设备令牌进行只读访问（通过二维码或配对码获取）",
+    "accountModeHint": "使用帐号密码获取完整权限包括写入操作",
+    "username": "用户名",
+    "usernameHint": "输入用户名",
+    "usernameRequired": "请输入用户名",
+    "password": "密码",
+    "passwordHint": "输入密码",
+    "passwordRequired": "请输入密码",
+    "loginFailed": "登录失败，请检查用户名和密码。",
+    "invalidQrCode": "无效的二维码格式"
   },
   "metrics": {
     "cpu": "CPU",

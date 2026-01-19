@@ -110,6 +110,11 @@ func main() {
 	agentTokenService := service.NewAgentTokenService(database.GetDB(), sugar)
 	agentTokenService.StartCleanupJob() // Auto-cleanup expired tokens
 
+	// Initialize device service for mobile/desktop client pairing
+	serverURL := fmt.Sprintf("http://localhost:%d", cfg.Server.HTTPPort)
+	// TODO: Add ExternalURL to config for production deployments
+	deviceService := service.NewDeviceService(database.GetDB(), sugar, serverURL)
+
 	// Setup Gin router
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
@@ -126,6 +131,10 @@ func main() {
 		authHandler := handler.NewAuthHandler(authService, sugar)
 		api.POST("/auth/register", authHandler.Register)
 		api.POST("/auth/login", authHandler.Login)
+
+		// Device token authentication (public, uses X-Device-Token header)
+		deviceHandler := handler.NewDeviceHandler(deviceService, sugar, "NanoLink")
+		api.POST("/auth/device", deviceHandler.AuthenticateDevice)
 
 		// Health check (public)
 		h := handler.NewHandlerWithPermissions(agentService, metricsService, permService, sugar)
@@ -164,6 +173,14 @@ func main() {
 			permHandler := handler.NewPermissionHandler(permService, sugar)
 			protected.POST("/permissions/check", permHandler.CheckPermission)
 			protected.GET("/agents/:id/groups", permHandler.GetAgentGroups)
+
+			// Device management routes (logged-in users can manage their own devices)
+			deviceHandler := handler.NewDeviceHandler(deviceService, sugar, "NanoLink")
+			protected.POST("/devices/token", deviceHandler.GenerateToken)
+			protected.GET("/devices", deviceHandler.ListDevices)
+			protected.GET("/devices/:id", deviceHandler.GetDevice)
+			protected.PATCH("/devices/:id", deviceHandler.UpdateDevice)
+			protected.DELETE("/devices/:id", deviceHandler.DeleteDevice)
 
 			// Super admin only routes
 			admin := protected.Group("")
