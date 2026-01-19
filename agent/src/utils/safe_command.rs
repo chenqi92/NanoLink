@@ -104,12 +104,24 @@ pub fn exec_with_timeout(mut cmd: Command, timeout: Duration) -> Option<Output> 
                     // If we got some output, return it with a fake success status
                     // This is important for streaming commands like intel_gpu_top
                     if !stdout.is_empty() {
-                        use std::os::unix::process::ExitStatusExt;
-                        return Some(Output {
-                            status: std::process::ExitStatus::from_raw(0),
-                            stdout,
-                            stderr,
-                        });
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::process::ExitStatusExt;
+                            return Some(Output {
+                                status: std::process::ExitStatus::from_raw(0),
+                                stdout,
+                                stderr,
+                            });
+                        }
+                        #[cfg(windows)]
+                        {
+                            use std::os::windows::process::ExitStatusExt;
+                            return Some(Output {
+                                status: std::process::ExitStatus::from_raw(0),
+                                stdout,
+                                stderr,
+                            });
+                        }
                     }
 
                     warn!("Command timed out after {:?}, killed", timeout);

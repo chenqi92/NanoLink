@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::process::Command;
+#[cfg(target_os = "linux")]
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 

@@ -99,10 +99,10 @@ impl WizardState {
 
         // Save configuration
         let yaml = serde_yaml::to_string(&config)
-            .map_err(|e| format!("Failed to serialize config: {}", e))?;
+            .map_err(|e| format!("Failed to serialize config: {e}"))?;
 
         std::fs::write(&config_path, yaml)
-            .map_err(|e| format!("Failed to write config file: {}", e))?;
+            .map_err(|e| format!("Failed to write config file: {e}"))?;
 
         Ok(config_path)
     }
@@ -372,7 +372,7 @@ pub fn run_wizard() -> anyhow::Result<()> {
         options,
         Box::new(|cc| Ok(Box::new(WizardApp::new(cc)))),
     )
-    .map_err(|e| anyhow::anyhow!("Failed to run wizard: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("Failed to run wizard: {e}"))?;
 
     Ok(())
 }

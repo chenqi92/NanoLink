@@ -912,12 +912,9 @@ impl Config {
             let old_id = config.agent.agent_id.take();
             config.agent.agent_id = Some(hardware_id.clone());
             if let Some(old) = old_id {
-                eprintln!(
-                    "Migrated agent_id from UUID ({}) to hardware-based: {}",
-                    old, hardware_id
-                );
+                eprintln!("Migrated agent_id from UUID ({old}) to hardware-based: {hardware_id}");
             } else {
-                eprintln!("Generated hardware-based agent_id: {}", hardware_id);
+                eprintln!("Generated hardware-based agent_id: {hardware_id}");
             }
             // Save config with the new agent_id
             if let Err(e) = config.save(path) {

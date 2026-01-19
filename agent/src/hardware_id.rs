@@ -46,7 +46,7 @@ fn get_machine_id() -> String {
     // Fallback: use hostname + platform info
     let hostname = get_hostname();
     let platform = get_platform_info();
-    let fallback_id = format!("{}-{}", hostname, platform);
+    let fallback_id = format!("{hostname}-{platform}");
     tracing::warn!(
         "machine_uid unavailable, using fallback ID based on hostname: {}",
         hostname
@@ -102,8 +102,8 @@ fn hash_to_short_hex(input: &str, len: usize) -> String {
 
     // Convert first bytes to hex string
     let mut hex = String::with_capacity(len);
-    for byte in result.iter().take((len + 1) / 2) {
-        write!(hex, "{:02x}", byte).unwrap();
+    for byte in result.iter().take(len.div_ceil(2)) {
+        write!(hex, "{byte:02x}").unwrap();
     }
     hex.truncate(len);
     hex
