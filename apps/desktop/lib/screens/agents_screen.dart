@@ -159,60 +159,69 @@ class _AgentsScreenState extends State<AgentsScreen> {
     );
   }
 
-  Widget _buildListTile(BuildContext context, agent, metrics, String serverName, bool isDark) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Material(
-          color: isDark ? AppTheme.darkCard.withValues(alpha: 0.5) : AppTheme.lightCard.withValues(alpha: 0.6),
-          child: InkWell(
-            onTap: () => _openAgentDetail(context, agent),
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  // OS Icon
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryBlue.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(_getOsIcon(agent.os), color: AppTheme.primaryBlue),
+  Widget _buildListTile(BuildContext context, Agent agent, AgentMetrics? metrics, String serverName, bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? AppTheme.darkCard : AppTheme.lightCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _openAgentDetail(context, agent),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // OS Icon
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryBlue.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  const SizedBox(width: 16),
-                  // Info
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          agent.hostname,
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  child: Icon(_getOsIcon(agent.os), color: AppTheme.primaryBlue),
+                ),
+                const SizedBox(width: 16),
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        agent.hostname,
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                      ),
+                      Text(
+                        '${agent.os} • $serverName',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary,
                         ),
-                        Text(
-                          '${agent.os} • $serverName',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  // Status
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: agent.isOnline ? AppTheme.successGreen : AppTheme.errorRed,
-                      shape: BoxShape.circle,
-                    ),
+                ),
+                // Status
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: agent.isOnline ? AppTheme.successGreen : AppTheme.errorRed,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: (agent.isOnline ? AppTheme.successGreen : AppTheme.errorRed).withValues(alpha: 0.4),
+                        blurRadius: 6,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

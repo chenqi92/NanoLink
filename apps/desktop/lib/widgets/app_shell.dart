@@ -64,6 +64,13 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _buildGlassNavigationBar(bool isDark) {
+    final items = [
+      _NavItem(Icons.dashboard_outlined, Icons.dashboard_rounded, 'nav.dashboard'.tr()),
+      _NavItem(Icons.devices_other_outlined, Icons.devices_other_rounded, 'nav.agents'.tr()),
+      _NavItem(Icons.terminal_outlined, Icons.terminal_rounded, 'nav.terminal'.tr()),
+      _NavItem(Icons.settings_outlined, Icons.settings_rounded, 'nav.settings'.tr()),
+    ];
+
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
@@ -84,36 +91,41 @@ class _AppShellState extends State<AppShell> {
           child: SafeArea(
             top: false,
             child: SizedBox(
-              height: 65, // Standard mobile navigation bar height
-              child: NavigationBar(
-                backgroundColor: Colors.transparent,
-                indicatorColor: AppTheme.primaryBlue.withValues(alpha: 0.2),
-                selectedIndex: _selectedIndex,
-                onDestinationSelected: (index) => setState(() => _selectedIndex = index),
-                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-                height: 65,
-                destinations: [
-                  NavigationDestination(
-                    icon: const Icon(Icons.dashboard_outlined, size: 22),
-                    selectedIcon: Icon(Icons.dashboard_rounded, color: AppTheme.primaryBlue, size: 22),
-                    label: 'nav.dashboard'.tr(),
-                  ),
-                  NavigationDestination(
-                    icon: const Icon(Icons.devices_other_outlined, size: 22),
-                    selectedIcon: Icon(Icons.devices_other_rounded, color: AppTheme.primaryBlue, size: 22),
-                    label: 'nav.agents'.tr(),
-                  ),
-                  NavigationDestination(
-                    icon: const Icon(Icons.terminal_outlined, size: 22),
-                    selectedIcon: Icon(Icons.terminal_rounded, color: AppTheme.primaryBlue, size: 22),
-                    label: 'nav.terminal'.tr(),
-                  ),
-                  NavigationDestination(
-                    icon: const Icon(Icons.settings_outlined, size: 22),
-                    selectedIcon: Icon(Icons.settings_rounded, color: AppTheme.primaryBlue, size: 22),
-                    label: 'nav.settings'.tr(),
-                  ),
-                ],
+              height: 56, // Compact height
+              child: Row(
+                children: List.generate(items.length, (index) {
+                  final item = items[index];
+                  final isSelected = _selectedIndex == index;
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedIndex = index),
+                      behavior: HitTestBehavior.opaque,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            isSelected ? item.selectedIcon : item.icon,
+                            size: 24,
+                            color: isSelected 
+                                ? AppTheme.primaryBlue 
+                                : (isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            item.label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                              color: isSelected 
+                                  ? AppTheme.primaryBlue 
+                                  : (isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
               ),
             ),
           ),
@@ -243,4 +255,13 @@ class _AppShellState extends State<AppShell> {
       ),
     );
   }
+}
+
+/// Helper class for navigation items
+class _NavItem {
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+
+  const _NavItem(this.icon, this.selectedIcon, this.label);
 }
