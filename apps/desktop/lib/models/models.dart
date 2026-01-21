@@ -114,6 +114,10 @@ class Agent {
           : DateTime.now(),
     );
   }
+
+  /// Check if agent is online based on last heartbeat (within 60 seconds)
+  bool get isOnline =>
+      DateTime.now().difference(lastHeartbeat).inSeconds < 60;
 }
 
 /// CPU metrics
