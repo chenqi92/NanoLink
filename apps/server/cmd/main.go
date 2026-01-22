@@ -111,8 +111,12 @@ func main() {
 	agentTokenService.StartCleanupJob() // Auto-cleanup expired tokens
 
 	// Initialize device service for mobile/desktop client pairing
-	serverURL := fmt.Sprintf("http://localhost:%d", cfg.Server.HTTPPort)
-	// TODO: Add ExternalURL to config for production deployments
+	// Use ExternalURL from config for QR codes, fallback to localhost for development
+	serverURL := cfg.Server.ExternalURL
+	if serverURL == "" {
+		serverURL = fmt.Sprintf("http://localhost:%d", cfg.Server.HTTPPort)
+		sugar.Warn("NANOLINK_EXTERNAL_URL not set, using localhost for device pairing QR codes. Set this for production deployments.")
+	}
 	deviceService := service.NewDeviceService(database.GetDB(), sugar, serverURL)
 
 	// Setup Gin router

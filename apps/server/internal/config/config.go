@@ -32,6 +32,7 @@ type ServerConfig struct {
 	TLSCert        string   `mapstructure:"tls_cert"`
 	TLSKey         string   `mapstructure:"tls_key"`
 	AllowedOrigins []string `mapstructure:"allowed_origins"` // CORS whitelist for WebSocket connections
+	ExternalURL    string   `mapstructure:"external_url"`    // External URL for device pairing QR codes (e.g., https://myserver.com:8080)
 }
 
 // AuthConfig holds authentication configuration
@@ -195,6 +196,7 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("jwt.expire_hour", "NANOLINK_JWT_EXPIRE_HOUR")
 	_ = viper.BindEnv("superadmin.username", "NANOLINK_ADMIN_USERNAME")
 	_ = viper.BindEnv("superadmin.password", "NANOLINK_ADMIN_PASSWORD")
+	_ = viper.BindEnv("server.external_url", "NANOLINK_EXTERNAL_URL")
 
 	// Try to read config file (optional - environment variables take precedence)
 	configErr := viper.ReadInConfig()
@@ -217,6 +219,9 @@ func Load(path string) (*Config, error) {
 	}
 	if dbPath := os.Getenv("NANOLINK_DATABASE_PATH"); dbPath != "" {
 		cfg.Database.Path = dbPath
+	}
+	if externalURL := os.Getenv("NANOLINK_EXTERNAL_URL"); externalURL != "" {
+		cfg.Server.ExternalURL = externalURL
 	}
 
 	return &cfg, configErr
