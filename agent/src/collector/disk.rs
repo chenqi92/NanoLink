@@ -538,6 +538,7 @@ impl DiskCollector {
             "squashfs",      // Snap packages
             "fuse.snapfuse", // Snap FUSE mounts
             "fuse.portal",   // XDG portals
+            "fuse.lxcfs",    // LXC/LXD container filesystem
         ];
 
         if virtual_fs_types.contains(&fs_type) {
@@ -557,6 +558,12 @@ impl DiskCollector {
             "/proc/",               // Procfs
             "/snap/",               // Snap package mounts
             "/var/snap/",           // Snap data (when mounted separately)
+            "/var/lib/lxc/",        // LXC containers
+            "/var/lib/lxd/",        // LXD containers
+            "/var/lib/containerd/", // containerd runtime
+            "/var/run/docker/",     // Docker runtime
+            "/run/containerd/",     // containerd runtime
+            "/run/docker/",         // Docker runtime
         ];
 
         if skip_mount_patterns
@@ -581,10 +588,26 @@ impl DiskCollector {
             return true;
         }
 
-        // Skip by device patterns
-        let skip_device_patterns = ["overlay", "shm", "nsfs"];
+        // Skip by device patterns (containers, overlay filesystems)
+        let skip_device_patterns = [
+            "overlay",
+            "shm",
+            "nsfs",
+            "docker",     // Any device with docker in name
+            "containerd", // containerd volumes
+        ];
 
         if skip_device_patterns.iter().any(|&p| device.contains(p)) {
+            return true;
+        }
+
+        // Skip container-related mount points (detect by path patterns)
+        // These are often long hash-based paths used by container runtimes
+        if mount_point.contains("/merged")
+            || mount_point.contains("/diff")
+            || mount_point.contains("/work")
+            || mount_point.contains("overlay2")
+        {
             return true;
         }
 

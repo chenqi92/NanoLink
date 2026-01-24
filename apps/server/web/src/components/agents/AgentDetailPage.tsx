@@ -210,6 +210,12 @@ export function AgentDetailPage({
                           <span className="text-xs font-medium truncate">{net.interface}</span>
                           <div className={cn("h-2 w-2 rounded-full", net.isUp ? "bg-green-500" : "bg-red-500")} />
                         </div>
+                        {/* IP Addresses */}
+                        {net.ipAddresses && net.ipAddresses.length > 0 && (
+                          <div className="text-xs text-[var(--color-muted-foreground)] mb-1 truncate" title={net.ipAddresses.join(", ")}>
+                            {net.ipAddresses.filter(ip => !ip.includes(":")).slice(0, 1).join(", ") || net.ipAddresses[0]}
+                          </div>
+                        )}
                         <div className="text-xs text-[var(--color-muted-foreground)]">
                           <div className="flex justify-between">
                             <span>↓</span>
@@ -243,7 +249,7 @@ export function AgentDetailPage({
 
             {/* System Info */}
             {metrics?.systemInfo && (
-              <SystemInfoCard systemInfo={metrics.systemInfo} />
+              <SystemInfoCard systemInfo={metrics.systemInfo} networks={metrics.networks} />
             )}
 
             {/* Footer */}

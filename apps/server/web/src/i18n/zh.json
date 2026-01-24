@@ -99,7 +99,8 @@
     "motherboard": "主板",
     "bios": "BIOS",
     "systemModel": "系统型号",
-    "vendor": "厂商"
+    "vendor": "厂商",
+    "ipAddress": "IP 地址"
   },
   "sessions": {
     "title": "用户会话",

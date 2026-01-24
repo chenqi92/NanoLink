@@ -1,14 +1,30 @@
 import { useTranslation } from "react-i18next"
-import { Monitor, Server, Cpu, HardDrive, Clock } from "lucide-react"
+import { Monitor, Server, Cpu, HardDrive, Clock, Globe } from "lucide-react"
 import { formatUptime } from "@/lib/utils"
-import type { SystemInfo } from "@/lib/api"
+import type { SystemInfo, NetworkMetrics } from "@/lib/api"
 
 interface SystemInfoCardProps {
   systemInfo: SystemInfo
+  networks?: NetworkMetrics[]
 }
 
-export function SystemInfoCard({ systemInfo }: SystemInfoCardProps) {
+export function SystemInfoCard({ systemInfo, networks }: SystemInfoCardProps) {
   const { t } = useTranslation()
+
+  // Extract primary IP (first non-loopback IPv4 address)
+  const primaryIp = (() => {
+    if (!networks || networks.length === 0) return null
+    for (const net of networks) {
+      // Skip loopback and virtual interfaces
+      if (net.interfaceType === "loopback" || net.interfaceType === "virtual") continue
+      if (!net.isUp) continue
+      if (!net.ipAddresses || net.ipAddresses.length === 0) continue
+      // Find first IPv4 address (no colons)
+      const ipv4 = net.ipAddresses.find(ip => !ip.includes(":"))
+      if (ipv4) return ipv4
+    }
+    return null
+  })()
 
   const items = [
     { icon: Monitor, label: t("system.osName"), value: `${systemInfo.osName} ${systemInfo.osVersion}` },
@@ -17,7 +33,8 @@ export function SystemInfoCard({ systemInfo }: SystemInfoCardProps) {
     { icon: HardDrive, label: t("system.motherboard"), value: `${systemInfo.motherboardVendor} ${systemInfo.motherboardModel}` },
     { icon: Cpu, label: t("system.bios"), value: systemInfo.biosVersion },
     { icon: Server, label: t("system.systemModel"), value: `${systemInfo.systemVendor} ${systemInfo.systemModel}` },
-  ].filter(item => item.value && item.value.trim() !== "")
+    primaryIp ? { icon: Globe, label: t("system.ipAddress", "IP 地址"), value: primaryIp } : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null && !!item.value && item.value.trim() !== "")
 
   return (
     <div>

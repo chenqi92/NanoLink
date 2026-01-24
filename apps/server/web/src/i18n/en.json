@@ -93,7 +93,8 @@
     "motherboard": "Motherboard",
     "bios": "BIOS",
     "systemModel": "System Model",
-    "vendor": "Vendor"
+    "vendor": "Vendor",
+    "ipAddress": "IP Address"
   },
   "sessions": {
     "title": "User Sessions",
