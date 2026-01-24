@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/peer"
 )
 
 // GrpcAgent represents a connected agent via gRPC
@@ -25,6 +27,7 @@ type GrpcAgent struct {
 	OS              string
 	Arch            string
 	Version         string
+	RemoteIP        string
 	PermissionLevel int32
 	ConnectedAt     time.Time
 	LastMetricsAt   time.Time
@@ -185,6 +188,22 @@ func (s *Server) Authenticate(ctx context.Context, req *pb.AuthRequest) (*pb.Aut
 func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) error {
 	s.logger.Info("StreamMetrics: New connection started")
 
+	// Get client IP from stream context
+	var remoteIP string
+	if p, ok := peer.FromContext(stream.Context()); ok && p.Addr != nil {
+		addr := p.Addr.String()
+		// Extract IP without port (format: "ip:port" or "[ipv6]:port")
+		if idx := strings.LastIndex(addr, ":"); idx != -1 {
+			remoteIP = addr[:idx]
+			// Remove brackets for IPv6
+			remoteIP = strings.TrimPrefix(remoteIP, "[")
+			remoteIP = strings.TrimSuffix(remoteIP, "]")
+		} else {
+			remoteIP = addr
+		}
+		s.logger.Infof("StreamMetrics: Client connected from IP: %s", remoteIP)
+	}
+
 	// Will be populated from AgentInit or generated if old agent
 	var agentID string
 
@@ -192,7 +211,9 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		ConnectedAt: time.Now(),
 		stream:      stream,
 		commandChan: make(chan *pb.Command, 10),
+		RemoteIP:    remoteIP,
 	}
+
 	// Send immediate HeartbeatAck to prevent client-side timeout
 	// (Some clients have RPC timeout that kills the stream if no response is received)
 	initAck := &pb.MetricsStreamResponse{
@@ -299,6 +320,9 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		// Unregister from AgentService
 		s.agentService.UnregisterAgent(agentID)
 
+		// Clean up metrics data to prevent accumulation on reconnect with new ID
+		s.metricsService.RemoveAgent(agentID)
+
 		close(agent.commandChan)
 
 		s.logger.Infof("gRPC agent disconnected: %s (%s)", agent.Hostname, agentID)
@@ -366,7 +390,7 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 
 		// Update last seen in database for online status
 		if s.agentTokenService != nil {
-			s.agentTokenService.UpdateLastSeen(agent.AgentID)
+			s.agentTokenService.UpdateLastSeen(agent.AgentID, agent.RemoteIP)
 		}
 
 	case *pb.MetricsStreamRequest_Realtime:
@@ -379,6 +403,14 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 		}
 
 	case *pb.MetricsStreamRequest_StaticInfo:
+		// Debug log to investigate memory display issue
+		if req.StaticInfo.Memory != nil {
+			s.logger.Infof("StaticInfo received from %s: Memory.Total=%d bytes (%.2f GB), SwapTotal=%d bytes",
+				agent.AgentID,
+				req.StaticInfo.Memory.Total,
+				float64(req.StaticInfo.Memory.Total)/(1024*1024*1024),
+				req.StaticInfo.Memory.SwapTotal)
+		}
 		// Merge static info into current metrics
 		s.metricsService.MergeStaticInfo(agent.AgentID, convertStaticInfo(req.StaticInfo))
 		// Update agent info from static info

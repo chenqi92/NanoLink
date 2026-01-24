@@ -15,6 +15,9 @@ interface Summary {
   memoryPercent: number
   totalMemory: number
   usedMemory: number
+  diskPercent: number
+  totalDisk: number
+  usedDisk: number
 }
 
 interface UseWebSocketOptions {

@@ -254,6 +254,9 @@ export interface Summary {
   memoryPercent: number
   totalMemory: number
   usedMemory: number
+  diskPercent: number
+  totalDisk: number
+  usedDisk: number
 }
 
 // API endpoints
@@ -291,6 +294,7 @@ export interface AgentToken {
   os?: string
   arch?: string
   version?: string
+  lastIp?: string
   permission: number
   sortOrder: number
   isOnline: boolean

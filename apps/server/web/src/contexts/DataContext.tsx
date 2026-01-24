@@ -30,6 +30,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     memoryPercent: 0,
     totalMemory: 0,
     usedMemory: 0,
+    diskPercent: 0,
+    totalDisk: 0,
+    usedDisk: 0,
   })
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -173,6 +176,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         memoryPercent: 0,
         totalMemory: 0,
         usedMemory: 0,
+        diskPercent: 0,
+        totalDisk: 0,
+        usedDisk: 0,
       })
       wsDataReceived.current = false
       setIsLoading(true)

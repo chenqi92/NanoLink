@@ -18,6 +18,7 @@ type AgentToken struct {
 	OS          string         `gorm:"size:100" json:"os"`                     // Operating system
 	Arch        string         `gorm:"size:50" json:"arch"`                    // Architecture
 	Version     string         `gorm:"size:50" json:"version"`                 // Agent version
+	LastIP      string         `gorm:"size:50" json:"lastIp"`                  // Last known IP address
 	Permission  int            `gorm:"default:0" json:"permission"`            // Permission level 0-3
 	SortOrder   int            `gorm:"default:0" json:"sortOrder"`             // Display order (lower = first)
 	CreatedAt   time.Time      `json:"createdAt"`

@@ -337,9 +337,12 @@ export function AgentManagement() {
                         </span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
-                        {token.agentId || "等待Agent连接"} 
-                        {token.os && ` • ${token.os}`}
-                        {token.lastSeenAt && ` • 最后: ${formatTime(token.lastSeenAt)}`}
+                        {token.lastIp && <span className="font-mono">{token.lastIp}</span>}
+                        {token.lastIp && token.os && " • "}
+                        {token.os}
+                        {(token.lastIp || token.os) && token.lastSeenAt && " • "}
+                        {token.lastSeenAt && `最后: ${formatTime(token.lastSeenAt)}`}
+                        {!token.lastIp && !token.os && !token.lastSeenAt && (token.agentId || "等待Agent连接")}
                       </div>
                     </div>
                     

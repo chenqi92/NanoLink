@@ -33,6 +33,7 @@
     "connectedAgents": "Connected Agents",
     "avgCpu": "Avg CPU Usage",
     "avgMemory": "Avg Memory Usage",
+    "totalDisk": "Total Disk Usage",
     "noAgents": "No agents connected",
     "noAgentsDesc": "Agents will appear here when they connect"
   },

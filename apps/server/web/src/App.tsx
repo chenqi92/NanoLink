@@ -81,6 +81,9 @@ function App() {
               memoryPercent={summary.memoryPercent}
               totalMemory={summary.totalMemory}
               usedMemory={summary.usedMemory}
+              diskPercent={summary.diskPercent}
+              totalDisk={summary.totalDisk}
+              usedDisk={summary.usedDisk}
             />
 
             <div className="flex items-center justify-between mt-8 mb-4">

@@ -171,10 +171,16 @@ func (s *AgentTokenService) ValidateAndUpdateToken(tokenStr string, agentID stri
 	return &token, true
 }
 
-// UpdateLastSeen updates the last seen time for an agent
-func (s *AgentTokenService) UpdateLastSeen(agentID string) {
+// UpdateLastSeen updates the last seen time and IP for an agent
+func (s *AgentTokenService) UpdateLastSeen(agentID string, ip string) {
 	now := time.Now()
-	s.db.Model(&database.AgentToken{}).Where("agent_id = ?", agentID).Update("last_seen_at", now)
+	updates := map[string]interface{}{
+		"last_seen_at": now,
+	}
+	if ip != "" {
+		updates["last_ip"] = ip
+	}
+	s.db.Model(&database.AgentToken{}).Where("agent_id = ?", agentID).Updates(updates)
 }
 
 // CleanupExpired removes tokens that have expired AND were never connected

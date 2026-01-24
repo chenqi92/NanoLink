@@ -33,6 +33,7 @@
     "connectedAgents": "已连接代理",
     "avgCpu": "平均 CPU 使用率",
     "avgMemory": "平均内存使用率",
+    "totalDisk": "硬盘总占用",
     "noAgents": "暂无代理连接",
     "noAgentsDesc": "代理连接后将显示在这里"
   },

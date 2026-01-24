@@ -285,21 +285,32 @@ func (s *MetricsService) GetSummary() map[string]interface{} {
 	totalCPU := 0.0
 	totalMem := uint64(0)
 	usedMem := uint64(0)
+	totalDisk := uint64(0)
+	usedDisk := uint64(0)
 	agentCount := len(s.current)
 
 	for _, data := range s.current {
 		totalCPU += data.CPU.UsagePercent
 		totalMem += data.Memory.Total
 		usedMem += data.Memory.Used
+		// Sum disk usage across all disks for each agent
+		for _, disk := range data.Disks {
+			totalDisk += disk.Total
+			usedDisk += disk.Used
+		}
 	}
 
 	avgCPU := 0.0
 	memPercent := 0.0
+	diskPercent := 0.0
 	if agentCount > 0 {
 		avgCPU = totalCPU / float64(agentCount)
 	}
 	if totalMem > 0 {
 		memPercent = float64(usedMem) / float64(totalMem) * 100
+	}
+	if totalDisk > 0 {
+		diskPercent = float64(usedDisk) / float64(totalDisk) * 100
 	}
 
 	return map[string]interface{}{
@@ -308,6 +319,9 @@ func (s *MetricsService) GetSummary() map[string]interface{} {
 		"totalMemory":   totalMem,
 		"usedMemory":    usedMem,
 		"memoryPercent": memPercent,
+		"totalDisk":     totalDisk,
+		"usedDisk":      usedDisk,
+		"diskPercent":   diskPercent,
 	}
 }
 
