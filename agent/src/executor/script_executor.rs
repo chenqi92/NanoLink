@@ -458,6 +458,7 @@ impl ScriptExecutor {
                 Ok(None) => {
                     if start.elapsed() > timeout {
                         let _ = child.kill();
+                        let _ = child.wait();
                         return (
                             String::new(),
                             false,
@@ -548,6 +549,7 @@ impl ScriptExecutor {
                 Ok(None) => {
                     if start.elapsed() > timeout {
                         let _ = child.kill();
+                        let _ = child.wait();
                         return (
                             String::new(),
                             false,

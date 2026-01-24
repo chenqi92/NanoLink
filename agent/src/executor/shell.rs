@@ -114,8 +114,9 @@ impl ShellExecutor {
                 Ok(None) => {
                     // Still running
                     if start.elapsed() > timeout {
-                        // Timeout - kill the process
+                        // Timeout - kill and wait for the process to prevent zombies
                         let _ = child.kill();
+                        let _ = child.wait();
                         return CommandResult {
                             command_id: String::new(),
                             success: false,
@@ -192,8 +193,9 @@ impl ShellExecutor {
                 Ok(None) => {
                     // Still running
                     if start.elapsed() > timeout {
-                        // Timeout - kill the process
+                        // Timeout - kill and wait for the process to prevent zombies
                         let _ = child.kill();
+                        let _ = child.wait();
                         return CommandResult {
                             command_id: String::new(),
                             success: false,
