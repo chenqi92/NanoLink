@@ -20,6 +20,7 @@ pub mod proto {
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
@@ -45,7 +46,7 @@ const CONFIG_SEARCH_PATHS: &[&str] = &[
 #[derive(Parser, Debug)]
 #[command(name = "nanolink-agent")]
 #[command(author = "NanoLink Team")]
-#[command(version = "0.4.3")]
+#[command(version = "0.4.4")]
 #[command(about = "Lightweight server monitoring agent", long_about = None)]
 struct Args {
     /// Path to configuration file (auto-detected if not specified)
@@ -303,7 +304,7 @@ fn main() -> Result<()> {
     // Note: interactive_main_menu creates its own runtime when needed
     if !args.foreground {
         // Check if stdin is a TTY - if not, we're likely running as a service
-        if atty::is(atty::Stream::Stdin) {
+        if std::io::stdin().is_terminal() {
             return interactive_main_menu(&args);
         }
         // Non-interactive environment (systemd, etc.) - run in foreground mode
