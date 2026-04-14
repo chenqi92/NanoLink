@@ -545,6 +545,11 @@ pub struct CollectorConfig {
     #[serde(default = "default_ip_check_interval")]
     pub ip_check_interval_ms: u64,
 
+    /// Per-core CPU usage collection interval in milliseconds
+    /// Sent via periodic channel at lower frequency than realtime aggregate CPU
+    #[serde(default = "default_per_core_interval")]
+    pub per_core_interval_ms: u64,
+
     /// Disk health (S.M.A.R.T) check interval in milliseconds
     #[serde(default = "default_health_check_interval")]
     pub health_check_interval_ms: u64,
@@ -605,6 +610,7 @@ impl Default for CollectorConfig {
             disk_usage_interval_ms: default_disk_usage_interval(),
             session_interval_ms: default_session_interval(),
             ip_check_interval_ms: default_ip_check_interval(),
+            per_core_interval_ms: default_per_core_interval(),
             health_check_interval_ms: default_health_check_interval(),
             cpu_interval_ms: default_cpu_interval(),
             disk_interval_ms: default_disk_interval(),
@@ -809,6 +815,9 @@ fn default_realtime_interval() -> u64 {
 }
 fn default_disk_usage_interval() -> u64 {
     30000 // 30 seconds for disk usage
+}
+fn default_per_core_interval() -> u64 {
+    30000 // 30 seconds for per-core CPU (sufficient for per-core charts)
 }
 fn default_session_interval() -> u64 {
     60000 // 1 minute for user sessions

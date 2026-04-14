@@ -126,7 +126,7 @@ func main() {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.Use(corsMiddleware())
+	router.Use(corsMiddleware(cfg.Server.AllowedOrigins))
 
 	// API routes
 	api := router.Group("/api")
@@ -153,6 +153,7 @@ func main() {
 		{
 			// Current user
 			protected.GET("/auth/me", authHandler.GetMe)
+			protected.POST("/auth/logout", authHandler.Logout)
 			protected.PUT("/auth/password", authHandler.UpdatePassword)
 
 			// Agent routes (with permission filtering)
@@ -185,6 +186,12 @@ func main() {
 			protected.GET("/devices/:id", deviceHandler.GetDevice)
 			protected.PATCH("/devices/:id", deviceHandler.UpdateDevice)
 			protected.DELETE("/devices/:id", deviceHandler.DeleteDevice)
+
+			// Configuration generator routes
+			configGen := handler.NewConfigGenHandler(cfg, sugar)
+			protected.POST("/config/generate", configGen.GenerateConfig)
+			protected.POST("/config/add-server", configGen.GenerateAddServerCommand)
+			protected.POST("/config/remove-server", configGen.GenerateRemoveServerCommand)
 
 			// Super admin only routes
 			admin := protected.Group("")
@@ -229,17 +236,15 @@ func main() {
 				admin.DELETE("/agent-tokens/:id", agentTokenHandler.DeleteAgentToken)
 				admin.POST("/agent-tokens/:id/regenerate", agentTokenHandler.RegenerateAgentToken)
 				admin.PUT("/agent-tokens/reorder", agentTokenHandler.ReorderAgentTokens)
+
+				admin.GET("/config/tokens", configGen.ListTokens)
+				admin.POST("/config/generate-token", configGen.GenerateToken)
 			}
 		}
 
-		// Configuration generator routes (protected)
+		// Public server discovery
 		configGen := handler.NewConfigGenHandler(cfg, sugar)
 		api.GET("/server-info", configGen.GetServerURLInfo)
-		api.POST("/config/generate", configGen.GenerateConfig)
-		api.POST("/config/add-server", configGen.GenerateAddServerCommand)
-		api.POST("/config/remove-server", configGen.GenerateRemoveServerCommand)
-		api.GET("/config/tokens", configGen.ListTokens)
-		api.POST("/config/generate-token", configGen.GenerateToken)
 	}
 
 	// Serve embedded web UI
@@ -254,46 +259,21 @@ func main() {
 	// Shell WebSocket endpoint (needs gRPC server reference, so created after)
 	// Will be registered after gRPC server is created
 
-	// Start HTTP server
-	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.HTTPPort),
-		Handler: router,
-	}
-
-	go func() {
-		sugar.Infof("HTTP server starting on port %d", cfg.Server.HTTPPort)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			sugar.Fatalf("HTTP server error: %v", err)
-		}
-	}()
-
-	// Start WebSocket server
-	wsHandler := handler.NewWebSocketHandler(agentService, metricsService, cfg, sugar)
-	wsServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.WSPort),
-		Handler: wsHandler,
-	}
-
-	go func() {
-		sugar.Infof("WebSocket server starting on port %d", cfg.Server.WSPort)
-		if err := wsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			sugar.Fatalf("WebSocket server error: %v", err)
-		}
-	}()
-
 	// Start gRPC server with auth interceptor
 	grpcAuthInterceptor := grpcserver.NewAuthInterceptor(authService, permService, sugar)
 	grpcServer := grpcserver.NewServerWithAuth(cfg, agentService, agentTokenService, metricsService, grpcAuthInterceptor, sugar)
-	go func() {
-		sugar.Infof("gRPC server starting on port %d", cfg.Server.GRPCPort)
-		if err := grpcServer.Start(cfg.Server.GRPCPort, cfg.Server.TLSCert, cfg.Server.TLSKey); err != nil {
-			sugar.Fatalf("gRPC server error: %v", err)
-		}
-	}()
 
-	// Register shell WebSocket handler (after gRPC server is available)
-	shellHandler := handler.NewShellHandler(sugar, authService, grpcServer)
-	router.GET("/ws/shell/:id", shellHandler.HandleShellWS)
+	// Register protected dashboard and shell WebSocket handlers (after gRPC server is available)
+	dashboardWSHandler := handler.NewDashboardWSHandler(sugar, permService, agentService, metricsService, cfg.Server.AllowedOrigins)
+	shellHandler := handler.NewShellHandler(sugar, grpcServer, cfg.Server.AllowedOrigins)
+	wsProtected := router.Group("/ws")
+	wsProtected.Use(handler.AuthMiddleware(authService))
+	{
+		wsProtected.GET("/dashboard", dashboardWSHandler.HandleDashboardWS)
+		wsProtected.GET("/shell/:id",
+			handler.RequireAgentPermission(permService, database.PermissionSystemAdmin),
+			shellHandler.HandleShellWS)
+	}
 
 	// Register data request API (after gRPC server is available)
 	dataRequestHandler := handler.NewDataRequestHandler(grpcServer, sugar)
@@ -334,14 +314,44 @@ func main() {
 		shellHandler.SendOutputToSession(agentID, commandID, output)
 	})
 
-	// Register dashboard WebSocket handler for real-time metrics push
-	dashboardWSHandler := handler.NewDashboardWSHandler(sugar, authService, agentService, metricsService)
-	router.GET("/ws/dashboard", dashboardWSHandler.HandleDashboardWS)
-
 	// Set broadcast callback in metrics service for real-time push
 	metricsService.SetBroadcastCallback(func(agentID string, metrics interface{}) {
 		dashboardWSHandler.BroadcastMetrics(agentID, metrics)
 	})
+
+	// Start HTTP server after all routes are registered.
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.Server.HTTPPort),
+		Handler: router,
+	}
+
+	go func() {
+		sugar.Infof("HTTP server starting on port %d", cfg.Server.HTTPPort)
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			sugar.Fatalf("HTTP server error: %v", err)
+		}
+	}()
+
+	// Start WebSocket server after handlers are fully initialized.
+	wsHandler := handler.NewWebSocketHandler(agentService, metricsService, cfg, sugar)
+	wsServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.Server.WSPort),
+		Handler: wsHandler,
+	}
+
+	go func() {
+		sugar.Infof("WebSocket server starting on port %d", cfg.Server.WSPort)
+		if err := wsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			sugar.Fatalf("WebSocket server error: %v", err)
+		}
+	}()
+
+	go func() {
+		sugar.Infof("gRPC server starting on port %d", cfg.Server.GRPCPort)
+		if err := grpcServer.Start(cfg.Server.GRPCPort, cfg.Server.TLSCert, cfg.Server.TLSKey); err != nil {
+			sugar.Fatalf("gRPC server error: %v", err)
+		}
+	}()
 
 	// Start MCP server if enabled
 	var mcpServer *mcp.Server
@@ -415,14 +425,10 @@ func main() {
 	sugar.Info("Server stopped")
 }
 
-func corsMiddleware() gin.HandlerFunc {
+func corsMiddleware(allowedOrigins []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
+		handler.ApplyCORSHeaders(c, allowedOrigins)
+		if c.IsAborted() {
 			return
 		}
 

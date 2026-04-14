@@ -25,7 +25,7 @@ func NewAuthHandler(authService *service.AuthService, logger *zap.SugaredLogger)
 // RegisterRequest represents a user registration request
 type RegisterRequest struct {
 	Username string `json:"username" binding:"required,min=3,max=50"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required,min=8"`
 	Email    string `json:"email" binding:"omitempty,email"`
 }
 
@@ -76,6 +76,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	SetAuthCookie(c, token, h.authService.TokenTTL())
+
 	c.JSON(http.StatusCreated, AuthResponse{
 		Token: token,
 		User: UserResponse{
@@ -106,6 +108,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	SetAuthCookie(c, token, h.authService.TokenTTL())
+
 	c.JSON(http.StatusOK, AuthResponse{
 		Token: token,
 		User: UserResponse{
@@ -115,6 +119,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			IsSuperAdmin: user.IsSuperAdmin,
 		},
 	})
+}
+
+// Logout clears the current session cookie.
+func (h *AuthHandler) Logout(c *gin.Context) {
+	ClearAuthCookie(c)
+	c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 }
 
 // GetMe returns the current authenticated user
@@ -190,7 +200,7 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 
 // UpdatePasswordRequest represents a password update request
 type UpdatePasswordRequest struct {
-	NewPassword string `json:"newPassword" binding:"required,min=6"`
+	NewPassword string `json:"newPassword" binding:"required,min=8"`
 }
 
 // UpdatePassword updates user's password

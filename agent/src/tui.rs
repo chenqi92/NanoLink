@@ -12,13 +12,17 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{
-    Frame, Terminal,
-    backend::CrosstermBackend,
+use ratatui_core::{
+    backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    terminal::{Frame, Terminal},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph, Row, Table, Tabs, Wrap},
+};
+use ratatui_crossterm::CrosstermBackend;
+use ratatui_widgets::{
+    block::Block, borders::Borders, gauge::Gauge, paragraph::Paragraph, paragraph::Wrap,
+    table::Row, table::Table, tabs::Tabs,
 };
 use std::io;
 use std::time::Duration;
@@ -117,7 +121,10 @@ pub fn interactive_realtime_metrics(lang: Lang) -> Result<()> {
     result
 }
 
-fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()>
+where
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
     loop {
         app.refresh_data();
 

@@ -16,7 +16,9 @@ type MetricsPersistence struct {
 	db                *gorm.DB
 	cfg               config.MetricsConfig
 	logger            *zap.SugaredLogger
-	mu                sync.Mutex
+	tableMu           sync.Mutex
+	maintenanceMu     sync.Mutex
+	currentTable      string
 	aggregationTicker *time.Ticker
 	cleanupTicker     *time.Ticker
 	stopChan          chan struct{}
@@ -25,10 +27,11 @@ type MetricsPersistence struct {
 // NewMetricsPersistence creates a new metrics persistence service
 func NewMetricsPersistence(db *gorm.DB, cfg config.MetricsConfig, logger *zap.SugaredLogger) *MetricsPersistence {
 	mp := &MetricsPersistence{
-		db:       db,
-		cfg:      cfg,
-		logger:   logger,
-		stopChan: make(chan struct{}),
+		db:           db,
+		cfg:          cfg,
+		logger:       logger,
+		currentTable: database.GetCurrentMetricsTableName(),
+		stopChan:     make(chan struct{}),
 	}
 
 	// Initialize tables
@@ -76,17 +79,13 @@ func (mp *MetricsPersistence) Stop() {
 
 // SaveMetrics saves a metrics snapshot to the database
 func (mp *MetricsPersistence) SaveMetrics(agentID string, data *MetricsData) error {
-	if !mp.cfg.PersistToDB {
+	if !mp.cfg.PersistToDB || data == nil {
 		return nil
 	}
 
-	mp.mu.Lock()
-	defer mp.mu.Unlock()
-
-	// Ensure current month's table exists
-	tableName := database.GetCurrentMetricsTableName()
-	if err := database.EnsureMetricsTable(mp.db, tableName); err != nil {
-		return fmt.Errorf("failed to ensure metrics table: %w", err)
+	tableName, err := mp.ensureMetricsTable(data.Timestamp)
+	if err != nil {
+		return err
 	}
 
 	// Calculate aggregated values
@@ -308,8 +307,8 @@ func (mp *MetricsPersistence) getTablesForRange(start, end time.Time) []string {
 
 // runHourlyAggregation aggregates the last hour's data
 func (mp *MetricsPersistence) runHourlyAggregation() {
-	mp.mu.Lock()
-	defer mp.mu.Unlock()
+	mp.maintenanceMu.Lock()
+	defer mp.maintenanceMu.Unlock()
 
 	now := time.Now()
 	hour := now.Truncate(time.Hour).Add(-time.Hour) // Previous hour
@@ -367,8 +366,8 @@ func (mp *MetricsPersistence) runHourlyAggregation() {
 
 // runCleanup removes old data
 func (mp *MetricsPersistence) runCleanup() {
-	mp.mu.Lock()
-	defer mp.mu.Unlock()
+	mp.maintenanceMu.Lock()
+	defer mp.maintenanceMu.Unlock()
 
 	// Cleanup old monthly tables
 	if err := database.CleanupOldMetricsTables(mp.db, mp.cfg.RetentionDays); err != nil {
@@ -414,4 +413,25 @@ func (mp *MetricsPersistence) getAgentsWithData(start, end time.Time) []string {
 	}
 
 	return agentIDs
+}
+
+func (mp *MetricsPersistence) ensureMetricsTable(ts time.Time) (string, error) {
+	tableName := database.GetMetricsTableName(ts)
+	if mp.currentTable == tableName {
+		return tableName, nil
+	}
+
+	mp.tableMu.Lock()
+	defer mp.tableMu.Unlock()
+
+	if mp.currentTable == tableName {
+		return tableName, nil
+	}
+
+	if err := database.EnsureMetricsTable(mp.db, tableName); err != nil {
+		return "", fmt.Errorf("failed to ensure metrics table: %w", err)
+	}
+
+	mp.currentTable = tableName
+	return tableName, nil
 }

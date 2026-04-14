@@ -6,38 +6,16 @@ export interface ApiError {
 }
 
 class ApiClient {
-  private token: string | null = null
-
-  setToken(token: string | null) {
-    this.token = token
-    if (token) {
-      localStorage.setItem("nanolink_token", token)
-    } else {
-      localStorage.removeItem("nanolink_token")
-    }
-  }
-
-  getToken(): string | null {
-    if (!this.token) {
-      this.token = localStorage.getItem("nanolink_token")
-    }
-    return this.token
-  }
-
   private getHeaders(): HeadersInit {
-    const headers: HeadersInit = {
+    return {
       "Content-Type": "application/json",
     }
-    const token = this.getToken()
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`
-    }
-    return headers
   }
 
   async fetch<T>(url: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${API_BASE}${url}`, {
       ...options,
+      credentials: "include",
       headers: {
         ...this.getHeaders(),
         ...options.headers,
@@ -45,8 +23,6 @@ class ApiClient {
     })
 
     if (response.status === 401) {
-      this.setToken(null)
-      // Don't redirect - let the auth hooks handle this
       throw { error: "Authentication required", status: 401 } as ApiError
     }
 
@@ -264,6 +240,7 @@ export const authApi = {
   login: (data: LoginRequest) => api.post<AuthResponse>("/auth/login", data),
   register: (data: RegisterRequest) => api.post<AuthResponse>("/auth/register", data),
   me: () => api.get<User>("/auth/me"),
+  logout: () => api.post<{ message: string }>("/auth/logout"),
 }
 
 export const agentsApi = {

@@ -1,16 +1,15 @@
 import React, { createContext, useContext, useCallback, useEffect, useState } from 'react'
-import { api, authApi, type User } from '@/lib/api'
+import { authApi, type User } from '@/lib/api'
 
 interface AuthContextValue {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
   error: string | null
-  token: string | null
 
   login: (username: string, password: string) => Promise<void>
   register: (username: string, password: string, email?: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   clearError: () => void
 }
 
@@ -20,24 +19,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [token, setTokenState] = useState<string | null>(null)
 
   useEffect(() => {
     const initAuth = async () => {
-      const storedToken = api.getToken()
-      if (!storedToken) {
-        setIsLoading(false)
-        return
-      }
-
-      setTokenState(storedToken)
       try {
         const userData = await authApi.me()
         setUser(userData)
         setError(null)
       } catch {
-        api.setToken(null)
-        setTokenState(null)
+        setUser(null)
       } finally {
         setIsLoading(false)
       }
@@ -51,11 +41,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null)
     try {
       const response = await authApi.login({ username, password })
-      api.setToken(response.token)
-      setTokenState(response.token)
       setUser(response.user)
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Login failed'
+      const errorMsg = typeof err === 'object' && err !== null && 'error' in err
+        ? String((err as { error: unknown }).error)
+        : 'Login failed'
       setError(errorMsg)
       throw err
     } finally {
@@ -68,11 +58,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null)
     try {
       const response = await authApi.register({ username, password, email })
-      api.setToken(response.token)
-      setTokenState(response.token)
       setUser(response.user)
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Registration failed'
+      const errorMsg = typeof err === 'object' && err !== null && 'error' in err
+        ? String((err as { error: unknown }).error)
+        : 'Registration failed'
       setError(errorMsg)
       throw err
     } finally {
@@ -80,11 +70,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const logout = useCallback(() => {
-    api.setToken(null)
-    setTokenState(null)
-    setUser(null)
-    setError(null)
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout()
+    } catch {
+      // Clear local auth state even if the logout request fails.
+    } finally {
+      setUser(null)
+      setError(null)
+    }
   }, [])
 
   const clearError = useCallback(() => {
@@ -93,10 +87,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value: AuthContextValue = {
     user,
-    isAuthenticated: !!token && !!user,
+    isAuthenticated: !!user,
     isLoading,
     error,
-    token,
     login,
     register,
     logout,

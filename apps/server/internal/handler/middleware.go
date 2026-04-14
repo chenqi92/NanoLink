@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
@@ -18,23 +17,12 @@ const (
 // AuthMiddleware creates a JWT authentication middleware
 func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get token from Authorization header
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
+		tokenString, ok := ExtractRequestToken(c)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 			c.Abort()
 			return
 		}
-
-		// Check Bearer token format
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header format"})
-			c.Abort()
-			return
-		}
-
-		tokenString := parts[1]
 
 		// Verify token
 		claims, err := authService.VerifyToken(tokenString)
@@ -68,19 +56,13 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 // This allows both authenticated and unauthenticated access
 func OptionalAuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		tokenString, ok := ExtractRequestToken(c)
+		if !ok {
 			c.Next()
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			c.Next()
-			return
-		}
-
-		claims, err := authService.VerifyToken(parts[1])
+		claims, err := authService.VerifyToken(tokenString)
 		if err != nil {
 			c.Next()
 			return

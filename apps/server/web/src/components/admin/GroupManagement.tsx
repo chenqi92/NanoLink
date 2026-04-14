@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next"
 import { Plus, Pencil, Trash2, Users2, UserPlus, UserMinus, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useAuth } from "@/contexts/AuthContext"
 
 interface Group {
   id: number
@@ -19,7 +18,6 @@ interface User {
 
 export function GroupManagement() {
   const { t } = useTranslation()
-  const { token } = useAuth()
   const [groups, setGroups] = useState<Group[]>([])
   const [allUsers, setAllUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
@@ -40,9 +38,7 @@ export function GroupManagement() {
 
   const fetchGroups = async () => {
     try {
-      const res = await fetch("/api/groups", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const res = await fetch("/api/groups", { credentials: "include" })
       if (!res.ok) throw new Error("Failed to fetch groups")
       const data = await res.json()
       setGroups(data)
@@ -55,9 +51,7 @@ export function GroupManagement() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch("/api/users", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const res = await fetch("/api/users", { credentials: "include" })
       if (res.ok) {
         const data = await res.json()
         setAllUsers(data)
@@ -71,9 +65,9 @@ export function GroupManagement() {
     try {
       const res = await fetch("/api/groups", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify(formData)
       })
@@ -94,9 +88,9 @@ export function GroupManagement() {
     try {
       const res = await fetch(`/api/groups/${editingGroup.id}`, {
         method: "PUT",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify(formData)
       })
@@ -113,7 +107,7 @@ export function GroupManagement() {
     try {
       const res = await fetch(`/api/groups/${group.id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
+        credentials: "include",
       })
       if (!res.ok) throw new Error("Failed to delete group")
       fetchGroups()
@@ -127,9 +121,9 @@ export function GroupManagement() {
     try {
       const res = await fetch(`/api/groups/${managingMembers.id}/users`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({ userId })
       })
@@ -148,7 +142,7 @@ export function GroupManagement() {
     try {
       const res = await fetch(`/api/groups/${managingMembers.id}/users/${userId}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
+        credentials: "include",
       })
       if (!res.ok) throw new Error("Failed to remove user")
       fetchGroups()

@@ -19,7 +19,7 @@ interface DataContextValue {
 const DataContext = createContext<DataContextValue | undefined>(undefined)
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const { token, isAuthenticated } = useAuth()
+  const { isAuthenticated } = useAuth()
 
   const [agents, setAgents] = useState<Agent[]>([])
   const [agentOrder, setAgentOrder] = useState<Map<string, number>>(new Map()) // AgentID -> SortOrder
@@ -104,7 +104,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // Only connect WebSocket when authenticated
   const { status: wsStatus } = useWebSocket({
-    token: isAuthenticated ? token : null,
+    enabled: isAuthenticated,
     onAgents: handleAgents,
     onMetrics: handleMetrics,
     onAgentUpdate: handleAgentUpdate,

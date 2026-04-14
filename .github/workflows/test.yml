@@ -41,6 +41,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
 
       - name: Install protoc (Linux)
         if: runner.os == 'Linux'

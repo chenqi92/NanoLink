@@ -343,9 +343,95 @@ func parseTimestamp(s string) (time.Time, error) {
 
 // GetSummary returns a summary of all metrics
 func (h *Handler) GetSummary(c *gin.Context) {
-	summary := h.metricsService.GetSummary()
-	summary["connectedAgents"] = h.agentService.GetAgentCount()
+	user := GetCurrentUser(c)
+	if h.permService == nil || (user != nil && user.IsSuperAdmin) {
+		summary := h.metricsService.GetSummary()
+		summary["connectedAgents"] = h.agentService.GetAgentCount()
+		c.JSON(http.StatusOK, summary)
+		return
+	}
+
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	visibleAgents, err := h.permService.GetVisibleAgents(user.ID)
+	if err != nil {
+		h.logger.Errorf("Failed to get visible agents for summary: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get summary"})
+		return
+	}
+
+	allMetrics := h.metricsService.GetAllCurrentMetrics()
+	filteredMetrics := make(map[string]*service.MetricsData)
+	connectedAgents := 0
+
+	if visibleAgents == nil {
+		filteredMetrics = allMetrics
+		connectedAgents = h.agentService.GetAgentCount()
+	} else {
+		visibleSet := make(map[string]bool, len(visibleAgents))
+		for _, agentID := range visibleAgents {
+			visibleSet[agentID] = true
+		}
+
+		for agentID, metrics := range allMetrics {
+			if visibleSet[agentID] {
+				filteredMetrics[agentID] = metrics
+			}
+		}
+		for _, agent := range h.agentService.GetAllAgents() {
+			if visibleSet[agent.ID] {
+				connectedAgents++
+			}
+		}
+	}
+
+	summary := summaryFromMetrics(filteredMetrics)
+	summary["connectedAgents"] = connectedAgents
 	c.JSON(http.StatusOK, summary)
+}
+
+func summaryFromMetrics(metrics map[string]*service.MetricsData) map[string]interface{} {
+	totalCPU := 0.0
+	totalMem := uint64(0)
+	usedMem := uint64(0)
+	totalDisk := uint64(0)
+	usedDisk := uint64(0)
+
+	for _, data := range metrics {
+		totalCPU += data.CPU.UsagePercent
+		totalMem += data.Memory.Total
+		usedMem += data.Memory.Used
+		for _, disk := range data.Disks {
+			totalDisk += disk.Total
+			usedDisk += disk.Used
+		}
+	}
+
+	avgCPU := 0.0
+	memPercent := 0.0
+	diskPercent := 0.0
+	if len(metrics) > 0 {
+		avgCPU = totalCPU / float64(len(metrics))
+	}
+	if totalMem > 0 {
+		memPercent = float64(usedMem) / float64(totalMem) * 100
+	}
+	if totalDisk > 0 {
+		diskPercent = float64(usedDisk) / float64(totalDisk) * 100
+	}
+
+	return gin.H{
+		"avgCpuPercent": avgCPU,
+		"totalMemory":   totalMem,
+		"usedMemory":    usedMem,
+		"memoryPercent": memPercent,
+		"totalDisk":     totalDisk,
+		"usedDisk":      usedDisk,
+		"diskPercent":   diskPercent,
+	}
 }
 
 // CommandRequest represents a command request

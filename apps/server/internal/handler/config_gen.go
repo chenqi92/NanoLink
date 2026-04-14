@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/config"
@@ -298,6 +299,9 @@ func generateYAMLConfig(req GenerateConfigRequest, token string, connString stri
 	shellConfig := ""
 	if req.ShellEnabled {
 		superToken := req.SuperToken
+		if superToken == "" {
+			superToken = strings.TrimSpace(os.Getenv("NANOLINK_SHELL_SUPER_TOKEN"))
+		}
 		if superToken == "" {
 			superToken = generateSecureToken(32)
 		}

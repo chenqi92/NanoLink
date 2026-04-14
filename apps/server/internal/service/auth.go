@@ -428,3 +428,8 @@ func (s *AuthService) VerifyPassword(userID uint, password string) error {
 func (s *AuthService) ChangePassword(userID uint, newPassword string) error {
 	return s.UpdatePassword(userID, newPassword)
 }
+
+// TokenTTL returns the configured JWT lifetime.
+func (s *AuthService) TokenTTL() time.Duration {
+	return s.jwtExpire
+}

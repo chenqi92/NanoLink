@@ -116,7 +116,7 @@ export function Header({ onNavigate }: HeaderProps) {
                 {user.username.charAt(0).toUpperCase()}
               </div>
               <span className="text-sm font-medium">{user.username}</span>
-              <Button variant="ghost" size="icon" onClick={logout} title={t("auth.logout")}>
+              <Button variant="ghost" size="icon" onClick={() => void logout()} title={t("auth.logout")}>
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>

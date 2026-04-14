@@ -2013,13 +2013,14 @@ func (x *NpuStaticInfo) GetDriverVersion() string {
 	return ""
 }
 
-// ========== Periodic Data (disk usage, user sessions) ==========
+// ========== Periodic Data (disk usage, user sessions, per-core CPU) ==========
 type PeriodicData struct {
 	state          protoimpl.MessageState  `protogen:"open.v1"`
 	Timestamp      uint64                  `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	DiskUsage      []*DiskUsage            `protobuf:"bytes,2,rep,name=disk_usage,json=diskUsage,proto3" json:"disk_usage,omitempty"`
 	UserSessions   []*UserSession          `protobuf:"bytes,3,rep,name=user_sessions,json=userSessions,proto3" json:"user_sessions,omitempty"`
 	NetworkUpdates []*NetworkAddressUpdate `protobuf:"bytes,4,rep,name=network_updates,json=networkUpdates,proto3" json:"network_updates,omitempty"`
+	CpuPerCore     []float64              `protobuf:"fixed64,5,rep,packed,name=cpu_per_core,json=cpuPerCore,proto3" json:"cpu_per_core,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2078,6 +2079,13 @@ func (x *PeriodicData) GetUserSessions() []*UserSession {
 func (x *PeriodicData) GetNetworkUpdates() []*NetworkAddressUpdate {
 	if x != nil {
 		return x.NetworkUpdates
+	}
+	return nil
+}
+
+func (x *PeriodicData) GetCpuPerCore() []float64 {
+	if x != nil {
+		return x.CpuPerCore
 	}
 	return nil
 }

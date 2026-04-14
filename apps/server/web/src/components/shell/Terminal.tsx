@@ -3,7 +3,6 @@ import { Terminal as XTerm } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
 import "@xterm/xterm/css/xterm.css"
-import { api } from "@/lib/api"
 import { getThemeById } from "./TerminalThemes"
 import { loadTerminalSettings, type TerminalSettings } from "./TerminalSettings"
 
@@ -32,9 +31,8 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
   const theme = getThemeById(settings.themeId)
 
   const connect = useCallback(() => {
-    const token = api.getToken()
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-    const wsUrl = `${protocol}//${window.location.host}/ws/shell/${agentId}?token=${token}`
+    const wsUrl = `${protocol}//${window.location.host}/ws/shell/${agentId}`
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws

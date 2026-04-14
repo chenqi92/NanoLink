@@ -1308,19 +1308,12 @@ func convertStaticInfo(s *pb.StaticInfo) *StaticData {
 	return data
 }
 
-// PeriodicData holds periodic data for merging
-type PeriodicData struct {
-	DiskUsage      []service.DiskData
-	UserSessions   []service.UserSession
-	NetworkUpdates []service.NetData
-}
-
-func convertPeriodicData(p *pb.PeriodicData) *PeriodicData {
+func convertPeriodicData(p *pb.PeriodicData) *service.PeriodicUpdate {
 	if p == nil {
 		return nil
 	}
 
-	data := &PeriodicData{}
+	data := &service.PeriodicUpdate{}
 
 	for _, d := range p.DiskUsage {
 		usagePercent := 0.0
@@ -1355,6 +1348,11 @@ func convertPeriodicData(p *pb.PeriodicData) *PeriodicData {
 			IpAddresses: n.IpAddresses,
 			IsUp:        n.IsUp,
 		})
+	}
+
+	// Per-core CPU (sent at lower frequency than realtime)
+	if len(p.CpuPerCore) > 0 {
+		data.CpuPerCore = p.CpuPerCore
 	}
 
 	return data

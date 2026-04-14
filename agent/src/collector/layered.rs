@@ -95,6 +95,7 @@ pub struct LayeredCollector {
     last_periodic_disk: Instant,
     last_periodic_session: Instant,
     last_periodic_ip_check: Instant,
+    last_periodic_per_core: Instant,
 
     // Cached IP addresses for change detection
     cached_ip_addresses: Vec<(String, Vec<String>)>,
@@ -129,6 +130,7 @@ impl LayeredCollector {
             last_periodic_disk: now,
             last_periodic_session: now,
             last_periodic_ip_check: now,
+            last_periodic_per_core: now,
             cached_ip_addresses: Vec::new(),
         }
     }
@@ -334,6 +336,7 @@ impl LayeredCollector {
     }
 
     /// Collect realtime metrics (lightweight, for frequent sending)
+    /// Per-core CPU data is excluded here and sent via periodic channel at lower frequency.
     pub fn collect_realtime_metrics(&mut self) -> anyhow::Result<RealtimeMetrics> {
         self.system.refresh_cpu_all();
         self.system.refresh_memory();
@@ -344,7 +347,7 @@ impl LayeredCollector {
             .duration_since(std::time::UNIX_EPOCH)?
             .as_millis() as u64;
 
-        // CPU realtime
+        // CPU realtime (aggregate only, per-core sent via periodic)
         let cpu = self
             .cpu_collector
             .collect(&self.system, &self.config.collector);
@@ -368,9 +371,7 @@ impl LayeredCollector {
             .collect();
 
         // Network IO (not addresses)
-        let net_metrics = self
-            .network_collector
-            .collect(&self.networks, &self.config.collector);
+        let net_metrics = self.network_collector.collect_realtime(&self.networks);
         let network_io: Vec<NetworkIo> = net_metrics
             .into_iter()
             .map(|n| NetworkIo {
@@ -418,7 +419,7 @@ impl LayeredCollector {
         Ok(RealtimeMetrics {
             timestamp,
             cpu_usage_percent: cpu.usage_percent,
-            cpu_per_core: cpu.per_core_usage,
+            cpu_per_core: vec![], // Per-core sent via periodic channel
             cpu_temperature: cpu.temperature,
             cpu_frequency_mhz: cpu.frequency_mhz,
             memory_used: mem.used,
@@ -441,6 +442,7 @@ impl LayeredCollector {
             disk_usage: Vec::new(),
             user_sessions: Vec::new(),
             network_updates: Vec::new(),
+            cpu_per_core: Vec::new(),
         };
 
         // Check disk usage interval
@@ -535,6 +537,25 @@ impl LayeredCollector {
                 debug!(
                     "Detected IP changes on {} interfaces",
                     periodic.network_updates.len()
+                );
+            }
+        }
+
+        // Check per-core CPU interval
+        if self.config.collector.enable_per_core_cpu {
+            let per_core_interval =
+                Duration::from_millis(self.config.collector.per_core_interval_ms);
+            if now.duration_since(self.last_periodic_per_core) >= per_core_interval {
+                self.last_periodic_per_core = now;
+
+                let cpu = self
+                    .cpu_collector
+                    .collect(&self.system, &self.config.collector);
+                periodic.cpu_per_core = cpu.per_core_usage;
+                has_data = true;
+                debug!(
+                    "Collected periodic per-core CPU: {} cores",
+                    periodic.cpu_per_core.len()
                 );
             }
         }
@@ -683,6 +704,7 @@ impl LayeredCollector {
                     disk_usage,
                     user_sessions: Vec::new(),
                     network_updates: Vec::new(),
+                    cpu_per_core: Vec::new(),
                 };
                 let _ = tx.send(LayeredMetricsMessage::Periodic(periodic)).await;
             }
@@ -713,6 +735,7 @@ impl LayeredCollector {
                     disk_usage: Vec::new(),
                     user_sessions,
                     network_updates: Vec::new(),
+                    cpu_per_core: Vec::new(),
                 };
                 let _ = tx.send(LayeredMetricsMessage::Periodic(periodic)).await;
             }

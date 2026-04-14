@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/chenqi92/nanolink"
 keywords = ["monitoring", "agent", "server", "metrics"]
 categories = ["command-line-utilities", "network-programming"]
-rust-version = "1.85"
+rust-version = "1.88"
 
 [dependencies]
 # Async runtime
@@ -18,7 +18,7 @@ futures-util = "0.3"
 
 # HTTP server for management API
 axum = "0.8"
-axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors"] }
@@ -67,7 +67,9 @@ sys-locale = "0.3"
 crossterm = "0.29"
 
 # TUI (Terminal User Interface)
-ratatui = "0.29"
+ratatui-core = { version = "0.1", features = ["std", "layout-cache", "underline-color"] }
+ratatui-crossterm = "0.1"
+ratatui-widgets = { version = "0.3", default-features = false }
 
 # GUI (optional)
 eframe = { version = "0.33", optional = true, default-features = false, features = ["default_fonts", "glow"] }

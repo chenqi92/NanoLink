@@ -23,11 +23,19 @@ struct DiskIoStats {
     write_ops: u64,
 }
 
+#[derive(Debug, Clone)]
+struct DiskHealthSnapshot {
+    temperature: f64,
+    health_status: String,
+    checked_at: std::time::Instant,
+}
+
 /// Disk metrics collector
 pub struct DiskCollector {
     /// Previous disk I/O stats for rate calculation
     prev_stats: HashMap<String, DiskIoStats>,
     prev_time: Option<std::time::Instant>,
+    health_cache: HashMap<String, DiskHealthSnapshot>,
 }
 
 impl DiskCollector {
@@ -37,6 +45,7 @@ impl DiskCollector {
         Self {
             prev_stats: HashMap::new(),
             prev_time: None,
+            health_cache: HashMap::new(),
         }
     }
 
@@ -414,7 +423,7 @@ impl DiskCollector {
     }
 
     /// Collect disk metrics
-    pub fn collect(&mut self, disks: &Disks, _config: &CollectorConfig) -> Vec<DiskMetrics> {
+    pub fn collect(&mut self, disks: &Disks, config: &CollectorConfig) -> Vec<DiskMetrics> {
         let now = std::time::Instant::now();
         let current_io_stats = Self::read_disk_io_stats();
         let empty_map = HashMap::new();
@@ -481,8 +490,9 @@ impl DiskCollector {
                     (0, 0, 0, 0)
                 };
 
-            let temperature = Self::get_disk_temperature(&format!("/dev/{base_device}"));
-            let health_status = Self::get_smart_health(&format!("/dev/{base_device}"));
+            let device_path = format!("/dev/{base_device}");
+            let (temperature, health_status) =
+                self.get_cached_health(&device_path, config.health_check_interval_ms);
 
             metrics.push(DiskMetrics {
                 mount_point,
@@ -508,6 +518,27 @@ impl DiskCollector {
         self.prev_time = Some(now);
 
         metrics
+    }
+
+    fn get_cached_health(&mut self, device: &str, refresh_interval_ms: u64) -> (f64, String) {
+        let refresh_interval = std::time::Duration::from_millis(refresh_interval_ms);
+
+        if let Some(snapshot) = self.health_cache.get(device) {
+            if refresh_interval_ms > 0 && snapshot.checked_at.elapsed() < refresh_interval {
+                return (snapshot.temperature, snapshot.health_status.clone());
+            }
+        }
+
+        let snapshot = DiskHealthSnapshot {
+            temperature: Self::get_disk_temperature(device),
+            health_status: Self::get_smart_health(device),
+            checked_at: std::time::Instant::now(),
+        };
+
+        self.health_cache
+            .insert(device.to_string(), snapshot.clone());
+
+        (snapshot.temperature, snapshot.health_status)
     }
 
     /// Check if a filesystem should be skipped (virtual/pseudo filesystems)

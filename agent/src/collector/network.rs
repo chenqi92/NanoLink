@@ -320,6 +320,19 @@ impl NetworkCollector {
         networks: &Networks,
         _config: &CollectorConfig,
     ) -> Vec<NetworkMetrics> {
+        let mut metrics = self.collect_realtime(networks);
+
+        for metric in &mut metrics {
+            metric.mac_address = Self::get_mac_address(&metric.interface);
+            metric.ip_addresses = Self::get_ip_addresses(&metric.interface);
+            metric.speed_mbps = Self::get_link_speed(&metric.interface);
+        }
+
+        metrics
+    }
+
+    /// Collect lightweight realtime network metrics without interface metadata lookups.
+    pub fn collect_realtime(&mut self, networks: &Networks) -> Vec<NetworkMetrics> {
         let now = std::time::Instant::now();
         let elapsed = self
             .prev_time
@@ -357,21 +370,16 @@ impl NetworkCollector {
                 (rx_bytes, tx_bytes, rx_packets, tx_packets),
             );
 
-            let is_up = Self::is_interface_up(interface_name);
-            let mac_address = Self::get_mac_address(interface_name);
-            let ip_addresses = Self::get_ip_addresses(interface_name);
-            let speed_mbps = Self::get_link_speed(interface_name);
-
             metrics.push(NetworkMetrics {
                 interface: interface_name.clone(),
                 rx_bytes_sec,
                 tx_bytes_sec,
                 rx_packets_sec,
                 tx_packets_sec,
-                is_up,
-                mac_address,
-                ip_addresses,
-                speed_mbps,
+                is_up: Self::is_interface_up(interface_name),
+                mac_address: String::new(),
+                ip_addresses: Vec::new(),
+                speed_mbps: 0,
                 interface_type,
             });
         }

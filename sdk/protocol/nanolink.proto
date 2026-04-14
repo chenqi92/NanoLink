@@ -209,12 +209,13 @@ message NpuStaticInfo {
   string driver_version = 5;
 }
 
-// ========== Periodic Data (disk usage, user sessions) ==========
+// ========== Periodic Data (disk usage, user sessions, per-core CPU) ==========
 message PeriodicData {
   uint64 timestamp = 1;
   repeated DiskUsage disk_usage = 2;
   repeated UserSession user_sessions = 3;
   repeated NetworkAddressUpdate network_updates = 4;
+  repeated double cpu_per_core = 5;           // Per-core CPU usage (sent at lower frequency than realtime)
 }
 
 message DiskUsage {

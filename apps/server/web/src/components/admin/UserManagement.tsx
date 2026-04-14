@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next"
 import { Plus, Pencil, Trash2, Key, Users, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useAuth } from "@/contexts/AuthContext"
 
 interface User {
   id: number
@@ -22,7 +21,6 @@ interface Group {
 
 export function UserManagement() {
   const { t } = useTranslation()
-  const { token } = useAuth()
   const [users, setUsers] = useState<User[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,9 +47,7 @@ export function UserManagement() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch("/api/users", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const res = await fetch("/api/users", { credentials: "include" })
       if (!res.ok) throw new Error("Failed to fetch users")
       const data = await res.json()
       setUsers(data)
@@ -64,9 +60,7 @@ export function UserManagement() {
 
   const fetchGroups = async () => {
     try {
-      const res = await fetch("/api/groups", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const res = await fetch("/api/groups", { credentials: "include" })
       if (res.ok) {
         const data = await res.json()
         setGroups(data)
@@ -80,9 +74,9 @@ export function UserManagement() {
     try {
       const res = await fetch("/api/users", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify(formData)
       })
@@ -103,9 +97,9 @@ export function UserManagement() {
     try {
       const res = await fetch(`/api/users/${editingUser.id}`, {
         method: "PUT",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
           email: formData.email,
@@ -125,7 +119,7 @@ export function UserManagement() {
     try {
       const res = await fetch(`/api/users/${user.id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
+        credentials: "include",
       })
       if (!res.ok) throw new Error("Failed to delete user")
       fetchUsers()
@@ -136,16 +130,16 @@ export function UserManagement() {
 
   const handleChangePassword = async () => {
     if (!changingPassword) return
-    if (!newPassword || newPassword.length < 6) {
-      setError("Password must be at least 6 characters")
+    if (!newPassword || newPassword.length < 8) {
+      setError("Password must be at least 8 characters")
       return
     }
     try {
       const res = await fetch(`/api/users/${changingPassword.id}/password`, {
         method: "PUT",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({ newPassword, forceChange: true })
       })

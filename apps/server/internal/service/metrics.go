@@ -148,19 +148,30 @@ type MetricsService struct {
 
 	// Broadcast callback for real-time push to dashboard clients
 	broadcastCallback func(agentID string, metrics interface{})
+	broadcastQueue    chan metricsDispatch
 
 	// Persistence service for database storage
-	persistence *MetricsPersistence
+	persistence      *MetricsPersistence
+	persistenceQueue chan metricsDispatch
+}
+
+type metricsDispatch struct {
+	agentID string
+	data    *MetricsData
 }
 
 // NewMetricsService creates a new metrics service
 func NewMetricsService(logger *zap.SugaredLogger) *MetricsService {
-	return &MetricsService{
-		current:    make(map[string]*MetricsData),
-		history:    make(map[string][]*MetricsData),
-		maxHistory: 600, // 10 minutes at 1-second intervals
-		logger:     logger,
+	svc := &MetricsService{
+		current:          make(map[string]*MetricsData),
+		history:          make(map[string][]*MetricsData),
+		maxHistory:       600, // 10 minutes at 1-second intervals
+		logger:           logger,
+		broadcastQueue:   make(chan metricsDispatch, 512),
+		persistenceQueue: make(chan metricsDispatch, 512),
 	}
+	svc.startDispatchers()
+	return svc
 }
 
 // SetPersistence sets the persistence service for database storage
@@ -172,41 +183,29 @@ func (s *MetricsService) SetPersistence(p *MetricsPersistence) {
 
 // StoreMetrics stores metrics for an agent
 func (s *MetricsService) StoreMetrics(agentID string, data *MetricsData) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if data == nil {
+		return
+	}
 
 	data.AgentID = agentID
 	data.Timestamp = time.Now()
+	snapshot := cloneMetricsData(data)
 
-	// Update current
+	s.mu.Lock()
 	s.current[agentID] = data
 
-	// Add to history
 	if _, exists := s.history[agentID]; !exists {
 		s.history[agentID] = make([]*MetricsData, 0, s.maxHistory)
 	}
 
 	history := s.history[agentID]
 	if len(history) >= s.maxHistory {
-		// Remove oldest entry
 		history = history[1:]
 	}
+	s.history[agentID] = append(history, snapshot)
+	s.mu.Unlock()
 
-	// Broadcast to dashboard clients if callback is set
-	if s.broadcastCallback != nil {
-		go s.broadcastCallback(agentID, data)
-	}
-
-	s.history[agentID] = append(history, data)
-
-	// Persist to database (async to not block)
-	if s.persistence != nil {
-		go func(aid string, d *MetricsData) {
-			if err := s.persistence.SaveMetrics(aid, d); err != nil {
-				s.logger.Warnf("Failed to persist metrics for %s: %v", aid, err)
-			}
-		}(agentID, data)
-	}
+	s.dispatchMetrics(agentID, snapshot)
 }
 
 // SetBroadcastCallback sets the callback for broadcasting metrics to dashboard clients
@@ -344,9 +343,6 @@ type RealtimeUpdate struct {
 // MergeRealtimeMetrics merges realtime data into existing metrics
 func (s *MetricsService) MergeRealtimeMetrics(agentID string, update interface{}) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Get or create current metrics
 	current := s.current[agentID]
 	if current == nil {
 		current = &MetricsData{AgentID: agentID}
@@ -446,8 +442,10 @@ func (s *MetricsService) MergeRealtimeMetrics(agentID string, update interface{}
 		}
 	}
 
-	// Add to history
-	s.addToHistory(agentID, current)
+	snapshot := s.addToHistory(agentID, current)
+	s.mu.Unlock()
+
+	s.dispatchMetrics(agentID, snapshot)
 }
 
 // StaticUpdate holds static hardware info for merging
@@ -578,6 +576,7 @@ type PeriodicUpdate struct {
 	DiskUsage      []DiskData
 	UserSessions   []UserSession
 	NetworkUpdates []NetData
+	CpuPerCore     []float64
 }
 
 // MergePeriodicData merges periodic data into existing metrics
@@ -632,34 +631,103 @@ func (s *MetricsService) MergePeriodicData(agentID string, update interface{}) {
 				}
 			}
 		}
+
+		// Merge per-core CPU (sent at lower frequency via periodic channel)
+		if len(p.CpuPerCore) > 0 {
+			current.CPU.PerCoreUsage = p.CpuPerCore
+		}
 	}
 }
 
 // addToHistory adds metrics to history (internal, must hold lock)
-func (s *MetricsService) addToHistory(agentID string, data *MetricsData) {
+func (s *MetricsService) addToHistory(agentID string, data *MetricsData) *MetricsData {
 	if _, exists := s.history[agentID]; !exists {
 		s.history[agentID] = make([]*MetricsData, 0, s.maxHistory)
 	}
 
-	// Make a copy for history
-	dataCopy := *data
+	snapshot := cloneMetricsData(data)
 	history := s.history[agentID]
 	if len(history) >= s.maxHistory {
 		history = history[1:]
 	}
-	s.history[agentID] = append(history, &dataCopy)
+	s.history[agentID] = append(history, snapshot)
+	return snapshot
+}
 
-	// Broadcast to dashboard clients if callback is set
-	if s.broadcastCallback != nil {
-		go s.broadcastCallback(agentID, &dataCopy)
-	}
-
-	// Persist to database (async to not block)
-	if s.persistence != nil {
-		go func(aid string, d *MetricsData) {
-			if err := s.persistence.SaveMetrics(aid, d); err != nil {
-				s.logger.Warnf("Failed to persist metrics for %s: %v", aid, err)
+func (s *MetricsService) startDispatchers() {
+	go func() {
+		for job := range s.broadcastQueue {
+			s.mu.RLock()
+			callback := s.broadcastCallback
+			s.mu.RUnlock()
+			if callback != nil {
+				callback(job.agentID, job.data)
 			}
-		}(agentID, &dataCopy)
+		}
+	}()
+
+	go func() {
+		for job := range s.persistenceQueue {
+			s.mu.RLock()
+			persistence := s.persistence
+			s.mu.RUnlock()
+			if persistence == nil {
+				continue
+			}
+
+			if err := persistence.SaveMetrics(job.agentID, job.data); err != nil {
+				s.logger.Warnf("Failed to persist metrics for %s: %v", job.agentID, err)
+			}
+		}
+	}()
+}
+
+func (s *MetricsService) dispatchMetrics(agentID string, data *MetricsData) {
+	if data == nil {
+		return
 	}
+
+	job := metricsDispatch{
+		agentID: agentID,
+		data:    data,
+	}
+
+	select {
+	case s.broadcastQueue <- job:
+	default:
+		s.logger.Warnf("Broadcast queue full, dropping metrics for %s", agentID)
+	}
+
+	select {
+	case s.persistenceQueue <- job:
+	default:
+		s.logger.Warnf("Persistence queue full, dropping metrics for %s", agentID)
+	}
+}
+
+func cloneMetricsData(data *MetricsData) *MetricsData {
+	if data == nil {
+		return nil
+	}
+
+	clone := *data
+	clone.CPU.PerCoreUsage = append([]float64(nil), data.CPU.PerCoreUsage...)
+	clone.CPU.LoadAverage = append([]float64(nil), data.CPU.LoadAverage...)
+	clone.LoadAverage = append([]float64(nil), data.LoadAverage...)
+	clone.Disks = append([]DiskData(nil), data.Disks...)
+	clone.Networks = append([]NetData(nil), data.Networks...)
+	clone.GPUs = append([]GPUData(nil), data.GPUs...)
+	clone.NPUs = append([]NPUData(nil), data.NPUs...)
+	clone.UserSessions = append([]UserSession(nil), data.UserSessions...)
+
+	for i := range clone.Networks {
+		clone.Networks[i].IpAddresses = append([]string(nil), data.Networks[i].IpAddresses...)
+	}
+
+	if data.SystemInfo != nil {
+		systemInfo := *data.SystemInfo
+		clone.SystemInfo = &systemInfo
+	}
+
+	return &clone
 }

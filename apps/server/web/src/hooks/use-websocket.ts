@@ -21,7 +21,7 @@ interface Summary {
 }
 
 interface UseWebSocketOptions {
-  token: string | null
+  enabled: boolean
   onAgents?: (agents: Agent[]) => void
   onMetrics?: (metrics: Record<string, Metrics>) => void
   onAgentUpdate?: (agentId: string, agent: Agent) => void
@@ -31,7 +31,7 @@ interface UseWebSocketOptions {
 }
 
 export function useWebSocket({
-  token,
+  enabled,
   onAgents,
   onMetrics,
   onAgentUpdate,
@@ -77,7 +77,7 @@ export function useWebSocket({
   }, [])
 
   const connect = useCallback(() => {
-    if (!token) {
+    if (!enabled) {
       setStatus('disconnected')
       return
     }
@@ -92,14 +92,12 @@ export function useWebSocket({
     // Build WebSocket URL
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
-    const wsUrl = `${protocol}//${host}/ws/dashboard?token=${encodeURIComponent(token)}`
+    const wsUrl = `${protocol}//${host}/ws/dashboard`
 
-    console.log('[WS] Connecting to:', wsUrl)
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     ws.onopen = () => {
-      console.log('[WS] Dashboard WebSocket connected')
       setStatus('connected')
 
       // Start ping interval to keep connection alive
@@ -171,7 +169,6 @@ export function useWebSocket({
     }
 
     ws.onclose = (event) => {
-      console.log('[WS] WebSocket closed:', event.code, event.reason)
       setStatus('disconnected')
 
       // Clear ping interval
@@ -181,18 +178,17 @@ export function useWebSocket({
       }
 
       // Attempt to reconnect if not intentionally closed
-      if (token && event.code !== 1000) {
+      if (enabled && event.code !== 1000) {
         reconnectTimeoutRef.current = setTimeout(() => {
-          console.log('[WS] Attempting to reconnect...')
           connect()
         }, reconnectInterval)
       }
     }
-  }, [token, reconnectInterval]) // Only depend on token and reconnectInterval
+  }, [enabled, reconnectInterval]) // Only depend on enabled and reconnectInterval
 
-  // Connect when token changes
+  // Connect when auth state changes
   useEffect(() => {
-    if (token) {
+    if (enabled) {
       connect()
     } else {
       disconnect()
@@ -201,7 +197,7 @@ export function useWebSocket({
     return () => {
       disconnect()
     }
-  }, [token]) // Only depend on token, not connect/disconnect
+  }, [enabled]) // Only depend on enabled, not connect/disconnect
 
   return {
     status,

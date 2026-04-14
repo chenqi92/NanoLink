@@ -6,14 +6,19 @@
 //! - Huawei Ascend (via npu-smi)
 //! - Other accelerators
 
+#[cfg(target_os = "linux")]
 use std::collections::HashMap;
 use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use parking_lot::RwLock;
+
 use crate::utils::safe_command::exec_with_timeout;
 
+/// Default cache duration for NPU metrics (5 seconds)
+const NPU_CACHE_DURATION: Duration = Duration::from_secs(5);
 /// NPU command timeout - 15 seconds (drivers can be slow)
 const NPU_COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
 /// Fast NPU availability check timeout
@@ -34,6 +39,7 @@ pub struct NpuMetrics {
 }
 
 /// Cache for NPU usage calculation (stores last busy_time and timestamp per device)
+#[cfg(target_os = "linux")]
 #[derive(Debug, Default)]
 struct NpuUsageCache {
     /// Maps device path to (last_busy_time_us, last_sample_time)
@@ -44,6 +50,7 @@ struct NpuUsageCache {
 pub struct NpuCollector {
     intel_available: bool,
     huawei_available: bool,
+    cached_metrics: RwLock<Option<(Vec<NpuMetrics>, Instant)>>,
     /// Cache for calculating NPU usage from busy_time delta
     #[cfg(target_os = "linux")]
     usage_cache: Mutex<NpuUsageCache>,
@@ -54,6 +61,7 @@ impl NpuCollector {
         Self {
             intel_available: Self::check_intel_npu_available(),
             huawei_available: Self::check_huawei_npu_available(),
+            cached_metrics: RwLock::new(None),
             #[cfg(target_os = "linux")]
             usage_cache: Mutex::new(NpuUsageCache::default()),
         }
@@ -89,6 +97,15 @@ impl NpuCollector {
     }
 
     pub fn collect(&self) -> Vec<NpuMetrics> {
+        {
+            let cache = self.cached_metrics.read();
+            if let Some((metrics, cached_at)) = cache.as_ref() {
+                if cached_at.elapsed() < NPU_CACHE_DURATION {
+                    return metrics.clone();
+                }
+            }
+        }
+
         let mut npus = Vec::new();
 
         if self.intel_available {
@@ -110,6 +127,7 @@ impl NpuCollector {
             }
         }
 
+        *self.cached_metrics.write() = Some((npus.clone(), Instant::now()));
         npus
     }
 
