@@ -1,0 +1,289 @@
+name: Gitea CI
+
+# Gitea-specific workflow set.
+# - GitHub keeps using .github/workflows/*
+# - Gitea keeps using .gitea/workflows/*
+# This workflow only targets the Linux labels currently available on our Gitea runners.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      test_agent:
+        description: "Test Agent"
+        type: boolean
+        default: true
+      test_sdk:
+        description: "Test SDK (Java/Go/Python)"
+        type: boolean
+        default: true
+      test_apps:
+        description: "Test Apps (Dashboard)"
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      test_agent: ${{ steps.config.outputs.test_agent }}
+      test_sdk: ${{ steps.config.outputs.test_sdk }}
+      test_apps: ${{ steps.config.outputs.test_apps }}
+    steps:
+      - name: Configure what to test
+        id: config
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TEST_AGENT="${{ inputs.test_agent }}"
+            TEST_SDK="${{ inputs.test_sdk }}"
+            TEST_APPS="${{ inputs.test_apps }}"
+          else
+            TEST_AGENT="true"
+            TEST_SDK="true"
+            TEST_APPS="true"
+          fi
+
+          if [[ -z "$TEST_AGENT" ]]; then TEST_AGENT="true"; fi
+          if [[ -z "$TEST_SDK" ]]; then TEST_SDK="true"; fi
+          if [[ -z "$TEST_APPS" ]]; then TEST_APPS="true"; fi
+
+          echo "test_agent=$TEST_AGENT" >> "$GITHUB_OUTPUT"
+          echo "test_sdk=$TEST_SDK" >> "$GITHUB_OUTPUT"
+          echo "test_apps=$TEST_APPS" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          echo "## Gitea CI Configuration" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Setting | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Event | ${{ github.event_name }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Test Agent | ${{ steps.config.outputs.test_agent }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Test SDK | ${{ steps.config.outputs.test_sdk }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Test Apps | ${{ steps.config.outputs.test_apps }} |" >> "$GITHUB_STEP_SUMMARY"
+
+  test-agent:
+    name: Test Agent
+    needs: setup
+    if: needs.setup.outputs.test_agent == 'true'
+    runs-on: rust-stable
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y protobuf-compiler
+
+      - name: Install Rust components
+        run: |
+          rustup component add rustfmt clippy
+
+      - name: Check formatting
+        working-directory: agent
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        working-directory: agent
+        shell: bash
+        run: |
+          cargo clippy -- -D warnings \
+            -A clippy::large_enum_variant \
+            -A clippy::field_reassign_with_default \
+            -A clippy::manual_clamp \
+            -A clippy::lines_filter_map_ok \
+            -A clippy::empty_line_after_doc_comments \
+            -A clippy::collapsible_if \
+            -A clippy::too_many_arguments \
+            -A clippy::type_complexity \
+            -A clippy::uninlined_format_args \
+            -A clippy::needless_return \
+            -A clippy::redundant_field_names \
+            -A clippy::single_match \
+            -A dead_code \
+            -A unused_imports \
+            -A unused_variables \
+            -A unused_assignments \
+            -A unused_mut
+
+      - name: Run tests
+        working-directory: agent
+        run: cargo test --verbose
+
+      - name: Build
+        working-directory: agent
+        run: cargo build --release
+
+  test-java-sdk:
+    name: Test Java SDK
+    needs: setup
+    if: needs.setup.outputs.test_sdk == 'true'
+    runs-on: java11-maven
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify toolchain
+        run: |
+          java -version
+          mvn -version
+
+      - name: Build and test
+        working-directory: sdk/java
+        run: mvn -B -ntp clean verify
+
+  test-go-sdk:
+    name: Test Go SDK
+    needs: setup
+    if: needs.setup.outputs.test_sdk == 'true'
+    runs-on: go-1.22
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify toolchain
+        run: go version
+
+      - name: Verify and download dependencies
+        working-directory: sdk/go
+        run: |
+          go mod tidy
+          go mod download
+
+      - name: Build
+        working-directory: sdk/go
+        run: go build ./...
+
+      - name: Test
+        working-directory: sdk/go
+        run: go test ./...
+
+  test-python-sdk:
+    name: Test Python SDK (${{ matrix.python-version }})
+    needs: setup
+    if: needs.setup.outputs.test_sdk == 'true'
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.10"
+            runs_on: "python-3.10"
+          - python-version: "3.11"
+            runs_on: "python-3.11"
+          - python-version: "3.12"
+            runs_on: "python-3.12"
+          - python-version: "3.13"
+            runs_on: "python-3.13"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify toolchain
+        run: python --version
+
+      - name: Install dependencies
+        working-directory: sdk/python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint with ruff
+        working-directory: sdk/python
+        run: ruff check . || true
+
+      - name: Check formatting with black
+        working-directory: sdk/python
+        run: black --check . || true
+
+      - name: Regenerate proto files
+        working-directory: sdk/python
+        run: |
+          python -m grpc_tools.protoc \
+            --proto_path=../protocol \
+            --python_out=nanolink/proto \
+            --grpc_python_out=nanolink/proto \
+            ../protocol/nanolink.proto
+
+      - name: Run tests
+        working-directory: sdk/python
+        run: pytest tests/ -v
+
+  test-dashboard:
+    name: Test Dashboard
+    needs: setup
+    if: needs.setup.outputs.test_apps == 'true'
+    runs-on: node-20
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify toolchain
+        run: |
+          node -v
+          npm -v
+
+      - name: Install dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Lint
+        working-directory: dashboard
+        run: npm run lint || true
+
+      - name: Build
+        working-directory: dashboard
+        run: npm run build
+
+  test-summary:
+    name: Test Summary
+    needs: [setup, test-agent, test-java-sdk, test-go-sdk, test-python-sdk, test-dashboard]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          echo "## Gitea CI Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Component | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-----------|--------|" >> "$GITHUB_STEP_SUMMARY"
+
+          print_status() {
+            local name="$1"
+            local result="$2"
+            if [[ "$result" == "success" ]]; then
+              echo "| $name | ✅ Passed |" >> "$GITHUB_STEP_SUMMARY"
+            elif [[ "$result" == "skipped" ]]; then
+              echo "| $name | ⏭️ Skipped |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| $name | ❌ Failed |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+
+          print_status "Agent" "${{ needs.test-agent.result }}"
+          print_status "Java SDK" "${{ needs.test-java-sdk.result }}"
+          print_status "Go SDK" "${{ needs.test-go-sdk.result }}"
+          print_status "Python SDK" "${{ needs.test-python-sdk.result }}"
+          print_status "Dashboard" "${{ needs.test-dashboard.result }}"
+
+      - name: Fail if any required job failed
+        run: |
+          for result in \
+            "${{ needs.test-agent.result }}" \
+            "${{ needs.test-java-sdk.result }}" \
+            "${{ needs.test-go-sdk.result }}" \
+            "${{ needs.test-python-sdk.result }}" \
+            "${{ needs.test-dashboard.result }}"; do
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              exit 1
+            fi
+          done
