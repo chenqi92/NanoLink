@@ -3,9 +3,9 @@ name: Gitea CI
 # Gitea-specific workflow set.
 # - GitHub keeps using .github/workflows/*
 # - Gitea keeps using .gitea/workflows/*
-# We intentionally run jobs on ubuntu-latest here because JS-based actions
-# such as actions/checkout and actions/setup-* require `node` inside the job
-# image. Some language-specific images on our runners do not include node.
+# Setup/summary stay on ubuntu-latest.
+# Build/test jobs use versioned runner labels and bootstrap the minimal
+# JS-action runtime (`git` + `node`) before actions/checkout runs.
 
 on:
   push:
@@ -76,15 +76,38 @@ jobs:
     name: Test Agent
     needs: setup
     if: needs.setup.outputs.test_agent == 'true'
-    runs-on: ubuntu-latest
+    runs-on: rust-stable
     timeout-minutes: 30
     steps:
+      - name: Bootstrap checkout runtime
+        shell: bash
+        run: |
+          missing_packages=()
+
+          if ! command -v git >/dev/null 2>&1; then
+            missing_packages+=(git ca-certificates)
+          fi
+
+          if ! command -v node >/dev/null 2>&1; then
+            missing_packages+=(nodejs npm)
+          fi
+
+          if ((${#missing_packages[@]} > 0)); then
+            apt-get update
+            apt-get install -y "${missing_packages[@]}"
+          fi
+
+          if ! command -v node >/dev/null 2>&1 && command -v nodejs >/dev/null 2>&1; then
+            ln -sf "$(command -v nodejs)" /usr/local/bin/node
+          fi
+
+          git --version
+          node --version
+
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
 
       - name: Install system dependencies
         run: |
@@ -130,21 +153,35 @@ jobs:
     name: Test Java SDK
     needs: setup
     if: needs.setup.outputs.test_sdk == 'true'
-    runs-on: ubuntu-latest
+    runs-on: java11-maven
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "11"
-
-      - name: Install Maven
+      - name: Bootstrap checkout runtime
+        shell: bash
         run: |
-          apt-get update
-          apt-get install -y maven
+          missing_packages=()
+
+          if ! command -v git >/dev/null 2>&1; then
+            missing_packages+=(git ca-certificates)
+          fi
+
+          if ! command -v node >/dev/null 2>&1; then
+            missing_packages+=(nodejs npm)
+          fi
+
+          if ((${#missing_packages[@]} > 0)); then
+            apt-get update
+            apt-get install -y "${missing_packages[@]}"
+          fi
+
+          if ! command -v node >/dev/null 2>&1 && command -v nodejs >/dev/null 2>&1; then
+            ln -sf "$(command -v nodejs)" /usr/local/bin/node
+          fi
+
+          git --version
+          node --version
+
+      - uses: actions/checkout@v4
 
       - name: Verify toolchain
         run: |
@@ -159,17 +196,35 @@ jobs:
     name: Test Go SDK
     needs: setup
     if: needs.setup.outputs.test_sdk == 'true'
-    runs-on: ubuntu-latest
+    runs-on: go-1.22
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Bootstrap checkout runtime
+        shell: bash
+        run: |
+          missing_packages=()
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-          cache: true
-          cache-dependency-path: sdk/go/go.sum
+          if ! command -v git >/dev/null 2>&1; then
+            missing_packages+=(git ca-certificates)
+          fi
+
+          if ! command -v node >/dev/null 2>&1; then
+            missing_packages+=(nodejs npm)
+          fi
+
+          if ((${#missing_packages[@]} > 0)); then
+            apt-get update
+            apt-get install -y "${missing_packages[@]}"
+          fi
+
+          if ! command -v node >/dev/null 2>&1 && command -v nodejs >/dev/null 2>&1; then
+            ln -sf "$(command -v nodejs)" /usr/local/bin/node
+          fi
+
+          git --version
+          node --version
+
+      - uses: actions/checkout@v4
 
       - name: Verify toolchain
         run: go version
@@ -192,19 +247,49 @@ jobs:
     name: Test Python SDK (${{ matrix.python-version }})
     needs: setup
     if: needs.setup.outputs.test_sdk == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        include:
+          - python-version: "3.9"
+            runs-on: python-3.9
+          - python-version: "3.10"
+            runs-on: python-3.10
+          - python-version: "3.11"
+            runs-on: python-3.11
+          - python-version: "3.12"
+            runs-on: python-3.12
+          - python-version: "3.13"
+            runs-on: python-3.13
     steps:
-      - uses: actions/checkout@v4
+      - name: Bootstrap checkout runtime
+        shell: bash
+        run: |
+          missing_packages=()
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+          if ! command -v git >/dev/null 2>&1; then
+            missing_packages+=(git ca-certificates)
+          fi
+
+          if ! command -v node >/dev/null 2>&1; then
+            missing_packages+=(nodejs npm)
+          fi
+
+          if ((${#missing_packages[@]} > 0)); then
+            apt-get update
+            apt-get install -y "${missing_packages[@]}"
+          fi
+
+          if ! command -v node >/dev/null 2>&1 && command -v nodejs >/dev/null 2>&1; then
+            ln -sf "$(command -v nodejs)" /usr/local/bin/node
+          fi
+
+          git --version
+          node --version
+
+      - uses: actions/checkout@v4
 
       - name: Verify toolchain
         run: python --version
@@ -240,17 +325,22 @@ jobs:
     name: Test Dashboard
     needs: setup
     if: needs.setup.outputs.test_apps == 'true'
-    runs-on: ubuntu-latest
+    runs-on: node-20
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Bootstrap checkout runtime
+        shell: bash
+        run: |
+          if ! command -v git >/dev/null 2>&1; then
+            apt-get update
+            apt-get install -y git ca-certificates
+          fi
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: dashboard/package-lock.json
+          git --version
+          node --version
+          npm --version
+
+      - uses: actions/checkout@v4
 
       - name: Verify toolchain
         run: |
