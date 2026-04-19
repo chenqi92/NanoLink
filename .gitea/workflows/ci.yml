@@ -3,7 +3,9 @@ name: Gitea CI
 # Gitea-specific workflow set.
 # - GitHub keeps using .github/workflows/*
 # - Gitea keeps using .gitea/workflows/*
-# This workflow only targets the Linux labels currently available on our Gitea runners.
+# We intentionally run jobs on ubuntu-latest here because JS-based actions
+# such as actions/checkout and actions/setup-* require `node` inside the job
+# image. Some language-specific images on our runners do not include node.
 
 on:
   push:
@@ -74,19 +76,20 @@ jobs:
     name: Test Agent
     needs: setup
     if: needs.setup.outputs.test_agent == 'true'
-    runs-on: rust-stable
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Install system dependencies
         run: |
           apt-get update
           apt-get install -y protobuf-compiler
-
-      - name: Install Rust components
-        run: |
-          rustup component add rustfmt clippy
 
       - name: Check formatting
         working-directory: agent
@@ -127,10 +130,21 @@ jobs:
     name: Test Java SDK
     needs: setup
     if: needs.setup.outputs.test_sdk == 'true'
-    runs-on: java11-maven
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: Install Maven
+        run: |
+          apt-get update
+          apt-get install -y maven
 
       - name: Verify toolchain
         run: |
@@ -145,10 +159,17 @@ jobs:
     name: Test Go SDK
     needs: setup
     if: needs.setup.outputs.test_sdk == 'true'
-    runs-on: go-1.22
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+          cache-dependency-path: sdk/go/go.sum
 
       - name: Verify toolchain
         run: go version
@@ -171,22 +192,19 @@ jobs:
     name: Test Python SDK (${{ matrix.python-version }})
     needs: setup
     if: needs.setup.outputs.test_sdk == 'true'
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - python-version: "3.10"
-            runs_on: "python-3.10"
-          - python-version: "3.11"
-            runs_on: "python-3.11"
-          - python-version: "3.12"
-            runs_on: "python-3.12"
-          - python-version: "3.13"
-            runs_on: "python-3.13"
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Verify toolchain
         run: python --version
@@ -222,10 +240,17 @@ jobs:
     name: Test Dashboard
     needs: setup
     if: needs.setup.outputs.test_apps == 'true'
-    runs-on: node-20
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
 
       - name: Verify toolchain
         run: |
