@@ -72,7 +72,6 @@ export interface RegisterRequest {
 }
 
 export interface AuthResponse {
-  token: string
   user: User
 }
 

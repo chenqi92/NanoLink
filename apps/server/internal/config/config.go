@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -227,22 +228,42 @@ func Load(path string) (*Config, error) {
 	return &cfg, configErr
 }
 
-// ValidateAndSecure performs security validations and auto-generates missing secrets
+// ValidateAndSecure performs security validations and auto-generates missing secrets.
+//
+// In release mode (server.mode == "release") an unset JWT secret is fatal: a per-process
+// auto-generated secret invalidates every issued token on restart and breaks signature
+// verification across replicas. We require operators to set NANOLINK_JWT_SECRET (or the
+// jwt.secret config key) explicitly for production. Only the development mode (debug/test)
+// gets the convenience of auto-generation.
 func (c *Config) ValidateAndSecure() {
-	// Auto-generate JWT secret if not set
 	if c.JWT.Secret == "" {
+		if c.Server.Mode == "release" {
+			log.Fatalf("[FATAL] JWT secret is not configured. Set NANOLINK_JWT_SECRET or jwt.secret in config (server.mode=release requires an explicit secret to keep sessions valid across restarts and replicas).")
+		}
 		secret := make([]byte, 32)
 		if _, err := rand.Read(secret); err != nil {
 			log.Fatalf("Failed to generate JWT secret: %v", err)
 		}
 		c.JWT.Secret = hex.EncodeToString(secret)
-		log.Println("[SECURITY WARNING] JWT secret auto-generated. Set NANOLINK_JWT_SECRET for production.")
+		log.Printf("[SECURITY WARNING] JWT secret auto-generated for development (server.mode=%q). Set NANOLINK_JWT_SECRET before deploying to production.", c.Server.Mode)
 	}
 
 	// Warn if auth is disabled
 	if !c.Auth.Enabled {
 		log.Println("[SECURITY WARNING] Authentication is DISABLED. All agents have full access (permission level 3).")
 		log.Println("[SECURITY WARNING] Set 'auth.enabled: true' in config for production use.")
+	}
+
+	// Reject the credentialed-wildcard CORS footgun: the dashboard's CORS layer
+	// hardcodes Access-Control-Allow-Credentials: true (cookie auth needs it),
+	// which the spec says must never be combined with an unbounded origin set.
+	// We log loudly here and the runtime CORS check ignores "*" entries so the
+	// wildcard cannot widen the exposure.
+	for _, o := range c.Server.AllowedOrigins {
+		if strings.TrimSpace(o) == "*" {
+			log.Println("[SECURITY WARNING] server.allowed_origins contains '*'. This entry is ignored at runtime to avoid credentialed-wildcard CORS (CSRF amplification). List the exact origins (https://example.com, ...) you want to allow.")
+			break
+		}
 	}
 }
 

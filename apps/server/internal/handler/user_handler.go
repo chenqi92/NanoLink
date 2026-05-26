@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -53,7 +54,7 @@ type GroupBriefInfo struct {
 // CreateUserRequest is the request body for creating a user
 type CreateUserRequest struct {
 	Username string `json:"username" binding:"required,min=3,max=50"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required,min=8"`
 	Email    string `json:"email" binding:"omitempty,email"`
 	GroupIDs []uint `json:"groupIds,omitempty"`
 }
@@ -67,7 +68,7 @@ type UpdateUserRequest struct {
 // ChangePasswordRequest is the request body for changing password
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"currentPassword" binding:"required_without=ForceChange"`
-	NewPassword     string `json:"newPassword" binding:"required,min=6"`
+	NewPassword     string `json:"newPassword" binding:"required,min=8"`
 	ForceChange     bool   `json:"forceChange"` // SuperAdmin can force change
 }
 
@@ -213,10 +214,11 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	}
 
 	// Get current user from context to prevent self-deletion
-	currentUserID, exists := c.Get("userID")
-	if exists && currentUserID.(uint) == uint(id) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Cannot delete yourself"})
-		return
+	if val, exists := c.Get("userID"); exists {
+		if currentUserID, ok := val.(uint); ok && currentUserID == uint(id) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Cannot delete yourself"})
+			return
+		}
 	}
 
 	var user database.User
@@ -229,15 +231,20 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	// Clear user groups first
-	h.db.Model(&user).Association("Groups").Clear()
-
-	// Delete user permissions
-	h.db.Where("user_id = ?", user.ID).Delete(&database.UserAgentPermission{})
-
-	// Delete user
-	if err := h.db.Delete(&user).Error; err != nil {
-		h.logger.Errorf("Failed to delete user: %v", err)
+	// All three deletes share a single transaction so a mid-flight failure
+	// can't leave orphan rows in user_groups / user_agent_permissions pointing
+	// at a deleted (or worse, half-deleted) user.
+	txErr := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&user).Association("Groups").Clear(); err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", user.ID).Delete(&database.UserAgentPermission{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&user).Error
+	})
+	if txErr != nil {
+		h.logger.Errorf("Failed to delete user: %v", txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
 		return
 	}
@@ -295,9 +302,24 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 
 	// Change password
 	if err := h.authService.ChangePassword(uint(id), req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrWeakPassword) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		h.logger.Errorf("Failed to change password: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to change password"})
 		return
+	}
+
+	// Self-change: reissue the cookie so the caller isn't logged out by their own
+	// token_version bump. For admin force-resets we intentionally skip this — the
+	// target user must re-login, which is the whole point of the revocation.
+	if isOwnPassword {
+		if refreshed, refErr := h.authService.GetUserByID(uint(id)); refErr == nil {
+			if newToken, tokErr := h.authService.GenerateToken(refreshed); tokErr == nil {
+				SetAuthCookie(c, newToken, h.authService.TokenTTL())
+			}
+		}
 	}
 
 	h.logger.Infof("Password changed for user ID %d", id)

@@ -84,6 +84,18 @@ func ApplyCORSHeaders(c *gin.Context, allowedOrigins []string) {
 }
 
 // IsOriginAllowed checks whether the request Origin header is allowed.
+//
+// An empty Origin header is treated as "no browser context" (server-to-server,
+// curl, native clients) and allowed: browser CSRF protection relies on the
+// Origin header always being present in cross-origin browser requests, which
+// it always is.
+//
+// Wildcard ("*") entries in allowedOrigins are deliberately NOT honored as a
+// match: ApplyCORSHeaders sends Access-Control-Allow-Credentials: true, and
+// per the CORS spec credentials must never be granted to an unbounded origin
+// set. Allowing both together is the classic credentialed-wildcard CSRF
+// amplification footgun. Operators get a startup warning (see config) and
+// the wildcard becomes effectively inert here.
 func IsOriginAllowed(r *http.Request, allowedOrigins []string) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -97,10 +109,10 @@ func IsOriginAllowed(r *http.Request, allowedOrigins []string) bool {
 
 	for _, allowedOrigin := range allowedOrigins {
 		normalizedAllowed := strings.TrimRight(strings.TrimSpace(allowedOrigin), "/")
-		if normalizedAllowed == "" {
+		if normalizedAllowed == "" || normalizedAllowed == "*" {
 			continue
 		}
-		if normalizedAllowed == "*" || strings.EqualFold(normalizedAllowed, normalizedOrigin) {
+		if strings.EqualFold(normalizedAllowed, normalizedOrigin) {
 			return true
 		}
 	}

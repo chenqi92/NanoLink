@@ -5,8 +5,11 @@ import (
 	"strconv"
 	"time"
 
+	grpcserver "github.com/chenqi92/NanoLink/apps/server/internal/grpc"
+	pb "github.com/chenqi92/NanoLink/apps/server/internal/proto"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -16,6 +19,8 @@ type Handler struct {
 	metricsService     *service.MetricsService
 	permService        *service.PermissionService
 	metricsPersistence *service.MetricsPersistence
+	grpcServer         *grpcserver.Server
+	auditService       *service.AuditService
 	logger             *zap.SugaredLogger
 }
 
@@ -41,6 +46,16 @@ func NewHandlerWithPermissions(as *service.AgentService, ms *service.MetricsServ
 // SetMetricsPersistence sets the metrics persistence service for DB queries
 func (h *Handler) SetMetricsPersistence(mp *service.MetricsPersistence) {
 	h.metricsPersistence = mp
+}
+
+// SetGRPCServer wires the gRPC server so HTTP handlers can dispatch commands to agents
+func (h *Handler) SetGRPCServer(s *grpcserver.Server) {
+	h.grpcServer = s
+}
+
+// SetAuditService wires the audit service for command audit logging
+func (h *Handler) SetAuditService(as *service.AuditService) {
+	h.auditService = as
 }
 
 // Health returns health status
@@ -459,11 +474,62 @@ func (h *Handler) SendCommand(c *gin.Context) {
 
 	// Permission check is done via middleware (RequireAgentPermission)
 
-	// TODO: Implement command serialization and sending
-	// For now, return a placeholder response
+	if h.grpcServer == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "command dispatch is not configured"})
+		return
+	}
+
+	cmdTypeVal, ok := pb.CommandType_value[req.Type]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown command type: " + req.Type})
+		return
+	}
+
+	commandID := uuid.New().String()
+	cmd := &pb.Command{
+		CommandId: commandID,
+		Type:      pb.CommandType(cmdTypeVal),
+		Target:    req.Target,
+		Params:    req.Params,
+	}
+
+	dispatchErr := h.grpcServer.SendCommandToAgent(agentID, cmd)
+
+	// Audit log (best-effort, never blocks the response on logging failure)
+	if h.auditService != nil {
+		user := GetCurrentUser(c)
+		entry := service.AuditEntry{
+			AgentID:     agentID,
+			CommandType: req.Type,
+			CommandID:   commandID,
+			Target:      req.Target,
+			Params:      req.Params,
+			Success:     dispatchErr == nil,
+			IPAddress:   c.ClientIP(),
+		}
+		if user != nil {
+			entry.UserID = user.ID
+			entry.Username = user.Username
+		}
+		if dispatchErr != nil {
+			entry.Error = dispatchErr.Error()
+		}
+		h.auditService.LogCommand(entry)
+	}
+
+	if dispatchErr != nil {
+		h.logger.Errorf("Failed to send command %s to agent %s: %v", req.Type, agentID, dispatchErr)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "failed to send command",
+			"details": dispatchErr.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"status":  "sent",
-		"agentId": agentID,
-		"command": req.Type,
+		"status":    "sent",
+		"agentId":   agentID,
+		"command":   req.Type,
+		"commandId": commandID,
 	})
 }

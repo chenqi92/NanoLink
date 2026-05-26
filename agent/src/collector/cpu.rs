@@ -369,7 +369,9 @@ impl CpuCollector {
     /// Collect CPU metrics
     pub fn collect(&mut self, system: &System, config: &CollectorConfig) -> CpuMetrics {
         let global_cpu = system.global_cpu_usage();
-        let cpu_info = CPU_INFO.get().expect("CPU info not initialized");
+        // Lazy-init fallback (the constructor primes this) so a missing
+        // initialization can't panic the collection task.
+        let cpu_info = CPU_INFO.get_or_init(Self::collect_static_info);
 
         // Collect per-core usage if enabled
         let per_core_usage = if config.enable_per_core_cpu {

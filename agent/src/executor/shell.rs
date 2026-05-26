@@ -1,6 +1,8 @@
-use std::process::Command;
+use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
+use tokio::process::Command;
 use tracing::{info, warn};
 
 use crate::config::Config;
@@ -39,19 +41,11 @@ impl ShellExecutor {
             };
         }
 
-        // Log the command execution
         info!("Executing shell command: {}", command);
 
-        // Execute with timeout
         let timeout_secs = self.config.shell.timeout_seconds;
+        let result = self.run(command, timeout_secs).await;
 
-        #[cfg(unix)]
-        let result = self.execute_unix(command, timeout_secs);
-
-        #[cfg(windows)]
-        let result = self.execute_windows(command, timeout_secs);
-
-        // Log the result
         if result.success {
             info!("Shell command completed successfully");
         } else {
@@ -61,95 +55,27 @@ impl ShellExecutor {
         result
     }
 
-    /// Execute command on Unix systems
-    #[cfg(unix)]
-    fn execute_unix(&self, command: &str, timeout_secs: u64) -> CommandResult {
-        use std::io::Read;
-        use std::process::Stdio;
-
-        let mut child = match Command::new("sh")
-            .args(["-c", command])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
-            Ok(child) => child,
-            Err(e) => {
-                return CommandResult {
-                    command_id: String::new(),
-                    success: false,
-                    output: String::new(),
-                    error: format!("Failed to spawn shell: {}", e),
-                    ..Default::default()
-                };
-            }
+    /// Spawn the platform shell, concurrently drain stdout/stderr, and wait with timeout.
+    ///
+    /// Concurrent draining is required: with synchronous read-after-wait, a command whose
+    /// output exceeds the OS pipe buffer (~64KB on Linux) blocks the child on its next
+    /// write, the child never exits, and we hit the timeout branch even though the work
+    /// itself was fine. Using async streams lets the OS hand us bytes as they arrive.
+    async fn run(&self, command: &str, timeout_secs: u64) -> CommandResult {
+        let mut cmd = if cfg!(windows) {
+            let mut c = Command::new("cmd");
+            c.args(["/C", command]);
+            c
+        } else {
+            let mut c = Command::new("sh");
+            c.args(["-c", command]);
+            c
         };
 
-        // Wait with timeout
-        let timeout = Duration::from_secs(timeout_secs);
-        let start = std::time::Instant::now();
-
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    // Process finished
-                    let mut stdout = String::new();
-                    let mut stderr = String::new();
-
-                    if let Some(mut out) = child.stdout.take() {
-                        let _ = out.read_to_string(&mut stdout);
-                    }
-                    if let Some(mut err) = child.stderr.take() {
-                        let _ = err.read_to_string(&mut stderr);
-                    }
-
-                    return CommandResult {
-                        command_id: String::new(),
-                        success: status.success(),
-                        output: stdout,
-                        error: stderr,
-                        ..Default::default()
-                    };
-                }
-                Ok(None) => {
-                    // Still running
-                    if start.elapsed() > timeout {
-                        // Timeout - kill and wait for the process to prevent zombies
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return CommandResult {
-                            command_id: String::new(),
-                            success: false,
-                            output: String::new(),
-                            error: format!("Command timed out after {} seconds", timeout_secs),
-                            ..Default::default()
-                        };
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(e) => {
-                    return CommandResult {
-                        command_id: String::new(),
-                        success: false,
-                        output: String::new(),
-                        error: format!("Failed to wait for process: {}", e),
-                        ..Default::default()
-                    };
-                }
-            }
-        }
-    }
-
-    /// Execute command on Windows systems
-    #[cfg(windows)]
-    fn execute_windows(&self, command: &str, timeout_secs: u64) -> CommandResult {
-        use std::io::Read;
-        use std::process::Stdio;
-
-        let mut child = match Command::new("cmd")
-            .args(["/C", command])
+        let mut child = match cmd
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .kill_on_drop(true)
             .spawn()
         {
             Ok(child) => child,
@@ -164,58 +90,64 @@ impl ShellExecutor {
             }
         };
 
-        // Wait with timeout
-        let timeout = Duration::from_secs(timeout_secs);
-        let start = std::time::Instant::now();
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
 
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    // Process finished
-                    let mut stdout = String::new();
-                    let mut stderr = String::new();
-
-                    if let Some(mut out) = child.stdout.take() {
-                        let _ = out.read_to_string(&mut stdout);
-                    }
-                    if let Some(mut err) = child.stderr.take() {
-                        let _ = err.read_to_string(&mut stderr);
-                    }
-
-                    return CommandResult {
-                        command_id: String::new(),
-                        success: status.success(),
-                        output: stdout,
-                        error: stderr,
-                        ..Default::default()
-                    };
-                }
-                Ok(None) => {
-                    // Still running
-                    if start.elapsed() > timeout {
-                        // Timeout - kill and wait for the process to prevent zombies
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return CommandResult {
-                            command_id: String::new(),
-                            success: false,
-                            output: String::new(),
-                            error: format!("Command timed out after {timeout_secs} seconds"),
-                            ..Default::default()
-                        };
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(e) => {
-                    return CommandResult {
-                        command_id: String::new(),
-                        success: false,
-                        output: String::new(),
-                        error: format!("Failed to wait for process: {e}"),
-                        ..Default::default()
-                    };
-                }
+        let stdout_task = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            if let Some(mut s) = stdout {
+                let _ = s.read_to_end(&mut buf).await;
             }
+            buf
+        });
+        let stderr_task = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            if let Some(mut s) = stderr {
+                let _ = s.read_to_end(&mut buf).await;
+            }
+            buf
+        });
+
+        let timeout = Duration::from_secs(timeout_secs);
+        let wait_result = tokio::time::timeout(timeout, child.wait()).await;
+
+        let status = match wait_result {
+            Ok(Ok(status)) => status,
+            Ok(Err(e)) => {
+                stdout_task.abort();
+                stderr_task.abort();
+                return CommandResult {
+                    command_id: String::new(),
+                    success: false,
+                    output: String::new(),
+                    error: format!("Failed to wait for process: {e}"),
+                    ..Default::default()
+                };
+            }
+            Err(_) => {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                stdout_task.abort();
+                stderr_task.abort();
+                return CommandResult {
+                    command_id: String::new(),
+                    success: false,
+                    output: String::new(),
+                    error: format!("Command timed out after {timeout_secs} seconds"),
+                    ..Default::default()
+                };
+            }
+        };
+
+        let stdout_buf = stdout_task.await.unwrap_or_default();
+        let stderr_buf = stderr_task.await.unwrap_or_default();
+
+        CommandResult {
+            command_id: String::new(),
+            success: status.success(),
+            output: String::from_utf8_lossy(&stdout_buf).into_owned(),
+            error: String::from_utf8_lossy(&stderr_buf).into_owned(),
+            ..Default::default()
         }
     }
 }

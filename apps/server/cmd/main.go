@@ -130,6 +130,9 @@ func main() {
 
 	// API routes
 	api := router.Group("/api")
+	// h is declared at outer scope so it can be wired with grpcServer/auditService
+	// after the gRPC server is constructed below
+	h := handler.NewHandlerWithPermissions(agentService, metricsService, permService, sugar)
 	{
 		// Public routes (no auth required)
 		authHandler := handler.NewAuthHandler(authService, sugar)
@@ -141,7 +144,6 @@ func main() {
 		api.POST("/auth/device", deviceHandler.AuthenticateDevice)
 
 		// Health check (public)
-		h := handler.NewHandlerWithPermissions(agentService, metricsService, permService, sugar)
 		if metricsPersistence != nil {
 			h.SetMetricsPersistence(metricsPersistence)
 		}
@@ -262,6 +264,11 @@ func main() {
 	// Start gRPC server with auth interceptor
 	grpcAuthInterceptor := grpcserver.NewAuthInterceptor(authService, permService, sugar)
 	grpcServer := grpcserver.NewServerWithAuth(cfg, agentService, agentTokenService, metricsService, grpcAuthInterceptor, sugar)
+
+	// Wire gRPC server and audit service into the main handler so /api/agents/:id/command
+	// dispatches commands to agents (with audit) instead of returning a placeholder
+	h.SetGRPCServer(grpcServer)
+	h.SetAuditService(auditService)
 
 	// Register protected dashboard and shell WebSocket handlers (after gRPC server is available)
 	dashboardWSHandler := handler.NewDashboardWSHandler(sugar, permService, agentService, metricsService, cfg.Server.AllowedOrigins)

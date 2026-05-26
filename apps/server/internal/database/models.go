@@ -8,11 +8,16 @@ import (
 
 // User represents a system user
 type User struct {
-	ID           uint           `gorm:"primarykey" json:"id"`
-	Username     string         `gorm:"uniqueIndex;size:50;not null" json:"username"`
-	PasswordHash string         `gorm:"size:255;not null" json:"-"`
-	Email        string         `gorm:"uniqueIndex;size:255" json:"email"`
-	IsSuperAdmin bool           `gorm:"default:false" json:"isSuperAdmin"`
+	ID           uint   `gorm:"primarykey" json:"id"`
+	Username     string `gorm:"uniqueIndex;size:50;not null" json:"username"`
+	PasswordHash string `gorm:"size:255;not null" json:"-"`
+	Email        string `gorm:"uniqueIndex;size:255" json:"email"`
+	IsSuperAdmin bool   `gorm:"default:false" json:"isSuperAdmin"`
+	// TokenVersion is incremented whenever credentials change (e.g. password reset).
+	// JWTs embed the version at issue time; the auth middleware rejects any token whose
+	// version is older than the current row, providing a cheap revocation mechanism
+	// without a separate denylist.
+	TokenVersion uint           `gorm:"default:1;not null" json:"-"`
 	CreatedAt    time.Time      `json:"createdAt"`
 	UpdatedAt    time.Time      `json:"updatedAt"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`

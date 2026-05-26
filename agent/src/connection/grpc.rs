@@ -2,8 +2,8 @@
 //!
 //! Provides high-performance bidirectional streaming for metrics and commands.
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use tokio::sync::mpsc;
@@ -22,6 +22,18 @@ use crate::proto::{
     Metrics, MetricsStreamRequest, MetricsStreamResponse, metrics_stream_request,
     metrics_stream_response, nano_link_service_client::NanoLinkServiceClient,
 };
+
+/// Process start time, captured the first time `agent_uptime_seconds` is called.
+///
+/// We don't take this from boot in main() because the gRPC layer is the only
+/// consumer (heartbeat reporting), so lazy-init keeps the dependency direction
+/// clean. Once captured, the same instant is reused for every heartbeat across
+/// reconnects.
+static AGENT_START: OnceLock<Instant> = OnceLock::new();
+
+fn agent_uptime_seconds() -> u64 {
+    AGENT_START.get_or_init(Instant::now).elapsed().as_secs()
+}
 
 /// Guard that ensures spawned tasks are aborted when dropped.
 /// This is critical for cleanup when stream errors cause early returns via `?`.
@@ -198,7 +210,7 @@ impl GrpcClient {
                     _ = heartbeat_interval.tick() => {
                         let heartbeat = Heartbeat {
                             timestamp: chrono::Utc::now().timestamp_millis() as u64,
-                            uptime_seconds: 0, // TODO: Calculate uptime
+                            uptime_seconds: agent_uptime_seconds(),
                         };
                         let request = MetricsStreamRequest {
                             request: Some(metrics_stream_request::Request::Heartbeat(heartbeat)),
@@ -231,9 +243,25 @@ impl GrpcClient {
                 Some(metrics_stream_response::Response::HeartbeatAck(ack)) => {
                     debug!("Heartbeat acknowledged: {}", ack.timestamp);
                 }
-                Some(metrics_stream_response::Response::ConfigUpdate(_config)) => {
-                    info!("Received config update from server");
-                    // TODO: Apply config update
+                Some(metrics_stream_response::Response::ConfigUpdate(new_cfg)) => {
+                    // Hot-apply isn't wired up: the agent holds Config behind an
+                    // Arc<Config> (immutable) shared with collectors and
+                    // command executors. Mutating intervals at runtime would
+                    // require switching to Arc<RwLock<Config>> across the tree
+                    // — a non-trivial refactor we haven't done yet. We log the
+                    // proposed values so server-side operators can see the
+                    // command was received but ignored, and so the change isn't
+                    // silently swallowed.
+                    warn!(
+                        "Received config_update from server (NOT applied — hot reload not implemented): \
+                         metrics_interval_ms={}, heartbeat_interval_ms={}, \
+                         enable_detailed_metrics={}, enabled_collectors={:?}. \
+                         Restart the agent to pick up new configuration.",
+                        new_cfg.metrics_interval_ms,
+                        new_cfg.heartbeat_interval_ms,
+                        new_cfg.enable_detailed_metrics,
+                        new_cfg.enabled_collectors,
+                    );
                 }
                 Some(metrics_stream_response::Response::DataRequest(req)) => {
                     info!("Received data request: {:?}", req.request_type);
@@ -440,7 +468,7 @@ impl GrpcClient {
                     _ = heartbeat_ticker.tick() => {
                         let heartbeat = Heartbeat {
                             timestamp: chrono::Utc::now().timestamp_millis() as u64,
-                            uptime_seconds: 0, // TODO: Calculate uptime
+                            uptime_seconds: agent_uptime_seconds(),
                         };
                         let request = MetricsStreamRequest {
                             request: Some(metrics_stream_request::Request::Heartbeat(heartbeat)),
@@ -474,9 +502,25 @@ impl GrpcClient {
                 Some(metrics_stream_response::Response::HeartbeatAck(ack)) => {
                     debug!("Heartbeat acknowledged: {}", ack.timestamp);
                 }
-                Some(metrics_stream_response::Response::ConfigUpdate(_config)) => {
-                    info!("Received config update from server");
-                    // TODO: Apply config update
+                Some(metrics_stream_response::Response::ConfigUpdate(new_cfg)) => {
+                    // Hot-apply isn't wired up: the agent holds Config behind an
+                    // Arc<Config> (immutable) shared with collectors and
+                    // command executors. Mutating intervals at runtime would
+                    // require switching to Arc<RwLock<Config>> across the tree
+                    // — a non-trivial refactor we haven't done yet. We log the
+                    // proposed values so server-side operators can see the
+                    // command was received but ignored, and so the change isn't
+                    // silently swallowed.
+                    warn!(
+                        "Received config_update from server (NOT applied — hot reload not implemented): \
+                         metrics_interval_ms={}, heartbeat_interval_ms={}, \
+                         enable_detailed_metrics={}, enabled_collectors={:?}. \
+                         Restart the agent to pick up new configuration.",
+                        new_cfg.metrics_interval_ms,
+                        new_cfg.heartbeat_interval_ms,
+                        new_cfg.enable_detailed_metrics,
+                        new_cfg.enabled_collectors,
+                    );
                 }
                 Some(metrics_stream_response::Response::DataRequest(data_req)) => {
                     info!("Received data request: {:?}", data_req.request_type);

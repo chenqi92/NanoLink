@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
@@ -35,10 +36,16 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
-// AuthResponse represents an authentication response
+// AuthResponse represents an authentication response.
+//
+// The JWT itself is delivered exclusively via the HttpOnly auth cookie set by
+// SetAuthCookie. We deliberately do not echo it in the JSON body: clients that
+// do not need raw token access (i.e. the web UI, which talks to same-origin
+// APIs) should never see it, eliminating accidental localStorage persistence
+// or logging of the bearer secret. SDK/CLI clients that genuinely need a
+// token string should use a separate token-issuing endpoint.
 type AuthResponse struct {
-	Token string       `json:"token"`
-	User  UserResponse `json:"user"`
+	User UserResponse `json:"user"`
 }
 
 // UserResponse represents a user in API responses
@@ -79,7 +86,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	SetAuthCookie(c, token, h.authService.TokenTTL())
 
 	c.JSON(http.StatusCreated, AuthResponse{
-		Token: token,
 		User: UserResponse{
 			ID:           user.ID,
 			Username:     user.Username,
@@ -97,10 +103,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, user, err := h.authService.LoginUser(req.Username, req.Password)
+	token, user, err := h.authService.LoginUser(req.Username, req.Password, c.ClientIP())
 	if err != nil {
-		if err == service.ErrUserNotFound || err == service.ErrInvalidPassword {
+		if errors.Is(err, service.ErrUserNotFound) || errors.Is(err, service.ErrInvalidPassword) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+			return
+		}
+		if errors.Is(err, service.ErrTooManyAttempts) {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
 			return
 		}
 		h.logger.Errorf("Login failed: %v", err)
@@ -111,7 +121,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	SetAuthCookie(c, token, h.authService.TokenTTL())
 
 	c.JSON(http.StatusOK, AuthResponse{
-		Token: token,
 		User: UserResponse{
 			ID:           user.ID,
 			Username:     user.Username,
@@ -218,9 +227,23 @@ func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 	}
 
 	if err := h.authService.UpdatePassword(user.ID, req.NewPassword); err != nil {
+		if errors.Is(err, service.ErrWeakPassword) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		h.logger.Errorf("Password update failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update password"})
 		return
+	}
+
+	// Self-change just bumped the user's token_version, which would otherwise log them
+	// out of this session immediately. Reissue a cookie with a fresh token (carrying the
+	// new version) so the caller stays signed in. Old tokens on other devices/tabs remain
+	// invalidated, which is the whole point of the version bump.
+	if refreshed, refErr := h.authService.GetUserByID(user.ID); refErr == nil {
+		if newToken, tokErr := h.authService.GenerateToken(refreshed); tokErr == nil {
+			SetAuthCookie(c, newToken, h.authService.TokenTTL())
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "password updated"})

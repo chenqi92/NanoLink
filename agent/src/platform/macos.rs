@@ -1,21 +1,15 @@
-/// macOS-specific implementations
+/// macOS-specific implementations.
+///
+/// launchd install/uninstall live in main.rs (`install_launchd_service` /
+/// `uninstall_launchd_service`) where the CLI args needed to render the
+/// plist are in scope. Stub functions that previously sat here only
+/// returned "Not implemented" and were never reachable; they've been
+/// removed to stop misleading readers about TODO status.
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
 const LAUNCHD_PLIST: &str = "/Library/LaunchDaemons/com.nanolink.agent.plist";
-
-/// Install as launchd service
-pub fn install_service() -> Result<(), String> {
-    // TODO: Implement launchd service installation
-    Err("Not implemented".to_string())
-}
-
-/// Uninstall launchd service
-pub fn uninstall_service() -> Result<(), String> {
-    // TODO: Implement launchd service uninstallation
-    Err("Not implemented".to_string())
-}
 
 /// Restart the nanolink-agent launchd service
 pub fn restart_service() -> Result<(), String> {

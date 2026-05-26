@@ -10,8 +10,11 @@ import (
 
 const (
 	// Context keys
-	ContextKeyUser   = "user"
-	ContextKeyClaims = "claims"
+	ContextKeyUser         = "user"
+	ContextKeyClaims       = "claims"
+	ContextKeyUserID       = "userID"
+	ContextKeyUsername     = "username"
+	ContextKeyIsSuperAdmin = "isSuperAdmin"
 )
 
 // AuthMiddleware creates a JWT authentication middleware
@@ -45,9 +48,22 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 			return
 		}
 
+		// Reject tokens whose version is older than the user's current version.
+		// UpdatePassword bumps token_version to invalidate previously issued JWTs;
+		// without this check a stolen/lost token remains valid until natural expiry
+		// even after the password is changed.
+		if claims.TokenVersion != user.TokenVersion {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "token revoked, please log in again"})
+			c.Abort()
+			return
+		}
+
 		// Store user and claims in context
 		c.Set(ContextKeyUser, user)
 		c.Set(ContextKeyClaims, claims)
+		c.Set(ContextKeyUserID, user.ID)
+		c.Set(ContextKeyUsername, user.Username)
+		c.Set(ContextKeyIsSuperAdmin, user.IsSuperAdmin)
 		c.Next()
 	}
 }
@@ -74,8 +90,18 @@ func OptionalAuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 			return
 		}
 
+		// Same revocation check as AuthMiddleware: a stale token is treated as
+		// "no auth" rather than failing the request, since this middleware is optional.
+		if claims.TokenVersion != user.TokenVersion {
+			c.Next()
+			return
+		}
+
 		c.Set(ContextKeyUser, user)
 		c.Set(ContextKeyClaims, claims)
+		c.Set(ContextKeyUserID, user.ID)
+		c.Set(ContextKeyUsername, user.Username)
+		c.Set(ContextKeyIsSuperAdmin, user.IsSuperAdmin)
 		c.Next()
 	}
 }

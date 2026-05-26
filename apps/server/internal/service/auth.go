@@ -28,6 +28,10 @@ type JWTClaims struct {
 	UserID       uint   `json:"userId"`
 	Username     string `json:"username"`
 	IsSuperAdmin bool   `json:"isSuperAdmin"`
+	// TokenVersion mirrors User.TokenVersion at issue time. The auth middleware rejects
+	// the token if the user's row has since been bumped (e.g. by a password change),
+	// invalidating every previously issued token for that user.
+	TokenVersion uint `json:"tv"`
 	jwt.RegisteredClaims
 }
 
@@ -80,12 +84,22 @@ var (
 	ErrTooManyAttempts  = errors.New("too many login attempts, please try again later")
 )
 
-// LoginRateLimiter implements a simple in-memory rate limiter for login attempts
+// LoginRateLimiter is an in-memory per-key counter that locks out a key after
+// too many failed attempts within a window.
+//
+// Why a single mutex instead of RWMutex split between Check and Record:
+// the previous design had Check under RLock and RecordFailure under Lock, but
+// the read-decide-write sequence wasn't atomic, so concurrent failed logins
+// could each pass Check before any of them bumped the counter, letting the
+// total exceed maxAttempts. Collapsing the read+decide+write into one Lock
+// closes that race. Login throughput is low enough that contention doesn't
+// matter.
 type LoginRateLimiter struct {
-	mu          sync.RWMutex
+	mu          sync.Mutex
 	attempts    map[string]*loginAttempt
 	maxAttempts int
 	lockoutTime time.Duration
+	stopCh      chan struct{}
 }
 
 type loginAttempt struct {
@@ -94,32 +108,51 @@ type loginAttempt struct {
 	lockedAt  *time.Time
 }
 
+// NewLoginRateLimiter constructs the limiter and starts a background sweeper
+// that drops entries older than 2x lockoutTime, so the map cannot grow
+// unboundedly under sustained credential-stuffing attacks.
 func NewLoginRateLimiter(maxAttempts int, lockoutTime time.Duration) *LoginRateLimiter {
-	return &LoginRateLimiter{
+	l := &LoginRateLimiter{
 		attempts:    make(map[string]*loginAttempt),
 		maxAttempts: maxAttempts,
 		lockoutTime: lockoutTime,
+		stopCh:      make(chan struct{}),
+	}
+	go l.sweepLoop()
+	return l
+}
+
+// Stop terminates the background sweeper. Safe to call multiple times.
+func (l *LoginRateLimiter) Stop() {
+	select {
+	case <-l.stopCh:
+	default:
+		close(l.stopCh)
 	}
 }
 
+// Check reports whether the key is currently locked out. Read-only; uses
+// the same mutex as the writers since the cost is negligible.
 func (l *LoginRateLimiter) Check(key string) error {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.checkLocked(key)
+}
 
+func (l *LoginRateLimiter) checkLocked(key string) error {
 	attempt, exists := l.attempts[key]
 	if !exists {
 		return nil
 	}
-
-	if attempt.lockedAt != nil {
-		if time.Since(*attempt.lockedAt) < l.lockoutTime {
-			return ErrTooManyAttempts
-		}
+	if attempt.lockedAt != nil && time.Since(*attempt.lockedAt) < l.lockoutTime {
+		return ErrTooManyAttempts
 	}
-
 	return nil
 }
 
+// RecordFailure atomically increments the failure counter for the key, rolling
+// over the window if it has elapsed and engaging the lockout when the threshold
+// is reached.
 func (l *LoginRateLimiter) RecordFailure(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -130,7 +163,6 @@ func (l *LoginRateLimiter) RecordFailure(key string) {
 		l.attempts[key] = attempt
 	}
 
-	// Reset if enough time has passed
 	if time.Since(attempt.lastReset) > l.lockoutTime {
 		attempt.count = 0
 		attempt.lockedAt = nil
@@ -144,10 +176,43 @@ func (l *LoginRateLimiter) RecordFailure(key string) {
 	}
 }
 
+// RecordSuccess clears the key's counter after a verified successful login.
 func (l *LoginRateLimiter) RecordSuccess(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.attempts, key)
+}
+
+// sweepLoop periodically purges entries whose last activity is well past the
+// lockout window, preventing unbounded map growth.
+func (l *LoginRateLimiter) sweepLoop() {
+	ticker := time.NewTicker(l.lockoutTime)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-l.stopCh:
+			return
+		case <-ticker.C:
+			l.sweep()
+		}
+	}
+}
+
+func (l *LoginRateLimiter) sweep() {
+	cutoff := time.Now().Add(-2 * l.lockoutTime)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for key, a := range l.attempts {
+		// Latest activity timestamp: prefer lockedAt, fall back to lastReset.
+		last := a.lastReset
+		if a.lockedAt != nil && a.lockedAt.After(last) {
+			last = *a.lockedAt
+		}
+		if last.Before(cutoff) {
+			delete(l.attempts, key)
+		}
+	}
 }
 
 // ValidatePasswordStrength checks if a password meets minimum requirements
@@ -254,39 +319,65 @@ func (s *AuthService) RegisterUser(username, password, email string) (*database.
 	return user, nil
 }
 
-// LoginUser authenticates a user and returns a JWT token
-func (s *AuthService) LoginUser(username, password string) (string, *database.User, error) {
-	// Check rate limiter
-	if err := s.loginLimiter.Check(username); err != nil {
+// LoginUser authenticates a user and returns a JWT token.
+//
+// remoteIP is included in rate-limiting so that a single attacker cannot bypass
+// per-username throttling by trying many usernames from the same host. Pass an
+// empty string only when no IP context is available (tests, internal calls);
+// production callers should always supply c.ClientIP().
+func (s *AuthService) LoginUser(username, password, remoteIP string) (string, *database.User, error) {
+	userKey := "user:" + username
+	ipKey := ""
+	if remoteIP != "" {
+		ipKey = "ip:" + remoteIP
+	}
+
+	// Check both buckets up front. We use the same threshold for both — if you
+	// burn 5 attempts on one username OR 5 from one IP across different
+	// usernames, you get locked out.
+	if err := s.loginLimiter.Check(userKey); err != nil {
 		s.logger.Warnf("Login blocked for user '%s': too many attempts", username)
 		return "", nil, err
+	}
+	if ipKey != "" {
+		if err := s.loginLimiter.Check(ipKey); err != nil {
+			s.logger.Warnf("Login blocked for IP %s (user='%s'): too many attempts", remoteIP, username)
+			return "", nil, err
+		}
+	}
+
+	recordFailure := func() {
+		s.loginLimiter.RecordFailure(userKey)
+		if ipKey != "" {
+			s.loginLimiter.RecordFailure(ipKey)
+		}
 	}
 
 	var user database.User
 	if err := s.db.Where("username = ?", username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			s.loginLimiter.RecordFailure(username)
+			recordFailure()
 			return "", nil, ErrUserNotFound
 		}
 		return "", nil, fmt.Errorf("database error: %w", err)
 	}
 
-	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		s.loginLimiter.RecordFailure(username)
+		recordFailure()
 		return "", nil, ErrInvalidPassword
 	}
 
-	// Clear rate limiter on success
-	s.loginLimiter.RecordSuccess(username)
+	// Clear only the username bucket on success: we don't want a successful
+	// login to wipe out evidence of credential stuffing from this IP across
+	// other accounts.
+	s.loginLimiter.RecordSuccess(userKey)
 
-	// Generate JWT token
 	token, err := s.GenerateToken(&user)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	s.logger.Infof("User '%s' logged in successfully", username)
+	s.logger.Infof("User '%s' logged in successfully from %s", username, remoteIP)
 	return token, &user, nil
 }
 
@@ -297,6 +388,7 @@ func (s *AuthService) GenerateToken(user *database.User) (string, error) {
 		UserID:       user.ID,
 		Username:     user.Username,
 		IsSuperAdmin: user.IsSuperAdmin,
+		TokenVersion: user.TokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.jwtExpire)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -367,35 +459,55 @@ func (s *AuthService) ListUsers() ([]database.User, error) {
 	return users, nil
 }
 
-// DeleteUser deletes a user by ID
+// DeleteUser deletes a user by ID.
+//
+// Wrapped in a single transaction so that a partial failure (e.g. the user row
+// deletes but the user_groups cleanup errors) cannot leave orphan rows in the
+// join tables. Without this, callers could end up with permission grants
+// pointing at a non-existent user, which would surface later as confusing
+// authorization bugs.
 func (s *AuthService) DeleteUser(userID uint) error {
-	// First remove user from all groups
-	if err := s.db.Exec("DELETE FROM user_groups WHERE user_id = ?", userID).Error; err != nil {
-		return fmt.Errorf("failed to remove user from groups: %w", err)
-	}
-
-	// Delete user agent permissions
-	if err := s.db.Where("user_id = ?", userID).Delete(&database.UserAgentPermission{}).Error; err != nil {
-		return fmt.Errorf("failed to delete user permissions: %w", err)
-	}
-
-	// Delete user
-	if err := s.db.Delete(&database.User{}, userID).Error; err != nil {
-		return fmt.Errorf("failed to delete user: %w", err)
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("DELETE FROM user_groups WHERE user_id = ?", userID).Error; err != nil {
+			return fmt.Errorf("failed to remove user from groups: %w", err)
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&database.UserAgentPermission{}).Error; err != nil {
+			return fmt.Errorf("failed to delete user permissions: %w", err)
+		}
+		if err := tx.Delete(&database.User{}, userID).Error; err != nil {
+			return fmt.Errorf("failed to delete user: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	s.logger.Infof("User ID %d deleted", userID)
 	return nil
 }
 
-// UpdatePassword updates a user's password
+// UpdatePassword updates a user's password.
+//
+// Bumps token_version atomically so every JWT that was issued before this call is
+// rejected by the auth middleware on its next request — see JWTClaims.TokenVersion.
+// Also enforces password strength on every code path (admin reset, self-change, etc.)
+// instead of trusting the handler layer.
 func (s *AuthService) UpdatePassword(userID uint, newPassword string) error {
+	if err := ValidatePasswordStrength(newPassword); err != nil {
+		return err
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	if err := s.db.Model(&database.User{}).Where("id = ?", userID).Update("password_hash", string(hash)).Error; err != nil {
+	updates := map[string]interface{}{
+		"password_hash": string(hash),
+		"token_version": gorm.Expr("token_version + ?", 1),
+	}
+	if err := s.db.Model(&database.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
 		return fmt.Errorf("failed to update password: %w", err)
 	}
 

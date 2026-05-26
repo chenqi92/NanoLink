@@ -73,9 +73,19 @@ impl WizardState {
     fn save_config(&mut self) -> Result<PathBuf, String> {
         self.validate_server_config()?;
 
+        // validate_server_config already verified the port parses; we re-parse
+        // here defensively (rather than unwrap) so a future code change that
+        // skips validation can't turn a malformed input into a process-wide
+        // panic in the GUI thread.
+        let port: u16 = self
+            .port
+            .trim()
+            .parse()
+            .map_err(|_| "Port must be a valid number (1-65535)".to_string())?;
+
         let server = ServerConfig {
             host: self.host.trim().to_string(),
-            port: self.port.trim().parse().unwrap(),
+            port,
             token: self.token.clone(),
             management_token: None,
             permission: PERMISSION_LEVELS[self.permission].1,

@@ -6,6 +6,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  type TooltipProps,
   ResponsiveContainer,
   ReferenceLine,
   Area,
@@ -89,8 +90,7 @@ export function MetricsChart({
   const textColor = isDark ? "#a1a1aa" : "#71717a"
   const bgColor = isDark ? "#09090b" : "#ffffff"
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const renderTooltip = (props: any) => {
+  const renderTooltip = (props: TooltipProps<number, string>) => {
     const { active, payload, label: tooltipLabel } = props
     if (!active || !payload) return null
     return (

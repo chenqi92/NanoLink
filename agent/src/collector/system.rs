@@ -206,7 +206,12 @@ impl SystemInfoCollector {
     }
 
     pub fn collect(&self) -> SystemInfo {
-        let static_info = SYSTEM_INFO.get().expect("System info not initialized");
+        // Both constructors prime SYSTEM_INFO via get_or_init, so this should
+        // already be populated. Fall back to initializing on demand instead of
+        // expect() — a panic deep in metric collection would tear down the
+        // tokio worker that owns this future, taking the whole agent's
+        // collection loop with it.
+        let static_info = SYSTEM_INFO.get_or_init(Self::collect_static_info);
         let uptime_seconds = System::uptime();
 
         let hostname = self

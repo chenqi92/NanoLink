@@ -180,46 +180,68 @@ impl PermissionChecker {
             vec![
                 // 破坏性命令
                 (
-                    Regex::new(r"\brm\s+(-[rfv]+\s+)*[/\*]").unwrap(),
+                    Regex::new(r"\brm\s+(-[rfv]+\s+)*[/\*]").expect("BUG: invalid regex literal"),
                     "rm with root/wildcard",
                 ),
-                (Regex::new(r"\bmkfs\b").unwrap(), "mkfs"),
-                (Regex::new(r"\bdd\s+if=").unwrap(), "dd"),
                 (
-                    Regex::new(r">\s*/dev/(sd|hd|nvme|vd)").unwrap(),
+                    Regex::new(r"\bmkfs\b").expect("BUG: invalid regex literal"),
+                    "mkfs",
+                ),
+                (
+                    Regex::new(r"\bdd\s+if=").expect("BUG: invalid regex literal"),
+                    "dd",
+                ),
+                (
+                    Regex::new(r">\s*/dev/(sd|hd|nvme|vd)").expect("BUG: invalid regex literal"),
                     "write to device",
                 ),
                 // 权限提升
-                (Regex::new(r"\bchmod\s+[0-7]*777").unwrap(), "chmod 777"),
-                (Regex::new(r"\bchown\s+root").unwrap(), "chown root"),
-                // 网络后门/反向shell
-                (Regex::new(r"\bnc\s+-[el]").unwrap(), "netcat listener/exec"),
                 (
-                    Regex::new(r"\bbash\s+-i\s+>&").unwrap(),
+                    Regex::new(r"\bchmod\s+[0-7]*777").expect("BUG: invalid regex literal"),
+                    "chmod 777",
+                ),
+                (
+                    Regex::new(r"\bchown\s+root").expect("BUG: invalid regex literal"),
+                    "chown root",
+                ),
+                // 网络后门/反向shell
+                (
+                    Regex::new(r"\bnc\s+-[el]").expect("BUG: invalid regex literal"),
+                    "netcat listener/exec",
+                ),
+                (
+                    Regex::new(r"\bbash\s+-i\s+>&").expect("BUG: invalid regex literal"),
                     "bash reverse shell",
                 ),
                 (
-                    Regex::new(r"/dev/tcp/").unwrap(),
+                    Regex::new(r"/dev/tcp/").expect("BUG: invalid regex literal"),
                     "bash network redirection",
                 ),
-                (Regex::new(r"python.*-c.*socket").unwrap(), "python socket"),
-                (Regex::new(r"perl.*-e.*socket").unwrap(), "perl socket"),
+                (
+                    Regex::new(r"python.*-c.*socket").expect("BUG: invalid regex literal"),
+                    "python socket",
+                ),
+                (
+                    Regex::new(r"perl.*-e.*socket").expect("BUG: invalid regex literal"),
+                    "perl socket",
+                ),
                 // 敏感文件访问
                 (
-                    Regex::new(r"\bcat\s+.*/(etc/(shadow|sudoers)|\.ssh/)").unwrap(),
+                    Regex::new(r"\bcat\s+.*/(etc/(shadow|sudoers)|\.ssh/)")
+                        .expect("BUG: invalid regex literal"),
                     "sensitive file read",
                 ),
                 // Fork炸弹和相关
                 (
-                    Regex::new(r":\s*\(\s*\)\s*\{").unwrap(),
+                    Regex::new(r":\s*\(\s*\)\s*\{").expect("BUG: invalid regex literal"),
                     "fork bomb pattern",
                 ),
                 (
-                    Regex::new(r"\bwhile\s+true\s*;?\s*do").unwrap(),
+                    Regex::new(r"\bwhile\s+true\s*;?\s*do").expect("BUG: invalid regex literal"),
                     "infinite loop",
                 ),
                 (
-                    Regex::new(r"\bfor\s*\(\s*;\s*;\s*\)").unwrap(),
+                    Regex::new(r"\bfor\s*\(\s*;\s*;\s*\)").expect("BUG: invalid regex literal"),
                     "infinite for loop",
                 ),
             ]
