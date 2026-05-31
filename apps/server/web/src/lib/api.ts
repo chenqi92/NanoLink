@@ -427,6 +427,18 @@ export interface AgentScript {
   lastModified?: string
   signatureVerified?: boolean
 }
+export interface AgentServiceInfo {
+  name: string
+  status: string
+  subState?: string
+  description?: string
+}
+export interface AgentFileEntry {
+  name: string
+  isDir?: boolean
+  size?: number
+  modified?: number
+}
 export interface CommandResultData {
   commandId: string
   success: boolean
@@ -436,6 +448,8 @@ export interface CommandResultData {
   containers?: AgentContainer[]
   packages?: AgentPackage[]
   scripts?: AgentScript[]
+  services?: AgentServiceInfo[]
+  files?: AgentFileEntry[]
   logResult?: AgentLogResult
 }
 

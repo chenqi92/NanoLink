@@ -104,6 +104,7 @@ impl MessageHandler {
             CommandType::ServiceStatus => {
                 self.service_executor.service_status(&command.target).await
             }
+            CommandType::ServiceList => self.service_executor.list_services().await,
 
             // File operations
             CommandType::FileTail => {
@@ -122,6 +123,7 @@ impl MessageHandler {
                     .await
             }
             CommandType::FileTruncate => self.file_executor.truncate_file(&command.target).await,
+            CommandType::FileList => self.file_executor.list_directory(&command.target).await,
 
             // Docker operations
             CommandType::DockerList => self.docker_executor.list_containers().await,

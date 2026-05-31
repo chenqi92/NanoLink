@@ -369,11 +369,13 @@ enum CommandType {
   SERVICE_STOP = 11;
   SERVICE_RESTART = 12;
   SERVICE_STATUS = 13;
+  SERVICE_LIST = 14;          // List all services
   // File Operations
   FILE_TAIL = 20;
   FILE_DOWNLOAD = 21;
   FILE_UPLOAD = 22;
   FILE_TRUNCATE = 23;
+  FILE_LIST = 24;             // List directory entries
   // Docker Operations
   DOCKER_LIST = 30;
   DOCKER_START = 31;
@@ -435,6 +437,24 @@ message CommandResult {
   repeated ScriptInfo scripts = 12;         // For SCRIPT_LIST
   ConfigResult config_result = 13;          // For CONFIG_READ/CONFIG_WRITE/CONFIG_ROLLBACK
   HealthCheckResult health_result = 14;     // For HEALTH_CHECK/CONNECTIVITY_TEST
+  repeated ServiceInfo services = 15;       // For SERVICE_LIST
+  repeated FileEntry files = 16;            // For FILE_LIST
+}
+
+// ServiceInfo describes a single service/unit (SERVICE_LIST)
+message ServiceInfo {
+  string name = 1;          // Unit/service name
+  string status = 2;        // Active state: active, inactive, failed
+  string sub_state = 3;     // running, dead, exited, ...
+  string description = 4;
+}
+
+// FileEntry describes a single directory entry (FILE_LIST)
+message FileEntry {
+  string name = 1;
+  bool is_dir = 2;
+  uint64 size = 3;
+  int64 modified = 4;       // Unix epoch milliseconds
 }
 
 // ========== DevOps Extension Messages ==========

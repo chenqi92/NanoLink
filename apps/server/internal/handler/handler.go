@@ -586,8 +586,10 @@ func commandRequiredPermission(cmdType pb.CommandType) int {
 	switch cmdType {
 	case pb.CommandType_PROCESS_LIST,
 		pb.CommandType_SERVICE_STATUS,
+		pb.CommandType_SERVICE_LIST,
 		pb.CommandType_DOCKER_LIST,
 		pb.CommandType_FILE_TAIL,
+		pb.CommandType_FILE_LIST,
 		pb.CommandType_AGENT_GET_VERSION,
 		pb.CommandType_SERVICE_LOGS,
 		pb.CommandType_PACKAGE_LIST,

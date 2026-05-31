@@ -8,7 +8,7 @@ use glob::Pattern;
 use tracing::{info, warn};
 
 use crate::config::Config;
-use crate::proto::CommandResult;
+use crate::proto::{CommandResult, FileEntry};
 
 const MAX_TAIL_LINES: usize = 1_000;
 const MAX_TAIL_OUTPUT_BYTES: usize = 1024 * 1024;
@@ -132,46 +132,47 @@ impl FileExecutor {
         }
     }
 
-    /// List directory entries as JSON in `output` (used by the dashboard file browser).
-    fn list_directory(&self, dir: &Path) -> CommandResult {
+    /// List directory entries as structured FileEntry items (FILE_LIST).
+    pub async fn list_directory(&self, path: &str) -> CommandResult {
         use std::time::UNIX_EPOCH;
-        info!("[AUDIT] FileList: {}", dir.display());
-        let read = match fs::read_dir(dir) {
+        let validated_path = match self.validate_path(path) {
+            Ok(p) => p,
+            Err(e) => return Self::error_result(e),
+        };
+        if !validated_path.is_dir() {
+            return Self::error_result(format!("Not a directory: {}", validated_path.display()));
+        }
+        info!("[AUDIT] FileList: {}", validated_path.display());
+        let read = match fs::read_dir(&validated_path) {
             Ok(rd) => rd,
             Err(e) => return Self::error_result(format!("Failed to read directory: {e}")),
         };
-        let mut entries: Vec<serde_json::Value> = Vec::new();
+        let mut files: Vec<FileEntry> = Vec::new();
         for entry in read.flatten() {
-            if entries.len() >= 2000 {
+            if files.len() >= 2000 {
                 break;
             }
             let meta = entry.metadata().ok();
-            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
             let modified = meta
                 .as_ref()
                 .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
+                .map(|d| d.as_millis() as i64)
                 .unwrap_or(0);
-            entries.push(serde_json::json!({
-                "name": entry.file_name().to_string_lossy(),
-                "isDir": is_dir,
-                "size": size,
-                "modified": modified,
-            }));
+            files.push(FileEntry {
+                name: entry.file_name().to_string_lossy().to_string(),
+                is_dir: meta.as_ref().map(|m| m.is_dir()).unwrap_or(false),
+                size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
+                modified,
+            });
         }
-        entries.sort_by(|a, b| {
-            let ad = a["isDir"].as_bool().unwrap_or(false);
-            let bd = b["isDir"].as_bool().unwrap_or(false);
-            bd.cmp(&ad).then_with(|| a["name"].as_str().cmp(&b["name"].as_str()))
-        });
-        let payload = serde_json::json!({ "path": dir.to_string_lossy(), "entries": entries });
+        files.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
         CommandResult {
             command_id: String::new(),
             success: true,
-            output: payload.to_string(),
+            output: format!("{} entries", files.len()),
             error: String::new(),
+            files,
             ..Default::default()
         }
     }
@@ -197,11 +198,6 @@ impl FileExecutor {
 
         if !validated_path.exists() {
             return Self::error_result(format!("File not found: {}", validated_path.display()));
-        }
-
-        // A directory path lists its entries (dashboard file browser) instead of tailing.
-        if validated_path.is_dir() {
-            return self.list_directory(&validated_path);
         }
 
         info!(

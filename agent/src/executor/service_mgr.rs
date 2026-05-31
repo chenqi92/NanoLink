@@ -1,7 +1,7 @@
 use std::process::Command;
 use tracing::info;
 
-use crate::proto::CommandResult;
+use crate::proto::{CommandResult, ServiceInfo};
 use crate::security::validation::validate_service_name;
 
 /// Service management executor
@@ -42,19 +42,16 @@ impl ServiceExecutor {
             .await
     }
 
-    /// Get service status. An empty target lists all services (JSON in `output`).
+    /// Get service status for a single service.
     pub async fn service_status(&self, service_name: &str) -> CommandResult {
-        if service_name.trim().is_empty() {
-            return self.list_services();
-        }
         self.execute_service_command(service_name, ServiceAction::Status)
             .await
     }
 
-    /// List all services as a JSON object {"services":[{name,status,sub,description}]} in `output`.
-    fn list_services(&self) -> CommandResult {
+    /// List all services as structured ServiceInfo entries (SERVICE_LIST).
+    pub async fn list_services(&self) -> CommandResult {
         info!("[AUDIT] ServiceList");
-        let mut services: Vec<serde_json::Value> = Vec::new();
+        let mut services: Vec<ServiceInfo> = Vec::new();
 
         #[cfg(target_os = "linux")]
         if let Ok(out) = Command::new("systemctl")
@@ -66,8 +63,12 @@ impl ServiceExecutor {
                 if f.len() < 4 {
                     continue;
                 }
-                let desc = f[4..].join(" ");
-                services.push(serde_json::json!({ "name": f[0], "status": f[2], "sub": f[3], "description": desc }));
+                services.push(ServiceInfo {
+                    name: f[0].to_string(),
+                    status: f[2].to_string(),
+                    sub_state: f[3].to_string(),
+                    description: f[4..].join(" "),
+                });
             }
         }
 
@@ -75,14 +76,19 @@ impl ServiceExecutor {
         if let Ok(out) = Command::new("launchctl").arg("list").output() {
             for (i, line) in String::from_utf8_lossy(&out.stdout).lines().enumerate() {
                 if i == 0 {
-                    continue; // header
+                    continue; // header: PID Status Label
                 }
                 let f: Vec<&str> = line.split_whitespace().collect();
                 if f.len() < 3 {
                     continue;
                 }
                 let running = f[0] != "-";
-                services.push(serde_json::json!({ "name": f[2], "status": if running { "active" } else { "inactive" }, "sub": if running { "running" } else { "dead" }, "description": "" }));
+                services.push(ServiceInfo {
+                    name: f[2].to_string(),
+                    status: if running { "active" } else { "inactive" }.to_string(),
+                    sub_state: if running { "running" } else { "dead" }.to_string(),
+                    description: String::new(),
+                });
             }
         }
 
@@ -96,18 +102,22 @@ impl ServiceExecutor {
                     name = rest.trim().to_string();
                 } else if l.starts_with("STATE") && !name.is_empty() {
                     let running = l.contains("RUNNING");
-                    services.push(serde_json::json!({ "name": name.clone(), "status": if running { "active" } else { "inactive" }, "sub": if running { "running" } else { "stopped" }, "description": "" }));
-                    name.clear();
+                    services.push(ServiceInfo {
+                        name: std::mem::take(&mut name),
+                        status: if running { "active" } else { "inactive" }.to_string(),
+                        sub_state: if running { "running" } else { "stopped" }.to_string(),
+                        description: String::new(),
+                    });
                 }
             }
         }
 
-        let payload = serde_json::json!({ "services": services });
         CommandResult {
             command_id: String::new(),
             success: true,
-            output: payload.to_string(),
+            output: format!("{} services", services.len()),
             error: String::new(),
+            services,
             ..Default::default()
         }
     }
