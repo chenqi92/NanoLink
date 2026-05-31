@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import "./i18n"
 import "@/index.css"
 import { useAuth } from "@/contexts/AuthContext"
+import { alertsApi } from "@/lib/api"
 import { LoginScreen } from "@/screens/LoginScreen"
 import { Sidebar } from "@/components/shell/Sidebar"
 import { Topbar } from "@/components/shell/Topbar"
@@ -19,6 +20,24 @@ function App() {
   const [collapsed, setCollapsed] = useState(false)
   const [openSearch, setOpenSearch] = useState(false)
   const [openWizard, setOpenWizard] = useState(false)
+  const [alertCount, setAlertCount] = useState(0)
+
+  // Poll unacknowledged alert count for the sidebar badge
+  useEffect(() => {
+    if (!isAuthenticated) return
+    let alive = true
+    const fetchCount = () =>
+      alertsApi
+        .list()
+        .then((a) => alive && setAlertCount(a.filter((x) => !x.ack).length))
+        .catch(() => {})
+    fetchCount()
+    const id = setInterval(fetchCount, 30000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [isAuthenticated])
 
   // Open the add-agent wizard when a navigation requests it
   useEffect(() => {
@@ -62,7 +81,7 @@ function App() {
   return (
     <>
       <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", background: "var(--bg)", color: "var(--fg)" }}>
-        <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+        <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} alertCount={alertCount} />
         <div className="col" style={{ flex: 1, minWidth: 0 }}>
           <Topbar onOpenSearch={() => setOpenSearch(true)} />
           <main style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>

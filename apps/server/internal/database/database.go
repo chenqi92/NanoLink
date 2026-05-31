@@ -85,6 +85,9 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		&AuditLog{},
 		&AgentToken{},
 		&DeviceToken{},
+		&AlertRule{},
+		&AlertInstance{},
+		&NotifyChannel{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}

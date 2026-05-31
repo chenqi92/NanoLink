@@ -300,6 +300,49 @@ export interface AuditQuery {
   limit?: number
   offset?: number
 }
+// Alerts
+export interface AlertInstanceDTO {
+  id: string
+  level: "crit" | "warn" | "info"
+  title: string
+  desc: string
+  agent: string
+  rule: string
+  since: string
+  ack: boolean
+  ackBy?: string
+  value?: number
+}
+export interface AlertRuleModel {
+  id: number
+  name: string
+  metric: string
+  operator: string
+  threshold: number
+  durationSec: number
+  severity: string
+  scope: string
+  enabled: boolean
+}
+export interface NotifyChannelModel {
+  id: number
+  kind: string
+  name: string
+  target: string
+  enabled: boolean
+}
+export const alertsApi = {
+  list: (status?: string) => api.get<AlertInstanceDTO[]>(`/alerts${status ? `?status=${status}` : ""}`),
+  ack: (id: string) => api.post(`/alerts/ack/${id}`),
+  rules: () => api.get<AlertRuleModel[]>("/alerts/rules"),
+  createRule: (data: { name: string; metric: string; operator?: string; threshold?: number; severity?: string; scope?: string; enabled?: boolean }) => api.post("/alerts/rules", data),
+  updateRule: (id: number, data: Record<string, unknown>) => api.put(`/alerts/rules/${id}`, data),
+  deleteRule: (id: number) => api.delete(`/alerts/rules/${id}`),
+  channels: () => api.get<NotifyChannelModel[]>("/alerts/channels"),
+  createChannel: (data: { kind: string; name: string; target?: string }) => api.post("/alerts/channels", data),
+  deleteChannel: (id: number) => api.delete(`/alerts/channels/${id}`),
+}
+
 export const auditApi = {
   logs: (q: AuditQuery = {}) => {
     const p = new URLSearchParams()

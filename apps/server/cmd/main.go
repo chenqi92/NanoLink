@@ -110,6 +110,11 @@ func main() {
 	agentTokenService := service.NewAgentTokenService(database.GetDB(), sugar)
 	agentTokenService.StartCleanupJob() // Auto-cleanup expired tokens
 
+	// Alert evaluation against live metrics
+	alertService := service.NewAlertService(database.GetDB(), metricsService, agentService, sugar)
+	alertService.Start()
+	defer alertService.Stop()
+
 	// Initialize device service for mobile/desktop client pairing
 	// Use ExternalURL from config for QR codes, fallback to localhost for development
 	serverURL := cfg.Server.ExternalURL
@@ -199,6 +204,13 @@ func main() {
 			protected.POST("/config/add-server", configGen.GenerateAddServerCommand)
 			protected.POST("/config/remove-server", configGen.GenerateRemoveServerCommand)
 
+			// Alerts (read + ack for authenticated users)
+			alertHandler := handler.NewAlertHandler(alertService, sugar)
+			protected.GET("/alerts", alertHandler.ListAlerts)
+			protected.GET("/alerts/rules", alertHandler.ListRules)
+			protected.GET("/alerts/channels", alertHandler.ListChannels)
+			protected.POST("/alerts/ack/:id", alertHandler.AckAlert)
+
 			// Super admin only routes
 			admin := protected.Group("")
 			admin.Use(handler.RequireSuperAdmin())
@@ -245,6 +257,13 @@ func main() {
 
 				admin.GET("/config/tokens", configGen.ListTokens)
 				admin.POST("/config/generate-token", configGen.GenerateToken)
+
+				// Alert rule & channel management (super admin only)
+				admin.POST("/alerts/rules", alertHandler.CreateRule)
+				admin.PUT("/alerts/rules/:id", alertHandler.UpdateRule)
+				admin.DELETE("/alerts/rules/:id", alertHandler.DeleteRule)
+				admin.POST("/alerts/channels", alertHandler.CreateChannel)
+				admin.DELETE("/alerts/channels/:id", alertHandler.DeleteChannel)
 			}
 		}
 
