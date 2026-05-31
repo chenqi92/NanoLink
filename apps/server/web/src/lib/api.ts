@@ -264,11 +264,6 @@ export const metricsApi = {
     api.get<Metrics[]>(`/metrics/history?agentId=${agentId}&start=${start}&end=${end}&interval=${interval}`),
 }
 
-export const usersApi = {
-  list: () => api.get<User[]>("/users"),
-  delete: (id: number) => api.delete(`/users/${id}`),
-}
-
 // Agent Token types and API
 export interface AgentToken {
   id: number
@@ -305,4 +300,89 @@ export const agentTokensApi = {
   delete: (id: number) => api.delete(`/agent-tokens/${id}`),
   regenerate: (id: number) => api.post<{ token: string }>(`/agent-tokens/${id}/regenerate`),
   reorder: (order: number[]) => api.put("/agent-tokens/reorder", { order }),
+}
+
+// ─── Users ─────────────────────────────────────────────────
+export interface UserGroupRef {
+  id: number
+  name: string
+}
+
+export interface UserDetail extends User {
+  groups?: UserGroupRef[]
+}
+
+export const usersApi = {
+  list: () => api.get<UserDetail[]>("/users"),
+  get: (id: number) => api.get<UserDetail>(`/users/${id}`),
+  create: (data: { username: string; password: string; email?: string; groupIds?: number[] }) => api.post<UserDetail>("/users", data),
+  update: (id: number, data: { email?: string; groupIds?: number[] }) => api.put(`/users/${id}`, data),
+  delete: (id: number) => api.delete(`/users/${id}`),
+  setPassword: (id: number, data: { newPassword: string; currentPassword?: string; forceChange?: boolean }) => api.put(`/users/${id}/password`, data),
+}
+
+// ─── Groups ────────────────────────────────────────────────
+export interface Group {
+  id: number
+  name: string
+  description?: string
+  userCount?: number
+}
+
+export interface GroupDetail extends Group {
+  users?: UserDetail[]
+}
+
+export const groupsApi = {
+  list: () => api.get<Group[]>("/groups"),
+  get: (id: number) => api.get<GroupDetail>(`/groups/${id}`),
+  create: (data: { name: string; description?: string }) => api.post<Group>("/groups", data),
+  update: (id: number, data: { name?: string; description?: string }) => api.put(`/groups/${id}`, data),
+  delete: (id: number) => api.delete(`/groups/${id}`),
+  addUser: (id: number, userId: number) => api.post(`/groups/${id}/users`, { userId }),
+  removeUser: (id: number, userId: number) => api.delete(`/groups/${id}/users/${userId}`),
+}
+
+// ─── Devices ───────────────────────────────────────────────
+export interface DeviceToken {
+  id: number
+  deviceName: string
+  deviceType: string
+  deviceOs: string
+  permissionLevel: number
+  isActive: boolean
+  lastUsedAt?: string | number
+  lastIp?: string
+  createdBy?: number | string
+  createdAt: string | number
+}
+
+export interface DevicePairing {
+  qrData: string
+  pairingCode: string
+  device: DeviceToken
+}
+
+export const devicesApi = {
+  list: () => api.get<DeviceToken[]>("/devices"),
+  get: (id: number) => api.get<DeviceToken>(`/devices/${id}`),
+  createToken: (serverName?: string) => api.post<DevicePairing>("/devices/token", { serverName }),
+  update: (id: number, data: { deviceName?: string; permissionLevel?: number; isActive?: boolean }) =>
+    api.fetch<DeviceToken>(`/devices/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  delete: (id: number) => api.delete(`/devices/${id}`),
+}
+
+// ─── Permissions ───────────────────────────────────────────
+export interface UserPermission {
+  agentId: string
+  permissionLevel: number
+}
+
+export const permissionsApi = {
+  forUser: (userId: number) => api.get<UserPermission[]>(`/permissions/${userId}`),
+  set: (userId: number, agentId: string, permissionLevel: number) => api.post("/permissions", { userId, agentId, permissionLevel }),
+  remove: (userId: number, agentId: string) => api.delete(`/permissions/${userId}/${agentId}`),
+  check: (userId: number, agentId: string, requiredLevel: number) => api.post<{ canExecute: boolean; reason?: string }>("/permissions/check", { userId, agentId, requiredLevel }),
+  assignAgentGroup: (agentId: string, groupId: number, permissionLevel: number) => api.post("/agents/groups", { agentId, groupId, permissionLevel }),
+  removeAgentGroup: (agentId: string, groupId: number) => api.delete(`/agents/${agentId}/groups/${groupId}`),
 }

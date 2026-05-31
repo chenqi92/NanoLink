@@ -1,0 +1,149 @@
+import { useCallback, useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { I } from "@/lib/icons"
+import { usersApi, permissionsApi, type UserDetail, type UserPermission } from "@/lib/api"
+import { useData } from "@/contexts/DataContext"
+import { PageHeader } from "@/components/shell/primitives"
+import { agentStatus } from "@/lib/format"
+
+type Mode = "matrix" | "byUser"
+
+export function PermissionsScreen() {
+  const { t } = useTranslation()
+  const { agents } = useData()
+  const [mode, setMode] = useState<Mode>("matrix")
+  const [users, setUsers] = useState<UserDetail[]>([])
+  const [permMap, setPermMap] = useState<Record<number, Record<string, number>>>({})
+  const [loading, setLoading] = useState(true)
+  const [selectedUser, setSelectedUser] = useState<number | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const u = await usersApi.list()
+      setUsers(u)
+      const entries = await Promise.all(
+        u.map(async (usr) => {
+          try {
+            const perms = await permissionsApi.forUser(usr.id)
+            const m: Record<string, number> = {}
+            perms.forEach((p: UserPermission) => { m[p.agentId] = p.permissionLevel })
+            return [usr.id, m] as const
+          } catch {
+            return [usr.id, {} as Record<string, number>] as const
+          }
+        })
+      )
+      setPermMap(Object.fromEntries(entries))
+    } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  async function setPerm(userId: number, agentId: string, level: number | null) {
+    setPermMap((prev) => {
+      const next = { ...prev, [userId]: { ...(prev[userId] ?? {}) } }
+      if (level == null) delete next[userId][agentId]
+      else next[userId][agentId] = level
+      return next
+    })
+    try {
+      if (level == null) await permissionsApi.remove(userId, agentId)
+      else await permissionsApi.set(userId, agentId, level)
+    } catch { /* reload on error */ load() }
+  }
+
+  return (
+    <div className="col" style={{ flex: 1, overflow: "hidden" }}>
+      <PageHeader
+        title={t("nav.permissions")}
+        subtitle={t("acc.permsSubtitle")}
+        actions={
+          <div className="row gap-1">
+            <button className="btn btn-sm" onClick={() => setMode("matrix")} style={mode === "matrix" ? { background: "var(--accent)", color: "var(--accent-fg)", borderColor: "var(--accent)" } : {}}>{t("acc.matrix")}</button>
+            <button className="btn btn-sm" onClick={() => setMode("byUser")} style={mode === "byUser" ? { background: "var(--accent)", color: "var(--accent-fg)", borderColor: "var(--accent)" } : {}}>{t("acc.byUser")}</button>
+          </div>
+        }
+      />
+      <div style={{ padding: "0 24px 24px", overflow: "auto", flex: 1 }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{t("common.loading")}</div>
+        ) : mode === "matrix" ? (
+          <div className="card" style={{ overflow: "auto" }}>
+            <table className="tbl" style={{ minWidth: 200 + agents.length * 70 }}>
+              <thead>
+                <tr>
+                  <th style={{ position: "sticky", left: 0, zIndex: 2 }}>{t("acc.user")}</th>
+                  {agents.map((a) => (
+                    <th key={a.id} style={{ textAlign: "center", whiteSpace: "nowrap" }}>
+                      <span className="row gap-1" style={{ justifyContent: "center", alignItems: "center" }}>
+                        <span className={`dot ${agentStatus(a.lastHeartbeat) === "online" ? "ok" : "crit"}`} />
+                        <span className="mono" style={{ textTransform: "none", letterSpacing: 0 }}>{a.hostname}</span>
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.id}>
+                    <td style={{ position: "sticky", left: 0, background: "var(--panel)", zIndex: 1 }}>
+                      <span className="row gap-2" style={{ alignItems: "center" }}>
+                        <span className="mono" style={{ fontWeight: 500 }}>{u.username}</span>
+                        {u.isSuperAdmin && <span className="badge" style={{ color: "var(--crit)", borderColor: "rgba(239,68,68,.3)" }}>{I.shield({ size: 10 })}</span>}
+                      </span>
+                    </td>
+                    {agents.map((a) => {
+                      const lvl = u.isSuperAdmin ? 3 : permMap[u.id]?.[a.id]
+                      return (
+                        <td key={a.id} style={{ textAlign: "center" }}>
+                          {lvl != null ? <span className={`perm perm-${lvl}`}>L{lvl}</span> : <span className="dim">{t("acc.noOverride")}</span>}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="row gap-4" style={{ alignItems: "flex-start" }}>
+            <div className="card" style={{ width: 240, flexShrink: 0, overflow: "hidden" }}>
+              <div className="col">
+                {users.map((u) => (
+                  <button key={u.id} onClick={() => setSelectedUser(u.id)} className="row gap-2" style={{ padding: "10px 12px", border: "none", background: selectedUser === u.id ? "var(--panel-2)" : "transparent", cursor: "pointer", textAlign: "left", borderBottom: "1px solid var(--border)", color: "var(--fg-2)", fontFamily: "inherit" }}>
+                    <span className="mono" style={{ fontSize: 12, fontWeight: selectedUser === u.id ? 500 : 400 }}>{u.username}</span>
+                    {u.isSuperAdmin && <span className="badge" style={{ color: "var(--crit)", borderColor: "rgba(239,68,68,.3)" }}>{I.shield({ size: 10 })}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex-1">
+              {selectedUser == null ? (
+                <div className="card" style={{ padding: "40px 24px", textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{t("acc.selectUser")}</div>
+              ) : (
+                <div className="card" style={{ padding: 16 }}>
+                  <div className="col" style={{ gap: 6 }}>
+                    {agents.map((a) => {
+                      const lvl = permMap[selectedUser]?.[a.id]
+                      const su = users.find((x) => x.id === selectedUser)?.isSuperAdmin
+                      return (
+                        <div key={a.id} className="row" style={{ alignItems: "center", justifyContent: "space-between", padding: "8px 10px", background: "var(--panel-2)", borderRadius: 4 }}>
+                          <span className="mono truncate" style={{ fontSize: 12 }}>{a.hostname}</span>
+                          <div className="row gap-1">
+                            {su ? <span className="perm perm-3">L3 · SuperAdmin</span> : [0, 1, 2, 3].map((l) => (
+                              <button key={l} className="btn btn-sm" onClick={() => setPerm(selectedUser, a.id, lvl === l ? null : l)} style={{ height: 22, padding: "0 8px", fontFamily: "var(--font-mono)", fontSize: 11, background: lvl === l ? "var(--panel)" : "transparent", border: lvl === l ? "1px solid var(--border-strong)" : "1px solid transparent", color: lvl === l ? "var(--fg)" : "var(--fg-4)" }}>L{l}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
