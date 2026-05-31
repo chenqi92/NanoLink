@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/models.dart';
+import 'shell_session.dart';
+import 'ws_channel.dart';
 
 /// Connection mode enum
 enum ConnectionMode {
@@ -170,7 +172,8 @@ class ServerService {
     return '$baseUrl/api$path';
   }
 
-  String _buildWsUrl() {
+  /// `ws(s)://host[:port]` base derived from the configured HTTP url.
+  String _wsBaseUrl() {
     var baseUrl = connection.url.endsWith('/')
         ? connection.url.substring(0, connection.url.length - 1)
         : connection.url;
@@ -181,9 +184,26 @@ class ServerService {
     } else if (baseUrl.startsWith('http://')) {
       baseUrl = 'ws://${baseUrl.substring(7)}';
     }
+    return baseUrl;
+  }
 
+  String _buildWsUrl() {
     final token = connection.authToken ?? '';
-    return '$baseUrl/ws/dashboard?token=${Uri.encodeComponent(token)}';
+    return '${_wsBaseUrl()}/ws/dashboard?token=${Uri.encodeComponent(token)}';
+  }
+
+  /// Open a remote shell session for [agentId] (`/ws/shell/:id`).
+  ///
+  /// The returned session is not connected yet — wire up its [ShellSession.lines]
+  /// / [ShellSession.statusStream] listeners first, then call
+  /// [ShellSession.connect]. Auth uses the Authorization header on native (the
+  /// query token is kept only for web/cookie fallback).
+  ShellSession openShell(String agentId) {
+    final token = connection.authToken ?? '';
+    final uri = Uri.parse(
+        '${_wsBaseUrl()}/ws/shell/${Uri.encodeComponent(agentId)}'
+        '?token=${Uri.encodeComponent(token)}');
+    return ShellSession(uri: uri, token: connection.authToken);
   }
 
   /// Login with username and password, returns JWT token on success
@@ -230,7 +250,8 @@ class ServerService {
       final wsUrl = _buildWsUrl();
       debugPrint('[WS] Connecting to $wsUrl');
 
-      _wsChannel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      _wsChannel = connectAuthedWs(Uri.parse(wsUrl),
+          token: connection.authToken);
 
       _wsChannel!.stream.listen(
         _onWsMessage,

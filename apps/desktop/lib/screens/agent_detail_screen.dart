@@ -7,19 +7,23 @@ import '../utils/format.dart';
 import '../widgets/nano/nano_card.dart';
 import '../widgets/nano/nano_charts.dart';
 import '../widgets/nano/nano_primitives.dart';
+import '../widgets/nano/nano_terminal.dart';
 import '../widgets/agent_actions_sheet.dart';
 
 /// Full agent detail: segmented Realtime / History / Terminal tabs.
 class AgentDetailScreen extends StatefulWidget {
   final Agent agent;
-  const AgentDetailScreen({super.key, required this.agent});
+  final int initialTab; // 0 realtime, 1 history, 2 terminal
+  const AgentDetailScreen({super.key, required this.agent, this.initialTab = 0});
 
   @override
   State<AgentDetailScreen> createState() => _AgentDetailScreenState();
 }
 
 class _AgentDetailScreenState extends State<AgentDetailScreen> {
-  int _tab = 0; // 0 realtime, 1 history, 2 terminal
+  late int _tab = (widget.initialTab == 2 && widget.agent.permissionLevel == 0)
+      ? 0
+      : widget.initialTab; // 0 realtime, 1 history, 2 terminal
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +49,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                     case 1:
                       return _HistoryTab(agent: a, metrics: m);
                     case 2:
-                      return _TerminalTab(agent: a);
+                      return NanoTerminalView(agent: a);
                     default:
                       return _RealtimeTab(agent: a, metrics: m);
                   }
@@ -742,53 +746,6 @@ class _HistoryTabState extends State<_HistoryTab> {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ─── Terminal (placeholder until WS shell wiring) ────────────────────────────
-class _TerminalTab extends StatelessWidget {
-  final Agent agent;
-  const _TerminalTab({required this.agent});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.nano;
-    if (agent.permissionLevel == 0) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.shield_outlined, size: 32, color: t.fg4),
-              const SizedBox(height: 10),
-              Text('权限不足',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600, color: t.fg)),
-              const SizedBox(height: 6),
-              Text('该节点为只读 (L0)。需管理员提升至 L1+ 才能打开远程终端。',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: t.fg3, height: 1.4)),
-            ],
-          ),
-        ),
-      );
-    }
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.terminal_rounded, size: 32, color: t.fg4),
-          const SizedBox(height: 12),
-          Text('远程终端即将接入',
-              style: TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w500, color: t.fg2)),
-          const SizedBox(height: 6),
-          Text('将通过 WebSocket 连接 /ws/shell',
-              style: TextStyle(fontSize: 12.5, color: t.fg4)),
-        ],
-      ),
     );
   }
 }

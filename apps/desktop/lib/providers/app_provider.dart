@@ -101,6 +101,16 @@ class AppProvider extends ChangeNotifier {
     return null;
   }
 
+  /// The live [ServerService] for a given server connection, if connected.
+  ServerService? serviceForServer(String serverId) => _serverServices[serverId];
+
+  /// The live [ServerService] that owns [agentId] (used for remote shell, etc.).
+  ServerService? serviceForAgent(String agentId) {
+    final agent = agentById(agentId);
+    if (agent == null) return null;
+    return _serverServices[agent.serverId];
+  }
+
   /// Get connection mode for a server
   ConnectionMode getConnectionMode(String serverId) {
     return _connectionModes[serverId] ?? ConnectionMode.disconnected;
