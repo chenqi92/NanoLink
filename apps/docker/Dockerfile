@@ -9,13 +9,16 @@ COPY apps/server/web/ ./
 RUN npm run build
 
 # Build stage - Go server
-FROM golang:1.24-alpine AS go-builder
+FROM golang:1.25-alpine AS go-builder
+
+# Allow the Go toolchain pinned in go.mod (>=1.26) to be fetched automatically
+ENV GOTOOLCHAIN=auto
 
 RUN apk add --no-cache gcc musl-dev protoc
 
-# Install Go protobuf plugins
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
-  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+# Install Go protobuf plugins (pinned to match the committed generated code)
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6 && \
+  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 
 WORKDIR /app
 COPY apps/server/go.mod apps/server/go.sum ./
