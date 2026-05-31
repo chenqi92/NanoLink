@@ -10,14 +10,18 @@ import (
 	"time"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/config"
+	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	pb "github.com/chenqi92/NanoLink/apps/server/internal/proto"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 // GrpcAgent represents a connected agent via gRPC
@@ -59,7 +63,19 @@ type Server struct {
 
 	// Command result handler for shell sessions
 	commandResultHandler func(agentID, commandID, output string, success bool)
+
+	// Recent command results keyed by commandId, for dashboard polling
+	commandResults  sync.Map // commandId -> *commandResultEntry
+	lastResultSweep time.Time
+	resultSweepMu   sync.Mutex
 }
+
+type commandResultEntry struct {
+	result *pb.CommandResult
+	at     time.Time
+}
+
+const commandResultTTL = 2 * time.Minute
 
 // NewServer creates a new gRPC server (without auth interceptor for backward compatibility)
 func NewServer(
@@ -166,9 +182,8 @@ func (s *Server) SetCommandResultHandler(handler func(agentID, commandID, output
 func (s *Server) Authenticate(ctx context.Context, req *pb.AuthRequest) (*pb.AuthResponse, error) {
 	s.logger.Infof("gRPC authentication request from %s", req.Hostname)
 
-	// Validate token
-	valid, permissionLevel := s.config.ValidateToken(req.Token)
-	if !valid {
+	permissionLevel, err := s.validateAgentTokenString(req.Token, "", req.Hostname, req.Os, req.Arch, req.AgentVersion)
+	if err != nil {
 		s.logger.Warnf("Authentication failed for %s: invalid token", req.Hostname)
 		return &pb.AuthResponse{
 			Success:      false,
@@ -214,21 +229,6 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		RemoteIP:    remoteIP,
 	}
 
-	// Send immediate HeartbeatAck to prevent client-side timeout
-	// (Some clients have RPC timeout that kills the stream if no response is received)
-	initAck := &pb.MetricsStreamResponse{
-		Response: &pb.MetricsStreamResponse_HeartbeatAck{
-			HeartbeatAck: &pb.HeartbeatAck{
-				Timestamp: uint64(time.Now().UnixMilli()),
-			},
-		},
-	}
-	if err := stream.Send(initAck); err != nil {
-		s.logger.Errorf("StreamMetrics: Failed to send initial ack: %v", err)
-		return err
-	}
-	s.logger.Info("StreamMetrics: Sent initial heartbeat ack")
-
 	// Wait for first message to get agent info
 	s.logger.Info("StreamMetrics: Waiting for first message...")
 	firstMsg, err := stream.Recv()
@@ -240,11 +240,13 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 
 	// Extract agent info from first message
 	// AgentInit is the preferred first message (contains persistent agent_id)
+	persistentAgentID := false
 	switch req := firstMsg.GetRequest().(type) {
 	case *pb.MetricsStreamRequest_AgentInit:
 		// New agent protocol: use the persistent agent_id from config
 		if req.AgentInit.AgentId != "" {
 			agentID = req.AgentInit.AgentId
+			persistentAgentID = true
 			s.logger.Infof("StreamMetrics: Using agent's persistent ID: %s", agentID)
 		} else {
 			// Agent sent empty ID, generate a new one (shouldn't happen normally)
@@ -283,6 +285,39 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 	}
 
 	agent.AgentID = agentID
+	authAgentID := ""
+	if persistentAgentID {
+		authAgentID = agentID
+	}
+
+	permissionLevel, err := s.validateAgentTokenFromContext(
+		stream.Context(),
+		authAgentID,
+		agent.Hostname,
+		agent.OS,
+		agent.Arch,
+		agent.Version,
+	)
+	if err != nil {
+		s.logger.Warnf("StreamMetrics: authentication failed for agent %s (%s): %v", agent.Hostname, agentID, err)
+		return err
+	}
+	agent.PermissionLevel = int32(permissionLevel)
+
+	// Send immediate HeartbeatAck after authentication to prevent client-side timeout
+	// (Some clients have RPC timeout that kills the stream if no response is received)
+	initAck := &pb.MetricsStreamResponse{
+		Response: &pb.MetricsStreamResponse_HeartbeatAck{
+			HeartbeatAck: &pb.HeartbeatAck{
+				Timestamp: uint64(time.Now().UnixMilli()),
+			},
+		},
+	}
+	if err := stream.Send(initAck); err != nil {
+		s.logger.Errorf("StreamMetrics: Failed to send initial ack: %v", err)
+		return err
+	}
+	s.logger.Info("StreamMetrics: Sent initial heartbeat ack")
 
 	// Register agent in gRPC server's internal map
 	s.agentsMu.Lock()
@@ -455,7 +490,47 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 			}
 			s.commandResultHandler(agent.AgentID, req.CommandResult.CommandId, output, req.CommandResult.Success)
 		}
+		// Cache the full structured result for dashboard polling
+		s.storeCommandResult(req.CommandResult)
 	}
+}
+
+// storeCommandResult caches a command result so the dashboard can poll for it.
+func (s *Server) storeCommandResult(res *pb.CommandResult) {
+	if res == nil || res.CommandId == "" {
+		return
+	}
+	s.commandResults.Store(res.CommandId, &commandResultEntry{result: res, at: time.Now()})
+	s.sweepCommandResults()
+}
+
+// GetCommandResult returns a cached command result by id, if still fresh.
+func (s *Server) GetCommandResult(commandID string) (*pb.CommandResult, bool) {
+	v, ok := s.commandResults.Load(commandID)
+	if !ok {
+		return nil, false
+	}
+	entry := v.(*commandResultEntry)
+	if time.Since(entry.at) > commandResultTTL {
+		s.commandResults.Delete(commandID)
+		return nil, false
+	}
+	return entry.result, true
+}
+
+func (s *Server) sweepCommandResults() {
+	s.resultSweepMu.Lock()
+	defer s.resultSweepMu.Unlock()
+	if time.Since(s.lastResultSweep) < time.Minute {
+		return
+	}
+	s.lastResultSweep = time.Now()
+	s.commandResults.Range(func(k, v any) bool {
+		if time.Since(v.(*commandResultEntry).at) > commandResultTTL {
+			s.commandResults.Delete(k)
+		}
+		return true
+	})
 }
 
 // ReportMetrics handles one-time metrics report
@@ -464,6 +539,11 @@ func (s *Server) ReportMetrics(ctx context.Context, metrics *pb.Metrics) (*pb.Me
 	agentID := metrics.Hostname
 	if agentID == "" {
 		agentID = "unknown-" + uuid.New().String()[:8]
+	}
+
+	permissionLevel, err := s.validateAgentTokenFromContext(ctx, "", metrics.Hostname, "", "", "")
+	if err != nil {
+		return nil, err
 	}
 
 	// Register/update agent in AgentService so it shows in dashboard
@@ -478,7 +558,7 @@ func (s *Server) ReportMetrics(ctx context.Context, metrics *pb.Metrics) (*pb.Me
 			Hostname: metrics.Hostname,
 			OS:       osName,
 			Arch:     arch,
-		}, 3) // Default to system admin permission
+		}, permissionLevel)
 		s.logger.Infof("Agent registered via ReportMetrics: %s", metrics.Hostname)
 	} else {
 		// Update heartbeat for existing agent
@@ -496,6 +576,10 @@ func (s *Server) ReportMetrics(ctx context.Context, metrics *pb.Metrics) (*pb.Me
 
 // ExecuteCommand sends a command to an agent (used for testing)
 func (s *Server) ExecuteCommand(ctx context.Context, cmd *pb.Command) (*pb.CommandResult, error) {
+	if _, err := s.validateAgentTokenFromContext(ctx, "", "", "", "", ""); err != nil {
+		return nil, err
+	}
+
 	// This is typically used for direct command execution
 	// For streaming agents, use the stream to send commands
 	return &pb.CommandResult{
@@ -507,6 +591,10 @@ func (s *Server) ExecuteCommand(ctx context.Context, cmd *pb.Command) (*pb.Comma
 
 // Heartbeat handles heartbeat requests
 func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
+	if _, err := s.validateAgentTokenFromContext(ctx, req.AgentId, "", "", "", ""); err != nil {
+		return nil, err
+	}
+
 	return &pb.HeartbeatResponse{
 		ServerTimestamp: uint64(time.Now().UnixMilli()),
 		ConfigChanged:   false,
@@ -515,6 +603,10 @@ func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.H
 
 // SyncMetrics handles metrics synchronization after reconnection
 func (s *Server) SyncMetrics(ctx context.Context, req *pb.MetricsSyncRequest) (*pb.MetricsSyncResponse, error) {
+	if _, err := s.validateAgentTokenFromContext(ctx, req.AgentId, "", "", "", ""); err != nil {
+		return nil, err
+	}
+
 	// Get buffered metrics from service
 	// For now, return empty (metrics are not persisted in current implementation)
 	return &pb.MetricsSyncResponse{
@@ -526,6 +618,10 @@ func (s *Server) SyncMetrics(ctx context.Context, req *pb.MetricsSyncRequest) (*
 
 // GetAgentInfo returns agent information
 func (s *Server) GetAgentInfo(ctx context.Context, req *pb.AgentInfoRequest) (*pb.AgentInfoResponse, error) {
+	if _, err := s.validateAgentTokenFromContext(ctx, req.AgentId, "", "", "", ""); err != nil {
+		return nil, err
+	}
+
 	s.agentsMu.RLock()
 	agent, exists := s.agents[req.AgentId]
 	s.agentsMu.RUnlock()
@@ -666,6 +762,16 @@ func (s *Server) GetAgentMetrics(ctx context.Context, req *pb.GetAgentMetricsReq
 
 // SendCommand sends a command to an agent from dashboard
 func (s *Server) SendCommand(ctx context.Context, req *pb.DashboardCommandRequest) (*pb.CommandResult, error) {
+	if req.Command == nil {
+		return nil, status.Error(codes.InvalidArgument, "command is required")
+	}
+
+	if s.authInterceptor != nil {
+		if err := s.authInterceptor.CheckAgentPermission(ctx, req.AgentId, requiredPermissionForCommand(req.Command.Type)); err != nil {
+			return nil, err
+		}
+	}
+
 	s.agentsMu.RLock()
 	agent, exists := s.agents[req.AgentId]
 	s.agentsMu.RUnlock()
@@ -747,6 +853,98 @@ func (s *Server) notifyMetrics(agentID string, metrics *pb.Metrics) {
 		case ch <- metrics:
 		default:
 		}
+	}
+}
+
+func (s *Server) validateAgentTokenFromContext(ctx context.Context, agentID, hostname, osName, arch, version string) (int, error) {
+	token, ok := agentTokenFromContext(ctx)
+	if !ok {
+		return 0, status.Error(codes.Unauthenticated, "agent token not provided")
+	}
+	return s.validateAgentTokenString(token, agentID, hostname, osName, arch, version)
+}
+
+func (s *Server) validateAgentTokenString(token, agentID, hostname, osName, arch, version string) (int, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return 0, status.Error(codes.Unauthenticated, "agent token not provided")
+	}
+
+	if s.agentTokenService != nil {
+		if agentToken, valid := s.agentTokenService.ValidateAndUpdateToken(token, agentID, hostname, osName, arch, version); valid {
+			return agentToken.Permission, nil
+		}
+	}
+
+	if valid, permission := s.config.ValidateToken(token); valid {
+		return permission, nil
+	}
+
+	return 0, status.Error(codes.Unauthenticated, "invalid agent token")
+}
+
+func agentTokenFromContext(ctx context.Context) (string, bool) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return "", false
+	}
+
+	for _, key := range []string{"authorization", "x-agent-token"} {
+		values := md.Get(key)
+		if len(values) == 0 {
+			continue
+		}
+
+		token := strings.TrimSpace(values[0])
+		if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+			token = strings.TrimSpace(token[7:])
+		}
+		if token != "" {
+			return token, true
+		}
+	}
+
+	return "", false
+}
+
+func requiredPermissionForCommand(cmdType pb.CommandType) int {
+	switch cmdType {
+	case pb.CommandType_PROCESS_LIST,
+		pb.CommandType_SERVICE_STATUS,
+		pb.CommandType_DOCKER_LIST,
+		pb.CommandType_FILE_TAIL,
+		pb.CommandType_AGENT_GET_VERSION,
+		pb.CommandType_SERVICE_LOGS,
+		pb.CommandType_PACKAGE_LIST,
+		pb.CommandType_PACKAGE_CHECK_UPDATES,
+		pb.CommandType_SCRIPT_LIST,
+		pb.CommandType_CONFIG_READ,
+		pb.CommandType_CONFIG_VALIDATE,
+		pb.CommandType_CONFIG_LIST_BACKUPS,
+		pb.CommandType_HEALTH_CHECK,
+		pb.CommandType_CONNECTIVITY_TEST:
+		return database.PermissionReadOnly
+	case pb.CommandType_FILE_DOWNLOAD,
+		pb.CommandType_FILE_TRUNCATE,
+		pb.CommandType_DOCKER_LOGS,
+		pb.CommandType_SYSTEM_LOGS,
+		pb.CommandType_LOG_STREAM:
+		return database.PermissionBasicWrite
+	case pb.CommandType_PROCESS_KILL,
+		pb.CommandType_SERVICE_START,
+		pb.CommandType_SERVICE_STOP,
+		pb.CommandType_SERVICE_RESTART,
+		pb.CommandType_DOCKER_START,
+		pb.CommandType_DOCKER_STOP,
+		pb.CommandType_DOCKER_RESTART,
+		pb.CommandType_FILE_UPLOAD,
+		pb.CommandType_AUDIT_LOGS,
+		pb.CommandType_SCRIPT_EXECUTE,
+		pb.CommandType_CONFIG_WRITE,
+		pb.CommandType_CONFIG_ROLLBACK:
+		return database.PermissionServiceControl
+	default:
+		return database.PermissionSystemAdmin
 	}
 }
 

@@ -50,9 +50,11 @@ func NewAuthInterceptor(
 		agentMethods: map[string]bool{
 			"/nanolink.NanoLinkService/Authenticate":   true,
 			"/nanolink.NanoLinkService/StreamMetrics":  true,
-			"/nanolink.NanoLinkService/SendHeartbeat":  true,
-			"/nanolink.NanoLinkService/SendMetrics":    true,
+			"/nanolink.NanoLinkService/ReportMetrics":  true,
 			"/nanolink.NanoLinkService/ExecuteCommand": true,
+			"/nanolink.NanoLinkService/Heartbeat":      true,
+			"/nanolink.NanoLinkService/SyncMetrics":    true,
+			"/nanolink.NanoLinkService/GetAgentInfo":   true,
 		},
 	}
 }
@@ -145,10 +147,18 @@ func (i *AuthInterceptor) authorize(ctx context.Context) (context.Context, error
 		return nil, status.Error(codes.Unauthenticated, "invalid token")
 	}
 
+	user, err := i.authService.GetUserByID(claims.UserID)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "user not found")
+	}
+	if claims.TokenVersion != user.TokenVersion {
+		return nil, status.Error(codes.Unauthenticated, "token revoked, please log in again")
+	}
+
 	// Add user info to context
-	newCtx := context.WithValue(ctx, ContextKeyUserID, claims.UserID)
-	newCtx = context.WithValue(newCtx, ContextKeyUsername, claims.Username)
-	newCtx = context.WithValue(newCtx, ContextKeyIsSuperAdmin, claims.IsSuperAdmin)
+	newCtx := context.WithValue(ctx, ContextKeyUserID, user.ID)
+	newCtx = context.WithValue(newCtx, ContextKeyUsername, user.Username)
+	newCtx = context.WithValue(newCtx, ContextKeyIsSuperAdmin, user.IsSuperAdmin)
 
 	return newCtx, nil
 }

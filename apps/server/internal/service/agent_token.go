@@ -135,6 +135,15 @@ func (s *AgentTokenService) ValidateAndUpdateToken(tokenStr string, agentID stri
 	}
 
 	now := time.Now()
+	if token.ExpiresAt != nil && token.ExpiresAt.Before(now) {
+		s.logger.Warnf("Rejected expired agent token: %s", token.TokenHint)
+		return nil, false
+	}
+
+	if agentID != "" && token.AgentID != "" && token.AgentID != agentID {
+		s.logger.Warnf("Rejected agent token %s: bound to %s, got %s", token.TokenHint, token.AgentID, agentID)
+		return nil, false
+	}
 
 	// Update agent info on connection
 	updates := map[string]interface{}{
@@ -159,7 +168,7 @@ func (s *AgentTokenService) ValidateAndUpdateToken(tokenStr string, agentID stri
 	}
 
 	// Clear expiry and set first seen on first connection
-	if token.FirstSeenAt == nil {
+	if agentID != "" && token.FirstSeenAt == nil {
 		updates["first_seen_at"] = now
 		updates["expires_at"] = nil // Clear expiry after first connection
 	}

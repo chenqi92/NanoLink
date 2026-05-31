@@ -5,12 +5,14 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	grpcserver "github.com/chenqi92/NanoLink/apps/server/internal/grpc"
 	pb "github.com/chenqi92/NanoLink/apps/server/internal/proto"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Handler handles HTTP API requests
@@ -472,8 +474,6 @@ func (h *Handler) SendCommand(c *gin.Context) {
 		return
 	}
 
-	// Permission check is done via middleware (RequireAgentPermission)
-
 	if h.grpcServer == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "command dispatch is not configured"})
 		return
@@ -485,10 +485,37 @@ func (h *Handler) SendCommand(c *gin.Context) {
 		return
 	}
 
+	cmdType := pb.CommandType(cmdTypeVal)
+	requiredLevel := commandRequiredPermission(cmdType)
+	user := GetCurrentUser(c)
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if !user.IsSuperAdmin {
+		if h.permService == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "permission service is not configured"})
+			return
+		}
+
+		canExecute, err := h.permService.CanUserExecuteCommand(user.ID, agentID, requiredLevel)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "permission check failed"})
+			return
+		}
+		if !canExecute {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":         "insufficient permissions",
+				"requiredLevel": database.PermissionLevelName(requiredLevel),
+			})
+			return
+		}
+	}
+
 	commandID := uuid.New().String()
 	cmd := &pb.Command{
 		CommandId: commandID,
-		Type:      pb.CommandType(cmdTypeVal),
+		Type:      cmdType,
 		Target:    req.Target,
 		Params:    req.Params,
 	}
@@ -532,4 +559,66 @@ func (h *Handler) SendCommand(c *gin.Context) {
 		"command":   req.Type,
 		"commandId": commandID,
 	})
+}
+
+// GetCommandResult returns the cached structured result for a dispatched command.
+// Returns 202 while the agent has not yet reported the result.
+func (h *Handler) GetCommandResult(c *gin.Context) {
+	commandID := c.Param("commandId")
+	if h.grpcServer == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "command dispatch is not configured"})
+		return
+	}
+	res, ok := h.grpcServer.GetCommandResult(commandID)
+	if !ok {
+		c.JSON(http.StatusAccepted, gin.H{"status": "pending", "commandId": commandID})
+		return
+	}
+	data, err := protojson.Marshal(res)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encode result"})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", data)
+}
+
+func commandRequiredPermission(cmdType pb.CommandType) int {
+	switch cmdType {
+	case pb.CommandType_PROCESS_LIST,
+		pb.CommandType_SERVICE_STATUS,
+		pb.CommandType_DOCKER_LIST,
+		pb.CommandType_FILE_TAIL,
+		pb.CommandType_AGENT_GET_VERSION,
+		pb.CommandType_SERVICE_LOGS,
+		pb.CommandType_PACKAGE_LIST,
+		pb.CommandType_PACKAGE_CHECK_UPDATES,
+		pb.CommandType_SCRIPT_LIST,
+		pb.CommandType_CONFIG_READ,
+		pb.CommandType_CONFIG_VALIDATE,
+		pb.CommandType_CONFIG_LIST_BACKUPS,
+		pb.CommandType_HEALTH_CHECK,
+		pb.CommandType_CONNECTIVITY_TEST:
+		return database.PermissionReadOnly
+	case pb.CommandType_FILE_DOWNLOAD,
+		pb.CommandType_FILE_TRUNCATE,
+		pb.CommandType_DOCKER_LOGS,
+		pb.CommandType_SYSTEM_LOGS,
+		pb.CommandType_LOG_STREAM:
+		return database.PermissionBasicWrite
+	case pb.CommandType_PROCESS_KILL,
+		pb.CommandType_SERVICE_START,
+		pb.CommandType_SERVICE_STOP,
+		pb.CommandType_SERVICE_RESTART,
+		pb.CommandType_DOCKER_START,
+		pb.CommandType_DOCKER_STOP,
+		pb.CommandType_DOCKER_RESTART,
+		pb.CommandType_FILE_UPLOAD,
+		pb.CommandType_AUDIT_LOGS,
+		pb.CommandType_SCRIPT_EXECUTE,
+		pb.CommandType_CONFIG_WRITE,
+		pb.CommandType_CONFIG_ROLLBACK:
+		return database.PermissionServiceControl
+	default:
+		return database.PermissionSystemAdmin
+	}
 }

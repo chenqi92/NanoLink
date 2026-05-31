@@ -84,19 +84,21 @@ func CheckOriginWithConfig(cfg *config.Config) func(r *http.Request) bool {
 
 // WebSocketHandler handles WebSocket connections from agents
 type WebSocketHandler struct {
-	agentService   *service.AgentService
-	metricsService *service.MetricsService
-	config         *config.Config
-	logger         *zap.SugaredLogger
+	agentService      *service.AgentService
+	agentTokenService *service.AgentTokenService
+	metricsService    *service.MetricsService
+	config            *config.Config
+	logger            *zap.SugaredLogger
 }
 
 // NewWebSocketHandler creates a new WebSocket handler
-func NewWebSocketHandler(as *service.AgentService, ms *service.MetricsService, cfg *config.Config, logger *zap.SugaredLogger) *WebSocketHandler {
+func NewWebSocketHandler(as *service.AgentService, ats *service.AgentTokenService, ms *service.MetricsService, cfg *config.Config, logger *zap.SugaredLogger) *WebSocketHandler {
 	return &WebSocketHandler{
-		agentService:   as,
-		metricsService: ms,
-		config:         cfg,
-		logger:         logger,
+		agentService:      as,
+		agentTokenService: ats,
+		metricsService:    ms,
+		config:            cfg,
+		logger:            logger,
 	}
 }
 
@@ -121,8 +123,7 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Validate token
-	valid, permission := h.config.ValidateToken(token)
+	permission, valid := h.validateAgentToken(token, service.AgentInfo{})
 	if !valid {
 		h.logger.Warnf("Invalid token from %s", r.RemoteAddr)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -142,7 +143,7 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle the connection
-	h.handleConnection(conn, permission)
+	h.handleConnection(conn, token, permission)
 }
 
 // Message types
@@ -179,7 +180,7 @@ type MetricsPayload struct {
 	NPUs     []service.NPUData  `json:"npus,omitempty"`
 }
 
-func (h *WebSocketHandler) handleConnection(conn *websocket.Conn, permission int) {
+func (h *WebSocketHandler) handleConnection(conn *websocket.Conn, token string, permission int) {
 	defer conn.Close()
 
 	// Wait for auth message
@@ -214,6 +215,18 @@ func (h *WebSocketHandler) handleConnection(conn *websocket.Conn, permission int
 		return
 	}
 
+	if payloadToken := strings.TrimSpace(authPayload.Token); payloadToken != "" && payloadToken != token {
+		h.logger.Warnf("WebSocket auth payload token mismatch for host %s", authPayload.Hostname)
+		return
+	}
+
+	refreshedPermission, valid := h.validateAgentToken(token, authPayload.AgentInfo)
+	if !valid {
+		h.logger.Warnf("WebSocket token rejected after auth payload for host %s", authPayload.Hostname)
+		return
+	}
+	permission = refreshedPermission
+
 	// Register agent
 	agent := h.agentService.RegisterAgent(conn, authPayload.AgentInfo, permission)
 	defer h.agentService.UnregisterAgent(agent.ID)
@@ -239,6 +252,29 @@ func (h *WebSocketHandler) handleConnection(conn *websocket.Conn, permission int
 
 		h.handleMessage(agent, msg)
 	}
+}
+
+func (h *WebSocketHandler) validateAgentToken(token string, info service.AgentInfo) (int, bool) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return 0, false
+	}
+
+	if h.agentTokenService != nil {
+		if agentToken, valid := h.agentTokenService.ValidateAndUpdateToken(
+			token,
+			"",
+			info.Hostname,
+			info.OS,
+			info.Arch,
+			info.Version,
+		); valid {
+			return agentToken.Permission, true
+		}
+	}
+
+	valid, permission := h.config.ValidateToken(token)
+	return permission, valid
 }
 
 func (h *WebSocketHandler) handleMessage(agent *service.Agent, msg Message) {

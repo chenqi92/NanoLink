@@ -250,8 +250,8 @@ func (c *Config) ValidateAndSecure() {
 
 	// Warn if auth is disabled
 	if !c.Auth.Enabled {
-		log.Println("[SECURITY WARNING] Authentication is DISABLED. All agents have full access (permission level 3).")
-		log.Println("[SECURITY WARNING] Set 'auth.enabled: true' in config for production use.")
+		log.Println("[SECURITY WARNING] Static config agent-token auth is DISABLED. DB-backed agent tokens are still accepted; unauthenticated agents are rejected.")
+		log.Println("[SECURITY WARNING] Set 'auth.enabled: true' only if you intentionally use legacy static tokens.")
 	}
 
 	// Reject the credentialed-wildcard CORS footgun: the dashboard's CORS layer
@@ -270,9 +270,13 @@ func (c *Config) ValidateAndSecure() {
 // ValidateToken validates a token and returns permission level
 // Uses timing-safe comparison to prevent timing attacks
 func (c *Config) ValidateToken(token string) (bool, int) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return false, 0
+	}
+
 	if !c.Auth.Enabled {
-		log.Println("[SECURITY] Auth disabled, granting full access")
-		return true, 3 // Full access when auth disabled
+		return false, 0
 	}
 
 	tokenBytes := []byte(token)

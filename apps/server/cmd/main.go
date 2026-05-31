@@ -168,8 +168,12 @@ func main() {
 
 			// Command execution (requires permission check)
 			protected.POST("/agents/:id/command",
-				handler.RequireAgentPermission(permService, database.PermissionBasicWrite),
+				handler.RequireAgentPermission(permService, database.PermissionReadOnly),
 				h.SendCommand)
+			// Poll for a dispatched command's structured result
+			protected.GET("/agents/:id/command/:commandId/result",
+				handler.RequireAgentPermission(permService, database.PermissionReadOnly),
+				h.GetCommandResult)
 
 			// Group routes
 			groupHandler := handler.NewGroupHandler(groupService, sugar)
@@ -340,7 +344,7 @@ func main() {
 	}()
 
 	// Start WebSocket server after handlers are fully initialized.
-	wsHandler := handler.NewWebSocketHandler(agentService, metricsService, cfg, sugar)
+	wsHandler := handler.NewWebSocketHandler(agentService, agentTokenService, metricsService, cfg, sugar)
 	wsServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.WSPort),
 		Handler: wsHandler,
