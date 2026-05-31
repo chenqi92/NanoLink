@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time;
 use tokio_stream::wrappers::ReceiverStream;
+use tonic::metadata::MetadataValue;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use tonic::{Request, Streaming};
 use tracing::{debug, error, info, warn};
@@ -120,6 +121,20 @@ impl GrpcClient {
         })
     }
 
+    fn with_agent_auth<T>(&self, mut request: Request<T>) -> Result<Request<T>> {
+        let resolved_token = self
+            .server_config
+            .resolve_token()
+            .map_err(|e| anyhow::anyhow!("Token resolution failed: {e}"))?;
+        let auth_value = format!("Bearer {resolved_token}");
+        let metadata_value = MetadataValue::try_from(auth_value.as_str())
+            .context("Invalid agent authentication metadata")?;
+        request
+            .metadata_mut()
+            .insert("authorization", metadata_value);
+        Ok(request)
+    }
+
     /// Authenticate with the server
     pub async fn authenticate(&mut self) -> Result<AuthResponse> {
         // Resolve token (supports environment variables and file references)
@@ -172,9 +187,10 @@ impl GrpcClient {
         let request_stream = ReceiverStream::new(rx);
 
         // Start the bidirectional stream
+        let request = self.with_agent_auth(Request::new(request_stream))?;
         let response = self
             .client
-            .stream_metrics(Request::new(request_stream))
+            .stream_metrics(request)
             .await
             .context("Failed to start metrics stream")?;
 
@@ -279,9 +295,10 @@ impl GrpcClient {
     /// Report metrics using unary RPC (simpler, but less efficient)
     #[allow(dead_code)]
     pub async fn report_metrics(&mut self, metrics: Metrics) -> Result<()> {
+        let request = self.with_agent_auth(Request::new(metrics))?;
         let response = self
             .client
-            .report_metrics(Request::new(metrics))
+            .report_metrics(request)
             .await
             .context("Failed to report metrics")?;
 
@@ -296,9 +313,10 @@ impl GrpcClient {
     /// Execute a command (used for testing or direct command execution)
     #[allow(dead_code)]
     pub async fn execute_command(&mut self, command: Command) -> Result<CommandResult> {
+        let request = self.with_agent_auth(Request::new(command))?;
         let response = self
             .client
-            .execute_command(Request::new(command))
+            .execute_command(request)
             .await
             .context("Failed to execute command")?;
 
@@ -384,9 +402,10 @@ impl GrpcClient {
         let request_stream = ReceiverStream::new(rx);
 
         // Start the bidirectional stream
+        let request = self.with_agent_auth(Request::new(request_stream))?;
         let response = self
             .client
-            .stream_metrics(Request::new(request_stream))
+            .stream_metrics(request)
             .await
             .context("Failed to start metrics stream")?;
 

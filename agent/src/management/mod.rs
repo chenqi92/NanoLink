@@ -14,7 +14,7 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{ConnectInfo, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Method, StatusCode},
     middleware::{self, Next},
     response::Response,
     routing::{delete, get, post},
@@ -274,10 +274,11 @@ async fn auth_middleware(
 ) -> Result<Response, (StatusCode, Json<ApiResponse>)> {
     let config = state.config.read().await;
     let source_ip = addr.ip();
-    let path = request.uri().path();
+    let method = request.method().clone();
+    let path = request.uri().path().to_string();
 
     // Get required permission for this endpoint
-    let required_permission = get_required_permission(path);
+    let required_permission = get_required_permission(&method, &path);
 
     // Public endpoints (permission 0) - no auth required
     if required_permission == 0 {
@@ -362,19 +363,28 @@ async fn auth_middleware(
 }
 
 /// Get required permission level for endpoint
-fn get_required_permission(path: &str) -> u8 {
-    match path {
+fn get_required_permission(method: &Method, path: &str) -> u8 {
+    match (method, path) {
         // Public endpoints (permission 0)
-        "/api/health" | "/api/status" => 0,
+        (&Method::GET, "/api/health") | (&Method::GET, "/api/status") => 0,
 
         // Basic read (permission 1)
-        "/api/config" | "/api/connection/status" | "/api/servers" => 1,
+        (&Method::GET, "/api/config")
+        | (&Method::GET, "/api/connection/status")
+        | (&Method::GET, "/api/servers") => 1,
 
         // Service control (permission 2)
-        "/api/connection/reconnect" | "/api/logs" | "/api/buffer/status" => 2,
+        (&Method::POST, "/api/connection/reconnect")
+        | (&Method::GET, "/api/logs")
+        | (&Method::GET, "/api/buffer/status") => 2,
 
         // System admin (permission 3)
-        "/api/shell" | "/api/restart" | "/api/token/rotate" | "/api/servers/update" => 3,
+        (&Method::POST, "/api/shell")
+        | (&Method::POST, "/api/restart")
+        | (&Method::POST, "/api/token/rotate")
+        | (&Method::POST, "/api/servers")
+        | (&Method::DELETE, "/api/servers")
+        | (&Method::POST, "/api/servers/update") => 3,
 
         // Default: require highest permission for unknown endpoints
         _ => 3,

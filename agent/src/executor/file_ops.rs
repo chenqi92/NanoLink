@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -8,6 +9,9 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::proto::CommandResult;
+
+const MAX_TAIL_LINES: usize = 1_000;
+const MAX_TAIL_OUTPUT_BYTES: usize = 1024 * 1024;
 
 /// File operations executor with security checks
 pub struct FileExecutor {
@@ -130,6 +134,17 @@ impl FileExecutor {
 
     /// Read the tail of a file
     pub async fn tail_file(&self, path: &str, lines: usize) -> CommandResult {
+        let requested_lines = lines.min(MAX_TAIL_LINES);
+        if requested_lines == 0 {
+            return CommandResult {
+                command_id: String::new(),
+                success: true,
+                output: String::new(),
+                error: String::new(),
+                ..Default::default()
+            };
+        }
+
         // Validate path first
         let validated_path = match self.validate_path(path) {
             Ok(p) => p,
@@ -143,21 +158,52 @@ impl FileExecutor {
         info!(
             "[AUDIT] FileTail: {} (last {} lines)",
             validated_path.display(),
-            lines
+            requested_lines
         );
 
         match File::open(&validated_path) {
             Ok(file) => {
                 let reader = BufReader::new(file);
-                let all_lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
+                let mut tail = VecDeque::with_capacity(requested_lines);
+                for line in reader.lines().map_while(Result::ok) {
+                    if tail.len() == requested_lines {
+                        tail.pop_front();
+                    }
+                    tail.push_back(line);
+                }
 
-                let start = if all_lines.len() > lines {
-                    all_lines.len() - lines
-                } else {
-                    0
-                };
+                let mut output = String::new();
+                let mut truncated = false;
+                for line in tail {
+                    let separator_len = if output.is_empty() { 0 } else { 1 };
+                    if output.len() + separator_len + line.len() > MAX_TAIL_OUTPUT_BYTES {
+                        if separator_len == 1 && output.len() < MAX_TAIL_OUTPUT_BYTES {
+                            output.push('\n');
+                        }
 
-                let output = all_lines[start..].join("\n");
+                        let remaining = MAX_TAIL_OUTPUT_BYTES.saturating_sub(output.len());
+                        let mut used = 0;
+                        for ch in line.chars() {
+                            let len = ch.len_utf8();
+                            if used + len > remaining {
+                                break;
+                            }
+                            output.push(ch);
+                            used += len;
+                        }
+                        truncated = true;
+                        break;
+                    }
+
+                    if separator_len == 1 {
+                        output.push('\n');
+                    }
+                    output.push_str(&line);
+                }
+
+                if truncated {
+                    output.push_str("\n... (output truncated)");
+                }
 
                 CommandResult {
                     command_id: String::new(),
