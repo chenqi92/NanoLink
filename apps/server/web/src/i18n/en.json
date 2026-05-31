@@ -203,7 +203,8 @@
   "topbar": {
     "search": "Search agents, users, audit…",
     "assistant": "AI",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "actions": "Actions"
   },
   "mon": {
     "live": "Live",

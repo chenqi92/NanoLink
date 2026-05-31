@@ -7,14 +7,26 @@ import { LoginScreen } from "@/screens/LoginScreen"
 import { Sidebar } from "@/components/shell/Sidebar"
 import { Topbar } from "@/components/shell/Topbar"
 import { SearchPalette } from "@/components/shell/SearchPalette"
+import { AgentWizard } from "@/components/agents/AgentWizard"
 import { ScreenRouter } from "@/screens"
+import { useRouter } from "@/store/router"
 import { I } from "@/lib/icons"
 
 function App() {
   const { t } = useTranslation()
   const { isAuthenticated, isLoading: authLoading } = useAuth()
+  const { route, setRoute } = useRouter()
   const [collapsed, setCollapsed] = useState(false)
   const [openSearch, setOpenSearch] = useState(false)
+  const [openWizard, setOpenWizard] = useState(false)
+
+  // Open the add-agent wizard when a navigation requests it
+  useEffect(() => {
+    if (route.openWizard) {
+      setOpenWizard(true)
+      setRoute({ ...route, openWizard: false })
+    }
+  }, [route, setRoute])
 
   // Global ⌘K / Esc
   useEffect(() => {
@@ -59,6 +71,7 @@ function App() {
         </div>
       </div>
       <SearchPalette open={openSearch} onClose={() => setOpenSearch(false)} />
+      {openWizard && <AgentWizard onClose={() => setOpenWizard(false)} />}
     </>
   )
 }

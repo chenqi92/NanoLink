@@ -4,7 +4,6 @@ import { I } from "@/lib/icons"
 import { agentTokensApi, type AgentToken } from "@/lib/api"
 import { PageHeader, Perm, Status, FormBlock } from "@/components/shell/primitives"
 import { Modal, ConfirmDialog } from "@/components/shell/Dialog"
-import { useRouter } from "@/store/router"
 import { timeAgo } from "@/lib/format"
 
 function MiniStat({ label, value, color }: { label: string; value: number; color: string }) {
@@ -32,7 +31,6 @@ function PermSelect({ value, onChange }: { value: number; onChange: (v: number) 
 
 export function TokensScreen() {
   const { t } = useTranslation()
-  const { route, setRoute } = useRouter()
   const [items, setItems] = useState<AgentToken[]>([])
   const [loading, setLoading] = useState(true)
   const [dragId, setDragId] = useState<number | null>(null)
@@ -53,14 +51,6 @@ export function TokensScreen() {
   }, [])
 
   useEffect(() => { load() }, [load])
-
-  // open create from route flag (e.g. dashboard "Add agent")
-  useEffect(() => {
-    if (route.openWizard) {
-      setCreating(true)
-      setRoute({ ...route, openWizard: false })
-    }
-  }, [route, setRoute])
 
   async function persistOrder(next: AgentToken[]) {
     setItems(next)

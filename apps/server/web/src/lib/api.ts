@@ -247,12 +247,26 @@ export const authApi = {
 export interface ServerInfo {
   version: string
   serverUrl?: string
+  wsUrl?: string
   grpcPort?: number
   wsPort?: number
 }
 export const serverApi = {
   info: () => api.get<ServerInfo>("/server-info"),
   health: () => api.get<{ status: string; agentCount: number }>("/health"),
+}
+
+// Agent install config generation
+export interface GeneratedConfig {
+  configYaml: string
+  installCommandUnix: string
+  installCommandWindows: string
+  generatedToken?: string
+  serverId?: string
+}
+export const configApi = {
+  generate: (body: { serverUrl?: string; permission: number; tlsVerify: boolean; hostname?: string; shellEnabled: boolean }) =>
+    api.post<GeneratedConfig>("/config/generate", body),
 }
 
 // Audit
