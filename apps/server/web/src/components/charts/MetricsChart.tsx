@@ -6,7 +6,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  type TooltipProps,
+  type TooltipContentProps,
   ResponsiveContainer,
   ReferenceLine,
   Area,
@@ -90,7 +90,7 @@ export function MetricsChart({
   const textColor = isDark ? "#a1a1aa" : "#71717a"
   const bgColor = isDark ? "#09090b" : "#ffffff"
 
-  const renderTooltip = (props: TooltipProps<number, string>) => {
+  const renderTooltip = (props: TooltipContentProps<number, string>) => {
     const { active, payload, label: tooltipLabel } = props
     if (!active || !payload) return null
     return (
@@ -99,13 +99,14 @@ export function MetricsChart({
         style={{ backgroundColor: bgColor }}
       >
         <p className="text-xs text-[var(--color-muted-foreground)] mb-1">{tooltipLabel}</p>
-        {payload.map((entry: { value: number; dataKey: string; color: string }, i: number) => {
+        {payload.map((entry, i) => {
+          const value = typeof entry.value === "number" ? entry.value : Number(entry.value ?? 0)
           const isValue2 = entry.dataKey === "value2"
           const displayUnit = isValue2 && unit2 ? unit2 : unit
           const displayLabel = isValue2 ? (label2 || "Value 2") : label
           return (
             <p key={i} className="text-sm font-medium" style={{ color: entry.color }}>
-              {displayLabel}: {formatValue(entry.value, displayUnit)}
+              {displayLabel}: {formatValue(value, displayUnit)}
             </p>
           )
         })}

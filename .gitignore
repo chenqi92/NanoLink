@@ -97,6 +97,9 @@ lerna-debug.log*
 # Build & Distribution
 # =========================
 dist/
+!apps/server/web/dist/
+apps/server/web/dist/*
+!apps/server/web/dist/.gitkeep
 build/
 out/
 release/
@@ -147,3 +150,4 @@ temp/
 website/
 
 *.db
+design
