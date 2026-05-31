@@ -58,6 +58,34 @@ class ServerSummary {
   }
 }
 
+/// One auto-diagnosis finding from `GET /api/assistant/findings`.
+class AssistantFinding {
+  final String kind; // anomaly | warn | info | ok
+  final String title;
+  final String detail;
+  final String? agentId;
+  final List<String> actions;
+
+  const AssistantFinding({
+    required this.kind,
+    required this.title,
+    required this.detail,
+    this.agentId,
+    required this.actions,
+  });
+
+  factory AssistantFinding.fromJson(Map<String, dynamic> j) => AssistantFinding(
+        kind: j['kind'] as String? ?? 'info',
+        title: j['title'] as String? ?? '',
+        detail: j['detail'] as String? ?? '',
+        agentId: (j['agentId'] as String?)?.isEmpty ?? true
+            ? null
+            : j['agentId'] as String?,
+        actions: (j['actions'] as List?)?.map((e) => e.toString()).toList() ??
+            const [],
+      );
+}
+
 /// Result of generating a device pairing token (`POST /api/devices/token`).
 class DeviceTokenResult {
   /// Base64(JSON) payload to render as a QR code (embeds server URL + token).
@@ -691,6 +719,30 @@ class ServerService {
       return _errorMessage(response);
     } catch (e) {
       return e.toString();
+    }
+  }
+
+  /// Fetch metric-derived auto-diagnosis findings
+  /// (`GET /api/assistant/findings`). Returns `null` on failure.
+  Future<List<AssistantFinding>?> fetchAssistantFindings() async {
+    try {
+      final response = await _client
+          .get(Uri.parse(_buildUrl('/assistant/findings')), headers: _headers)
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is List) {
+          return data
+              .whereType<Map<String, dynamic>>()
+              .map(AssistantFinding.fromJson)
+              .toList();
+        }
+        return const <AssistantFinding>[];
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[Assistant] findings error: $e');
+      return null;
     }
   }
 

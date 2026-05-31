@@ -286,7 +286,15 @@
     "suggestDiskFull": "有没有磁盘快满的服务器？",
     "suggestHealth": "汇总当前集群健康状况",
     "inputHint": "询问运维助手…",
-    "comingSoon": "AI 助手即将上线"
+    "comingSoon": "AI 助手即将上线",
+    "autoDiagnosis": "自动诊断",
+    "findingsCount": "{n} 项发现",
+    "allHealthy": "所有节点均在阈值范围内，集群健康。",
+    "loadError": "无法加载诊断",
+    "loadErrorDesc": "请确认与服务器的连接，自动诊断依赖可访问的实时指标。",
+    "actHistory": "查看历史",
+    "actShell": "打开终端",
+    "actProcesses": "查看进程"
   },
   "settings": {
     "appearance": "外观",

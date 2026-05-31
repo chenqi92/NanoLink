@@ -286,7 +286,15 @@
     "suggestDiskFull": "Any servers running low on disk?",
     "suggestHealth": "Summarize the current cluster health",
     "inputHint": "Ask the ops assistant…",
-    "comingSoon": "AI assistant is coming soon"
+    "comingSoon": "AI assistant is coming soon",
+    "autoDiagnosis": "Auto-diagnosis",
+    "findingsCount": "{n} findings",
+    "allHealthy": "All nodes are within thresholds — fleet healthy.",
+    "loadError": "Unable to load diagnostics",
+    "loadErrorDesc": "Check the connection to the server; auto-diagnosis needs reachable live metrics.",
+    "actHistory": "View history",
+    "actShell": "Open terminal",
+    "actProcesses": "List processes"
   },
   "settings": {
     "appearance": "Appearance",
