@@ -4,7 +4,6 @@ import 'package:easy_localization/easy_localization.dart';
 import '../design/nano_tokens.dart';
 import '../providers/app_provider.dart';
 import '../providers/theme_provider.dart';
-import '../services/storage_service.dart';
 import '../widgets/nano/nano_card.dart';
 import '../widgets/nano/nano_primitives.dart';
 import 'add_server_page.dart';
@@ -20,37 +19,9 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _storage = StorageService();
-  bool _notifyOffline = true;
-  bool _notifyHigh = true;
-  bool _notifyDisk = true;
-
   static const _kNotifyOffline = 'notify_offline';
   static const _kNotifyHigh = 'notify_high';
   static const _kNotifyDisk = 'notify_disk';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadPrefs();
-  }
-
-  Future<void> _loadPrefs() async {
-    final off = await _storage.getBool(_kNotifyOffline);
-    final high = await _storage.getBool(_kNotifyHigh);
-    final disk = await _storage.getBool(_kNotifyDisk);
-    if (!mounted) return;
-    setState(() {
-      _notifyOffline = off;
-      _notifyHigh = high;
-      _notifyDisk = disk;
-    });
-  }
-
-  void _setNotify(String key, bool value, ValueChanged<bool> apply) {
-    setState(() => apply(value));
-    _storage.setBool(key, value);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -227,14 +198,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           NanoCard(
             child: Column(
               children: [
-                _toggle(context, 'settings.notifyOffline'.tr(), _notifyOffline,
-                    (v) => _setNotify(
-                        _kNotifyOffline, v, (x) => _notifyOffline = x)),
-                _toggle(context, 'settings.notifyHigh'.tr(), _notifyHigh,
-                    (v) =>
-                        _setNotify(_kNotifyHigh, v, (x) => _notifyHigh = x)),
-                _toggle(context, 'settings.notifyDisk'.tr(), _notifyDisk,
-                    (v) => _setNotify(_kNotifyDisk, v, (x) => _notifyDisk = x),
+                _toggle(context, 'settings.notifyOffline'.tr(),
+                    provider.notifyOffline,
+                    (v) => provider.setNotifyPref(_kNotifyOffline, v)),
+                _toggle(context, 'settings.notifyHigh'.tr(), provider.notifyHigh,
+                    (v) => provider.setNotifyPref(_kNotifyHigh, v)),
+                _toggle(context, 'settings.notifyDisk'.tr(), provider.notifyDisk,
+                    (v) => provider.setNotifyPref(_kNotifyDisk, v),
                     divider: false),
               ],
             ),
