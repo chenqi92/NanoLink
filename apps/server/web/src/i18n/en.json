@@ -167,6 +167,42 @@
     "read_only": "View metrics only",
     "basic_write": "Basic operations",
     "service_control": "Manage services",
-    "system_admin": "Full control"
+    "system_admin": "Full control",
+    "l0": "READ_ONLY",
+    "l1": "BASIC_WRITE",
+    "l2": "SERVICE_CONTROL",
+    "l3": "SYSTEM_ADMIN"
+  },
+  "nav": {
+    "monitoring": "Monitoring",
+    "ops": "DevOps",
+    "access": "Access & Identity",
+    "platform": "Platform",
+    "dashboard": "Dashboard",
+    "agents": "Agents",
+    "alerts": "Alerts",
+    "assistant": "AI Assistant",
+    "operations": "Operations",
+    "logs": "Log Query",
+    "tokens": "Agent Tokens",
+    "devices": "Device Pairing",
+    "users": "Users",
+    "groups": "User Groups",
+    "permissions": "Permissions",
+    "audit": "Audit Log",
+    "settings": "Settings"
+  },
+  "status": {
+    "online": "Online",
+    "offline": "Offline",
+    "connecting": "Connecting",
+    "polling": "Polling",
+    "live": "Live",
+    "connected": "connected"
+  },
+  "topbar": {
+    "search": "Search agents, users, audit…",
+    "assistant": "AI",
+    "signOut": "Sign out"
   }
 }

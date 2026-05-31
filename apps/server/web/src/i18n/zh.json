@@ -173,6 +173,42 @@
     "read_only": "仅查看指标",
     "basic_write": "基本操作",
     "service_control": "服务管理",
-    "system_admin": "完全控制"
+    "system_admin": "完全控制",
+    "l0": "只读",
+    "l1": "基础写入",
+    "l2": "服务控制",
+    "l3": "系统管理"
+  },
+  "nav": {
+    "monitoring": "监控",
+    "ops": "运维",
+    "access": "身份与权限",
+    "platform": "平台",
+    "dashboard": "总览",
+    "agents": "节点",
+    "alerts": "告警中心",
+    "assistant": "AI 助手",
+    "operations": "运维工具",
+    "logs": "日志查询",
+    "tokens": "节点令牌",
+    "devices": "设备配对",
+    "users": "用户",
+    "groups": "用户组",
+    "permissions": "权限矩阵",
+    "audit": "审计日志",
+    "settings": "设置"
+  },
+  "status": {
+    "online": "在线",
+    "offline": "离线",
+    "connecting": "连接中",
+    "polling": "轮询中",
+    "live": "实时",
+    "connected": "在线"
+  },
+  "topbar": {
+    "search": "搜索节点、用户、审计…",
+    "assistant": "助手",
+    "signOut": "登出"
   }
 }

@@ -4,14 +4,20 @@ import './i18n'
 import './index.css'
 import { AuthProvider } from './contexts/AuthContext'
 import { DataProvider } from './contexts/DataContext'
+import { SettingsProvider } from './store/settings'
+import { RouterProvider } from './store/router'
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
-      <DataProvider>
-        <App />
-      </DataProvider>
+      <SettingsProvider>
+        <DataProvider>
+          <RouterProvider>
+            <App />
+          </RouterProvider>
+        </DataProvider>
+      </SettingsProvider>
     </AuthProvider>
   </StrictMode>,
 )
