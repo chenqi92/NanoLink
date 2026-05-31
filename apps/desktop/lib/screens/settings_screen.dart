@@ -1,161 +1,375 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
+import '../design/nano_tokens.dart';
+import '../providers/app_provider.dart';
 import '../providers/theme_provider.dart';
-import '../theme/app_theme.dart';
+import '../widgets/nano/nano_card.dart';
+import '../widgets/nano/nano_primitives.dart';
+import 'add_server_page.dart';
+import 'assistant_screen.dart';
+import 'device_pairing_screen.dart';
+import 'server_detail_screen.dart';
 
-/// Settings screen with theme and language options.
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
   @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  static const _kNotifyOffline = 'notify_offline';
+  static const _kNotifyHigh = 'notify_high';
+  static const _kNotifyDisk = 'notify_disk';
+
+  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final t = context.nano;
+    final provider = context.watch<AppProvider>();
+    final themeProvider = context.watch<ThemeProvider>();
+    final loggedIn = provider.servers.any((s) => s.hasFullPermissions);
 
     return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'nav.settings'.tr(),
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
+      bottom: false,
+      child: ListView(
+        padding: EdgeInsets.fromLTRB(16, t.isIOS ? 40 : 8, 16, 96),
+        children: [
+          Row(
+            children: [
+              if (!t.isIOS)
+                Builder(
+                  builder: (ctx) => Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: IconButton(
+                      icon: Icon(Icons.menu_rounded, color: t.fg),
+                      onPressed: () => Scaffold.of(ctx).openDrawer(),
+                    ),
+                  ),
+                ),
+              Text('settings.title'.tr(),
+                  style: TextStyle(
+                      fontSize: t.isIOS ? 32 : 28,
+                      fontWeight: t.displayWeight,
+                      letterSpacing: t.displayTracking,
+                      color: t.fg)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // user card
+          NanoCard(
+            child: NanoListRow(
+              divider: false,
+              leading: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(colors: [t.accent, t.tertiary]),
+                ),
+                child: const Icon(Icons.person_rounded, color: Colors.white),
               ),
-            ),
-            const SizedBox(height: 24),
-            // Appearance Section
-            _buildSectionHeader('settings.appearance'.tr(), isDark),
-            const SizedBox(height: 12),
-            _buildGlassCard(
-              isDark: isDark,
-              child: Consumer<ThemeProvider>(
-                builder: (context, themeProvider, _) {
-                  return Column(
-                    children: [
-                      _buildSettingsTile(
-                        icon: Icons.brightness_6_rounded,
-                        title: 'settings.theme'.tr(),
-                        trailing: SegmentedButton<AppThemeMode>(
-                          segments: [
-                            ButtonSegment(value: AppThemeMode.system, icon: Icon(Icons.brightness_auto_rounded)),
-                            ButtonSegment(value: AppThemeMode.light, icon: Icon(Icons.light_mode_rounded)),
-                            ButtonSegment(value: AppThemeMode.dark, icon: Icon(Icons.dark_mode_rounded)),
-                          ],
-                          selected: {themeProvider.themeMode},
-                          onSelectionChanged: (value) => themeProvider.setThemeMode(value.first),
-                          showSelectedIcon: false,
-                          style: ButtonStyle(visualDensity: VisualDensity.compact),
-                        ),
-                        isDark: isDark,
-                      ),
-                      const Divider(height: 1),
-                      _buildSettingsTile(
-                        icon: Icons.language_rounded,
-                        title: 'settings.language'.tr(),
-                        trailing: SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(value: 'en', label: Text('EN')),
-                            ButtonSegment(value: 'zh', label: Text('中文')),
-                          ],
-                          selected: {context.locale.languageCode},
-                          onSelectionChanged: (value) => context.setLocale(Locale(value.first)),
-                          showSelectedIcon: false,
-                          style: ButtonStyle(visualDensity: VisualDensity.compact),
-                        ),
-                        isDark: isDark,
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 32),
-            // About Section
-            _buildSectionHeader('settings.about'.tr(), isDark),
-            const SizedBox(height: 12),
-            _buildGlassCard(
-              isDark: isDark,
+              trailing: Icon(Icons.chevron_right_rounded, color: t.fg4),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSettingsTile(
-                    icon: Icons.info_outline_rounded,
-                    title: 'settings.version'.tr(),
-                    trailing: const Text('0.5.0'),
-                    isDark: isDark,
-                  ),
-                  const Divider(height: 1),
-                  _buildSettingsTile(
-                    icon: Icons.code_rounded,
-                    title: 'settings.sourceCode'.tr(),
-                    trailing: const Icon(Icons.open_in_new_rounded, size: 18),
-                    onTap: () {
-                      // TODO: Open GitHub
-                    },
-                    isDark: isDark,
-                  ),
+                  Text(
+                      loggedIn
+                          ? 'settings.loggedIn'.tr()
+                          : 'settings.notLoggedIn'.tr(),
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: t.fg)),
+                  Text(
+                      loggedIn
+                          ? 'settings.loggedInSub'.tr()
+                          : 'settings.notLoggedInSub'.tr(),
+                      style: TextStyle(fontSize: 12.5, color: t.fg3)),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title, bool isDark) {
-    return Text(
-      title,
-      style: TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary,
-      ),
-    );
-  }
-
-  Widget _buildGlassCard({required bool isDark, required Widget child}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isDark ? AppTheme.darkCard.withValues(alpha: 0.5) : AppTheme.lightCard.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark ? AppTheme.darkBorder.withValues(alpha: 0.3) : AppTheme.lightBorder.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: 16),
+          NanoSectionLabel(
+              'settings.servers'
+                  .tr(namedArgs: {'n': '${provider.servers.length}'}),
+              grouped: true),
+          NanoCard(
+            child: Column(
+              children: [
+                for (final s in provider.servers)
+                  NanoListRow(
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => ServerDetailScreen(serverId: s.id))),
+                    leading: NanoIconBox(Icons.dns_rounded),
+                    trailing: Icon(Icons.chevron_right_rounded, color: t.fg4),
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(s.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w500,
+                                  color: t.fg)),
+                        ),
+                        if (s.id == provider.activeServerId) ...[
+                          const SizedBox(width: 6),
+                          NanoBadge('settings.current'.tr(), color: t.info),
+                        ],
+                      ],
+                    ),
+                  ),
+                NanoListRow(
+                  divider: false,
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const AddServerPage())),
+                  leading: NanoIconBox(Icons.add_rounded,
+                      bg: t.accent.withValues(alpha: 0.14), fg: t.accent),
+                  child: Text('settings.addNewServer'.tr(),
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: t.accent)),
+                ),
+              ],
             ),
           ),
-          child: child,
+          const SizedBox(height: 16),
+          NanoSectionLabel('settings.tools'.tr(), grouped: true),
+          NanoCard(
+            child: Column(
+              children: [
+                NanoListRow(
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const AssistantScreen())),
+                  leading: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [t.accent, t.tertiary]),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: const Icon(Icons.auto_awesome,
+                        color: Colors.white, size: 15),
+                  ),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    NanoBadge('MCP'),
+                    const SizedBox(width: 8),
+                    Icon(Icons.chevron_right_rounded, color: t.fg4),
+                  ]),
+                  child: Text('settings.aiAssistant'.tr(),
+                      style: TextStyle(fontSize: 15, color: t.fg)),
+                ),
+                NanoListRow(
+                  divider: false,
+                  onTap: () => _openPairing(context, provider),
+                  leading: NanoIconBox(Icons.qr_code_rounded,
+                      size: 30, iconSize: 16, fg: t.accent),
+                  trailing: Icon(Icons.chevron_right_rounded, color: t.fg4),
+                  child: Text('settings.pairDevice'.tr(),
+                      style: TextStyle(fontSize: 15, color: t.fg)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          NanoSectionLabel('settings.appearance'.tr(), grouped: true),
+          NanoCard(
+            child: Column(
+              children: [
+                _row(context,
+                    label: 'settings.theme'.tr(),
+                    value: _themeLabel(themeProvider.themeMode),
+                    onTap: () => _pickTheme(context, themeProvider)),
+                _row(context,
+                    label: 'settings.language'.tr(),
+                    value: context.locale.languageCode == 'zh'
+                        ? 'settings.langChinese'.tr()
+                        : 'settings.langEnglish'.tr(),
+                    onTap: () => _pickLanguage(context),
+                    divider: false),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          NanoSectionLabel('settings.notifications'.tr(), grouped: true),
+          NanoCard(
+            child: Column(
+              children: [
+                _toggle(context, 'settings.notifyOffline'.tr(),
+                    provider.notifyOffline,
+                    (v) => provider.setNotifyPref(_kNotifyOffline, v)),
+                _toggle(context, 'settings.notifyHigh'.tr(), provider.notifyHigh,
+                    (v) => provider.setNotifyPref(_kNotifyHigh, v)),
+                _toggle(context, 'settings.notifyDisk'.tr(), provider.notifyDisk,
+                    (v) => provider.setNotifyPref(_kNotifyDisk, v),
+                    divider: false),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          NanoSectionLabel('settings.about'.tr(), grouped: true),
+          NanoCard(
+            child: Column(
+              children: [
+                _row(context,
+                    label: 'settings.version'.tr(),
+                    value: 'v0.5.0',
+                    onTap: null),
+                _row(context,
+                    label: 'settings.sourceCodeLabel'.tr(),
+                    value: 'github.com/chenqi92/NanoLink',
+                    onTap: null,
+                    divider: false),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Center(
+            child: NanoMono('settings.footer'.tr(), size: 11, color: t.fg4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openPairing(BuildContext context, AppProvider provider) {
+    final full = provider.servers.where((s) => s.hasFullPermissions).toList();
+    if (full.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('settings.pairNeedsLogin'.tr())));
+      return;
+    }
+    final active = provider.activeServer;
+    final targetId =
+        (active != null && active.hasFullPermissions) ? active.id : full.first.id;
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => DevicePairingScreen(serverId: targetId)));
+  }
+
+  String _themeLabel(AppThemeMode m) {
+    switch (m) {
+      case AppThemeMode.light:
+        return 'settings.themeLight'.tr();
+      case AppThemeMode.dark:
+        return 'settings.themeDark'.tr();
+      case AppThemeMode.system:
+        return 'settings.themeSystem'.tr();
+    }
+  }
+
+  void _pickTheme(BuildContext context, ThemeProvider tp) {
+    final t = context.nano;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      showDragHandle: true,
+      shape: RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(t.isIOS ? 16 : 28)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final m in AppThemeMode.values)
+              NanoListRow(
+                divider: m != AppThemeMode.values.last,
+                trailing: tp.themeMode == m
+                    ? Icon(Icons.check_rounded, color: t.accent)
+                    : null,
+                onTap: () {
+                  tp.setThemeMode(m);
+                  Navigator.pop(ctx);
+                },
+                child: Text(_themeLabel(m),
+                    style: TextStyle(fontSize: 15, color: t.fg)),
+              ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildSettingsTile({
-    required IconData icon,
-    required String title,
-    required Widget trailing,
-    VoidCallback? onTap,
-    required bool isDark,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
+  void _pickLanguage(BuildContext context) {
+    final t = context.nano;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      showDragHandle: true,
+      shape: RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(t.isIOS ? 16 : 28)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22, color: AppTheme.primaryBlue),
-            const SizedBox(width: 16),
-            Expanded(child: Text(title)),
-            trailing,
+            for (final lang in [
+              ['zh', 'settings.langChinese'.tr()],
+              ['en', 'settings.langEnglish'.tr()],
+            ])
+              NanoListRow(
+                divider: lang[0] == 'zh',
+                trailing: context.locale.languageCode == lang[0]
+                    ? Icon(Icons.check_rounded, color: t.accent)
+                    : null,
+                onTap: () {
+                  context.setLocale(Locale(lang[0]));
+                  Navigator.pop(ctx);
+                },
+                child: Text(lang[1],
+                    style: TextStyle(fontSize: 15, color: t.fg)),
+              ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _row(BuildContext context,
+      {required String label,
+      String? value,
+      VoidCallback? onTap,
+      bool divider = true}) {
+    final t = context.nano;
+    return NanoListRow(
+      divider: divider,
+      onTap: onTap,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (value != null)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 180),
+              child: Text(value,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14, color: t.fg3)),
+            ),
+          if (onTap != null) ...[
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right_rounded, color: t.fg4, size: 18),
+          ],
+        ],
+      ),
+      child: Text(label, style: TextStyle(fontSize: 15, color: t.fg)),
+    );
+  }
+
+  Widget _toggle(BuildContext context, String label, bool value,
+      ValueChanged<bool> onChanged,
+      {bool divider = true}) {
+    final t = context.nano;
+    return NanoListRow(
+      divider: divider,
+      trailing: Switch.adaptive(
+        value: value,
+        activeTrackColor: t.ok,
+        onChanged: onChanged,
+      ),
+      child: Text(label, style: TextStyle(fontSize: 15, color: t.fg)),
     );
   }
 }

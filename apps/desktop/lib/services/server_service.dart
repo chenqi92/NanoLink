@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/models.dart';
+import 'shell_session.dart';
+import 'ws_channel.dart';
 
 /// Connection mode enum
 enum ConnectionMode {
@@ -53,6 +55,165 @@ class ServerSummary {
       avgMemoryUsage: (json['avgMemoryUsage'] as num?)?.toDouble() ?? 0,
       totalAlerts: json['totalAlerts'] as int? ?? 0,
     );
+  }
+}
+
+/// One auto-diagnosis finding from `GET /api/assistant/findings`.
+class AssistantFinding {
+  final String kind; // anomaly | warn | info | ok
+  final String title;
+  final String detail;
+  final String? agentId;
+  final List<String> actions;
+
+  const AssistantFinding({
+    required this.kind,
+    required this.title,
+    required this.detail,
+    this.agentId,
+    required this.actions,
+  });
+
+  factory AssistantFinding.fromJson(Map<String, dynamic> j) => AssistantFinding(
+        kind: j['kind'] as String? ?? 'info',
+        title: j['title'] as String? ?? '',
+        detail: j['detail'] as String? ?? '',
+        agentId: (j['agentId'] as String?)?.isEmpty ?? true
+            ? null
+            : j['agentId'] as String?,
+        actions: (j['actions'] as List?)?.map((e) => e.toString()).toList() ??
+            const [],
+      );
+}
+
+/// Result of generating a device pairing token (`POST /api/devices/token`).
+class DeviceTokenResult {
+  /// Base64(JSON) payload to render as a QR code (embeds server URL + token).
+  final String qrData;
+
+  /// 6-digit manual pairing code.
+  final String pairingCode;
+
+  const DeviceTokenResult({required this.qrData, required this.pairingCode});
+}
+
+/// Parsed historical metrics for one agent, shaped for the history charts.
+///
+/// Handles both backend response shapes (DB-aggregated and in-memory): each
+/// sample exposes `cpu.usagePercent`, `memory.used/total`, `networks[].rx/tx`,
+/// `disks[].read/write` and optional `gpus[]`. Network/disk rates are converted
+/// to MB/s; memory is normalised to a percentage.
+class MetricsHistory {
+  final List<DateTime> times;
+  final List<double> cpu; // %
+  final List<double> mem; // %
+  final List<double> netRx; // MB/s
+  final List<double> netTx; // MB/s
+  final List<double> diskRead; // MB/s
+  final List<double> diskWrite; // MB/s
+  final List<double> gpuUsage; // %
+  final List<double> gpuTemp; // °C (may be empty)
+
+  const MetricsHistory({
+    required this.times,
+    required this.cpu,
+    required this.mem,
+    required this.netRx,
+    required this.netTx,
+    required this.diskRead,
+    required this.diskWrite,
+    required this.gpuUsage,
+    required this.gpuTemp,
+  });
+
+  bool get isEmpty => cpu.isEmpty;
+  bool get hasGpu => gpuUsage.any((v) => v > 0) && gpuUsage.isNotEmpty;
+
+  factory MetricsHistory.parse(List<dynamic> raw) {
+    final times = <DateTime>[];
+    final cpu = <double>[];
+    final mem = <double>[];
+    final netRx = <double>[];
+    final netTx = <double>[];
+    final diskRead = <double>[];
+    final diskWrite = <double>[];
+    final gpuUsage = <double>[];
+    final gpuTemp = <double>[];
+    var anyGpuTemp = false;
+
+    double n(dynamic v) => (v as num?)?.toDouble() ?? 0;
+    const mb = 1000000.0;
+
+    for (final e in raw) {
+      if (e is! Map) continue;
+      final m = e.cast<String, dynamic>();
+
+      times.add(_parseTime(m['timestamp']));
+
+      cpu.add(n((m['cpu'] as Map?)?['usagePercent']));
+
+      final memMap = (m['memory'] as Map?) ?? const {};
+      final total = n(memMap['total']);
+      final used = n(memMap['used']);
+      mem.add(total > 0 ? (used / total * 100).clamp(0, 100).toDouble() : 0);
+
+      double rx = 0, tx = 0;
+      for (final net in (m['networks'] as List? ?? const [])) {
+        if (net is Map) {
+          rx += n(net['rxBytesPerSec']);
+          tx += n(net['txBytesPerSec']);
+        }
+      }
+      netRx.add(rx / mb);
+      netTx.add(tx / mb);
+
+      double rd = 0, wr = 0;
+      for (final d in (m['disks'] as List? ?? const [])) {
+        if (d is Map) {
+          rd += n(d['readBytesPerSec']);
+          wr += n(d['writeBytesPerSec']);
+        }
+      }
+      diskRead.add(rd / mb);
+      diskWrite.add(wr / mb);
+
+      final gpus = m['gpus'] as List? ?? const [];
+      if (gpus.isNotEmpty && gpus.first is Map) {
+        final g = (gpus.first as Map);
+        gpuUsage.add(n(g['usagePercent']));
+        if (g.containsKey('temperature')) {
+          anyGpuTemp = true;
+          gpuTemp.add(n(g['temperature']));
+        } else {
+          gpuTemp.add(0);
+        }
+      } else {
+        gpuUsage.add(0);
+        gpuTemp.add(0);
+      }
+    }
+
+    return MetricsHistory(
+      times: times,
+      cpu: cpu,
+      mem: mem,
+      netRx: netRx,
+      netTx: netTx,
+      diskRead: diskRead,
+      diskWrite: diskWrite,
+      gpuUsage: gpuUsage,
+      gpuTemp: anyGpuTemp ? gpuTemp : const [],
+    );
+  }
+
+  static DateTime _parseTime(dynamic v) {
+    if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
+    if (v is String) {
+      final ms = int.tryParse(v);
+      if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
+      return DateTime.tryParse(v) ?? DateTime.now();
+    }
+    return DateTime.now();
   }
 }
 
@@ -170,7 +331,8 @@ class ServerService {
     return '$baseUrl/api$path';
   }
 
-  String _buildWsUrl() {
+  /// `ws(s)://host[:port]` base derived from the configured HTTP url.
+  String _wsBaseUrl() {
     var baseUrl = connection.url.endsWith('/')
         ? connection.url.substring(0, connection.url.length - 1)
         : connection.url;
@@ -181,9 +343,26 @@ class ServerService {
     } else if (baseUrl.startsWith('http://')) {
       baseUrl = 'ws://${baseUrl.substring(7)}';
     }
+    return baseUrl;
+  }
 
+  String _buildWsUrl() {
     final token = connection.authToken ?? '';
-    return '$baseUrl/ws/dashboard?token=${Uri.encodeComponent(token)}';
+    return '${_wsBaseUrl()}/ws/dashboard?token=${Uri.encodeComponent(token)}';
+  }
+
+  /// Open a remote shell session for [agentId] (`/ws/shell/:id`).
+  ///
+  /// The returned session is not connected yet — wire up its [ShellSession.lines]
+  /// / [ShellSession.statusStream] listeners first, then call
+  /// [ShellSession.connect]. Auth uses the Authorization header on native (the
+  /// query token is kept only for web/cookie fallback).
+  ShellSession openShell(String agentId) {
+    final token = connection.authToken ?? '';
+    final uri = Uri.parse(
+        '${_wsBaseUrl()}/ws/shell/${Uri.encodeComponent(agentId)}'
+        '?token=${Uri.encodeComponent(token)}');
+    return ShellSession(uri: uri, token: connection.authToken);
   }
 
   /// Login with username and password, returns JWT token on success
@@ -230,7 +409,8 @@ class ServerService {
       final wsUrl = _buildWsUrl();
       debugPrint('[WS] Connecting to $wsUrl');
 
-      _wsChannel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      _wsChannel = connectAuthedWs(Uri.parse(wsUrl),
+          token: connection.authToken);
 
       _wsChannel!.stream.listen(
         _onWsMessage,
@@ -446,6 +626,163 @@ class ServerService {
     } catch (e) {
       return {};
     }
+  }
+
+  /// Fetch historical metrics for [agentId] over the trailing [window].
+  ///
+  /// Sends `start`/`end` (Unix ms) so the server uses its DB-aggregated path
+  /// when persistence is available, otherwise it falls back to the in-memory
+  /// ring buffer (same JSON shape, capped by [limit]).
+  Future<MetricsHistory?> fetchMetricsHistory(
+    String agentId, {
+    required Duration window,
+    String interval = 'auto',
+    int limit = 240,
+  }) async {
+    try {
+      final end = DateTime.now();
+      final start = end.subtract(window);
+      final uri = Uri.parse(_buildUrl('/metrics/history')).replace(
+        queryParameters: {
+          'agentId': agentId,
+          'start': '${start.millisecondsSinceEpoch}',
+          'end': '${end.millisecondsSinceEpoch}',
+          'interval': interval,
+          'limit': '$limit',
+        },
+      );
+      final response =
+          await _client.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is List) return MetricsHistory.parse(data);
+        return const MetricsHistory(
+          times: [], cpu: [], mem: [], netRx: [], netTx: [],
+          diskRead: [], diskWrite: [], gpuUsage: [], gpuTemp: [],
+        );
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[History] fetch error: $e');
+      return null;
+    }
+  }
+
+  /// Send a control command to an agent (`POST /api/agents/:id/command`).
+  ///
+  /// [type] is a backend `CommandType` enum name (e.g. `SYSTEM_REBOOT`,
+  /// `HEALTH_CHECK`, `SERVICE_RESTART`). Returns `null` on success, otherwise a
+  /// human-readable error message. Requires L1+ (server enforces per-route).
+  Future<String?> sendCommand(
+    String agentId,
+    String type, {
+    String target = '',
+    Map<String, String>? params,
+  }) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/agents/$agentId/command')),
+            headers: _headers,
+            body: jsonEncode({
+              'type': type,
+              'target': target,
+              if (params != null) 'params': params,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) return null;
+      return _errorMessage(response);
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// Ask an agent to push fresh data on demand
+  /// (`POST /api/agents/:id/data-request`). [requestType] ∈
+  /// full / static / disk_usage / network_info / user_sessions / gpu_info /
+  /// health. Returns `null` on success, otherwise an error message.
+  Future<String?> requestData(
+    String agentId, {
+    String requestType = 'full',
+    String target = '',
+  }) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/agents/$agentId/data-request')),
+            headers: _headers,
+            body: jsonEncode({'requestType': requestType, 'target': target}),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) return null;
+      return _errorMessage(response);
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// Fetch metric-derived auto-diagnosis findings
+  /// (`GET /api/assistant/findings`). Returns `null` on failure.
+  Future<List<AssistantFinding>?> fetchAssistantFindings() async {
+    try {
+      final response = await _client
+          .get(Uri.parse(_buildUrl('/assistant/findings')), headers: _headers)
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is List) {
+          return data
+              .whereType<Map<String, dynamic>>()
+              .map(AssistantFinding.fromJson)
+              .toList();
+        }
+        return const <AssistantFinding>[];
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[Assistant] findings error: $e');
+      return null;
+    }
+  }
+
+  /// Generate a device pairing token + QR payload (`POST /api/devices/token`).
+  /// Requires an account-authenticated (JWT) connection. Returns `null` on
+  /// failure (e.g. device-token-only connections cannot generate codes).
+  Future<DeviceTokenResult?> generateDeviceToken({String? serverName}) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/devices/token')),
+            headers: _headers,
+            body: jsonEncode(
+                {if (serverName != null) 'serverName': serverName}),
+          )
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return DeviceTokenResult(
+          qrData: data['qrData'] as String? ?? '',
+          pairingCode: data['pairingCode'] as String? ?? '',
+        );
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[Pairing] generate error: $e');
+      return null;
+    }
+  }
+
+  /// Extract a readable error from a failed JSON response.
+  String _errorMessage(http.Response response) {
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map) {
+        final err = body['error'] ?? body['details'];
+        if (err is String && err.isNotEmpty) return err;
+      }
+    } catch (_) {}
+    return 'HTTP ${response.statusCode}';
   }
 
   /// Fetch server summary

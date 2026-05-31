@@ -52,4 +52,16 @@ class StorageService {
     servers.removeWhere((s) => s.id == serverId);
     await saveServers(servers);
   }
+
+  /// Read a boolean preference (defaults to [fallback] when unset).
+  Future<bool> getBool(String key, {bool fallback = true}) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(key) ?? fallback;
+  }
+
+  /// Persist a boolean preference.
+  Future<void> setBool(String key, bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, value);
+  }
 }

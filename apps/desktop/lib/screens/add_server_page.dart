@@ -1,26 +1,21 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:easy_localization/easy_localization.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import '../design/nano_tokens.dart';
 import '../providers/app_provider.dart';
-import '../theme/app_theme.dart';
+import '../widgets/nano/nano_card.dart';
 
-/// Authentication method for server connection
-enum ConnectionMethod { qrCode, pairingCode, manual, account }
+/// How to connect a server. The 6-digit pairing code is intentionally omitted:
+/// the backend issues codes but has no redemption endpoint, so only QR (which
+/// embeds the full token), account login and manual entry actually work.
+enum ConnectionMethod { qrCode, account, manual }
 
-/// Premium full-screen add server page with Liquid Glass design
-/// 
-/// Features:
-/// - Method selection cards with glassmorphic styling
-/// - Animated transitions between steps
-/// - QR code scanning integration (mobile)
-/// - Pairing code entry with large digits
-/// - Account login with smooth validation
+/// Full-screen "add server" flow styled with the NanoLink design tokens.
 class AddServerPage extends StatefulWidget {
   const AddServerPage({super.key});
 
@@ -28,657 +23,370 @@ class AddServerPage extends StatefulWidget {
   State<AddServerPage> createState() => _AddServerPageState();
 }
 
-class _AddServerPageState extends State<AddServerPage>
-    with SingleTickerProviderStateMixin {
-  ConnectionMethod? _selectedMethod;
-  late AnimationController _animController;
-  late Animation<double> _fadeAnimation;
+class _AddServerPageState extends State<AddServerPage> {
+  ConnectionMethod? _method;
 
-  // Form controllers
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _urlController = TextEditingController();
-  final _tokenController = TextEditingController();
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _pairingCodeController = TextEditingController();
+  final _name = TextEditingController();
+  final _url = TextEditingController();
+  final _token = TextEditingController();
+  final _username = TextEditingController();
+  final _password = TextEditingController();
 
-  // QR Scanner
-  MobileScannerController? _scannerController;
+  MobileScannerController? _scanner;
   bool _hasScanned = false;
-  bool _torchEnabled = false;
-
-  bool _isLoading = false;
+  bool _torch = false;
+  bool _loading = false;
+  bool _obscure = true;
   String? _error;
-  bool _obscurePassword = true;
 
-  /// Check if QR scanning is supported on current platform
-  bool get _isQrScanningSupported => 
-      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
-
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeOut,
-    );
-    _animController.forward();
-  }
+  bool get _qrSupported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   @override
   void dispose() {
-    _animController.dispose();
-    _nameController.dispose();
-    _urlController.dispose();
-    _tokenController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
-    _pairingCodeController.dispose();
-    _scannerController?.dispose();
+    _name.dispose();
+    _url.dispose();
+    _token.dispose();
+    _username.dispose();
+    _password.dispose();
+    _scanner?.dispose();
     super.dispose();
   }
 
-  void _selectMethod(ConnectionMethod method) {
+  void _select(ConnectionMethod m) {
     HapticFeedback.selectionClick();
     setState(() {
-      _selectedMethod = method;
+      _method = m;
       _error = null;
       _hasScanned = false;
     });
-    
-    // Initialize scanner when QR method is selected
-    if (method == ConnectionMethod.qrCode && _isQrScanningSupported) {
-      _scannerController = MobileScannerController(
+    if (m == ConnectionMethod.qrCode && _qrSupported) {
+      _scanner = MobileScannerController(
         detectionSpeed: DetectionSpeed.normal,
         facing: CameraFacing.back,
-        torchEnabled: false,
       );
     }
-    
-    _animController.reset();
-    _animController.forward();
   }
 
-  void _goBack() {
-    if (_selectedMethod != null) {
-      _scannerController?.dispose();
-      _scannerController = null;
+  void _back() {
+    if (_method != null) {
+      _scanner?.dispose();
+      _scanner = null;
       setState(() {
-        _selectedMethod = null;
+        _method = null;
         _error = null;
         _hasScanned = false;
       });
-      _animController.reset();
-      _animController.forward();
     } else {
       Navigator.pop(context);
     }
   }
 
-  /// Process scanned QR code data
-  Future<void> _processQrData(String rawData) async {
-    if (_hasScanned) return; // Prevent multiple scans
-    
+  Future<void> _processQr(String raw) async {
+    if (_hasScanned) return;
+    final provider = context.read<AppProvider>();
     setState(() {
       _hasScanned = true;
-      _isLoading = true;
+      _loading = true;
       _error = null;
     });
-
     HapticFeedback.mediumImpact();
-
     try {
-      // Try to decode base64 JSON first (NanoLink format)
       String jsonStr;
       try {
-        jsonStr = utf8.decode(base64.decode(rawData));
+        jsonStr = utf8.decode(base64.decode(raw));
       } catch (_) {
-        // Maybe it's plain JSON
-        jsonStr = rawData;
+        jsonStr = raw;
       }
-
       final json = jsonDecode(jsonStr) as Map<String, dynamic>;
       final version = json['v'] as int?;
       final serverUrl = json['s'] as String?;
       final token = json['t'] as String?;
-      final serverName = json['n'] as String? ?? 'NanoLink Server';
-
+      final name = json['n'] as String? ?? 'addServer.defaultServerName'.tr();
       if (version != 1 || serverUrl == null || token == null) {
-        throw FormatException('Invalid QR format');
+        throw const FormatException('invalid');
       }
-
-      // Stop the scanner
-      _scannerController?.stop();
-
-      // Auto-connect with scanned data
-      final provider = context.read<AppProvider>();
-      final success = await provider.addServer(
-        name: serverName,
-        url: serverUrl,
-        token: token,
-      );
-
+      await _scanner?.stop();
+      final ok = await provider.addServer(name: name, url: serverUrl, token: token);
       if (!mounted) return;
-
-      if (success) {
+      if (ok) {
         HapticFeedback.heavyImpact();
         Navigator.pop(context, true);
       } else {
         setState(() {
-          _isLoading = false;
+          _loading = false;
           _hasScanned = false;
-          _error = 'server.connectionFailed'.tr();
+          _error = 'addServer.connectionFailed'.tr();
         });
-        _scannerController?.start();
+        _scanner?.start();
       }
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
-        _isLoading = false;
+        _loading = false;
         _hasScanned = false;
-        _error = 'server.invalidQrCode'.tr();
+        _error = 'addServer.qrInvalid'.tr();
       });
-      _scannerController?.start();
+      _scanner?.start();
     }
   }
 
   Future<void> _submitManual() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() {
-      _isLoading = true;
+      _loading = true;
       _error = null;
     });
-
-    final provider = context.read<AppProvider>();
-    final success = await provider.addServer(
-      name: _nameController.text.trim(),
-      url: _urlController.text.trim(),
-      token: _tokenController.text.trim().isEmpty
-          ? null
-          : _tokenController.text.trim(),
-    );
-
+    final ok = await context.read<AppProvider>().addServer(
+          name: _name.text.trim(),
+          url: _url.text.trim(),
+          token: _token.text.trim().isEmpty ? null : _token.text.trim(),
+        );
     if (!mounted) return;
-
-    if (success) {
+    if (ok) {
       HapticFeedback.heavyImpact();
       Navigator.pop(context, true);
     } else {
       setState(() {
-        _isLoading = false;
-        _error = 'server.connectionFailed'.tr();
+        _loading = false;
+        _error = 'addServer.connectionFailed'.tr();
       });
     }
   }
 
   Future<void> _submitAccount() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() {
-      _isLoading = true;
+      _loading = true;
       _error = null;
     });
-
-    final provider = context.read<AppProvider>();
-    final success = await provider.addServerWithCredentials(
-      name: _nameController.text.trim(),
-      url: _urlController.text.trim(),
-      username: _usernameController.text.trim(),
-      password: _passwordController.text,
-    );
-
+    final ok = await context.read<AppProvider>().addServerWithCredentials(
+          name: _name.text.trim(),
+          url: _url.text.trim(),
+          username: _username.text.trim(),
+          password: _password.text,
+        );
     if (!mounted) return;
-
-    if (success) {
+    if (ok) {
       HapticFeedback.heavyImpact();
       Navigator.pop(context, true);
     } else {
       setState(() {
-        _isLoading = false;
-        _error = 'server.loginFailed'.tr();
+        _loading = false;
+        _error = 'addServer.loginFailed'.tr();
       });
     }
   }
 
-  Future<void> _processPairingCode() async {
-    final code = _pairingCodeController.text.trim();
-    if (code.length < 6) {
-      setState(() => _error = 'server.pairingCodeInvalid'.tr());
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    // TODO: Implement pairing code validation against server
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-      _error = 'server.pairingCodeExpired'.tr();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final mediaQuery = MediaQuery.of(context);
-    final isCompact = mediaQuery.size.width < 600;
-
+    final t = context.nano;
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          onPressed: _goBack,
-          icon: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+      backgroundColor: t.bg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _header(t),
+            Expanded(
+              child: _method == null
+                  ? _methodSelection(t)
+                  : switch (_method!) {
+                      ConnectionMethod.qrCode => _qrScanner(t),
+                      ConnectionMethod.account => _accountForm(t),
+                      ConnectionMethod.manual => _manualForm(t),
+                    },
             ),
-            child: Icon(
-              _selectedMethod != null ? Icons.arrow_back : Icons.close,
-              color: isDark ? Colors.white : Colors.black87,
-            ),
-          ),
+          ],
         ),
-        title: Text(
-          _selectedMethod == null
-              ? 'server.addServer'.tr()
-              : _getMethodTitle(_selectedMethod!),
-          style: TextStyle(
-            color: isDark ? Colors.white : Colors.black87,
-            fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+
+  Widget _header(NanoTokens t) {
+    final title = _method == null
+        ? 'addServer.title'.tr()
+        : switch (_method!) {
+            ConnectionMethod.qrCode => 'addServer.headerScanQr'.tr(),
+            ConnectionMethod.account => 'addServer.headerAccount'.tr(),
+            ConnectionMethod.manual => 'addServer.headerManual'.tr(),
+          };
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: _back,
+            icon: Icon(_method != null ? Icons.arrow_back_rounded : Icons.close_rounded,
+                color: t.fg),
           ),
-        ),
-        centerTitle: true,
-        actions: [
-          // Torch toggle for QR scanner
-          if (_selectedMethod == ConnectionMethod.qrCode && 
-              _scannerController != null)
+          Expanded(
+            child: Text(title,
+                style: TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w600, color: t.fg)),
+          ),
+          if (_method == ConnectionMethod.qrCode && _scanner != null)
             IconButton(
               onPressed: () {
-                _scannerController?.toggleTorch();
-                setState(() => _torchEnabled = !_torchEnabled);
+                _scanner?.toggleTorch();
+                setState(() => _torch = !_torch);
               },
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _torchEnabled
-                      ? AppTheme.accentCyan.withValues(alpha: 0.3)
-                      : (isDark ? Colors.white : Colors.black).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  _torchEnabled ? Icons.flash_on : Icons.flash_off,
-                  color: _torchEnabled
-                      ? AppTheme.accentCyan
-                      : (isDark ? Colors.white : Colors.black87),
-                ),
-              ),
-            ),
+              icon: Icon(_torch ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+                  color: _torch ? t.accent : t.fg3),
+            )
+          else
+            const SizedBox(width: 48),
         ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient,
-        ),
-        child: SafeArea(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: _selectedMethod == null
-                ? _buildMethodSelection(theme, isDark, isCompact)
-                : _buildMethodForm(theme, isDark),
-          ),
-        ),
       ),
     );
   }
 
-  String _getMethodTitle(ConnectionMethod method) {
-    switch (method) {
-      case ConnectionMethod.qrCode:
-        return 'server.scanQrCode'.tr();
-      case ConnectionMethod.pairingCode:
-        return 'server.enterPairingCode'.tr();
-      case ConnectionMethod.manual:
-        return 'server.manualEntry'.tr();
-      case ConnectionMethod.account:
-        return 'server.accountLogin'.tr();
-    }
-  }
-
-  Widget _buildMethodSelection(ThemeData theme, bool isDark, bool isCompact) {
-    final methods = <_MethodOption>[
-      // Only show QR code option on mobile platforms
-      if (_isQrScanningSupported)
-        _MethodOption(
-          method: ConnectionMethod.qrCode,
-          icon: Icons.qr_code_scanner_rounded,
-          title: 'server.scanQrCode'.tr(),
-          subtitle: 'server.scanQrCodeDesc'.tr(),
-          gradient: const LinearGradient(
-            colors: [Color(0xFF3B82F6), Color(0xFF8B5CF6)],
-          ),
-          isPrimary: true,
-        ),
-      _MethodOption(
-        method: ConnectionMethod.pairingCode,
-        icon: Icons.pin_rounded,
-        title: 'server.enterPairingCode'.tr(),
-        subtitle: 'server.pairingCodeDesc'.tr(),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF22D3EE), Color(0xFF3B82F6)],
-        ),
-        isPrimary: !_isQrScanningSupported, // Primary on desktop
-      ),
-      _MethodOption(
-        method: ConnectionMethod.account,
-        icon: Icons.person_rounded,
-        title: 'server.accountLogin'.tr(),
-        subtitle: 'server.accountLoginDesc'.tr(),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF22C55E), Color(0xFF10B981)],
-        ),
-      ),
-      _MethodOption(
-        method: ConnectionMethod.manual,
-        icon: Icons.edit_rounded,
-        title: 'server.manualEntry'.tr(),
-        subtitle: 'server.manualEntryDesc'.tr(),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF6B7280), Color(0xFF4B5563)],
-        ),
-      ),
+  Widget _methodSelection(NanoTokens t) {
+    final methods = <List<dynamic>>[
+      if (_qrSupported)
+        [
+          ConnectionMethod.qrCode,
+          Icons.qr_code_scanner_rounded,
+          'addServer.methodScanQr'.tr(),
+          'addServer.methodScanQrDesc'.tr()
+        ],
+      [
+        ConnectionMethod.account,
+        Icons.shield_outlined,
+        'addServer.methodAccount'.tr(),
+        'addServer.methodAccountDesc'.tr()
+      ],
+      [
+        ConnectionMethod.manual,
+        Icons.link_rounded,
+        'addServer.methodManual'.tr(),
+        'addServer.methodManualDesc'.tr()
+      ],
     ];
-
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header text
-          Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'server.chooseMethod'.tr(),
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'server.chooseMethodDesc'.tr(),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: isDark ? Colors.white60 : Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Method cards
-          Expanded(
-            child: ListView.separated(
-              itemCount: methods.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final option = methods[index];
-                return _buildMethodCard(option, isDark);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMethodCard(_MethodOption option, bool isDark) {
-    return GestureDetector(
-      onTap: () => _selectMethod(option.method),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: option.isPrimary
-                  ? option.gradient
-                  : LinearGradient(
-                      colors: [
-                        (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
-                        (isDark ? Colors.white : Colors.black).withValues(alpha: 0.04),
-                      ],
-                    ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: option.isPrimary
-                    ? Colors.white.withValues(alpha: 0.3)
-                    : (isDark ? Colors.white : Colors.black).withValues(alpha: 0.1),
-              ),
-            ),
-            child: Row(
-              children: [
-                // Icon
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    gradient: option.isPrimary
-                        ? LinearGradient(
-                            colors: [
-                              Colors.white.withValues(alpha: 0.3),
-                              Colors.white.withValues(alpha: 0.1),
-                            ],
-                          )
-                        : option.gradient,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(
-                    option.icon,
-                    size: 28,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 16),
-
-                // Text
-                Expanded(
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
+          child: Text('addServer.chooseMethodHint'.tr(),
+              style: TextStyle(fontSize: 14, color: t.fg3, height: 1.5)),
+        ),
+        NanoCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              for (var i = 0; i < methods.length; i++)
+                NanoListRow(
+                  divider: i < methods.length - 1,
+                  onTap: () => _select(methods[i][0] as ConnectionMethod),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                  leading: NanoIconBox(methods[i][1] as IconData,
+                      size: 44, iconSize: 22, fg: t.accent),
+                  trailing: Icon(Icons.chevron_right_rounded, color: t.fg4),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        option.title,
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                          color: option.isPrimary
-                              ? Colors.white
-                              : (isDark ? Colors.white : Colors.black87),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        option.subtitle,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: option.isPrimary
-                              ? Colors.white70
-                              : (isDark ? Colors.white60 : Colors.black54),
-                        ),
-                      ),
+                      Text(methods[i][2] as String,
+                          style: TextStyle(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w500,
+                              color: t.fg)),
+                      const SizedBox(height: 2),
+                      Text(methods[i][3] as String,
+                          style: TextStyle(fontSize: 13, color: t.fg3)),
                     ],
                   ),
                 ),
-
-                // Arrow
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: option.isPrimary
-                      ? Colors.white70
-                      : (isDark ? Colors.white38 : Colors.black38),
-                ),
-              ],
-            ),
+            ],
           ),
         ),
-      ),
+      ],
     );
   }
 
-  Widget _buildMethodForm(ThemeData theme, bool isDark) {
-    switch (_selectedMethod!) {
-      case ConnectionMethod.qrCode:
-        return _buildQrCodeScanner(theme, isDark);
-      case ConnectionMethod.pairingCode:
-        return _buildPairingCodeForm(theme, isDark);
-      case ConnectionMethod.manual:
-        return _buildManualForm(theme, isDark);
-      case ConnectionMethod.account:
-        return _buildAccountForm(theme, isDark);
-    }
-  }
-
-  Widget _buildQrCodeScanner(ThemeData theme, bool isDark) {
-    // Fallback for platforms without camera support
-    if (!_isQrScanningSupported || _scannerController == null) {
+  Widget _qrScanner(NanoTokens t) {
+    if (!_qrSupported || _scanner == null) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.qr_code_scanner_rounded,
-              size: 80,
-              color: isDark ? Colors.white30 : Colors.black26,
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'server.qrNotSupported'.tr(),
-              style: TextStyle(
-                fontSize: 16,
-                color: isDark ? Colors.white70 : Colors.black54,
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.qr_code_scanner_rounded, size: 60, color: t.fg4),
+              const SizedBox(height: 20),
+              Text('addServer.qrUnsupported'.tr(),
+                  style: TextStyle(fontSize: 15, color: t.fg2)),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () => _select(ConnectionMethod.manual),
+                child: Text('addServer.useManualInstead'.tr(),
+                    style: TextStyle(color: t.accent)),
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => _selectMethod(ConnectionMethod.pairingCode),
-              icon: const Icon(Icons.pin_rounded),
-              label: Text('server.usePairingCodeInstead'.tr()),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primaryBlue,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }
-
     return Column(
       children: [
-        // Scanner area
         Expanded(
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Camera preview
-              ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: MobileScanner(
-                  controller: _scannerController!,
-                  onDetect: (capture) {
-                    final barcodes = capture.barcodes;
-                    if (barcodes.isNotEmpty) {
-                      final rawValue = barcodes.first.rawValue;
-                      if (rawValue != null && rawValue.isNotEmpty) {
-                        _processQrData(rawValue);
-                      }
-                    }
-                  },
-                ),
-              ),
-
-              // Scan frame overlay
-              Container(
-                width: 280,
-                height: 280,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: _isLoading
-                        ? AppTheme.successGreen
-                        : AppTheme.primaryBlue.withValues(alpha: 0.5),
-                    width: 3,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(t.cardRadius),
+                  child: MobileScanner(
+                    controller: _scanner!,
+                    onDetect: (capture) {
+                      final raw = capture.barcodes.isNotEmpty
+                          ? capture.barcodes.first.rawValue
+                          : null;
+                      if (raw != null && raw.isNotEmpty) _processQr(raw);
+                    },
                   ),
                 ),
-                child: Stack(
-                  children: [
-                    _buildScanFrame(),
-                    if (_isLoading)
-                      Center(
-                        child: Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 3,
-                          ),
-                        ),
-                      ),
-                  ],
+                SizedBox(
+                  width: 260,
+                  height: 260,
+                  child: CustomPaint(
+                    painter: _ScanFramePainter(
+                        color: _loading ? t.ok : t.accent),
+                    child: _loading
+                        ? Center(
+                            child: Container(
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 3),
+                            ),
+                          )
+                        : null,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-
-        // Bottom section
-        Container(
-          padding: const EdgeInsets.all(24),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
           child: Column(
             children: [
               if (_error != null) ...[
-                _buildErrorBanner(_error!, isDark),
-                const SizedBox(height: 16),
+                _errorBanner(t, _error!),
+                const SizedBox(height: 14),
               ],
-              Text(
-                'server.positionQrCode'.tr(),
-                style: TextStyle(
-                  fontSize: 16,
-                  color: isDark ? Colors.white70 : Colors.black54,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              TextButton.icon(
-                onPressed: () => _selectMethod(ConnectionMethod.pairingCode),
-                icon: const Icon(Icons.pin_rounded, size: 18),
-                label: Text('server.usePairingCodeInstead'.tr()),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.primaryBlue,
-                ),
+              Text('addServer.qrHint'.tr(),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13.5, color: t.fg3)),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => _select(ConnectionMethod.manual),
+                child: Text('addServer.useManualInstead'.tr(),
+                    style: TextStyle(color: t.accent)),
               ),
             ],
           ),
@@ -687,503 +395,224 @@ class _AddServerPageState extends State<AddServerPage>
     );
   }
 
-  Widget _buildScanFrame() {
-    const cornerSize = 30.0;
-    const color = AppTheme.accentCyan;
-
-    return Stack(
-      children: [
-        // Top-left
-        Positioned(
-          top: 20,
-          left: 20,
-          child: _buildCorner(color, cornerSize, topLeft: true),
-        ),
-        // Top-right
-        Positioned(
-          top: 20,
-          right: 20,
-          child: _buildCorner(color, cornerSize, topRight: true),
-        ),
-        // Bottom-left
-        Positioned(
-          bottom: 20,
-          left: 20,
-          child: _buildCorner(color, cornerSize, bottomLeft: true),
-        ),
-        // Bottom-right
-        Positioned(
-          bottom: 20,
-          right: 20,
-          child: _buildCorner(color, cornerSize, bottomRight: true),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCorner(
-    Color color,
-    double size, {
-    bool topLeft = false,
-    bool topRight = false,
-    bool bottomLeft = false,
-    bool bottomRight = false,
-  }) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(
-        painter: _CornerPainter(
-          color: color,
-          topLeft: topLeft,
-          topRight: topRight,
-          bottomLeft: bottomLeft,
-          bottomRight: bottomRight,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPairingCodeForm(ThemeData theme, bool isDark) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
+  Widget _manualForm(NanoTokens t) {
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
         children: [
-          const SizedBox(height: 40),
-          // Large pairing code icon
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              gradient: AppTheme.primaryGradient,
-              borderRadius: BorderRadius.circular(28),
-            ),
-            child: const Icon(
-              Icons.pin_rounded,
-              size: 50,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 32),
-
-          Text(
-            'server.enterPairingCodeTitle'.tr(),
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : Colors.black87,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'server.enterPairingCodeHint'.tr(),
-            style: TextStyle(
-              color: isDark ? Colors.white60 : Colors.black54,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 40),
-
-          // Pairing code input
-          _buildGlassTextField(
-            controller: _pairingCodeController,
-            isDark: isDark,
-            hintText: '000-000',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 8,
-            ),
-            keyboardType: TextInputType.number,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9-]')),
-              LengthLimitingTextInputFormatter(7),
-            ],
-          ),
-
+          _field(t,
+              controller: _name,
+              label: 'addServer.serverName'.tr(),
+              hint: 'addServer.serverNameHint'.tr(),
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'addServer.nameRequired'.tr()
+                  : null),
+          _field(t,
+              controller: _url,
+              label: 'addServer.serverUrl'.tr(),
+              hint: 'http://192.168.1.100:39100',
+              keyboardType: TextInputType.url,
+              validator: _urlValidator),
+          _field(t,
+              controller: _token,
+              label: 'addServer.deviceTokenOptional'.tr(),
+              hint: 'addServer.deviceTokenHint'.tr(),
+              obscure: true),
           if (_error != null) ...[
-            const SizedBox(height: 16),
-            _buildErrorBanner(_error!, isDark),
+            const SizedBox(height: 4),
+            _errorBanner(t, _error!),
           ],
-
-          const SizedBox(height: 32),
-
-          _buildPrimaryButton(
-            onPressed: _isLoading ? null : _processPairingCode,
-            isLoading: _isLoading,
-            label: 'server.verifyCode'.tr(),
-            isDark: isDark,
-          ),
+          const SizedBox(height: 24),
+          _primary(t, 'addServer.connect'.tr(), _submitManual),
         ],
       ),
     );
   }
 
-  Widget _buildManualForm(ThemeData theme, bool isDark) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildGlassTextField(
-              controller: _nameController,
-              isDark: isDark,
-              label: 'server.serverName'.tr(),
-              hintText: 'server.serverNameHint'.tr(),
-              prefixIcon: Icons.label_outline,
-              validator: (v) =>
-                  v?.trim().isEmpty == true ? 'server.serverNameRequired'.tr() : null,
+  Widget _accountForm(NanoTokens t) {
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: t.ok.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 16),
-
-            _buildGlassTextField(
-              controller: _urlController,
-              isDark: isDark,
-              label: 'server.serverUrl'.tr(),
-              hintText: 'http://192.168.1.100:39100',
-              prefixIcon: Icons.link_rounded,
-              keyboardType: TextInputType.url,
-              validator: (v) {
-                if (v?.trim().isEmpty == true) return 'server.serverUrlRequired'.tr();
-                final uri = Uri.tryParse(v!.trim());
-                if (uri == null || !uri.hasScheme) return 'server.serverUrlInvalid'.tr();
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            _buildGlassTextField(
-              controller: _tokenController,
-              isDark: isDark,
-              label: 'server.authToken'.tr(),
-              hintText: 'server.authTokenHint'.tr(),
-              prefixIcon: Icons.key_rounded,
-              obscureText: true,
-            ),
-
-            if (_error != null) ...[
-              const SizedBox(height: 16),
-              _buildErrorBanner(_error!, isDark),
-            ],
-
-            const SizedBox(height: 32),
-
-            _buildPrimaryButton(
-              onPressed: _isLoading ? null : _submitManual,
-              isLoading: _isLoading,
-              label: 'common.connect'.tr(),
-              isDark: isDark,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAccountForm(ThemeData theme, bool isDark) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Account info banner
-            _buildInfoBanner(
-              'server.accountModeHint'.tr(),
-              AppTheme.successGreen,
-              isDark,
-            ),
-            const SizedBox(height: 24),
-
-            _buildGlassTextField(
-              controller: _nameController,
-              isDark: isDark,
-              label: 'server.serverName'.tr(),
-              hintText: 'server.serverNameHint'.tr(),
-              prefixIcon: Icons.label_outline,
-              validator: (v) =>
-                  v?.trim().isEmpty == true ? 'server.serverNameRequired'.tr() : null,
-            ),
-            const SizedBox(height: 16),
-
-            _buildGlassTextField(
-              controller: _urlController,
-              isDark: isDark,
-              label: 'server.serverUrl'.tr(),
-              hintText: 'http://192.168.1.100:39100',
-              prefixIcon: Icons.link_rounded,
-              keyboardType: TextInputType.url,
-              validator: (v) {
-                if (v?.trim().isEmpty == true) return 'server.serverUrlRequired'.tr();
-                final uri = Uri.tryParse(v!.trim());
-                if (uri == null || !uri.hasScheme) return 'server.serverUrlInvalid'.tr();
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            _buildGlassTextField(
-              controller: _usernameController,
-              isDark: isDark,
-              label: 'server.username'.tr(),
-              hintText: 'admin',
-              prefixIcon: Icons.person_outline,
-              validator: (v) =>
-                  v?.trim().isEmpty == true ? 'server.usernameRequired'.tr() : null,
-            ),
-            const SizedBox(height: 16),
-
-            _buildGlassTextField(
-              controller: _passwordController,
-              isDark: isDark,
-              label: 'server.password'.tr(),
-              hintText: '••••••••',
-              prefixIcon: Icons.lock_outline,
-              obscureText: _obscurePassword,
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                  color: isDark ? Colors.white38 : Colors.black38,
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, color: t.ok, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('addServer.accountNotice'.tr(),
+                      style: TextStyle(fontSize: 13, color: t.fg2)),
                 ),
-                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _field(t,
+              controller: _name,
+              label: 'addServer.serverName'.tr(),
+              hint: 'addServer.serverNameHint'.tr(),
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'addServer.nameRequired'.tr()
+                  : null),
+          _field(t,
+              controller: _url,
+              label: 'addServer.serverUrl'.tr(),
+              hint: 'http://192.168.1.100:39100',
+              keyboardType: TextInputType.url,
+              validator: _urlValidator),
+          _field(t,
+              controller: _username,
+              label: 'addServer.username'.tr(),
+              hint: 'admin',
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'addServer.usernameRequired'.tr()
+                  : null),
+          _field(t,
+              controller: _password,
+              label: 'addServer.password'.tr(),
+              hint: '••••••••',
+              obscure: _obscure,
+              suffix: IconButton(
+                icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility,
+                    color: t.fg4, size: 20),
+                onPressed: () => setState(() => _obscure = !_obscure),
               ),
-              validator: (v) =>
-                  v?.isEmpty == true ? 'server.passwordRequired'.tr() : null,
-            ),
-
-            if (_error != null) ...[
-              const SizedBox(height: 16),
-              _buildErrorBanner(_error!, isDark),
-            ],
-
-            const SizedBox(height: 32),
-
-            _buildPrimaryButton(
-              onPressed: _isLoading ? null : _submitAccount,
-              isLoading: _isLoading,
-              label: 'server.login'.tr(),
-              isDark: isDark,
-            ),
+              validator: (v) => v == null || v.isEmpty
+                  ? 'addServer.passwordRequired'.tr()
+                  : null),
+          if (_error != null) ...[
+            const SizedBox(height: 4),
+            _errorBanner(t, _error!),
           ],
-        ),
+          const SizedBox(height: 24),
+          _primary(t, 'addServer.login'.tr(), _submitAccount),
+        ],
       ),
     );
   }
 
-  Widget _buildGlassTextField({
+  String? _urlValidator(String? v) {
+    if (v == null || v.trim().isEmpty) return 'addServer.urlRequired'.tr();
+    final uri = Uri.tryParse(v.trim());
+    if (uri == null || !uri.hasScheme) return 'addServer.urlInvalid'.tr();
+    return null;
+  }
+
+  Widget _field(
+    NanoTokens t, {
     required TextEditingController controller,
-    required bool isDark,
-    String? label,
-    String? hintText,
-    IconData? prefixIcon,
-    Widget? suffixIcon,
-    bool obscureText = false,
+    required String label,
+    String? hint,
+    bool obscure = false,
     TextInputType? keyboardType,
-    TextAlign textAlign = TextAlign.start,
-    TextStyle? style,
-    List<TextInputFormatter>? inputFormatters,
+    Widget? suffix,
     String? Function(String?)? validator,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (label != null) ...[
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: isDark ? Colors.white70 : Colors.black54,
-            ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(label,
+                style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w500, color: t.fg2)),
           ),
-          const SizedBox(height: 8),
-        ],
-        ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: TextFormField(
-              controller: controller,
-              obscureText: obscureText,
-              keyboardType: keyboardType,
-              textAlign: textAlign,
-              style: style ?? TextStyle(
-                color: isDark ? Colors.white : Colors.black87,
+          TextFormField(
+            controller: controller,
+            obscureText: obscure,
+            keyboardType: keyboardType,
+            autocorrect: false,
+            enableSuggestions: false,
+            style: TextStyle(color: t.fg, fontSize: 15),
+            validator: validator,
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(color: t.fg4),
+              filled: true,
+              fillColor: t.card2,
+              isDense: true,
+              suffixIcon: suffix,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(t.fieldRadius),
+                borderSide: BorderSide.none,
               ),
-              inputFormatters: inputFormatters,
-              validator: validator,
-              decoration: InputDecoration(
-                hintText: hintText,
-                hintStyle: TextStyle(
-                  color: isDark ? Colors.white30 : Colors.black26,
-                ),
-                prefixIcon: prefixIcon != null
-                    ? Icon(
-                        prefixIcon,
-                        color: isDark ? Colors.white38 : Colors.black38,
-                        size: 20,
-                      )
-                    : null,
-                suffixIcon: suffixIcon,
-                filled: true,
-                fillColor: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(
-                    color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.1),
-                  ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(
-                    color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.1),
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(
-                    color: AppTheme.primaryBlue,
-                    width: 2,
-                  ),
-                ),
-                errorBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(color: AppTheme.errorRed),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
-                ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(t.fieldRadius),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(t.fieldRadius),
+                borderSide: BorderSide(color: t.accent, width: 1.5),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildInfoBanner(String text, Color color, bool isDark) {
+  Widget _errorBanner(NanoTokens t, String text) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        color: t.crit.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          Icon(Icons.info_outline, color: color, size: 20),
-          const SizedBox(width: 12),
+          Icon(Icons.error_outline_rounded, color: t.crit, size: 18),
+          const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              text,
-              style: TextStyle(color: color, fontSize: 13),
-            ),
+            child: Text(text, style: TextStyle(color: t.crit, fontSize: 13)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildErrorBanner(String text, bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.errorRed.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.errorRed.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline, color: AppTheme.errorRed, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(color: AppTheme.errorRed, fontSize: 13),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPrimaryButton({
-    required VoidCallback? onPressed,
-    required bool isLoading,
-    required String label,
-    required bool isDark,
-  }) {
+  Widget _primary(NanoTokens t, String label, VoidCallback onPressed) {
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: 52,
       child: ElevatedButton(
-        onPressed: onPressed,
+        onPressed: _loading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppTheme.primaryBlue,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+          backgroundColor: t.accent,
+          foregroundColor: t.onAccent,
           elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(t.buttonRadius),
+          ),
         ),
-        child: isLoading
-            ? const SizedBox(
-                width: 24,
-                height: 24,
+        child: _loading
+            ? SizedBox(
+                width: 22,
+                height: 22,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: Colors.white,
-                ),
+                    strokeWidth: 2.5, color: t.onAccent),
               )
-            : Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+            : Text(label,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
       ),
     );
   }
 }
 
-class _MethodOption {
-  final ConnectionMethod method;
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final LinearGradient gradient;
-  final bool isPrimary;
-
-  _MethodOption({
-    required this.method,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.gradient,
-    this.isPrimary = false,
-  });
-}
-
-class _CornerPainter extends CustomPainter {
+class _ScanFramePainter extends CustomPainter {
   final Color color;
-  final bool topLeft;
-  final bool topRight;
-  final bool bottomLeft;
-  final bool bottomRight;
-
-  _CornerPainter({
-    required this.color,
-    this.topLeft = false,
-    this.topRight = false,
-    this.bottomLeft = false,
-    this.bottomRight = false,
-  });
+  _ScanFramePainter({required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1192,30 +621,38 @@ class _CornerPainter extends CustomPainter {
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-
-    final path = Path();
-    
-    if (topLeft) {
-      path.moveTo(0, size.height);
-      path.lineTo(0, 0);
-      path.lineTo(size.width, 0);
-    } else if (topRight) {
-      path.moveTo(0, 0);
-      path.lineTo(size.width, 0);
-      path.lineTo(size.width, size.height);
-    } else if (bottomLeft) {
-      path.moveTo(0, 0);
-      path.lineTo(0, size.height);
-      path.lineTo(size.width, size.height);
-    } else if (bottomRight) {
-      path.moveTo(size.width, 0);
-      path.lineTo(size.width, size.height);
-      path.lineTo(0, size.height);
-    }
-
-    canvas.drawPath(path, paint);
+    const c = 28.0;
+    final w = size.width, h = size.height;
+    // top-left
+    canvas.drawPath(
+        Path()
+          ..moveTo(0, c)
+          ..lineTo(0, 0)
+          ..lineTo(c, 0),
+        paint);
+    // top-right
+    canvas.drawPath(
+        Path()
+          ..moveTo(w - c, 0)
+          ..lineTo(w, 0)
+          ..lineTo(w, c),
+        paint);
+    // bottom-left
+    canvas.drawPath(
+        Path()
+          ..moveTo(0, h - c)
+          ..lineTo(0, h)
+          ..lineTo(c, h),
+        paint);
+    // bottom-right
+    canvas.drawPath(
+        Path()
+          ..moveTo(w - c, h)
+          ..lineTo(w, h)
+          ..lineTo(w, h - c),
+        paint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _ScanFramePainter old) => old.color != color;
 }

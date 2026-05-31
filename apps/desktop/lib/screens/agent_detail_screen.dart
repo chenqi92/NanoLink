@@ -1,25 +1,31 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../design/nano_tokens.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
+import '../services/server_service.dart';
 import '../utils/format.dart';
 import '../widgets/nano/nano_card.dart';
 import '../widgets/nano/nano_charts.dart';
 import '../widgets/nano/nano_primitives.dart';
+import '../widgets/nano/nano_terminal.dart';
 import '../widgets/agent_actions_sheet.dart';
 
 /// Full agent detail: segmented Realtime / History / Terminal tabs.
 class AgentDetailScreen extends StatefulWidget {
   final Agent agent;
-  const AgentDetailScreen({super.key, required this.agent});
+  final int initialTab; // 0 realtime, 1 history, 2 terminal
+  const AgentDetailScreen({super.key, required this.agent, this.initialTab = 0});
 
   @override
   State<AgentDetailScreen> createState() => _AgentDetailScreenState();
 }
 
 class _AgentDetailScreenState extends State<AgentDetailScreen> {
-  int _tab = 0; // 0 realtime, 1 history, 2 terminal
+  late int _tab = (widget.initialTab == 2 && widget.agent.permissionLevel == 0)
+      ? 0
+      : widget.initialTab; // 0 realtime, 1 history, 2 terminal
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +51,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                     case 1:
                       return _HistoryTab(agent: a, metrics: m);
                     case 2:
-                      return _TerminalTab(agent: a);
+                      return NanoTerminalView(agent: a);
                     default:
                       return _RealtimeTab(agent: a, metrics: m);
                   }
@@ -122,12 +128,19 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
             child: Row(
               children: [
-                NanoMono('agent ${a.version ?? '—'}', size: 11, color: t.fg4),
+                NanoMono(
+                    'agentDetail.agentVersion'
+                        .tr(namedArgs: {'version': a.version ?? '—'}),
+                    size: 11,
+                    color: t.fg4),
                 const SizedBox(width: 8),
                 Text('·', style: TextStyle(color: t.fg4, fontSize: 11)),
                 const SizedBox(width: 8),
-                NanoMono('心跳 ${Fmt.ago(a.lastHeartbeat)} 前',
-                    size: 11, color: t.fg4),
+                NanoMono(
+                    'agentDetail.heartbeat'
+                        .tr(namedArgs: {'ago': Fmt.ago(a.lastHeartbeat)}),
+                    size: 11,
+                    color: t.fg4),
               ],
             ),
           ),
@@ -138,7 +151,11 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
   Widget _segmented(BuildContext context, bool locked) {
     final t = context.nano;
-    final items = ['实时', '历史', '终端'];
+    final items = [
+      'agentDetail.tabRealtime'.tr(),
+      'agentDetail.tabHistory'.tr(),
+      'agentDetail.tabTerminal'.tr(),
+    ];
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
@@ -169,7 +186,9 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                         : null,
                   ),
                   child: Text(
-                    i == 2 && locked ? '终端 🔒' : items[i],
+                    i == 2 && locked
+                        ? 'agentDetail.tabTerminalLocked'.tr()
+                        : items[i],
                     style: TextStyle(
                       fontSize: 13.5,
                       fontWeight: _tab == i ? FontWeight.w600 : FontWeight.w500,
@@ -203,11 +222,13 @@ class _RealtimeTab extends StatelessWidget {
           children: [
             Icon(Icons.cloud_off_rounded, size: 30, color: t.fg4),
             const SizedBox(height: 12),
-            Text('节点离线',
+            Text('agentDetail.nodeOffline'.tr(),
                 style: TextStyle(
                     fontSize: 16, fontWeight: FontWeight.w600, color: t.fg2)),
             const SizedBox(height: 6),
-            Text('最后心跳 ${Fmt.ago(agent.lastHeartbeat)} 前',
+            Text(
+                'agentDetail.lastHeartbeat'
+                    .tr(namedArgs: {'ago': Fmt.ago(agent.lastHeartbeat)}),
                 style: TextStyle(fontSize: 13, color: t.fg4)),
           ],
         ),
@@ -221,7 +242,7 @@ class _RealtimeTab extends StatelessWidget {
         const SizedBox(height: 12),
         _memCard(context, m),
         if (m.disks.isNotEmpty) ...[
-          NanoSectionLabel('存储'),
+          NanoSectionLabel('agentDetail.storage'.tr()),
           NanoCard(
             child: Column(
               children: [
@@ -233,7 +254,7 @@ class _RealtimeTab extends StatelessWidget {
           const SizedBox(height: 4),
         ],
         if (m.networks.isNotEmpty) ...[
-          NanoSectionLabel('网络接口'),
+          NanoSectionLabel('agentDetail.networkInterfaces'.tr()),
           NanoCard(
             child: Column(
               children: [
@@ -245,15 +266,19 @@ class _RealtimeTab extends StatelessWidget {
           const SizedBox(height: 4),
         ],
         if (m.gpus.isNotEmpty) ...[
-          NanoSectionLabel('GPU',
-              trailing: NanoMono('${m.gpus.length} 个', size: 11, color: t.fg4)),
+          NanoSectionLabel('agentDetail.gpu'.tr(),
+              trailing: NanoMono(
+                  'agentDetail.gpuCount'
+                      .tr(namedArgs: {'n': '${m.gpus.length}'}),
+                  size: 11,
+                  color: t.fg4)),
           for (final g in m.gpus) ...[
             _gpuCard(context, g),
             const SizedBox(height: 8),
           ],
         ],
         if (m.npus.isNotEmpty) ...[
-          NanoSectionLabel('AI 加速器'),
+          NanoSectionLabel('agentDetail.aiAccelerator'.tr()),
           NanoCard(
             child: Column(
               children: [
@@ -274,7 +299,8 @@ class _RealtimeTab extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 6),
-                        _bar(context, '利用率', m.npus[i].usagePercent,
+                        _bar(context, 'agentDetail.utilization'.tr(),
+                            m.npus[i].usagePercent,
                             '${m.npus[i].usagePercent.toStringAsFixed(0)}%'),
                       ],
                     ),
@@ -285,7 +311,7 @@ class _RealtimeTab extends StatelessWidget {
           const SizedBox(height: 4),
         ],
         if (m.userSessions.isNotEmpty) ...[
-          NanoSectionLabel('登录会话',
+          NanoSectionLabel('agentDetail.loginSessions'.tr(),
               trailing:
                   NanoMono('${m.userSessions.length}', size: 11, color: t.fg4)),
           NanoCard(
@@ -313,7 +339,7 @@ class _RealtimeTab extends StatelessWidget {
           const SizedBox(height: 4),
         ],
         if (m.systemInfo != null) ...[
-          NanoSectionLabel('系统信息'),
+          NanoSectionLabel('agentDetail.systemInfo'.tr()),
           NanoCard(child: _systemInfo(context, m.systemInfo!)),
         ],
       ],
@@ -340,7 +366,7 @@ class _RealtimeTab extends StatelessWidget {
                       children: [
                         Icon(Icons.memory_rounded, size: 13, color: t.fg3),
                         const SizedBox(width: 5),
-                        Text('CPU',
+                        Text('agentDetail.cpu'.tr(),
                             style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -410,7 +436,7 @@ class _RealtimeTab extends StatelessWidget {
                       children: [
                         Icon(Icons.sd_storage_outlined, size: 13, color: t.fg3),
                         const SizedBox(width: 5),
-                        Text('内存',
+                        Text('agentDetail.memory'.tr(),
                             style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -444,8 +470,10 @@ class _RealtimeTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          _kv(context, '已用', '${Fmt.gib(m.memory.used).toStringAsFixed(1)} GiB'),
-          _kv(context, '可用', '${Fmt.gib(m.memory.available).toStringAsFixed(1)} GiB'),
+          _kv(context, 'agentDetail.memUsed'.tr(),
+              '${Fmt.gib(m.memory.used).toStringAsFixed(1)} GiB'),
+          _kv(context, 'agentDetail.memAvailable'.tr(),
+              '${Fmt.gib(m.memory.available).toStringAsFixed(1)} GiB'),
           if (m.memory.swapTotal > 0)
             _kv(context, 'Swap',
                 '${Fmt.gib(m.memory.swapUsed).toStringAsFixed(1)} / ${Fmt.gib(m.memory.swapTotal).toStringAsFixed(0)} GiB',
@@ -585,18 +613,19 @@ class _RealtimeTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          _bar(context, '利用率', g.usagePercent,
+          _bar(context, 'agentDetail.utilization'.tr(), g.usagePercent,
               '${g.usagePercent.toStringAsFixed(0)}%'),
           const SizedBox(height: 5),
           if (g.memoryTotal > 0)
-            _bar(context, '显存', g.memoryPercent,
+            _bar(context, 'agentDetail.vram'.tr(), g.memoryPercent,
                 '${Fmt.gib(g.memoryUsed).toStringAsFixed(1)}/${Fmt.gib(g.memoryTotal).toStringAsFixed(0)} GB'),
           if (g.powerWatts > 0) ...[
             const SizedBox(height: 5),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('功耗', style: TextStyle(fontSize: 11.5, color: t.fg4)),
+                Text('agentDetail.power'.tr(),
+                    style: TextStyle(fontSize: 11.5, color: t.fg4)),
                 NanoMono('${g.powerWatts}W', size: 11.5, color: t.fg2),
               ],
             ),
@@ -640,12 +669,14 @@ class _RealtimeTab extends StatelessWidget {
 
   Widget _systemInfo(BuildContext context, SystemInfo s) {
     final rows = <List<String>>[
-      ['OS', '${s.osName} ${s.osVersion}'.trim()],
-      ['内核', s.kernelVersion],
-      ['运行时长', Fmt.uptime(s.uptimeSeconds)],
-      if (s.motherboardModel.isNotEmpty) ['主板', s.motherboardModel],
-      if (s.systemModel.isNotEmpty) ['整机', s.systemModel],
-      if (s.biosVersion.isNotEmpty) ['BIOS', s.biosVersion],
+      ['agentDetail.osLabel'.tr(), '${s.osName} ${s.osVersion}'.trim()],
+      ['agentDetail.kernel'.tr(), s.kernelVersion],
+      ['agentDetail.uptime'.tr(), Fmt.uptime(s.uptimeSeconds)],
+      if (s.motherboardModel.isNotEmpty)
+        ['agentDetail.motherboard'.tr(), s.motherboardModel],
+      if (s.systemModel.isNotEmpty)
+        ['agentDetail.systemModel'.tr(), s.systemModel],
+      if (s.biosVersion.isNotEmpty) ['agentDetail.bios'.tr(), s.biosVersion],
     ].where((r) => r[1].trim().isNotEmpty).toList();
     final t = context.nano;
     return Column(
@@ -676,7 +707,35 @@ class _RealtimeTab extends StatelessWidget {
   }
 }
 
-// ─── History (placeholder until backend history wiring) ──────────────────────
+// ─── History (real data from /api/metrics/history) ──────────────────────────
+class _RangeSpec {
+  final Duration window;
+  final String interval;
+  final List<String> labels;
+  const _RangeSpec(this.window, this.interval, this.labels);
+}
+
+const _kRanges = ['5m', '30m', '1h', '6h', '1d', '7d'];
+
+_RangeSpec _rangeSpec(String r) {
+  switch (r) {
+    case '5m':
+      return const _RangeSpec(
+          Duration(minutes: 5), '1m', ['-5m', '-2m', 'now']);
+    case '30m':
+      return const _RangeSpec(
+          Duration(minutes: 30), '1m', ['-30m', '-15m', 'now']);
+    case '6h':
+      return const _RangeSpec(Duration(hours: 6), '5m', ['-6h', '-3h', 'now']);
+    case '1d':
+      return const _RangeSpec(Duration(days: 1), '1h', ['-24h', '-12h', 'now']);
+    case '7d':
+      return const _RangeSpec(Duration(days: 7), '1h', ['-7d', '-3d', 'now']);
+    default:
+      return const _RangeSpec(Duration(hours: 1), 'auto', ['-60m', '-30m', 'now']);
+  }
+}
+
 class _HistoryTab extends StatefulWidget {
   final Agent agent;
   final AgentMetrics? metrics;
@@ -688,11 +747,35 @@ class _HistoryTab extends StatefulWidget {
 
 class _HistoryTabState extends State<_HistoryTab> {
   String _range = '1h';
+  Future<MetricsHistory?>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    final svc = context.read<AppProvider>().serviceForAgent(widget.agent.id);
+    final spec = _rangeSpec(_range);
+    setState(() {
+      _future = svc == null
+          ? Future.value(null)
+          : svc.fetchMetricsHistory(widget.agent.id,
+              window: spec.window, interval: spec.interval);
+    });
+  }
+
+  void _pick(String r) {
+    if (r == _range) return;
+    _range = r;
+    _load();
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.nano;
-    const ranges = ['5m', '30m', '1h', '6h', '1d', '7d'];
+    final spec = _rangeSpec(_range);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
       children: [
@@ -704,10 +787,10 @@ class _HistoryTabState extends State<_HistoryTab> {
           ),
           child: Row(
             children: [
-              for (final r in ranges)
+              for (final r in _kRanges)
                 Expanded(
                   child: GestureDetector(
-                    onTap: () => setState(() => _range = r),
+                    onTap: () => _pick(r),
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       alignment: Alignment.center,
@@ -726,67 +809,272 @@ class _HistoryTabState extends State<_HistoryTab> {
             ],
           ),
         ),
-        const SizedBox(height: 40),
-        Center(
-          child: Column(
-            children: [
-              Icon(Icons.show_chart_rounded, color: t.fg4, size: 30),
-              const SizedBox(height: 12),
-              Text('历史曲线即将接入',
-                  style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w500, color: t.fg2)),
-              const SizedBox(height: 6),
-              Text('将从服务器拉取该节点的历史指标',
-                  style: TextStyle(fontSize: 12.5, color: t.fg4)),
-            ],
-          ),
+        const SizedBox(height: 12),
+        FutureBuilder<MetricsHistory?>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return _hint(t,
+                  child: const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2)));
+            }
+            final h = snap.data;
+            if (h == null) {
+              return _hint(t,
+                  icon: Icons.cloud_off_rounded,
+                  title: 'history.loadFailed'.tr(),
+                  sub: 'history.loadFailedSub'.tr(),
+                  action: _retry(t));
+            }
+            if (h.isEmpty) {
+              return _hint(t,
+                  icon: Icons.show_chart_rounded,
+                  title: 'history.noData'.tr(),
+                  sub: 'history.noDataSub'.tr());
+            }
+            return _charts(context, h, spec.labels);
+          },
         ),
       ],
     );
   }
+
+  Widget _retry(NanoTokens t) => Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: TextButton.icon(
+          onPressed: _load,
+          icon: Icon(Icons.refresh_rounded, size: 16, color: t.accent),
+          label: Text('common.retry'.tr(), style: TextStyle(color: t.accent)),
+        ),
+      );
+
+  Widget _hint(NanoTokens t,
+      {IconData? icon,
+      String? title,
+      String? sub,
+      Widget? child,
+      Widget? action}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (child != null) child,
+            if (icon != null) Icon(icon, color: t.fg4, size: 30),
+            if (title != null) ...[
+              const SizedBox(height: 12),
+              Text(title,
+                  style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w500, color: t.fg2)),
+            ],
+            if (sub != null) ...[
+              const SizedBox(height: 6),
+              Text(sub, style: TextStyle(fontSize: 12.5, color: t.fg4)),
+            ],
+            if (action != null) action,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _charts(BuildContext context, MetricsHistory h, List<String> labels) {
+    final t = context.nano;
+    final cpuPeak = h.cpu.isEmpty ? 0.0 : h.cpu.reduce((a, b) => a > b ? a : b);
+    final memPeak = h.mem.isEmpty ? 0.0 : h.mem.reduce((a, b) => a > b ? a : b);
+    final m = widget.metrics;
+    String f(List<double> s) =>
+        s.isEmpty ? '0' : s.last.toStringAsFixed(s.last >= 100 ? 0 : 1);
+
+    return Column(
+      children: [
+        if (cpuPeak > 90 || memPeak > 90) ...[
+          _anomalyBanner(t, cpuPeak, memPeak),
+          const SizedBox(height: 12),
+        ],
+        _HistoryChartCard(
+          title: 'history.cpu'.tr(),
+          stat: '${(m?.cpuPercent ?? (h.cpu.isEmpty ? 0 : h.cpu.last)).toStringAsFixed(0)}%',
+          peak: cpuPeak,
+          unit: '%',
+          xLabels: labels,
+          yMax: 100,
+          series: [NanoSeries(h.cpu, t.accent, fill: true)],
+          thresholds: [NanoThreshold(90, t.crit, label: '90%')],
+        ),
+        _HistoryChartCard(
+          title: 'history.memory'.tr(),
+          stat: '${(m?.memoryPercent ?? (h.mem.isEmpty ? 0 : h.mem.last)).toStringAsFixed(0)}%',
+          peak: memPeak,
+          unit: '%',
+          xLabels: labels,
+          yMax: 100,
+          series: [NanoSeries(h.mem, t.fg2, fill: true)],
+          thresholds: [NanoThreshold(90, t.crit, label: '90%')],
+        ),
+        _HistoryChartCard(
+          title: 'history.network'.tr(),
+          stat: '↓${f(h.netRx)} ↑${f(h.netTx)}',
+          unit: ' MB/s',
+          xLabels: labels,
+          series: [
+            NanoSeries(h.netRx, t.accent, fill: true, label: 'RX'),
+            NanoSeries(h.netTx, t.warn, dashed: true, label: 'TX'),
+          ],
+        ),
+        _HistoryChartCard(
+          title: 'history.diskIo'.tr(),
+          stat: 'R ${f(h.diskRead)} · W ${f(h.diskWrite)}',
+          unit: ' MB/s',
+          xLabels: labels,
+          series: [
+            NanoSeries(h.diskRead, t.ok, fill: true, label: 'Read'),
+            NanoSeries(h.diskWrite, t.warn, dashed: true, label: 'Write'),
+          ],
+        ),
+        if (h.hasGpu)
+          _HistoryChartCard(
+            title: 'history.gpu'.tr(),
+            stat: '${h.gpuUsage.isEmpty ? 0 : h.gpuUsage.last.toStringAsFixed(0)}%',
+            unit: '%',
+            xLabels: labels,
+            yMax: 100,
+            series: [
+              NanoSeries(h.gpuUsage, t.tertiary, fill: true, label: 'Util'),
+              if (h.gpuTemp.isNotEmpty)
+                NanoSeries(h.gpuTemp, t.crit, dashed: true, label: 'Temp'),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _anomalyBanner(NanoTokens t, double cpuPeak, double memPeak) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: t.warn.withValues(alpha: 0.1),
+        border: Border.all(color: t.warn.withValues(alpha: 0.25), width: 0.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 15, color: t.warn),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('history.anomaly'.tr(),
+                    style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500, color: t.fg)),
+                if (cpuPeak > 90)
+                  Text(
+                      'history.anomalyCpu'.tr(
+                          namedArgs: {'value': cpuPeak.toStringAsFixed(0)}),
+                      style: TextStyle(fontSize: 11.5, color: t.fg3)),
+                if (memPeak > 90)
+                  Text(
+                      'history.anomalyMem'.tr(
+                          namedArgs: {'value': memPeak.toStringAsFixed(0)}),
+                      style: TextStyle(fontSize: 11.5, color: t.fg3)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-// ─── Terminal (placeholder until WS shell wiring) ────────────────────────────
-class _TerminalTab extends StatelessWidget {
-  final Agent agent;
-  const _TerminalTab({required this.agent});
+class _HistoryChartCard extends StatelessWidget {
+  final String title;
+  final String stat;
+  final double? peak;
+  final String unit;
+  final double? yMax;
+  final List<NanoSeries> series;
+  final List<NanoThreshold> thresholds;
+  final List<String> xLabels;
+  const _HistoryChartCard({
+    required this.title,
+    required this.stat,
+    required this.unit,
+    required this.series,
+    required this.xLabels,
+    this.peak,
+    this.yMax,
+    this.thresholds = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
     final t = context.nano;
-    if (agent.permissionLevel == 0) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    return NanoCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.shield_outlined, size: 32, color: t.fg4),
-              const SizedBox(height: 10),
-              Text('权限不足',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600, color: t.fg)),
-              const SizedBox(height: 6),
-              Text('该节点为只读 (L0)。需管理员提升至 L1+ 才能打开远程终端。',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: t.fg3, height: 1.4)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: t.fg3)),
+                    const SizedBox(height: 1),
+                    NanoMono(stat, size: 16, weight: FontWeight.w600, color: t.fg),
+                  ],
+                ),
+              ),
+              if (peak != null)
+                NanoBadge(
+                    'history.peak'.tr(namedArgs: {
+                      'value': peak!.toStringAsFixed(0),
+                      'unit': unit
+                    }),
+                    color: peak! > 90 ? t.crit : t.fg3),
+              if (series.length > 1) ...[
+                for (final s in series)
+                  if (s.label != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 2,
+                            color: s.color,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(s.label!,
+                              style: TextStyle(fontSize: 10.5, color: t.fg4)),
+                        ],
+                      ),
+                    ),
+              ],
             ],
           ),
-        ),
-      );
-    }
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.terminal_rounded, size: 32, color: t.fg4),
-          const SizedBox(height: 12),
-          Text('远程终端即将接入',
-              style: TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w500, color: t.fg2)),
-          const SizedBox(height: 6),
-          Text('将通过 WebSocket 连接 /ws/shell',
-              style: TextStyle(fontSize: 12.5, color: t.fg4)),
+          const SizedBox(height: 8),
+          NanoLineChart(
+            series: series,
+            unit: unit,
+            yMax: yMax,
+            thresholds: thresholds,
+            xLabels: xLabels,
+            height: 130,
+          ),
         ],
       ),
     );

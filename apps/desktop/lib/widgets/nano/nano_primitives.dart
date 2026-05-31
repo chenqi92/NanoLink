@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import '../../design/nano_tokens.dart';
 
@@ -82,13 +83,13 @@ class NanoStatusLabel extends StatelessWidget {
     switch (status) {
       case 'online':
         c = t.ok;
-        label = '在线';
+        label = 'status.online'.tr();
       case 'connecting':
         c = t.warn;
-        label = '连接中';
+        label = 'status.connecting'.tr();
       default:
         c = t.crit;
-        label = '离线';
+        label = 'status.offline'.tr();
     }
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -142,13 +143,17 @@ class NanoPermPill extends StatelessWidget {
   final int level;
   const NanoPermPill({super.key, required this.level});
 
-  static const _labels = ['只读', '基础写入', '服务控制', '系统管理'];
-
   @override
   Widget build(BuildContext context) {
     final t = context.nano;
     final c = t.permColor(level);
     final lv = level.clamp(0, 3);
+    final labels = [
+      'perm.l0'.tr(),
+      'perm.l1'.tr(),
+      'perm.l2'.tr(),
+      'perm.l3'.tr(),
+    ];
     return Container(
       height: 18,
       padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -158,7 +163,7 @@ class NanoPermPill extends StatelessWidget {
       ),
       child: Center(
         child: Text(
-          'L$lv · ${_labels[lv]}',
+          'L$lv · ${labels[lv]}',
           style: TextStyle(
             fontSize: 10.5,
             height: 1,

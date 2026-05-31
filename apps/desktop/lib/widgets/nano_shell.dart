@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../design/nano_tokens.dart';
@@ -14,16 +15,19 @@ import 'nano/nano_primitives.dart';
 class _Dest {
   final IconData icon;
   final IconData activeIcon;
-  final String label;
-  const _Dest(this.icon, this.activeIcon, this.label);
+  final String labelKey;
+  const _Dest(this.icon, this.activeIcon, this.labelKey);
+
+  String get label => labelKey.tr();
 }
 
 const _destinations = <_Dest>[
-  _Dest(Icons.grid_view_outlined, Icons.grid_view_rounded, '总览'),
-  _Dest(Icons.dns_outlined, Icons.dns_rounded, '节点'),
-  _Dest(Icons.terminal_outlined, Icons.terminal_rounded, '终端'),
-  _Dest(Icons.notifications_none_rounded, Icons.notifications_rounded, '活动'),
-  _Dest(Icons.settings_outlined, Icons.settings_rounded, '设置'),
+  _Dest(Icons.grid_view_outlined, Icons.grid_view_rounded, 'nav.overview'),
+  _Dest(Icons.dns_outlined, Icons.dns_rounded, 'nav.nodes'),
+  _Dest(Icons.terminal_outlined, Icons.terminal_rounded, 'nav.terminal'),
+  _Dest(Icons.notifications_none_rounded, Icons.notifications_rounded,
+      'nav.activity'),
+  _Dest(Icons.settings_outlined, Icons.settings_rounded, 'nav.settings'),
 ];
 
 /// Adaptive navigation shell for the redesigned mobile app.
@@ -296,7 +300,7 @@ class _Sidebar extends StatelessWidget {
                       children: [
                         Icon(Icons.auto_awesome, size: 20, color: t.accent),
                         const SizedBox(width: 12),
-                        Text('AI 助手',
+                        Text('nav.assistant'.tr(),
                             style: TextStyle(
                                 color: t.fg2, fontWeight: FontWeight.w500)),
                       ],
@@ -350,7 +354,9 @@ class _MaterialDrawer extends StatelessWidget {
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
                               color: t.fg)),
-                      Text('${provider.servers.length} 服务器',
+                      Text(
+                          'shell.servers'.tr(
+                              namedArgs: {'n': '${provider.servers.length}'}),
                           style: TextStyle(fontSize: 12, color: t.fg3)),
                     ],
                   ),
@@ -360,12 +366,12 @@ class _MaterialDrawer extends StatelessWidget {
             const SizedBox(height: 8),
             _DrawerItem(
               icon: Icons.auto_awesome,
-              label: 'AI 运维助手',
+              label: 'shell.aiAssistant'.tr(),
               onTap: onAssistant,
             ),
             _DrawerItem(
               icon: Icons.settings_outlined,
-              label: '设置',
+              label: 'shell.settings'.tr(),
               onTap: () {
                 Navigator.pop(context);
                 onSettings();
@@ -374,7 +380,7 @@ class _MaterialDrawer extends StatelessWidget {
             const Spacer(),
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text('NanoLink Mobile',
+              child: Text('shell.footer'.tr(),
                   style: TextStyle(
                       fontSize: 11,
                       color: t.fg4,

@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../design/nano_tokens.dart';
@@ -27,7 +28,7 @@ Future<void> showServerSwitchSheet(BuildContext context) {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: Text('切换服务器',
+                child: Text('serverSwitch.title'.tr(),
                     style: TextStyle(
                         fontSize: 17, fontWeight: FontWeight.w600, color: t.fg)),
               ),
@@ -73,7 +74,8 @@ Future<void> showServerSwitchSheet(BuildContext context) {
                           builder: (_) => const AddServerPage()));
                     },
                     icon: Icon(Icons.add_rounded, color: t.accent),
-                    label: Text('添加服务器', style: TextStyle(color: t.accent)),
+                    label: Text('serverSwitch.addServer'.tr(),
+                        style: TextStyle(color: t.accent)),
                     style: TextButton.styleFrom(
                       backgroundColor: t.card2,
                       padding: const EdgeInsets.symmetric(vertical: 14),

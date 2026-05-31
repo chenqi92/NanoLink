@@ -1,8 +1,18 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/models.dart';
+import '../services/notification_service.dart';
 import '../services/server_service.dart';
 import '../services/storage_service.dart';
+
+/// A critical alert pending a notification decision.
+class _PendingAlert {
+  final String category; // offline | high | disk
+  final String title;
+  final String body;
+  const _PendingAlert(this.category, this.title, this.body);
+}
 
 /// Extended server connection with connection mode info
 class ServerConnectionState {
@@ -40,8 +50,19 @@ class ServerConnectionState {
 /// Application state provider managing servers, agents and metrics
 class AppProvider extends ChangeNotifier {
   final StorageService _storageService = StorageService();
+  final NotificationService _notifications = NotificationService();
   final Map<String, ServerService> _serverServices = {};
   final Uuid _uuid = const Uuid();
+
+  // Notification preferences (persisted) + alert-dedup state.
+  static const _kNotifyOffline = 'notify_offline';
+  static const _kNotifyHigh = 'notify_high';
+  static const _kNotifyDisk = 'notify_disk';
+  bool notifyOffline = true;
+  bool notifyHigh = true;
+  bool notifyDisk = true;
+  final Set<String> _activeAlerts = {};
+  bool _alertsSeeded = false;
 
   List<ServerConnection> _servers = [];
   Map<String, ConnectionMode> _connectionModes = {};
@@ -101,6 +122,16 @@ class AppProvider extends ChangeNotifier {
     return null;
   }
 
+  /// The live [ServerService] for a given server connection, if connected.
+  ServerService? serviceForServer(String serverId) => _serverServices[serverId];
+
+  /// The live [ServerService] that owns [agentId] (used for remote shell, etc.).
+  ServerService? serviceForAgent(String agentId) {
+    final agent = agentById(agentId);
+    if (agent == null) return null;
+    return _serverServices[agent.serverId];
+  }
+
   /// Get connection mode for a server
   ConnectionMode getConnectionMode(String serverId) {
     return _connectionModes[serverId] ?? ConnectionMode.disconnected;
@@ -116,10 +147,29 @@ class AppProvider extends ChangeNotifier {
     return _connectionModes.values.contains(ConnectionMode.httpPolling);
   }
 
+  /// Update a notification preference and persist it.
+  Future<void> setNotifyPref(String key, bool value) async {
+    switch (key) {
+      case _kNotifyOffline:
+        notifyOffline = value;
+      case _kNotifyHigh:
+        notifyHigh = value;
+      case _kNotifyDisk:
+        notifyDisk = value;
+    }
+    await _storageService.setBool(key, value);
+    notifyListeners();
+  }
+
   /// Initialize the provider
   Future<void> init() async {
     _isLoading = true;
     notifyListeners();
+
+    notifyOffline = await _storageService.getBool(_kNotifyOffline);
+    notifyHigh = await _storageService.getBool(_kNotifyHigh);
+    notifyDisk = await _storageService.getBool(_kNotifyDisk);
+    await _notifications.init();
 
     _servers = await _storageService.getServers();
 
@@ -234,12 +284,85 @@ class AppProvider extends ChangeNotifier {
     _allAgents.removeWhere((a) => a.serverId == serverId);
     // Add new agents
     _allAgents.addAll(agents);
+    _evaluateAlerts();
     notifyListeners();
   }
 
   void _updateMetricsFromServer(Map<String, AgentMetrics> metrics) {
     _allMetrics.addAll(metrics);
+    _evaluateAlerts();
     notifyListeners();
+  }
+
+  /// Detect newly-appeared critical alert conditions across all agents and fire
+  /// a local notification for each (honoring the per-category toggles). The
+  /// first pass only seeds the active set so existing alerts don't all fire on
+  /// launch.
+  void _evaluateAlerts() {
+    final current = <String, _PendingAlert>{};
+    for (final a in _allAgents) {
+      final host = a.hostname;
+      if (!a.isOnline) {
+        current['offline:${a.id}'] = _PendingAlert(
+          'offline',
+          tr('alerts.nodeOffline', namedArgs: {'host': host}),
+          tr('alerts.nodeOfflineDetail'),
+        );
+        continue;
+      }
+      final m = _allMetrics[a.id];
+      if (m == null) continue;
+      if (m.cpuPercent > 90) {
+        current['cpu:${a.id}'] = _PendingAlert(
+          'high',
+          tr('alerts.cpuPressure', namedArgs: {'host': host}),
+          tr('alerts.usageDetail',
+              namedArgs: {'value': m.cpuPercent.toStringAsFixed(0)}),
+        );
+      }
+      if (m.memoryPercent > 90) {
+        current['mem:${a.id}'] = _PendingAlert(
+          'high',
+          tr('alerts.memPressure', namedArgs: {'host': host}),
+          tr('alerts.usageDetail',
+              namedArgs: {'value': m.memoryPercent.toStringAsFixed(0)}),
+        );
+      }
+      for (final d in m.disks) {
+        if (d.usagePercent > 90) {
+          current['disk:${a.id}:${d.mountPoint}'] = _PendingAlert(
+            'disk',
+            tr('alerts.diskFull', namedArgs: {'host': host}),
+            tr('alerts.diskDetail', namedArgs: {
+              'mount': d.mountPoint,
+              'value': d.usagePercent.toStringAsFixed(0)
+            }),
+          );
+        }
+      }
+    }
+
+    if (!_alertsSeeded) {
+      _activeAlerts
+        ..clear()
+        ..addAll(current.keys);
+      _alertsSeeded = true;
+      return;
+    }
+
+    for (final entry in current.entries) {
+      if (_activeAlerts.contains(entry.key)) continue;
+      final p = entry.value;
+      final enabled = switch (p.category) {
+        'offline' => notifyOffline,
+        'disk' => notifyDisk,
+        _ => notifyHigh,
+      };
+      if (enabled) _notifications.show(entry.key, p.title, p.body);
+    }
+    _activeAlerts
+      ..clear()
+      ..addAll(current.keys);
   }
 
   void _updateServerConnectionStatus(String serverId, ConnectionStatus status) {
