@@ -9,6 +9,7 @@ import { RealtimeTab } from "@/components/monitor/realtime"
 import { HistoryTab } from "@/components/monitor/HistoryTab"
 import { TerminalTab } from "@/components/monitor/TerminalTab"
 import { OnDemandTab } from "@/components/monitor/OnDemandTab"
+import { ProcessesTab, DockerTab, AgentLogsTab } from "@/components/monitor/AgentDataTabs"
 import { agentStatus, osFamily } from "@/lib/format"
 
 type Tab = "realtime" | "history" | "processes" | "services" | "docker" | "files" | "logs" | "terminal"
@@ -119,11 +120,11 @@ export function AgentDetailScreen() {
           (m ? <RealtimeTab m={m} history={hist} /> : <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{status === "online" ? t("common.loading") : t("mon.offlineNoHistory")}</div>)}
         {tab === "history" && <HistoryTab agentId={a.id} />}
         {tab === "terminal" && <TerminalTab agentId={a.id} permission={a.permission} />}
-        {tab === "processes" && <OnDemandTab agentId={a.id} host={a.hostname} kind="processes" icon={I.cpu({ size: 24 })} disabled={status !== "online"} />}
+        {tab === "processes" && <ProcessesTab agentId={a.id} />}
         {tab === "services" && <OnDemandTab agentId={a.id} host={a.hostname} kind="services" icon={I.bolt({ size: 24 })} disabled={status !== "online"} />}
-        {tab === "docker" && <OnDemandTab agentId={a.id} host={a.hostname} kind="docker" icon={I.disk({ size: 24 })} disabled={status !== "online"} />}
+        {tab === "docker" && <DockerTab agentId={a.id} />}
         {tab === "files" && <OnDemandTab agentId={a.id} host={a.hostname} kind="files" icon={I.audit({ size: 24 })} disabled={status !== "online"} />}
-        {tab === "logs" && <OnDemandTab agentId={a.id} host={a.hostname} kind="logs" icon={I.audit({ size: 24 })} disabled={status !== "online"} />}
+        {tab === "logs" && <AgentLogsTab agentId={a.id} permission={a.permission} />}
       </div>
     </div>
   )

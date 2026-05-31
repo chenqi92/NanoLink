@@ -282,7 +282,15 @@
     "onDemandDesc": "该视图按需从节点拉取实时数据。点击下方按钮向 {{host}} 请求最新快照。",
     "requestFromAgent": "向节点请求",
     "requestSent": "请求已发送至节点",
-    "requestFailed": "请求失败"
+    "requestFailed": "请求失败",
+    "pid": "PID",
+    "command": "命令",
+    "image": "镜像",
+    "created": "创建于",
+    "state": "状态",
+    "noProcesses": "未返回进程",
+    "noContainers": "无容器",
+    "search": "搜索…"
   },
   "acc": {
     "refresh": "刷新",

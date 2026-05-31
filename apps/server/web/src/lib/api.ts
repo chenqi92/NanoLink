@@ -322,11 +322,64 @@ export const agentsApi = {
     api.post<{ status: string }>(`/agents/${id}/command`, { type: "shell", command }),
 }
 
+// Structured command results (protojson camelCase) returned by the agent
+export interface AgentProcess {
+  pid: number
+  name: string
+  user: string
+  cpuPercent: number
+  memoryBytes: number
+  status: string
+  startTime: number
+}
+export interface AgentContainer {
+  id: string
+  name: string
+  image: string
+  status: string
+  state: string
+  created: string
+}
+export interface AgentPackage {
+  name: string
+  version: string
+  description?: string
+  architecture?: string
+  installedSize?: number
+  updateAvailable?: boolean
+  newVersion?: string
+  repository?: string
+  packageManager?: string
+}
+export interface AgentLogEntry {
+  timestamp?: string
+  level?: string
+  source?: string
+  message: string
+}
+export interface AgentLogResult {
+  lines?: AgentLogEntry[]
+  totalLines?: number
+  logSource?: string
+}
+export interface CommandResultData {
+  commandId: string
+  success: boolean
+  output?: string
+  error?: string
+  processes?: AgentProcess[]
+  containers?: AgentContainer[]
+  packages?: AgentPackage[]
+  logResult?: AgentLogResult
+}
+
 export const commandsApi = {
-  send: (agentId: string, body: { type: string; target?: string; params?: Record<string, unknown> }) =>
+  send: (agentId: string, body: { type: string; target?: string; params?: Record<string, string> }) =>
     api.post<{ status: string; commandId: string }>(`/agents/${agentId}/command`, body),
   dataRequest: (agentId: string, requestType: string, target?: string) =>
     api.post<{ success: boolean; message?: string }>(`/agents/${agentId}/data-request`, { requestType, target }),
+  result: (agentId: string, commandId: string) =>
+    api.get<CommandResultData | { status: "pending" }>(`/agents/${agentId}/command/${commandId}/result`),
 }
 
 export const metricsApi = {

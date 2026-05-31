@@ -276,7 +276,15 @@
     "onDemandDesc": "This view streams live data from the agent on demand. Trigger a request to fetch the latest snapshot from {{host}}.",
     "requestFromAgent": "Request from agent",
     "requestSent": "Request sent to agent",
-    "requestFailed": "Request failed"
+    "requestFailed": "Request failed",
+    "pid": "PID",
+    "command": "Command",
+    "image": "Image",
+    "created": "Created",
+    "state": "State",
+    "noProcesses": "No processes returned",
+    "noContainers": "No containers",
+    "search": "Search…"
   },
   "acc": {
     "refresh": "Refresh",
