@@ -1,6 +1,9 @@
 import { useTranslation } from "react-i18next"
 import { useRouter } from "@/store/router"
 import { Placeholder } from "./Placeholder"
+import { DashboardScreen } from "./DashboardScreen"
+import { AgentsScreen } from "./AgentsScreen"
+import { AgentDetailScreen } from "./AgentDetailScreen"
 
 // Screens are progressively replaced with real implementations across the
 // redesign nodes. Until then they render a Placeholder.
@@ -10,11 +13,11 @@ export function ScreenRouter() {
 
   switch (route.page) {
     case "dashboard":
-      return <Placeholder title={t("nav.dashboard")} />
+      return <DashboardScreen />
     case "agents":
-      return <Placeholder title={t("nav.agents")} />
+      return <AgentsScreen />
     case "agent-detail":
-      return <Placeholder title={t("agent.agentDetails")} />
+      return <AgentDetailScreen />
     case "alerts":
       return <Placeholder title={t("nav.alerts")} />
     case "assistant":
@@ -38,6 +41,6 @@ export function ScreenRouter() {
     case "settings":
       return <Placeholder title={t("nav.settings")} />
     default:
-      return <Placeholder title={t("nav.dashboard")} />
+      return <DashboardScreen />
   }
 }

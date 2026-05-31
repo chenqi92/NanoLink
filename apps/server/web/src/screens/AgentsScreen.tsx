@@ -1,0 +1,143 @@
+import { useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { I, osIcon } from "@/lib/icons"
+import { useData } from "@/contexts/DataContext"
+import { useRouter } from "@/store/router"
+import { PageHeader, EmptyState, Status, Perm } from "@/components/shell/primitives"
+import { AgentCard } from "@/components/monitor/AgentCard"
+import { agentStatus, osFamily, toneFor } from "@/lib/format"
+
+type Filter = "all" | "online" | "warn" | "offline"
+
+export function AgentsScreen() {
+  const { t } = useTranslation()
+  const { agents, metrics, refresh } = useData()
+  const { navigate } = useRouter()
+  const [filter, setFilter] = useState<Filter>("all")
+  const [view, setView] = useState<"grid" | "list">("grid")
+  const [q, setQ] = useState("")
+
+  function warnLevel(id: string): boolean {
+    const m = metrics[id]
+    if (!m) return false
+    const memPct = m.memory?.total ? (m.memory.used / m.memory.total) * 100 : 0
+    return (m.cpu?.usagePercent ?? 0) > 85 || memPct > 85 || (m.disks ?? []).some((d) => d.usagePercent > 85)
+  }
+
+  const counts = useMemo(() => {
+    let online = 0
+    let warn = 0
+    let offline = 0
+    for (const a of agents) {
+      if (agentStatus(a.lastHeartbeat) !== "online") offline++
+      else {
+        online++
+        if (warnLevel(a.id)) warn++
+      }
+    }
+    return { all: agents.length, online, warn, offline }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents, metrics])
+
+  const filtered = agents.filter((a) => {
+    const ql = q.toLowerCase()
+    if (ql && !(a.hostname.toLowerCase().includes(ql) || a.os.toLowerCase().includes(ql) || a.id.toLowerCase().includes(ql))) return false
+    const online = agentStatus(a.lastHeartbeat) === "online"
+    if (filter === "online") return online
+    if (filter === "offline") return !online
+    if (filter === "warn") return online && warnLevel(a.id)
+    return true
+  })
+
+  const chips: { k: Filter; label: string; n: number }[] = [
+    { k: "all", label: t("mon.all"), n: counts.all },
+    { k: "online", label: t("status.online"), n: counts.online },
+    { k: "warn", label: t("mon.warn"), n: counts.warn },
+    { k: "offline", label: t("status.offline"), n: counts.offline },
+  ]
+
+  return (
+    <div className="col" style={{ flex: 1, overflow: "hidden" }}>
+      <PageHeader
+        title={t("nav.agents")}
+        actions={
+          <>
+            <button className="btn btn-sm" onClick={() => refresh()}>{I.refresh({ size: 13 })}<span>{t("mon.refresh")}</span></button>
+            <button className="btn btn-sm btn-primary" onClick={() => navigate("tokens", { openWizard: true })}>{I.plus({ size: 13 })}<span>{t("wizard.addAgent")}</span></button>
+          </>
+        }
+      />
+      <div style={{ padding: "0 24px 24px", overflow: "auto", flex: 1 }}>
+        {/* toolbar */}
+        <div className="row gap-3" style={{ marginBottom: 14, justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div className="row gap-2" style={{ flexWrap: "wrap" }}>
+            <div className="row gap-2" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", height: 30, minWidth: 240 }}>
+              {I.search({ size: 13 })}
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("mon.searchAgents")} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "inherit", fontSize: 12 }} />
+            </div>
+            <div className="row gap-1">
+              {chips.map((c) => (
+                <button key={c.k} className="btn btn-sm" onClick={() => setFilter(c.k)} style={filter === c.k ? { background: "var(--accent)", color: "var(--accent-fg)", borderColor: "var(--accent)" } : {}}>
+                  {c.label} <span className="mono num" style={{ opacity: 0.7 }}>{c.n}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="row gap-1">
+            <button className="btn btn-sm btn-icon" onClick={() => setView("grid")} style={view === "grid" ? { background: "var(--panel-3)", color: "var(--fg)" } : {}} title={t("mon.grid")}>{I.dashboard({ size: 13 })}</button>
+            <button className="btn btn-sm btn-icon" onClick={() => setView("list")} style={view === "list" ? { background: "var(--panel-3)", color: "var(--fg)" } : {}} title={t("mon.list")}>{I.audit({ size: 13 })}</button>
+          </div>
+        </div>
+
+        {filtered.length === 0 ? (
+          <EmptyState icon={I.agents({ size: 28 })} title={t("mon.noAgents")} desc={agents.length ? undefined : t("mon.noAgentsDesc")} />
+        ) : view === "grid" ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
+            {filtered.map((a) => (
+              <AgentCard key={a.id} agent={a} metrics={metrics[a.id]} onClick={() => navigate("agent-detail", { agentId: a.id })} />
+            ))}
+          </div>
+        ) : (
+          <div className="card" style={{ overflow: "hidden" }}>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>{t("nav.agents")}</th>
+                  <th>OS</th>
+                  <th>{t("status.online")}</th>
+                  <th>CPU</th>
+                  <th>MEM</th>
+                  <th>{t("agent.version")}</th>
+                  <th>{t("admin.permissions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((a) => {
+                  const m = metrics[a.id]
+                  const cpu = m?.cpu?.usagePercent ?? 0
+                  const mem = m?.memory?.total ? (m.memory.used / m.memory.total) * 100 : 0
+                  return (
+                    <tr key={a.id} style={{ cursor: "pointer" }} onClick={() => navigate("agent-detail", { agentId: a.id })}>
+                      <td>
+                        <span className="row gap-2" style={{ alignItems: "center" }}>
+                          <span style={{ color: "var(--fg-4)" }}>{osIcon(osFamily(a.os))}</span>
+                          <span className="mono" style={{ fontWeight: 500 }}>{a.hostname}</span>
+                        </span>
+                      </td>
+                      <td className="muted">{a.os} · {a.arch}</td>
+                      <td><Status status={agentStatus(a.lastHeartbeat)} /></td>
+                      <td className="mono num" style={{ color: toneFor(cpu) ? `var(--${toneFor(cpu)})` : "var(--fg-2)" }}>{Math.round(cpu)}%</td>
+                      <td className="mono num" style={{ color: toneFor(mem) ? `var(--${toneFor(mem)})` : "var(--fg-2)" }}>{Math.round(mem)}%</td>
+                      <td className="mono dim">{a.version ? `v${a.version}` : "—"}</td>
+                      <td><Perm level={a.permission} /></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
