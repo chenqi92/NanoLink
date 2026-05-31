@@ -240,6 +240,65 @@ export const authApi = {
   register: (data: RegisterRequest) => api.post<AuthResponse>("/auth/register", data),
   me: () => api.get<User>("/auth/me"),
   logout: () => api.post<{ message: string }>("/auth/logout"),
+  changePassword: (newPassword: string) => api.put<{ message: string }>("/auth/password", { newPassword }),
+}
+
+// Server info (public)
+export interface ServerInfo {
+  version: string
+  serverUrl?: string
+  grpcPort?: number
+  wsPort?: number
+}
+export const serverApi = {
+  info: () => api.get<ServerInfo>("/server-info"),
+  health: () => api.get<{ status: string; agentCount: number }>("/health"),
+}
+
+// Audit
+export interface AuditLog {
+  id: number
+  timestamp: string | number
+  userId: number
+  agentId: string
+  commandId: string
+  durationMs: number
+  username: string
+  agentHostname: string
+  commandType: string
+  target: string
+  params: string
+  success: boolean
+  error?: string
+  ipAddress: string
+}
+export interface AuditStats {
+  totalCommands: number
+  successRate: number
+  topUsers?: { username: string; count: number }[]
+  topAgents?: { hostname: string; count: number }[]
+}
+export interface AuditQuery {
+  userId?: number
+  agentId?: string
+  commandType?: string
+  success?: boolean
+  limit?: number
+  offset?: number
+}
+export const auditApi = {
+  logs: (q: AuditQuery = {}) => {
+    const p = new URLSearchParams()
+    if (q.userId != null) p.set("userId", String(q.userId))
+    if (q.agentId) p.set("agentId", q.agentId)
+    if (q.commandType) p.set("commandType", q.commandType)
+    if (q.success != null) p.set("success", String(q.success))
+    p.set("limit", String(q.limit ?? 100))
+    if (q.offset) p.set("offset", String(q.offset))
+    return api.get<{ data: AuditLog[]; total: number }>(`/audit/logs?${p.toString()}`)
+  },
+  stats: () => api.get<AuditStats>("/audit/stats"),
+  recent: (limit = 50) => api.get<AuditLog[]>(`/audit/recent?limit=${limit}`),
 }
 
 export const agentsApi = {

@@ -1,6 +1,4 @@
-import { useTranslation } from "react-i18next"
 import { useRouter } from "@/store/router"
-import { Placeholder } from "./Placeholder"
 import { DashboardScreen } from "./DashboardScreen"
 import { AgentsScreen } from "./AgentsScreen"
 import { AgentDetailScreen } from "./AgentDetailScreen"
@@ -11,11 +9,12 @@ import { GroupsScreen } from "./GroupsScreen"
 import { PermissionsScreen } from "./PermissionsScreen"
 import { OperationsScreen } from "./OperationsScreen"
 import { LogsScreen } from "./LogsScreen"
+import { AuditScreen } from "./AuditScreen"
+import { SettingsScreen } from "./SettingsScreen"
+import { AlertsScreen } from "./AlertsScreen"
+import { AssistantScreen } from "./AssistantScreen"
 
-// Screens are progressively replaced with real implementations across the
-// redesign nodes. Until then they render a Placeholder.
 export function ScreenRouter() {
-  const { t } = useTranslation()
   const { route } = useRouter()
 
   switch (route.page) {
@@ -26,9 +25,9 @@ export function ScreenRouter() {
     case "agent-detail":
       return <AgentDetailScreen />
     case "alerts":
-      return <Placeholder title={t("nav.alerts")} />
+      return <AlertsScreen />
     case "assistant":
-      return <Placeholder title={t("nav.assistant")} />
+      return <AssistantScreen />
     case "operations":
       return <OperationsScreen />
     case "logs":
@@ -44,9 +43,9 @@ export function ScreenRouter() {
     case "permissions":
       return <PermissionsScreen />
     case "audit":
-      return <Placeholder title={t("nav.audit")} />
+      return <AuditScreen />
     case "settings":
-      return <Placeholder title={t("nav.settings")} />
+      return <SettingsScreen />
     default:
       return <DashboardScreen />
   }
