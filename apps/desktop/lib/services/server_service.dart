@@ -58,6 +58,17 @@ class ServerSummary {
   }
 }
 
+/// Result of generating a device pairing token (`POST /api/devices/token`).
+class DeviceTokenResult {
+  /// Base64(JSON) payload to render as a QR code (embeds server URL + token).
+  final String qrData;
+
+  /// 6-digit manual pairing code.
+  final String pairingCode;
+
+  const DeviceTokenResult({required this.qrData, required this.pairingCode});
+}
+
 /// Parsed historical metrics for one agent, shaped for the history charts.
 ///
 /// Handles both backend response shapes (DB-aggregated and in-memory): each
@@ -680,6 +691,33 @@ class ServerService {
       return _errorMessage(response);
     } catch (e) {
       return e.toString();
+    }
+  }
+
+  /// Generate a device pairing token + QR payload (`POST /api/devices/token`).
+  /// Requires an account-authenticated (JWT) connection. Returns `null` on
+  /// failure (e.g. device-token-only connections cannot generate codes).
+  Future<DeviceTokenResult?> generateDeviceToken({String? serverName}) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/devices/token')),
+            headers: _headers,
+            body: jsonEncode(
+                {if (serverName != null) 'serverName': serverName}),
+          )
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return DeviceTokenResult(
+          qrData: data['qrData'] as String? ?? '',
+          pairingCode: data['pairingCode'] as String? ?? '',
+        );
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[Pairing] generate error: $e');
+      return null;
     }
   }
 

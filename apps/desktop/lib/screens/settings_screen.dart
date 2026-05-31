@@ -8,6 +8,7 @@ import '../widgets/nano/nano_card.dart';
 import '../widgets/nano/nano_primitives.dart';
 import 'add_server_page.dart';
 import 'assistant_screen.dart';
+import 'device_pairing_screen.dart';
 import 'server_detail_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -129,27 +130,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
           NanoSectionLabel('工具', grouped: true),
           NanoCard(
-            child: NanoListRow(
-              divider: false,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const AssistantScreen())),
-              leading: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [t.accent, t.tertiary]),
-                  borderRadius: BorderRadius.circular(7),
+            child: Column(
+              children: [
+                NanoListRow(
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const AssistantScreen())),
+                  leading: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [t.accent, t.tertiary]),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: const Icon(Icons.auto_awesome,
+                        color: Colors.white, size: 15),
+                  ),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    NanoBadge('MCP'),
+                    const SizedBox(width: 8),
+                    Icon(Icons.chevron_right_rounded, color: t.fg4),
+                  ]),
+                  child: Text('AI 运维助手',
+                      style: TextStyle(fontSize: 15, color: t.fg)),
                 ),
-                child:
-                    const Icon(Icons.auto_awesome, color: Colors.white, size: 15),
-              ),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                NanoBadge('MCP'),
-                const SizedBox(width: 8),
-                Icon(Icons.chevron_right_rounded, color: t.fg4),
-              ]),
-              child: Text('AI 运维助手',
-                  style: TextStyle(fontSize: 15, color: t.fg)),
+                NanoListRow(
+                  divider: false,
+                  onTap: () => _openPairing(context, provider),
+                  leading: NanoIconBox(Icons.qr_code_rounded,
+                      size: 30, iconSize: 16, fg: t.accent),
+                  trailing: Icon(Icons.chevron_right_rounded, color: t.fg4),
+                  child: Text('配对新设备',
+                      style: TextStyle(fontSize: 15, color: t.fg)),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -206,6 +219,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  void _openPairing(BuildContext context, AppProvider provider) {
+    final full = provider.servers.where((s) => s.hasFullPermissions).toList();
+    if (full.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('生成配对码需要先用账号登录一个服务器')));
+      return;
+    }
+    final active = provider.activeServer;
+    final targetId =
+        (active != null && active.hasFullPermissions) ? active.id : full.first.id;
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => DevicePairingScreen(serverId: targetId)));
   }
 
   String _themeLabel(AppThemeMode m) {

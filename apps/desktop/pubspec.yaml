@@ -16,6 +16,7 @@ dependencies:
   web_socket_channel: ^3.0.0
   easy_localization: ^3.0.7
   mobile_scanner: ^6.0.0
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:
