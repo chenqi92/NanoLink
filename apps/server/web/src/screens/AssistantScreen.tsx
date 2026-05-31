@@ -1,20 +1,10 @@
+import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import { PageHeader, SectionPanel } from "@/components/shell/primitives"
+import { assistantApi, type FindingDTO } from "@/lib/api"
 
-interface Finding {
-  kind: "anomaly" | "warn" | "info" | "ok"
-  title: string
-  detail: string
-  actions: string[]
-}
-
-const FINDINGS: Finding[] = [
-  { kind: "anomaly", title: "ml-train-04 H100 GPU 0 sustained > 90% for 38 minutes", detail: "Likely a long-running training job. Memory pressure at 96%. Suggest checking for OOM risk.", actions: ["List processes", "GPU history", "Notify owner"] },
-  { kind: "warn", title: "db-primary-2:/var/lib/postgresql at 93% full", detail: "Disk fill at current write rate predicts < 4 days remaining. Suggest archiving WAL or extending volume.", actions: ["Archive WAL", "Open shell"] },
-  { kind: "info", title: "rpi-monitor-7 offline for 3h 12m", detail: "Earlier today reported memory pressure (88%). Likely an OOM/kernel panic.", actions: ["View history", "Reset token"] },
-  { kind: "ok", title: "edge-* fleet healthy", detail: "All edge nodes within thresholds. Mean CPU 38%, mean memory 54%.", actions: [] },
-]
+type Finding = FindingDTO
 
 const TOOLS = [
   { name: "list_agents", desc: "List all agents and status" },
@@ -31,6 +21,25 @@ const kindColor: Record<Finding["kind"], string> = { anomaly: "var(--crit)", war
 
 export function AssistantScreen() {
   const { t } = useTranslation()
+  const [findings, setFindings] = useState<Finding[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    const fetchFindings = () =>
+      assistantApi
+        .findings()
+        .then((f) => alive && setFindings(f))
+        .catch(() => {})
+        .finally(() => alive && setLoading(false))
+    fetchFindings()
+    const id = setInterval(fetchFindings, 30000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [])
+
   return (
     <div className="col" style={{ flex: 1, overflow: "hidden" }}>
       <PageHeader title={t("nav.assistant")} subtitle={t("plat.assistantSubtitle")} />
@@ -42,9 +51,10 @@ export function AssistantScreen() {
 
         <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16, alignItems: "start" }}>
           <div className="col gap-4">
-            <SectionPanel title={t("plat.findings")} icon={I.sparkle({ size: 13 })} count={FINDINGS.length}>
+            <SectionPanel title={t("plat.findings")} icon={I.sparkle({ size: 13 })} count={findings.length}>
               <div className="col gap-3">
-                {FINDINGS.map((f, i) => (
+                {loading && findings.length === 0 && <div style={{ padding: 12, color: "var(--fg-4)", fontSize: 12.5 }}><span className="dot pulse ok" /> {t("common.loading")}</div>}
+                {findings.map((f, i) => (
                   <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 12, background: "var(--panel-2)" }}>
                     <div className="row gap-2" style={{ alignItems: "flex-start" }}>
                       <div style={{ width: 26, height: 26, borderRadius: 6, background: `color-mix(in srgb, ${kindColor[f.kind]} 12%, transparent)`, color: kindColor[f.kind], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.bolt({ size: 13 })}</div>

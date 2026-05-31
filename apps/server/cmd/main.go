@@ -211,6 +211,10 @@ func main() {
 			protected.GET("/alerts/channels", alertHandler.ListChannels)
 			protected.POST("/alerts/ack/:id", alertHandler.AckAlert)
 
+			// AI assistant (metric-derived findings)
+			assistantHandler := handler.NewAssistantHandler(metricsService, agentService, database.GetDB(), sugar)
+			protected.GET("/assistant/findings", assistantHandler.Findings)
+
 			// Super admin only routes
 			admin := protected.Group("")
 			admin.Use(handler.RequireSuperAdmin())

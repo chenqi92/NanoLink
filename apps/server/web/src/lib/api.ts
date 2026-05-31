@@ -343,6 +343,18 @@ export const alertsApi = {
   deleteChannel: (id: number) => api.delete(`/alerts/channels/${id}`),
 }
 
+// AI assistant findings (metric-derived, no external LLM)
+export interface FindingDTO {
+  kind: "anomaly" | "warn" | "info" | "ok"
+  title: string
+  detail: string
+  agentId?: string
+  actions: string[]
+}
+export const assistantApi = {
+  findings: () => api.get<FindingDTO[]>("/assistant/findings"),
+}
+
 export const auditApi = {
   logs: (q: AuditQuery = {}) => {
     const p = new URLSearchParams()

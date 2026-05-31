@@ -491,6 +491,6 @@
     "tools": "MCP tools",
     "recentActivity": "Recent activity",
     "askPlaceholder": "Ask about your fleet…",
-    "assistantNote": "AI assistant backend is not wired yet — this is a design preview."
+    "assistantNote": "Findings below are computed from live metrics. The chat panel is a design preview (no LLM wired)."
   }
 }

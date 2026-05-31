@@ -497,6 +497,6 @@
     "tools": "MCP 工具",
     "recentActivity": "最近活动",
     "askPlaceholder": "询问关于你的集群…",
-    "assistantNote": "AI 助手后端尚未接入，此为设计预览。"
+    "assistantNote": "下方发现项基于实时指标计算；聊天面板为设计预览（未接入 LLM）。"
   }
 }
