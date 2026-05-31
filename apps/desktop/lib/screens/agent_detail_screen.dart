@@ -1,692 +1,513 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:easy_localization/easy_localization.dart';
+import '../design/nano_tokens.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
-import '../theme/app_theme.dart';
-import '../widgets/agent_card.dart';
+import '../utils/format.dart';
+import '../widgets/nano/nano_card.dart';
+import '../widgets/nano/nano_charts.dart';
+import '../widgets/nano/nano_primitives.dart';
+import '../widgets/agent_actions_sheet.dart';
 
-/// Detailed view of a single agent with all metrics (Glassmorphism design)
-class AgentDetailScreen extends StatelessWidget {
+/// Full agent detail: segmented Realtime / History / Terminal tabs.
+class AgentDetailScreen extends StatefulWidget {
   final Agent agent;
-
   const AgentDetailScreen({super.key, required this.agent});
 
   @override
+  State<AgentDetailScreen> createState() => _AgentDetailScreenState();
+}
+
+class _AgentDetailScreenState extends State<AgentDetailScreen> {
+  int _tab = 0; // 0 realtime, 1 history, 2 terminal
+
+  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
+    final t = context.nano;
+    final a = widget.agent;
+    final locked = a.permissionLevel == 0;
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? AppTheme.darkCard.withValues(alpha: 0.8)
-                  : AppTheme.lightCard.withValues(alpha: 0.8),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-              border: Border.all(
-                color: isDark
-                    ? AppTheme.darkBorder.withValues(alpha: 0.3)
-                    : AppTheme.lightBorder.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Icon(
-              Icons.arrow_back_rounded,
-              color: isDark ? AppTheme.darkText : AppTheme.lightText,
-              size: 20,
-            ),
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Row(
+      backgroundColor: t.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
           children: [
-            _buildOsIcon(context),
-            const SizedBox(width: AppTheme.spacingMedium),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  agent.hostname,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  '${agent.os} \u2022 ${agent.arch}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isDark
-                        ? AppTheme.darkTextSecondary
-                        : AppTheme.lightTextSecondary,
-                  ),
-                ),
-              ],
+            _header(context, a),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: _segmented(context, locked),
+            ),
+            Expanded(
+              child: Consumer<AppProvider>(
+                builder: (context, provider, _) {
+                  final m = provider.metricsFor(a.id);
+                  switch (_tab) {
+                    case 1:
+                      return _HistoryTab(agent: a, metrics: m);
+                    case 2:
+                      return _TerminalTab(agent: a);
+                    default:
+                      return _RealtimeTab(agent: a, metrics: m);
+                  }
+                },
+              ),
             ),
           ],
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: AppTheme.spacingLarge),
-            child: _buildStatusBadge(context),
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: isDark ? AppTheme.darkGradient : AppTheme.lightGradient,
-        ),
-        child: Consumer<AppProvider>(
-          builder: (context, provider, _) {
-            final metrics = provider.allMetrics[agent.id];
-
-            if (metrics == null) {
-              return _buildLoadingState(context);
-            }
-
-            return SingleChildScrollView(
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + kToolbarHeight + 20,
-                left: 20,
-                right: 20,
-                bottom: 20,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildOverviewSection(context, metrics),
-                  const SizedBox(height: AppTheme.spacingXLarge),
-                  _buildCpuMemorySection(context, metrics),
-                  const SizedBox(height: AppTheme.spacingXLarge),
-                  if (metrics.disks.isNotEmpty) ...[
-                    _buildDisksSection(context, metrics.disks),
-                    const SizedBox(height: AppTheme.spacingXLarge),
-                  ],
-                  if (metrics.networks.isNotEmpty) ...[
-                    _buildNetworkSection(context, metrics.networks),
-                    const SizedBox(height: AppTheme.spacingXLarge),
-                  ],
-                  if (metrics.gpus.isNotEmpty) ...[
-                    _buildGpuSection(context, metrics.gpus),
-                    const SizedBox(height: AppTheme.spacingXLarge),
-                  ],
-                  if (metrics.npus.isNotEmpty) ...[
-                    _buildNpuSection(context, metrics.npus),
-                    const SizedBox(height: AppTheme.spacingXLarge),
-                  ],
-                  if (metrics.userSessions.isNotEmpty) ...[
-                    _buildUserSessionsSection(context, metrics.userSessions),
-                    const SizedBox(height: AppTheme.spacingXLarge),
-                  ],
-                  if (metrics.systemInfo != null) ...[
-                    _buildSystemInfoSection(context, metrics.systemInfo!),
-                  ],
-                  const SizedBox(height: AppTheme.spacingXLarge),
-                ],
-              ),
-            );
-          },
-        ),
       ),
     );
   }
 
-  Widget _buildOsIcon(BuildContext context) {
+  Widget _header(BuildContext context, Agent a) {
+    final t = context.nano;
     return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            _getOsColor(agent.os).withValues(alpha: 0.2),
-            _getOsColor(agent.os).withValues(alpha: 0.1),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-        border: Border.all(
-          color: _getOsColor(agent.os).withValues(alpha: 0.3),
-        ),
-      ),
-      child: Icon(
-        _getOsIcon(agent.os),
-        color: _getOsColor(agent.os),
-        size: 20,
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacingMedium,
-        vertical: AppTheme.spacingSmall,
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppTheme.successGreen.withValues(alpha: 0.2),
-            AppTheme.successGreen.withValues(alpha: 0.1),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-        border: Border.all(
-          color: AppTheme.successGreen.withValues(alpha: 0.3),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const StatusIndicator(isOnline: true, size: 8),
-          const SizedBox(width: AppTheme.spacingSmall),
-          Text(
-            'common.online'.tr(),
-            style: TextStyle(
-              color: AppTheme.successGreen,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoadingState(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Center(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryBlue.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: SizedBox(
-              width: 32,
-              height: 32,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                color: AppTheme.primaryBlue,
-              ),
-            ),
-          ),
-          const SizedBox(height: AppTheme.spacingLarge),
-          Text(
-            'metrics.loadingMetrics'.tr(),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: isDark
-                  ? AppTheme.darkTextSecondary
-                  : AppTheme.lightTextSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(BuildContext context, String title, {IconData? icon}) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Row(
-      children: [
-        if (icon != null) ...[
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryBlue.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-            ),
-            child: Icon(icon, size: 16, color: AppTheme.primaryBlue),
-          ),
-          const SizedBox(width: AppTheme.spacingMedium),
-        ],
-        Text(
-          title,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGlassCard(BuildContext context, {required Widget child}) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.all(AppTheme.spacingLarge),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                      AppTheme.darkCard.withValues(alpha: 0.8),
-                      AppTheme.darkCard.withValues(alpha: 0.6),
-                    ]
-                  : [
-                      AppTheme.lightCard.withValues(alpha: 0.9),
-                      AppTheme.lightCard.withValues(alpha: 0.7),
-                    ],
-            ),
-            borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-            border: Border.all(
-              color: isDark
-                  ? AppTheme.darkBorder.withValues(alpha: 0.3)
-                  : AppTheme.lightBorder.withValues(alpha: 0.5),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOverviewSection(BuildContext context, AgentMetrics metrics) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle(context, 'metrics.overview'.tr(), icon: Icons.dashboard_rounded),
-        const SizedBox(height: AppTheme.spacingMedium),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final cardWidth = (constraints.maxWidth - AppTheme.spacingMedium * 3) / 4;
-            final adjustedWidth = cardWidth < 160
-                ? (constraints.maxWidth - AppTheme.spacingMedium) / 2
-                : cardWidth;
-
-            return Wrap(
-              spacing: AppTheme.spacingMedium,
-              runSpacing: AppTheme.spacingMedium,
-              children: [
-                _buildOverviewCard(
-                  context,
-                  width: adjustedWidth,
-                  icon: Icons.memory,
-                  label: 'metrics.cpu'.tr(),
-                  value: Formatter.percent(metrics.cpuPercent),
-                  color: AppTheme.primaryBlue,
-                  percent: metrics.cpuPercent,
-                ),
-                _buildOverviewCard(
-                  context,
-                  width: adjustedWidth,
-                  icon: Icons.storage_rounded,
-                  label: 'metrics.memory'.tr(),
-                  value: Formatter.bytes(metrics.memory.used),
-                  subtitle: 'of ${Formatter.bytes(metrics.memory.total)}',
-                  color: AppTheme.successGreen,
-                  percent: metrics.memoryPercent,
-                ),
-                _buildOverviewCard(
-                  context,
-                  width: adjustedWidth,
-                  icon: Icons.folder_open,
-                  label: 'metrics.disk'.tr(),
-                  value: Formatter.percent(metrics.diskPercent),
-                  color: AppTheme.warningYellow,
-                  percent: metrics.diskPercent,
-                ),
-                _buildOverviewCard(
-                  context,
-                  width: adjustedWidth,
-                  icon: Icons.wifi,
-                  label: 'metrics.network'.tr(),
-                  value: '\u2193${Formatter.bytesPerSec(metrics.networkIn)}',
-                  subtitle: '\u2191${Formatter.bytesPerSec(metrics.networkOut)}',
-                  color: AppTheme.infoCyan,
-                ),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildOverviewCard(
-    BuildContext context, {
-    required double width,
-    required IconData icon,
-    required String label,
-    required String value,
-    String? subtitle,
-    required Color color,
-    double? percent,
-  }) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-        child: Container(
-          width: width,
-          padding: const EdgeInsets.all(AppTheme.spacingLarge),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                      AppTheme.darkCard.withValues(alpha: 0.7),
-                      AppTheme.darkCard.withValues(alpha: 0.5),
-                    ]
-                  : [
-                      AppTheme.lightCard.withValues(alpha: 0.9),
-                      AppTheme.lightCard.withValues(alpha: 0.7),
-                    ],
-            ),
-            borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-            border: Border.all(
-              color: isDark
-                  ? AppTheme.darkBorder.withValues(alpha: 0.3)
-                  : AppTheme.lightBorder.withValues(alpha: 0.5),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          color.withValues(alpha: 0.2),
-                          color.withValues(alpha: 0.1),
+              IconButton(
+                icon: Icon(Icons.arrow_back_ios_new_rounded,
+                    color: t.accent, size: 20),
+                onPressed: () => Navigator.pop(context),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(Icons.more_horiz_rounded, color: t.accent),
+                onPressed: () => showAgentActionsSheet(
+                  context,
+                  agent: a,
+                  onOpenTerminal: () => setState(() => _tab = 2),
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+            child: Row(
+              children: [
+                NanoIconBox(_osIcon(a.os), size: 44, iconSize: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      NanoMono(a.hostname,
+                          size: 19, weight: FontWeight.w700, color: t.fg,
+                          overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          NanoStatusLabel(
+                              status: a.isOnline ? 'online' : 'offline'),
+                          const SizedBox(width: 8),
+                          Text('·', style: TextStyle(color: t.fg4)),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text('${a.os} · ${a.arch}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11.5, color: t.fg3)),
+                          ),
                         ],
                       ),
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                    ),
-                    child: Icon(icon, size: 18, color: color),
-                  ),
-                  const SizedBox(width: AppTheme.spacingMedium),
-                  Text(
-                    label,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: isDark
-                          ? AppTheme.darkTextSecondary
-                          : AppTheme.lightTextSecondary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppTheme.spacingMedium),
-              Text(
-                value,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: percent != null ? AppTheme.getStatusColor(percent) : null,
-                ),
-              ),
-              if (subtitle != null)
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isDark
-                        ? AppTheme.darkTextSecondary.withValues(alpha: 0.7)
-                        : AppTheme.lightTextSecondary.withValues(alpha: 0.7),
+                    ],
                   ),
                 ),
-              if (percent != null) ...[
-                const SizedBox(height: AppTheme.spacingMedium),
-                GradientProgressBar(
-                  value: percent / 100,
-                  height: 6,
-                  color: AppTheme.getStatusColor(percent),
-                ),
+                NanoPermPill(level: a.permissionLevel),
               ],
-            ],
+            ),
           ),
-        ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+            child: Row(
+              children: [
+                NanoMono('agent ${a.version ?? '—'}', size: 11, color: t.fg4),
+                const SizedBox(width: 8),
+                Text('·', style: TextStyle(color: t.fg4, fontSize: 11)),
+                const SizedBox(width: 8),
+                NanoMono('心跳 ${Fmt.ago(a.lastHeartbeat)} 前',
+                    size: 11, color: t.fg4),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildCpuMemorySection(BuildContext context, AgentMetrics metrics) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+  Widget _segmented(BuildContext context, bool locked) {
+    final t = context.nano;
+    final items = ['实时', '历史', '终端'];
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: t.card2,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < items.length; i++)
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  if (i == 2 && locked) return;
+                  setState(() => _tab = i);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _tab == i ? t.card : Colors.transparent,
+                    borderRadius: BorderRadius.circular(7),
+                    boxShadow: _tab == i
+                        ? [
+                            BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.2),
+                                blurRadius: 4)
+                          ]
+                        : null,
+                  ),
+                  child: Text(
+                    i == 2 && locked ? '终端 🔒' : items[i],
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: _tab == i ? FontWeight.w600 : FontWeight.w500,
+                      color: _tab == i
+                          ? t.fg
+                          : (i == 2 && locked ? t.fg5 : t.fg2),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+// ─── Realtime ───────────────────────────────────────────────────────────────
+class _RealtimeTab extends StatelessWidget {
+  final Agent agent;
+  final AgentMetrics? metrics;
+  const _RealtimeTab({required this.agent, required this.metrics});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nano;
+    if (!agent.isOnline || metrics == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_rounded, size: 30, color: t.fg4),
+            const SizedBox(height: 12),
+            Text('节点离线',
+                style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w600, color: t.fg2)),
+            const SizedBox(height: 6),
+            Text('最后心跳 ${Fmt.ago(agent.lastHeartbeat)} 前',
+                style: TextStyle(fontSize: 13, color: t.fg4)),
+          ],
+        ),
+      );
+    }
+    final m = metrics!;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
       children: [
-        _buildSectionTitle(context, 'metrics.cpuMemory'.tr(), icon: Icons.memory),
-        const SizedBox(height: AppTheme.spacingMedium),
-        _buildGlassCard(
-          context,
-          child: Column(
+        _cpuCard(context, m),
+        const SizedBox(height: 12),
+        _memCard(context, m),
+        if (m.disks.isNotEmpty) ...[
+          NanoSectionLabel('存储'),
+          NanoCard(
+            child: Column(
+              children: [
+                for (var i = 0; i < m.disks.length; i++)
+                  _diskTile(context, m.disks[i], i < m.disks.length - 1),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+        if (m.networks.isNotEmpty) ...[
+          NanoSectionLabel('网络接口'),
+          NanoCard(
+            child: Column(
+              children: [
+                for (var i = 0; i < m.networks.length; i++)
+                  _netTile(context, m.networks[i], i < m.networks.length - 1),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+        if (m.gpus.isNotEmpty) ...[
+          NanoSectionLabel('GPU',
+              trailing: NanoMono('${m.gpus.length} 个', size: 11, color: t.fg4)),
+          for (final g in m.gpus) ...[
+            _gpuCard(context, g),
+            const SizedBox(height: 8),
+          ],
+        ],
+        if (m.npus.isNotEmpty) ...[
+          NanoSectionLabel('AI 加速器'),
+          NanoCard(
+            child: Column(
+              children: [
+                for (var i = 0; i < m.npus.length; i++)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                        14, 12, 14, i < m.npus.length - 1 ? 4 : 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                                child: NanoMono(m.npus[i].name,
+                                    size: 13.5, weight: FontWeight.w600)),
+                            NanoMono('${m.npus[i].temperature.toStringAsFixed(0)}°C',
+                                size: 11, color: t.fg4),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        _bar(context, '利用率', m.npus[i].usagePercent,
+                            '${m.npus[i].usagePercent.toStringAsFixed(0)}%'),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+        if (m.userSessions.isNotEmpty) ...[
+          NanoSectionLabel('登录会话',
+              trailing:
+                  NanoMono('${m.userSessions.length}', size: 11, color: t.fg4)),
+          NanoCard(
+            child: Column(
+              children: [
+                for (var i = 0; i < m.userSessions.length; i++)
+                  NanoListRow(
+                    divider: i < m.userSessions.length - 1,
+                    trailing: NanoBadge(m.userSessions[i].sessionType),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        NanoMono(m.userSessions[i].username,
+                            size: 13.5, weight: FontWeight.w600),
+                        NanoMono(
+                            '${m.userSessions[i].tty} · ${m.userSessions[i].remoteHost}',
+                            size: 11,
+                            color: t.fg4),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+        if (m.systemInfo != null) ...[
+          NanoSectionLabel('系统信息'),
+          NanoCard(child: _systemInfo(context, m.systemInfo!)),
+        ],
+      ],
+    );
+  }
+
+  Widget _cpuCard(BuildContext context, AgentMetrics m) {
+    final t = context.nano;
+    final cpu = m.cpuPercent;
+    final tone = t.usageColor(cpu);
+    return NanoCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // CPU
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryBlue.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.memory_rounded, size: 13, color: t.fg3),
+                        const SizedBox(width: 5),
+                        Text('CPU',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: t.fg3)),
+                        const SizedBox(width: 6),
+                        NanoMono(
+                            '${m.cpu.coreCount}c · ${m.cpu.temperature.toStringAsFixed(0)}°C',
+                            size: 10.5,
+                            color: t.fg4),
+                      ],
                     ),
-                    child: Icon(Icons.memory, size: 18, color: AppTheme.primaryBlue),
-                  ),
-                  const SizedBox(width: AppTheme.spacingMedium),
-                  Text('metrics.cpuUsage'.tr(), style: theme.textTheme.titleSmall),
-                  const Spacer(),
-                  Text(
-                    Formatter.percent(metrics.cpuPercent),
-                    style: TextStyle(
-                      color: AppTheme.getStatusColor(metrics.cpuPercent),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppTheme.spacingMedium),
-              GradientProgressBar(
-                value: metrics.cpuPercent / 100,
-                height: 10,
-                color: AppTheme.getStatusColor(metrics.cpuPercent),
-              ),
-              if (metrics.cpu.model.isNotEmpty) ...[
-                const SizedBox(height: AppTheme.spacingSmall),
-                Text(
-                  '${metrics.cpu.model} (${metrics.cpu.coreCount} cores)',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isDark
-                        ? AppTheme.darkTextSecondary
-                        : AppTheme.lightTextSecondary,
-                  ),
-                ),
-              ],
-
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppTheme.spacingLarge),
-                child: Divider(
-                  color: isDark
-                      ? AppTheme.darkBorder.withValues(alpha: 0.3)
-                      : AppTheme.lightBorder,
+                    const SizedBox(height: 2),
+                    Text('${cpu.toStringAsFixed(0)}%',
+                        style: TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w600,
+                            height: 1.05,
+                            letterSpacing: -0.5,
+                            color: tone,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ])),
+                    if (m.cpu.model.isNotEmpty)
+                      NanoMono(m.cpu.model, size: 11, color: t.fg4,
+                          overflow: TextOverflow.ellipsis),
+                  ],
                 ),
               ),
+              NanoDonut(
+                  value: cpu,
+                  size: 72,
+                  thickness: 6,
+                  label: '${cpu.toStringAsFixed(0)}%',
+                  sub: '${m.cpu.coreCount}c'),
+            ],
+          ),
+          if (m.cpu.perCoreUsage.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            NanoCoreMatrix(
+              cores: m.cpu.perCoreUsage,
+              cols: m.cpu.perCoreUsage.length > 16 ? 16 : m.cpu.perCoreUsage.length.clamp(1, 16),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
-              // Memory
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.successGreen.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+  Widget _memCard(BuildContext context, AgentMetrics m) {
+    final t = context.nano;
+    final mem = m.memoryPercent;
+    final tone = t.usageColor(mem);
+    return NanoCard(
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.sd_storage_outlined, size: 13, color: t.fg3),
+                        const SizedBox(width: 5),
+                        Text('内存',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: t.fg3)),
+                      ],
                     ),
-                    child: Icon(Icons.storage_rounded, size: 18, color: AppTheme.successGreen),
-                  ),
-                  const SizedBox(width: AppTheme.spacingMedium),
-                  Text('metrics.memoryUsage'.tr(), style: theme.textTheme.titleSmall),
-                  const Spacer(),
-                  Text(
-                    '${Formatter.bytes(metrics.memory.used)} / ${Formatter.bytes(metrics.memory.total)}',
-                    style: TextStyle(
-                      color: AppTheme.getStatusColor(metrics.memoryPercent),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text('${mem.toStringAsFixed(0)}%',
+                        style: TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w600,
+                            height: 1.05,
+                            letterSpacing: -0.5,
+                            color: tone,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ])),
+                    NanoMono(
+                        '${Fmt.gib(m.memory.used).toStringAsFixed(1)} / ${Fmt.gib(m.memory.total).toStringAsFixed(0)} GiB',
+                        size: 11,
+                        color: t.fg4),
+                  ],
+                ),
               ),
-              const SizedBox(height: AppTheme.spacingMedium),
-              GradientProgressBar(
-                value: metrics.memoryPercent / 100,
-                height: 10,
-                color: AppTheme.getStatusColor(metrics.memoryPercent),
+              NanoDonut(
+                  value: mem,
+                  size: 72,
+                  thickness: 6,
+                  label: '${mem.toStringAsFixed(0)}%',
+                  sub: '${Fmt.gib(m.memory.total).toStringAsFixed(0)}G'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _kv(context, '已用', '${Fmt.gib(m.memory.used).toStringAsFixed(1)} GiB'),
+          _kv(context, '可用', '${Fmt.gib(m.memory.available).toStringAsFixed(1)} GiB'),
+          if (m.memory.swapTotal > 0)
+            _kv(context, 'Swap',
+                '${Fmt.gib(m.memory.swapUsed).toStringAsFixed(1)} / ${Fmt.gib(m.memory.swapTotal).toStringAsFixed(0)} GiB',
+                warn: m.memory.swapUsed / m.memory.swapTotal > 0.2),
+        ],
+      ),
+    );
+  }
+
+  Widget _diskTile(BuildContext context, DiskMetrics d, bool divider) {
+    final t = context.nano;
+    final use = d.usagePercent;
+    return Container(
+      decoration: BoxDecoration(
+        border: divider
+            ? Border(bottom: BorderSide(color: t.sep2, width: 0.5))
+            : null,
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    NanoMono(d.mountPoint,
+                        size: 14, weight: FontWeight.w600),
+                    NanoMono('${d.device} · ${d.fsType}',
+                        size: 11, color: t.fg4,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                ),
               ),
-              const SizedBox(height: AppTheme.spacingMedium),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  _buildMemoryLabel(context, 'metrics.available'.tr(), metrics.memory.available),
-                  _buildMemoryLabel(context, 'metrics.swapUsed'.tr(), metrics.memory.swapUsed),
-                  _buildMemoryLabel(context, 'metrics.swapTotal'.tr(), metrics.memory.swapTotal),
+                  Text('${use.toStringAsFixed(0)}%',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: t.usageColor(use),
+                          fontFeatures: const [FontFeature.tabularFigures()])),
+                  NanoMono(
+                      '${Fmt.gib(d.used).toStringAsFixed(0)}/${Fmt.gib(d.total).toStringAsFixed(0)} GiB',
+                      size: 11,
+                      color: t.fg4),
                 ],
               ),
             ],
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMemoryLabel(BuildContext context, String label, int value) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: isDark
-                ? AppTheme.darkTextSecondary.withValues(alpha: 0.6)
-                : AppTheme.lightTextSecondary.withValues(alpha: 0.6),
-          ),
-        ),
-        Text(
-          Formatter.bytes(value),
-          style: theme.textTheme.bodySmall?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDisksSection(BuildContext context, List<DiskMetrics> disks) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle(
-          context,
-          disks.length == 1
-              ? 'metrics.storage'.tr().replaceFirst('{}', disks.length.toString())
-              : 'metrics.storages'.tr().replaceFirst('{}', disks.length.toString()),
-          icon: Icons.folder_open,
-        ),
-        const SizedBox(height: AppTheme.spacingMedium),
-        ...disks.map((disk) => Padding(
-          padding: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
-          child: _buildDiskCard(context, disk),
-        )),
-      ],
-    );
-  }
-
-  Widget _buildDiskCard(BuildContext context, DiskMetrics disk) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final percent = disk.usagePercent;
-
-    return _buildGlassCard(
-      context,
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppTheme.warningYellow.withValues(alpha: 0.2),
-                  AppTheme.warningYellow.withValues(alpha: 0.1),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-            ),
-            child: Icon(Icons.folder_open, color: AppTheme.warningYellow, size: 24),
-          ),
-          const SizedBox(width: AppTheme.spacingLarge),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  disk.mountPoint,
-                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '${Formatter.bytes(disk.used)} / ${Formatter.bytes(disk.total)} (${disk.fsType})',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isDark
-                        ? AppTheme.darkTextSecondary
-                        : AppTheme.lightTextSecondary,
-                  ),
-                ),
-                const SizedBox(height: AppTheme.spacingSmall),
-                GradientProgressBar(
-                  value: percent / 100,
-                  height: 6,
-                  color: AppTheme.getStatusColor(percent),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppTheme.spacingLarge),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          const SizedBox(height: 8),
+          NanoMeter(value: use / 100),
+          const SizedBox(height: 6),
+          Row(
             children: [
-              Text(
-                Formatter.percent(percent),
-                style: TextStyle(
-                  color: AppTheme.getStatusColor(percent),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-              ),
-              if (disk.readBytesPerSec > 0 || disk.writeBytesPerSec > 0)
-                Text(
-                  'R: ${Formatter.bytesPerSec(disk.readBytesPerSec.toInt())}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isDark
-                        ? AppTheme.darkTextSecondary.withValues(alpha: 0.6)
-                        : AppTheme.lightTextSecondary.withValues(alpha: 0.6),
-                    fontSize: 10,
-                  ),
-                ),
+              NanoMono('R ${Fmt.rate(d.readBytesPerSec)}', size: 11, color: t.fg4),
+              const SizedBox(width: 12),
+              NanoMono('W ${Fmt.rate(d.writeBytesPerSec)}', size: 11, color: t.fg4),
             ],
           ),
         ],
@@ -694,614 +515,289 @@ class AgentDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildNetworkSection(BuildContext context, List<NetworkMetrics> networks) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle(
-          context,
-          networks.length == 1
-              ? 'metrics.networkInterface'.tr().replaceFirst('{}', networks.length.toString())
-              : 'metrics.networkInterfaces'.tr().replaceFirst('{}', networks.length.toString()),
-          icon: Icons.wifi,
-        ),
-        const SizedBox(height: AppTheme.spacingMedium),
-        _buildGlassCard(
-          context,
-          child: Column(
-            children: networks.asMap().entries.map((entry) {
-              final index = entry.key;
-              final net = entry.value;
-              return Column(
-                children: [
-                  if (index > 0)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppTheme.spacingMedium,
-                      ),
-                      child: Divider(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? AppTheme.darkBorder.withValues(alpha: 0.3)
-                            : AppTheme.lightBorder,
-                      ),
-                    ),
-                  _buildNetworkRow(context, net),
-                ],
-              );
-            }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNetworkRow(BuildContext context, NetworkMetrics net) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                (net.isUp ? AppTheme.successGreen : AppTheme.errorRed).withValues(alpha: 0.2),
-                (net.isUp ? AppTheme.successGreen : AppTheme.errorRed).withValues(alpha: 0.1),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-          ),
-          child: Icon(
-            net.isUp ? Icons.wifi : Icons.wifi_off,
-            color: net.isUp ? AppTheme.successGreen : AppTheme.errorRed,
-            size: 20,
-          ),
-        ),
-        const SizedBox(width: AppTheme.spacingMedium),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                net.interface_,
-                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              if (net.ipAddresses.isNotEmpty)
-                Text(
-                  net.ipAddresses.join(', '),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isDark
-                        ? AppTheme.darkTextSecondary
-                        : AppTheme.lightTextSecondary,
-                  ),
-                ),
-            ],
-          ),
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.arrow_downward_rounded, size: 14, color: AppTheme.successGreen),
-                const SizedBox(width: 4),
-                Text(
-                  Formatter.bytesPerSec(net.rxBytesPerSec),
-                  style: TextStyle(
-                    color: AppTheme.successGreen,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.arrow_upward_rounded, size: 14, color: AppTheme.primaryBlue),
-                const SizedBox(width: 4),
-                Text(
-                  Formatter.bytesPerSec(net.txBytesPerSec),
-                  style: TextStyle(
-                    color: AppTheme.primaryBlue,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGpuSection(BuildContext context, List<GpuMetrics> gpus) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle(context, 'metrics.gpuCount'.tr().replaceFirst('{}', gpus.length.toString()), icon: Icons.videocam_rounded),
-        const SizedBox(height: AppTheme.spacingMedium),
-        ...gpus.map((gpu) => Padding(
-          padding: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
-          child: _buildGpuCard(context, gpu),
-        )),
-      ],
-    );
-  }
-
-  Widget _buildGpuCard(BuildContext context, GpuMetrics gpu) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return _buildGlassCard(
-      context,
+  Widget _netTile(BuildContext context, NetworkMetrics n, bool divider) {
+    final t = context.nano;
+    return Container(
+      decoration: BoxDecoration(
+        border: divider
+            ? Border(bottom: BorderSide(color: t.sep2, width: 0.5))
+            : null,
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppTheme.gpuPurple.withValues(alpha: 0.2),
-                      AppTheme.gpuPurple.withValues(alpha: 0.1),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                ),
-                child: Icon(Icons.videocam_rounded, color: AppTheme.gpuPurple, size: 24),
-              ),
-              const SizedBox(width: AppTheme.spacingMedium),
+              NanoStatusDot(color: n.isUp ? t.ok : t.crit),
+              const SizedBox(width: 7),
+              NanoMono(n.interface_, size: 14, weight: FontWeight.w600),
+              const SizedBox(width: 8),
+              if (n.interfaceType.isNotEmpty) NanoBadge(n.interfaceType),
+              const Spacer(),
+              if (n.speedMbps > 0)
+                NanoMono('${(n.speedMbps / 1000).toStringAsFixed(0)} Gb/s',
+                    size: 11, color: t.fg4),
+            ],
+          ),
+          if (n.ipAddresses.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            NanoMono(n.ipAddresses.join(' · '),
+                size: 11.5, color: t.fg3, overflow: TextOverflow.ellipsis),
+          ],
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              NanoMono('↓ ${Fmt.rate(n.rxBytesPerSec)}', size: 12, color: t.fg2),
+              const SizedBox(width: 14),
+              NanoMono('↑ ${Fmt.rate(n.txBytesPerSec)}', size: 12, color: t.fg2),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _gpuCard(BuildContext context, GpuMetrics g) {
+    final t = context.nano;
+    return NanoCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      gpu.name,
-                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    if (gpu.vendor.isNotEmpty)
-                      Text(
-                        gpu.vendor,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: isDark
-                              ? AppTheme.darkTextSecondary
-                              : AppTheme.lightTextSecondary,
-                        ),
-                      ),
+                    NanoMono(g.name,
+                        size: 13.5, weight: FontWeight.w600,
+                        overflow: TextOverflow.ellipsis),
+                    if (g.driverVersion.isNotEmpty)
+                      NanoMono(g.driverVersion, size: 10.5, color: t.fg4),
                   ],
                 ),
               ),
-              if (gpu.temperature > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.spacingMedium,
-                    vertical: AppTheme.spacingSmall,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        (gpu.temperature > 80 ? AppTheme.errorRed : AppTheme.warningYellow)
-                            .withValues(alpha: 0.2),
-                        (gpu.temperature > 80 ? AppTheme.errorRed : AppTheme.warningYellow)
-                            .withValues(alpha: 0.1),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.thermostat_rounded,
-                        size: 16,
-                        color: gpu.temperature > 80 ? AppTheme.errorRed : AppTheme.warningYellow,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${gpu.temperature.toInt()}\u00B0C',
-                        style: TextStyle(
-                          color: gpu.temperature > 80 ? AppTheme.errorRed : AppTheme.warningYellow,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              NanoMono('${g.temperature.toStringAsFixed(0)}°C',
+                  size: 11,
+                  color: g.temperature > 75 ? t.warn : t.fg3),
             ],
           ),
-          const SizedBox(height: AppTheme.spacingLarge),
-
-          // Usage
-          _buildProgressRow(
-            context,
-            label: 'metrics.gpuUsage'.tr(),
-            value: gpu.usagePercent,
-            color: AppTheme.gpuPurple,
-          ),
-          const SizedBox(height: AppTheme.spacingMedium),
-
-          // VRAM
-          _buildProgressRow(
-            context,
-            label: 'metrics.vram'.tr(),
-            value: gpu.memoryPercent,
-            suffix: '${Formatter.bytes(gpu.memoryUsed)} / ${Formatter.bytes(gpu.memoryTotal)}',
-          ),
-          const SizedBox(height: AppTheme.spacingMedium),
-
-          // Additional stats
-          Wrap(
-            spacing: AppTheme.spacingLarge,
-            runSpacing: AppTheme.spacingSmall,
-            children: [
-              if (gpu.powerWatts > 0)
-                _buildStat(context, Icons.bolt, '${gpu.powerWatts}W'),
-              if (gpu.fanSpeedPercent > 0)
-                _buildStat(context, Icons.air, '${gpu.fanSpeedPercent}%'),
-              if (gpu.driverVersion.isNotEmpty)
-                _buildStat(context, Icons.info_outline, gpu.driverVersion),
-            ],
-          ),
+          const SizedBox(height: 8),
+          _bar(context, '利用率', g.usagePercent,
+              '${g.usagePercent.toStringAsFixed(0)}%'),
+          const SizedBox(height: 5),
+          if (g.memoryTotal > 0)
+            _bar(context, '显存', g.memoryPercent,
+                '${Fmt.gib(g.memoryUsed).toStringAsFixed(1)}/${Fmt.gib(g.memoryTotal).toStringAsFixed(0)} GB'),
+          if (g.powerWatts > 0) ...[
+            const SizedBox(height: 5),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('功耗', style: TextStyle(fontSize: 11.5, color: t.fg4)),
+                NanoMono('${g.powerWatts}W', size: 11.5, color: t.fg2),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildProgressRow(
-    BuildContext context, {
-    required String label,
-    required double value,
-    Color? color,
-    String? suffix,
-  }) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final statusColor = color ?? AppTheme.getStatusColor(value);
-
+  Widget _bar(BuildContext context, String label, double pct, String val) {
+    final t = context.nano;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              label,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: isDark
-                    ? AppTheme.darkTextSecondary
-                    : AppTheme.lightTextSecondary,
-              ),
-            ),
-            const Spacer(),
-            if (suffix != null) ...[
-              Text(
-                suffix,
-                style: TextStyle(
-                  color: statusColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ] else
-              Text(
-                Formatter.percent(value),
-                style: TextStyle(
-                  color: statusColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            Text(label, style: TextStyle(fontSize: 11.5, color: t.fg4)),
+            NanoMono(val, size: 11.5, color: t.fg2),
           ],
         ),
-        const SizedBox(height: 4),
-        GradientProgressBar(
-          value: value / 100,
-          height: 8,
-          color: statusColor,
-        ),
+        const SizedBox(height: 3),
+        NanoMeter(value: pct / 100),
       ],
     );
   }
 
-  Widget _buildNpuSection(BuildContext context, List<NpuMetrics> npus) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle(
-          context,
-          'metrics.npuCount'.tr().replaceFirst('{}', npus.length.toString()),
-          icon: Icons.psychology,
-        ),
-        const SizedBox(height: AppTheme.spacingMedium),
-        ...npus.map((npu) => Padding(
-          padding: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
-          child: _buildNpuCard(context, npu),
-        )),
-      ],
-    );
-  }
-
-  Widget _buildNpuCard(BuildContext context, NpuMetrics npu) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return _buildGlassCard(
-      context,
+  Widget _kv(BuildContext context, String k, String v, {bool warn = false}) {
+    final t = context.nano;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          Text(k, style: TextStyle(fontSize: 12.5, color: t.fg4)),
+          NanoMono(v, size: 12.5, color: warn ? t.warn : t.fg2),
+        ],
+      ),
+    );
+  }
+
+  Widget _systemInfo(BuildContext context, SystemInfo s) {
+    final rows = <List<String>>[
+      ['OS', '${s.osName} ${s.osVersion}'.trim()],
+      ['内核', s.kernelVersion],
+      ['运行时长', Fmt.uptime(s.uptimeSeconds)],
+      if (s.motherboardModel.isNotEmpty) ['主板', s.motherboardModel],
+      if (s.systemModel.isNotEmpty) ['整机', s.systemModel],
+      if (s.biosVersion.isNotEmpty) ['BIOS', s.biosVersion],
+    ].where((r) => r[1].trim().isNotEmpty).toList();
+    final t = context.nano;
+    return Column(
+      children: [
+        for (var i = 0; i < rows.length; i++)
           Container(
-            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppTheme.npuIndigo.withValues(alpha: 0.2),
-                  AppTheme.npuIndigo.withValues(alpha: 0.1),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+              border: i < rows.length - 1
+                  ? Border(bottom: BorderSide(color: t.sep2, width: 0.5))
+                  : null,
             ),
-            child: Icon(Icons.psychology, color: AppTheme.npuIndigo, size: 24),
-          ),
-          const SizedBox(width: AppTheme.spacingMedium),
-          Expanded(
-            child: Column(
+            padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  npu.name,
-                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                if (npu.vendor.isNotEmpty)
-                  Text(
-                    npu.vendor,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: isDark
-                          ? AppTheme.darkTextSecondary
-                          : AppTheme.lightTextSecondary,
-                    ),
-                  ),
-                const SizedBox(height: AppTheme.spacingSmall),
-                GradientProgressBar(
-                  value: npu.usagePercent / 100,
-                  height: 8,
-                  color: AppTheme.npuIndigo,
+                Text(rows[i][0], style: TextStyle(fontSize: 14, color: t.fg3)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(rows[i][1],
+                      textAlign: TextAlign.right,
+                      style: TextStyle(fontSize: 13.5, color: t.fg2)),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: AppTheme.spacingLarge),
-          Text(
-            Formatter.percent(npu.usagePercent),
-            style: TextStyle(
-              color: AppTheme.getStatusColor(npu.usagePercent),
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUserSessionsSection(BuildContext context, List<UserSession> sessions) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle(
-          context,
-          'metrics.activeUsers'.tr().replaceFirst('{}', sessions.length.toString()),
-          icon: Icons.people_rounded,
-        ),
-        const SizedBox(height: AppTheme.spacingMedium),
-        _buildGlassCard(
-          context,
-          child: Column(
-            children: sessions.asMap().entries.map((entry) {
-              final index = entry.key;
-              final session = entry.value;
-              return Column(
-                children: [
-                  if (index > 0)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppTheme.spacingMedium,
-                      ),
-                      child: Divider(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? AppTheme.darkBorder.withValues(alpha: 0.3)
-                            : AppTheme.lightBorder,
-                      ),
-                    ),
-                  _buildUserSessionRow(context, session),
-                ],
-              );
-            }).toList(),
-          ),
-        ),
       ],
     );
   }
+}
 
-  Widget _buildUserSessionRow(BuildContext context, UserSession session) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+// ─── History (placeholder until backend history wiring) ──────────────────────
+class _HistoryTab extends StatefulWidget {
+  final Agent agent;
+  final AgentMetrics? metrics;
+  const _HistoryTab({required this.agent, required this.metrics});
 
-    return Row(
+  @override
+  State<_HistoryTab> createState() => _HistoryTabState();
+}
+
+class _HistoryTabState extends State<_HistoryTab> {
+  String _range = '1h';
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nano;
+    const ranges = ['5m', '30m', '1h', '6h', '1d', '7d'];
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
       children: [
         Container(
-          width: 40,
-          height: 40,
+          padding: const EdgeInsets.all(3),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppTheme.primaryBlue.withValues(alpha: 0.2),
-                AppTheme.primaryBlue.withValues(alpha: 0.1),
-              ],
-            ),
-            shape: BoxShape.circle,
+            color: t.card2,
+            borderRadius: BorderRadius.circular(9),
           ),
-          child: Center(
-            child: Text(
-              session.username.isNotEmpty ? session.username[0].toUpperCase() : '?',
-              style: TextStyle(
-                color: AppTheme.primaryBlue,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: AppTheme.spacingMedium),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                session.username,
-                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              Text(
-                '${session.tty} \u2022 ${session.sessionType}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: isDark
-                      ? AppTheme.darkTextSecondary
-                      : AppTheme.lightTextSecondary,
+              for (final r in ranges)
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _range = r),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _range == r ? t.card : Colors.transparent,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: NanoMono(r,
+                          size: 12,
+                          color: _range == r ? t.fg : t.fg3,
+                          weight:
+                              _range == r ? FontWeight.w600 : FontWeight.w500),
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
-        if (session.remoteHost.isNotEmpty)
-          Text(
-            session.remoteHost,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: isDark
-                  ? AppTheme.darkTextSecondary
-                  : AppTheme.lightTextSecondary,
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildSystemInfoSection(BuildContext context, SystemInfo info) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle(context, 'system.systemInfo'.tr(), icon: Icons.info_outline),
-        const SizedBox(height: AppTheme.spacingMedium),
-        _buildGlassCard(
-          context,
+        const SizedBox(height: 40),
+        Center(
           child: Column(
             children: [
-              _buildInfoRow(context, 'system.os'.tr(), '${info.osName} ${info.osVersion}'),
-              _buildInfoRow(context, 'system.kernel'.tr(), info.kernelVersion),
-              _buildInfoRow(context, 'system.uptime'.tr(), Formatter.uptime(info.uptimeSeconds)),
-              if (info.systemModel.isNotEmpty)
-                _buildInfoRow(context, 'system.systemModel'.tr(), '${info.systemVendor} ${info.systemModel}'),
-              if (info.motherboardModel.isNotEmpty)
-                _buildInfoRow(context, 'system.motherboard'.tr(), '${info.motherboardVendor} ${info.motherboardModel}'),
-              if (info.biosVersion.isNotEmpty)
-                _buildInfoRow(context, 'system.bios'.tr(), info.biosVersion),
+              Icon(Icons.show_chart_rounded, color: t.fg4, size: 30),
+              const SizedBox(height: 12),
+              Text('历史曲线即将接入',
+                  style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w500, color: t.fg2)),
+              const SizedBox(height: 6),
+              Text('将从服务器拉取该节点的历史指标',
+                  style: TextStyle(fontSize: 12.5, color: t.fg4)),
             ],
           ),
         ),
       ],
     );
   }
+}
 
-  Widget _buildInfoRow(BuildContext context, String label, String value) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+// ─── Terminal (placeholder until WS shell wiring) ────────────────────────────
+class _TerminalTab extends StatelessWidget {
+  final Agent agent;
+  const _TerminalTab({required this.agent});
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: isDark
-                    ? AppTheme.darkTextSecondary
-                    : AppTheme.lightTextSecondary,
-              ),
-            ),
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nano;
+    if (agent.permissionLevel == 0) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.shield_outlined, size: 32, color: t.fg4),
+              const SizedBox(height: 10),
+              Text('权限不足',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600, color: t.fg)),
+              const SizedBox(height: 6),
+              Text('该节点为只读 (L0)。需管理员提升至 L1+ 才能打开远程终端。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: t.fg3, height: 1.4)),
+            ],
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStat(BuildContext context, IconData icon, String value) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTheme.spacingMedium,
-        vertical: AppTheme.spacingSmall,
-      ),
-      decoration: BoxDecoration(
-        color: isDark
-            ? AppTheme.darkBorder.withValues(alpha: 0.2)
-            : AppTheme.lightBorder.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-      ),
-      child: Row(
+        ),
+      );
+    }
+    return Center(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 14,
-            color: isDark
-                ? AppTheme.darkTextSecondary
-                : AppTheme.lightTextSecondary,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            value,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: isDark
-                  ? AppTheme.darkTextSecondary
-                  : AppTheme.lightTextSecondary,
-            ),
-          ),
+          Icon(Icons.terminal_rounded, size: 32, color: t.fg4),
+          const SizedBox(height: 12),
+          Text('远程终端即将接入',
+              style: TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w500, color: t.fg2)),
+          const SizedBox(height: 6),
+          Text('将通过 WebSocket 连接 /ws/shell',
+              style: TextStyle(fontSize: 12.5, color: t.fg4)),
         ],
       ),
     );
   }
+}
 
-  IconData _getOsIcon(String os) {
-    final osLower = os.toLowerCase();
-    if (osLower.contains('linux')) return Icons.terminal;
-    if (osLower.contains('windows')) return Icons.window;
-    if (osLower.contains('darwin') || osLower.contains('macos')) {
-      return Icons.laptop_mac;
-    }
-    return Icons.computer;
+IconData _osIcon(String os) {
+  final s = os.toLowerCase();
+  if (s.contains('mac') || s.contains('darwin') || s.contains('ios')) {
+    return Icons.apple;
   }
-
-  Color _getOsColor(String os) {
-    final osLower = os.toLowerCase();
-    if (osLower.contains('linux')) return Colors.orange;
-    if (osLower.contains('windows')) return AppTheme.primaryBlue;
-    if (osLower.contains('darwin') || osLower.contains('macos')) {
-      return Colors.grey;
-    }
-    return AppTheme.npuIndigo;
-  }
+  if (s.contains('win')) return Icons.window;
+  return Icons.terminal;
 }

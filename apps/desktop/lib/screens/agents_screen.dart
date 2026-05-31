@@ -1,14 +1,16 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:easy_localization/easy_localization.dart';
-import '../providers/app_provider.dart';
+import '../design/nano_tokens.dart';
 import '../models/models.dart';
-import '../theme/app_theme.dart';
-import '../widgets/agent_card.dart';
+import '../providers/app_provider.dart';
+import '../utils/format.dart';
+import '../widgets/nano/nano_card.dart';
+import '../widgets/nano/nano_primitives.dart';
+import '../widgets/nano/nano_tiles.dart';
+import '../widgets/agent_actions_sheet.dart';
 import 'agent_detail_screen.dart';
 
-/// Agents list screen with swipe actions and grid/list toggle.
+/// Node list with search + filters. Each card shows live CPU/MEM/disk meters.
 class AgentsScreen extends StatefulWidget {
   const AgentsScreen({super.key});
 
@@ -17,231 +19,317 @@ class AgentsScreen extends StatefulWidget {
 }
 
 class _AgentsScreenState extends State<AgentsScreen> {
-  bool _isGridView = true;
+  String _query = '';
+  String _filter = 'all';
+
+  bool _warn(AppProvider p, Agent a) {
+    final m = p.metricsFor(a.id);
+    if (m == null) return false;
+    return m.cpuPercent > 80 ||
+        m.memoryPercent > 80 ||
+        m.disks.any((d) => d.usagePercent > 85);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final t = context.nano;
+    return Consumer<AppProvider>(
+      builder: (context, provider, _) {
+        final all = provider.agentsForServer();
+        final filtered = all.where((a) {
+          if (_filter == 'online' && !a.isOnline) return false;
+          if (_filter == 'offline' && a.isOnline) return false;
+          if (_filter == 'warn' && !_warn(provider, a)) return false;
+          if (_query.isNotEmpty) {
+            final q = _query.toLowerCase();
+            if (!a.hostname.toLowerCase().contains(q) &&
+                !a.os.toLowerCase().contains(q)) return false;
+          }
+          return true;
+        }).toList();
 
-    return SafeArea(
-      child: Column(
-        children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-            child: Row(
-              children: [
-                Text(
-                  'nav.agents'.tr(),
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                // View Toggle
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: true, icon: Icon(Icons.grid_view_rounded)),
-                    ButtonSegment(value: false, icon: Icon(Icons.view_list_rounded)),
-                  ],
-                  selected: {_isGridView},
-                  onSelectionChanged: (value) => setState(() => _isGridView = value.first),
-                  showSelectedIcon: false,
-                  style: ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Agent List/Grid
-          Expanded(
-            child: Consumer<AppProvider>(
-              builder: (context, provider, _) {
-                if (provider.allAgents.isEmpty) {
-                  return _buildEmptyState(isDark);
-                }
-                return _isGridView
-                    ? _buildGridView(context, provider, isDark)
-                    : _buildListView(context, provider, isDark);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+        final filters = <List<dynamic>>[
+          ['all', '全部', all.length],
+          ['online', '在线', all.where((a) => a.isOnline).length],
+          ['warn', '告警', all.where((a) => _warn(provider, a)).length],
+          ['offline', '离线', all.where((a) => !a.isOnline).length],
+        ];
 
-  Widget _buildEmptyState(bool isDark) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.computer_outlined, size: 64, color: isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary),
-          const SizedBox(height: 16),
-          Text(
-            'home.noAgentsTitle'.tr(),
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'home.noAgentsDesc'.tr(),
-            style: TextStyle(color: isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGridView(BuildContext context, AppProvider provider, bool isDark) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final crossAxisCount = (constraints.maxWidth / 380).floor().clamp(1, 4);
-        return GridView.builder(
-          padding: const EdgeInsets.all(24),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            childAspectRatio: 0.95, // Taller cards to fit GPU info
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-          ),
-          itemCount: provider.allAgents.length,
-          itemBuilder: (context, index) {
-            final agent = provider.allAgents[index];
-            final metrics = provider.allMetrics[agent.id];
-            final serverName = provider.getServerName(agent.serverId);
-            return AgentCard(
-              agent: agent,
-              metrics: metrics,
-              serverName: serverName,
-              onTap: () => _openAgentDetail(context, agent),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildListView(BuildContext context, AppProvider provider, bool isDark) {
-    return ListView.separated(
-      padding: const EdgeInsets.all(24),
-      itemCount: provider.allAgents.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final agent = provider.allAgents[index];
-        final metrics = provider.allMetrics[agent.id];
-        final serverName = provider.getServerName(agent.serverId);
-        return Dismissible(
-          key: Key(agent.id),
-          direction: DismissDirection.horizontal,
-          confirmDismiss: (direction) async {
-            if (direction == DismissDirection.startToEnd) {
-              // Swipe right -> Terminal (TODO)
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Terminal for ${agent.hostname} coming soon')),
-              );
-            }
-            return false; // Don't dismiss
-          },
-          background: Container(
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.only(left: 24),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryBlue.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(Icons.terminal_rounded, color: AppTheme.primaryBlue),
-          ),
-          child: _buildListTile(context, agent, metrics, serverName, isDark),
-        );
-      },
-    );
-  }
-
-  Widget _buildListTile(BuildContext context, Agent agent, AgentMetrics? metrics, String serverName, bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? AppTheme.darkCard : AppTheme.lightCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? AppTheme.darkBorder : AppTheme.lightBorder,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _openAgentDetail(context, agent),
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                // OS Icon
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryBlue.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(_getOsIcon(agent.os), color: AppTheme.primaryBlue),
-                ),
-                const SizedBox(width: 16),
-                // Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        agent.hostname,
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+        return SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, t.isIOS ? 40 : 8, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (!t.isIOS)
+                          Builder(
+                            builder: (ctx) => Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: IconButton(
+                                icon: Icon(Icons.menu_rounded, color: t.fg),
+                                onPressed: () => Scaffold.of(ctx).openDrawer(),
+                              ),
+                            ),
+                          ),
+                        Text('节点',
+                            style: TextStyle(
+                                fontSize: t.isIOS ? 32 : 28,
+                                fontWeight: t.displayWeight,
+                                letterSpacing: t.displayTracking,
+                                color: t.fg)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // search
+                    Container(
+                      decoration: BoxDecoration(
+                        color: t.card2,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      Text(
-                        '${agent.os} • $serverName',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: isDark ? AppTheme.darkTextSecondary : AppTheme.lightTextSecondary,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Row(
+                        children: [
+                          Icon(Icons.search_rounded, size: 18, color: t.fg4),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: TextField(
+                              style: TextStyle(color: t.fg, fontSize: 15),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                border: InputBorder.none,
+                                hintText: '搜索节点、主机名、OS',
+                                hintStyle: TextStyle(color: t.fg4),
+                              ),
+                              onChanged: (v) => setState(() => _query = v),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 30,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          for (final f in filters)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: _FilterChip(
+                                label: f[1] as String,
+                                count: f[2] as int,
+                                selected: _filter == f[0],
+                                onTap: () =>
+                                    setState(() => _filter = f[0] as String),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: filtered.isEmpty
+                    ? Center(
+                        child: Text(
+                          all.isEmpty ? '该服务器暂无节点' : '没有匹配的节点',
+                          style: TextStyle(color: t.fg4, fontSize: 13.5),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (ctx, i) => _AgentCard(
+                          agent: filtered[i],
+                          metrics: provider.metricsFor(filtered[i].id),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                // Status
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: agent.isOnline ? AppTheme.successGreen : AppTheme.errorRed,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: (agent.isOnline ? AppTheme.successGreen : AppTheme.errorRed).withValues(alpha: 0.4),
-                        blurRadius: 6,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
+        );
+      },
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+  const _FilterChip(
+      {required this.label,
+      required this.count,
+      required this.selected,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nano;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? t.fg : t.card,
+          borderRadius: BorderRadius.circular(100),
+        ),
+        child: Row(
+          children: [
+            Text(label,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: selected ? t.bg : t.fg2)),
+            const SizedBox(width: 5),
+            Text('$count',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: selected ? t.bg.withValues(alpha: 0.7) : t.fg4,
+                    fontFamilyFallback: kMonoFallback)),
+          ],
         ),
       ),
     );
   }
+}
 
-  IconData _getOsIcon(String os) {
-    final osLower = os.toLowerCase();
-    if (osLower.contains('linux')) return Icons.terminal;
-    if (osLower.contains('windows')) return Icons.window;
-    if (osLower.contains('darwin') || osLower.contains('mac')) return Icons.laptop_mac;
-    return Icons.computer;
-  }
+class _AgentCard extends StatelessWidget {
+  final Agent agent;
+  final AgentMetrics? metrics;
+  const _AgentCard({required this.agent, required this.metrics});
 
-  void _openAgentDetail(BuildContext context, agent) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => AgentDetailScreen(agent: agent)),
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nano;
+    return NanoCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => AgentDetailScreen(agent: agent)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              NanoIconBox(_osIcon(agent.os)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    NanoMono(agent.hostname,
+                        size: 14, weight: FontWeight.w600, color: t.fg,
+                        overflow: TextOverflow.ellipsis),
+                    Text('${agent.os} · ${agent.arch}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11.5, color: t.fg4)),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  NanoStatusLabel(status: agent.isOnline ? 'online' : 'offline'),
+                  const SizedBox(height: 5),
+                  NanoPermPill(level: agent.permissionLevel),
+                ],
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.more_horiz_rounded, color: t.fg4, size: 20),
+                onPressed: () =>
+                    showAgentActionsSheet(context, agent: agent),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 46, right: 6, top: 4),
+            child: _summary(context),
+          ),
+        ],
+      ),
     );
   }
+
+  Widget _summary(BuildContext context) {
+    final t = context.nano;
+    final m = metrics;
+    if (!agent.isOnline || m == null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, size: 14, color: t.fg4),
+            const SizedBox(width: 6),
+            Text('离线 · 无实时数据',
+                style: TextStyle(fontSize: 12, color: t.fg4)),
+          ],
+        ),
+      );
+    }
+    final cpu = m.cpuPercent;
+    final mem = m.memoryPercent;
+    DiskMetrics? worst;
+    for (final d in m.disks) {
+      if (worst == null || d.usagePercent > worst.usagePercent) worst = d;
+    }
+    String tone(double v) => v > 90 ? 'crit' : v > 75 ? 'warn' : '';
+    return Column(
+      children: [
+        const SizedBox(height: 4),
+        NanoMetricRow(
+          icon: Icons.memory_rounded,
+          label: 'CPU',
+          pct: cpu,
+          value: '${cpu.toStringAsFixed(0)}%',
+          sub: '${m.cpu.coreCount}c',
+          tone: tone(cpu).isEmpty ? null : tone(cpu),
+        ),
+        const SizedBox(height: 6),
+        NanoMetricRow(
+          icon: Icons.sd_storage_outlined,
+          label: 'MEM',
+          pct: mem,
+          value: '${mem.toStringAsFixed(0)}%',
+          sub: '${Fmt.gib(m.memory.used).toStringAsFixed(0)}/${Fmt.gib(m.memory.total).toStringAsFixed(0)}G',
+          tone: tone(mem).isEmpty ? null : tone(mem),
+        ),
+        if (worst != null) ...[
+          const SizedBox(height: 6),
+          NanoMetricRow(
+            icon: Icons.storage_rounded,
+            label: 'DSK',
+            pct: worst.usagePercent,
+            value: '${worst.usagePercent.toStringAsFixed(0)}%',
+            sub: worst.mountPoint,
+            tone: tone(worst.usagePercent).isEmpty
+                ? null
+                : tone(worst.usagePercent),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+IconData _osIcon(String os) {
+  final s = os.toLowerCase();
+  if (s.contains('mac') || s.contains('darwin') || s.contains('ios')) {
+    return Icons.apple;
+  }
+  if (s.contains('win')) return Icons.window;
+  return Icons.terminal;
 }
