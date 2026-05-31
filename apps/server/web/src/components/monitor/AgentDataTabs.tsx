@@ -4,6 +4,18 @@ import { I } from "@/lib/icons"
 import { useAgentCommand } from "@/hooks/useAgentCommand"
 import { formatBytes, toneFor } from "@/lib/format"
 
+interface SvcInfo { name: string; status: string; sub?: string; description?: string }
+interface FileEntry { name: string; isDir: boolean; size: number; modified: number }
+
+function parseOutput<T>(output: string | undefined): T | null {
+  if (!output) return null
+  try {
+    return JSON.parse(output) as T
+  } catch {
+    return null
+  }
+}
+
 function Toolbar({ count, loading, onReload, q, setQ, extra }: { count: number; loading: boolean; onReload: () => void; q: string; setQ: (v: string) => void; extra?: React.ReactNode }) {
   const { t } = useTranslation()
   return (
@@ -111,6 +123,103 @@ export function DockerTab({ agentId }: { agentId: string }) {
 }
 
 const LEVEL_COLOR: Record<string, string> = { info: "var(--fg-3)", warn: "var(--warn)", warning: "var(--warn)", error: "var(--crit)", err: "var(--crit)", debug: "var(--fg-dim)" }
+
+export function ServicesTab({ agentId }: { agentId: string }) {
+  const { t } = useTranslation()
+  const { data, loading, error, reload } = useAgentCommand(agentId, "SERVICE_STATUS", { target: "" })
+  const [q, setQ] = useState("")
+  const parsed = parseOutput<{ services: SvcInfo[] }>(data?.output)
+  const rows = useMemo(() => {
+    const list = parsed?.services ?? []
+    const ql = q.toLowerCase()
+    return ql ? list.filter((s) => s.name.toLowerCase().includes(ql) || (s.description || "").toLowerCase().includes(ql)) : list
+  }, [parsed, q])
+
+  return (
+    <div className="col" style={{ padding: 20 }}>
+      <Toolbar count={rows.length} loading={loading} onReload={reload} q={q} setQ={setQ} />
+      <StatePanel loading={loading && !data} error={error} empty={!!data && rows.length === 0} emptyMsg={t("common.noData")} />
+      {data && rows.length > 0 && (
+        <div className="card" style={{ overflow: "auto" }}>
+          <table className="tbl" style={{ minWidth: 720 }}>
+            <thead><tr><th>{t("mon.tabServices")}</th><th>{t("acc.status")}</th><th>{t("mon.state")}</th><th>{t("dev.path")}</th></tr></thead>
+            <tbody>
+              {rows.slice(0, 400).map((s, i) => {
+                const active = /active|running/i.test(s.status) || /running/i.test(s.sub || "")
+                const failed = /fail/i.test(s.status) || /fail|dead/i.test(s.sub || "")
+                return (
+                  <tr key={s.name + i}>
+                    <td className="mono" style={{ fontWeight: 500 }}>{s.name}</td>
+                    <td><span className="row gap-2" style={{ alignItems: "center" }}><span className={`dot ${active ? "ok" : failed ? "crit" : "off"}`} /><span style={{ fontSize: 11.5, color: active ? "var(--ok)" : failed ? "var(--crit)" : "var(--fg-3)" }}>{s.status}</span></span></td>
+                    <td className="mono dim">{s.sub || "—"}</td>
+                    <td className="muted truncate" style={{ maxWidth: 360, fontSize: 11.5 }}>{s.description || "—"}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const parentDir = (p: string) => {
+  if (p === "/" || p === "") return "/"
+  const trimmed = p.replace(/\/+$/, "")
+  const idx = trimmed.lastIndexOf("/")
+  return idx <= 0 ? "/" : trimmed.slice(0, idx)
+}
+
+export function FilesTab({ agentId }: { agentId: string }) {
+  const { t } = useTranslation()
+  const [path, setPath] = useState("/var/log")
+  const [input, setInput] = useState("/var/log")
+  const { data, loading, error, reload } = useAgentCommand(agentId, "FILE_TAIL", { target: path })
+  const parsed = parseOutput<{ path: string; entries: FileEntry[] }>(data?.output)
+  const entries = parsed?.entries ?? []
+
+  function go(p: string) {
+    setPath(p)
+    setInput(p)
+  }
+
+  return (
+    <div className="col" style={{ padding: 20, gap: 12 }}>
+      <div className="row gap-2" style={{ flexWrap: "wrap" }}>
+        <button className="btn btn-sm btn-ghost btn-icon" title="Up" onClick={() => go(parentDir(path))}>{I.back({ size: 13 })}</button>
+        <div className="row gap-2" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", height: 30, flex: 1, minWidth: 220 }}>
+          {I.audit({ size: 13 })}
+          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") go(input) }} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "var(--font-mono)", fontSize: 12 }} />
+        </div>
+        <button className="btn btn-sm" onClick={() => go(input)}>{t("dev.query")}</button>
+        <button className="btn btn-sm btn-ghost" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button>
+      </div>
+      <StatePanel loading={loading && !data} error={error} empty={!!data && entries.length === 0} emptyMsg={t("common.noData")} />
+      {data && entries.length > 0 && (
+        <div className="card" style={{ overflow: "auto" }}>
+          <table className="tbl" style={{ minWidth: 600 }}>
+            <thead><tr><th>{t("dev.path")}</th><th style={{ textAlign: "right" }}>{t("dev.size")}</th><th style={{ textAlign: "right" }}>{t("dev.modified")}</th></tr></thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.name} style={e.isDir ? { cursor: "pointer" } : {}} onClick={() => e.isDir && go(`${path.replace(/\/+$/, "")}/${e.name}`)}>
+                  <td>
+                    <span className="row gap-2" style={{ alignItems: "center" }}>
+                      <span style={{ color: "var(--fg-4)" }}>{e.isDir ? I.dashboard({ size: 13 }) : I.audit({ size: 13 })}</span>
+                      <span className="mono" style={{ color: e.isDir ? "var(--fg)" : "var(--fg-2)" }}>{e.name}{e.isDir ? "/" : ""}</span>
+                    </span>
+                  </td>
+                  <td className="mono num dim" style={{ textAlign: "right", fontSize: 11 }}>{e.isDir ? "—" : formatBytes(e.size)}</td>
+                  <td className="mono dim" style={{ textAlign: "right", fontSize: 11 }}>{e.modified ? new Date(e.modified).toLocaleString() : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function AgentLogsTab({ agentId, permission }: { agentId: string; permission: number }) {
   const { t } = useTranslation()

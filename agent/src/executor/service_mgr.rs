@@ -42,10 +42,74 @@ impl ServiceExecutor {
             .await
     }
 
-    /// Get service status
+    /// Get service status. An empty target lists all services (JSON in `output`).
     pub async fn service_status(&self, service_name: &str) -> CommandResult {
+        if service_name.trim().is_empty() {
+            return self.list_services();
+        }
         self.execute_service_command(service_name, ServiceAction::Status)
             .await
+    }
+
+    /// List all services as a JSON object {"services":[{name,status,sub,description}]} in `output`.
+    fn list_services(&self) -> CommandResult {
+        info!("[AUDIT] ServiceList");
+        let mut services: Vec<serde_json::Value> = Vec::new();
+
+        #[cfg(target_os = "linux")]
+        if let Ok(out) = Command::new("systemctl")
+            .args(["list-units", "--type=service", "--all", "--no-pager", "--plain", "--no-legend"])
+            .output()
+        {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                let f: Vec<&str> = line.split_whitespace().collect();
+                if f.len() < 4 {
+                    continue;
+                }
+                let desc = f[4..].join(" ");
+                services.push(serde_json::json!({ "name": f[0], "status": f[2], "sub": f[3], "description": desc }));
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        if let Ok(out) = Command::new("launchctl").arg("list").output() {
+            for (i, line) in String::from_utf8_lossy(&out.stdout).lines().enumerate() {
+                if i == 0 {
+                    continue; // header
+                }
+                let f: Vec<&str> = line.split_whitespace().collect();
+                if f.len() < 3 {
+                    continue;
+                }
+                let running = f[0] != "-";
+                services.push(serde_json::json!({ "name": f[2], "status": if running { "active" } else { "inactive" }, "sub": if running { "running" } else { "dead" }, "description": "" }));
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        if let Ok(out) = Command::new("sc").args(["query", "type=", "service", "state=", "all"]).output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let mut name = String::new();
+            for line in text.lines() {
+                let l = line.trim();
+                if let Some(rest) = l.strip_prefix("SERVICE_NAME:") {
+                    name = rest.trim().to_string();
+                } else if l.starts_with("STATE") && !name.is_empty() {
+                    let running = l.contains("RUNNING");
+                    services.push(serde_json::json!({ "name": name.clone(), "status": if running { "active" } else { "inactive" }, "sub": if running { "running" } else { "stopped" }, "description": "" }));
+                    name.clear();
+                }
+            }
+        }
+
+        let payload = serde_json::json!({ "services": services });
+        CommandResult {
+            command_id: String::new(),
+            success: true,
+            output: payload.to_string(),
+            error: String::new(),
+            ..Default::default()
+        }
     }
 
     /// Execute a service command

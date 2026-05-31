@@ -8,8 +8,7 @@ import { Status, Perm } from "@/components/shell/primitives"
 import { RealtimeTab } from "@/components/monitor/realtime"
 import { HistoryTab } from "@/components/monitor/HistoryTab"
 import { TerminalTab } from "@/components/monitor/TerminalTab"
-import { OnDemandTab } from "@/components/monitor/OnDemandTab"
-import { ProcessesTab, DockerTab, AgentLogsTab } from "@/components/monitor/AgentDataTabs"
+import { ProcessesTab, DockerTab, AgentLogsTab, ServicesTab, FilesTab } from "@/components/monitor/AgentDataTabs"
 import { agentStatus, osFamily } from "@/lib/format"
 
 type Tab = "realtime" | "history" | "processes" | "services" | "docker" | "files" | "logs" | "terminal"
@@ -121,9 +120,9 @@ export function AgentDetailScreen() {
         {tab === "history" && <HistoryTab agentId={a.id} />}
         {tab === "terminal" && <TerminalTab agentId={a.id} permission={a.permission} />}
         {tab === "processes" && <ProcessesTab agentId={a.id} />}
-        {tab === "services" && <OnDemandTab agentId={a.id} host={a.hostname} kind="services" icon={I.bolt({ size: 24 })} disabled={status !== "online"} />}
+        {tab === "services" && <ServicesTab agentId={a.id} />}
         {tab === "docker" && <DockerTab agentId={a.id} />}
-        {tab === "files" && <OnDemandTab agentId={a.id} host={a.hostname} kind="files" icon={I.audit({ size: 24 })} disabled={status !== "online"} />}
+        {tab === "files" && <FilesTab agentId={a.id} />}
         {tab === "logs" && <AgentLogsTab agentId={a.id} permission={a.permission} />}
       </div>
     </div>

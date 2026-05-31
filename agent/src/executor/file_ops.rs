@@ -132,6 +132,50 @@ impl FileExecutor {
         }
     }
 
+    /// List directory entries as JSON in `output` (used by the dashboard file browser).
+    fn list_directory(&self, dir: &Path) -> CommandResult {
+        use std::time::UNIX_EPOCH;
+        info!("[AUDIT] FileList: {}", dir.display());
+        let read = match fs::read_dir(dir) {
+            Ok(rd) => rd,
+            Err(e) => return Self::error_result(format!("Failed to read directory: {e}")),
+        };
+        let mut entries: Vec<serde_json::Value> = Vec::new();
+        for entry in read.flatten() {
+            if entries.len() >= 2000 {
+                break;
+            }
+            let meta = entry.metadata().ok();
+            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let modified = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            entries.push(serde_json::json!({
+                "name": entry.file_name().to_string_lossy(),
+                "isDir": is_dir,
+                "size": size,
+                "modified": modified,
+            }));
+        }
+        entries.sort_by(|a, b| {
+            let ad = a["isDir"].as_bool().unwrap_or(false);
+            let bd = b["isDir"].as_bool().unwrap_or(false);
+            bd.cmp(&ad).then_with(|| a["name"].as_str().cmp(&b["name"].as_str()))
+        });
+        let payload = serde_json::json!({ "path": dir.to_string_lossy(), "entries": entries });
+        CommandResult {
+            command_id: String::new(),
+            success: true,
+            output: payload.to_string(),
+            error: String::new(),
+            ..Default::default()
+        }
+    }
+
     /// Read the tail of a file
     pub async fn tail_file(&self, path: &str, lines: usize) -> CommandResult {
         let requested_lines = lines.min(MAX_TAIL_LINES);
@@ -153,6 +197,11 @@ impl FileExecutor {
 
         if !validated_path.exists() {
             return Self::error_result(format!("File not found: {}", validated_path.display()));
+        }
+
+        // A directory path lists its entries (dashboard file browser) instead of tailing.
+        if validated_path.is_dir() {
+            return self.list_directory(&validated_path);
         }
 
         info!(
