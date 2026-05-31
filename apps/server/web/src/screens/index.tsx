@@ -9,6 +9,8 @@ import { DevicesScreen } from "./DevicesScreen"
 import { UsersScreen } from "./UsersScreen"
 import { GroupsScreen } from "./GroupsScreen"
 import { PermissionsScreen } from "./PermissionsScreen"
+import { OperationsScreen } from "./OperationsScreen"
+import { LogsScreen } from "./LogsScreen"
 
 // Screens are progressively replaced with real implementations across the
 // redesign nodes. Until then they render a Placeholder.
@@ -28,9 +30,9 @@ export function ScreenRouter() {
     case "assistant":
       return <Placeholder title={t("nav.assistant")} />
     case "operations":
-      return <Placeholder title={t("nav.operations")} />
+      return <OperationsScreen />
     case "logs":
-      return <Placeholder title={t("nav.logs")} />
+      return <LogsScreen />
     case "tokens":
       return <TokensScreen />
     case "devices":
