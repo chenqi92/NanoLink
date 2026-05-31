@@ -21,6 +21,7 @@ type AuthService struct {
 	jwtSecret    []byte
 	jwtExpire    time.Duration
 	loginLimiter *LoginRateLimiter
+	bootstrapMu  sync.Mutex
 }
 
 // JWTClaims represents JWT claims
@@ -74,14 +75,15 @@ func NewAuthService(db *gorm.DB, cfg AuthConfig, logger *zap.SugaredLogger) *Aut
 
 // Auth errors
 var (
-	ErrUserNotFound     = errors.New("user not found")
-	ErrInvalidPassword  = errors.New("invalid password")
-	ErrUserExists       = errors.New("user already exists")
-	ErrInvalidToken     = errors.New("invalid token")
-	ErrTokenExpired     = errors.New("token expired")
-	ErrPermissionDenied = errors.New("permission denied")
-	ErrWeakPassword     = errors.New("password does not meet strength requirements")
-	ErrTooManyAttempts  = errors.New("too many login attempts, please try again later")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrInvalidPassword    = errors.New("invalid password")
+	ErrUserExists         = errors.New("user already exists")
+	ErrInvalidToken       = errors.New("invalid token")
+	ErrTokenExpired       = errors.New("token expired")
+	ErrPermissionDenied   = errors.New("permission denied")
+	ErrWeakPassword       = errors.New("password does not meet strength requirements")
+	ErrTooManyAttempts    = errors.New("too many login attempts, please try again later")
+	ErrRegistrationClosed = errors.New("registration is closed")
 )
 
 // LoginRateLimiter is an in-memory per-key counter that locks out a key after
@@ -282,6 +284,44 @@ func (s *AuthService) InitSuperAdmin(username, password string) error {
 
 // RegisterUser creates a new user account
 func (s *AuthService) RegisterUser(username, password, email string) (*database.User, error) {
+	return s.registerUser(s.db, username, password, email, false)
+}
+
+// RegisterFirstSuperAdmin creates the first user as a super admin and then closes public registration.
+func (s *AuthService) RegisterFirstSuperAdmin(username, password, email string) (*database.User, error) {
+	s.bootstrapMu.Lock()
+	defer s.bootstrapMu.Unlock()
+
+	var created *database.User
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&database.User{}).Count(&count).Error; err != nil {
+			return fmt.Errorf("database error: %w", err)
+		}
+		if count > 0 {
+			return ErrRegistrationClosed
+		}
+
+		user, err := s.registerUser(tx, username, password, email, true)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&database.User{}).Count(&count).Error; err != nil {
+			return fmt.Errorf("database error: %w", err)
+		}
+		if count != 1 {
+			return ErrRegistrationClosed
+		}
+		created = user
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
+func (s *AuthService) registerUser(db *gorm.DB, username, password, email string, isSuperAdmin bool) (*database.User, error) {
 	// Validate password strength
 	if err := ValidatePasswordStrength(password); err != nil {
 		return nil, err
@@ -289,11 +329,11 @@ func (s *AuthService) RegisterUser(username, password, email string) (*database.
 
 	// Check if user exists
 	var existing database.User
-	if err := s.db.Where("username = ?", username).First(&existing).Error; err == nil {
+	if err := db.Where("username = ?", username).First(&existing).Error; err == nil {
 		return nil, ErrUserExists
 	}
 	if email != "" {
-		if err := s.db.Where("email = ?", email).First(&existing).Error; err == nil {
+		if err := db.Where("email = ?", email).First(&existing).Error; err == nil {
 			return nil, fmt.Errorf("email already registered")
 		}
 	}
@@ -308,14 +348,14 @@ func (s *AuthService) RegisterUser(username, password, email string) (*database.
 		Username:     username,
 		PasswordHash: string(hash),
 		Email:        email,
-		IsSuperAdmin: false,
+		IsSuperAdmin: isSuperAdmin,
 	}
 
-	if err := s.db.Create(user).Error; err != nil {
+	if err := db.Create(user).Error; err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	s.logger.Infof("User '%s' registered successfully", username)
+	s.logger.Infof("User '%s' registered successfully (super_admin=%v)", username, isSuperAdmin)
 	return user, nil
 }
 

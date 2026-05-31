@@ -475,7 +475,10 @@ func (s *Server) toolRequestAgentData(ctx context.Context, args map[string]inter
 	}
 
 	// Map string to proto enum
-	reqType := s.mapRequestType(requestType)
+	reqType, ok := s.mapRequestType(requestType)
+	if !ok {
+		return nil, fmt.Errorf("unknown request_type: %s", requestType)
+	}
 
 	err := s.grpcServer.RequestDataFromAgent(agentID, reqType, "")
 	if err != nil {
@@ -491,23 +494,23 @@ func (s *Server) toolRequestAgentData(ctx context.Context, args map[string]inter
 }
 
 // mapRequestType maps string to proto DataRequestType
-func (s *Server) mapRequestType(reqType string) pb.DataRequestType {
+func (s *Server) mapRequestType(reqType string) (pb.DataRequestType, bool) {
 	switch reqType {
 	case "full":
-		return pb.DataRequestType_DATA_REQUEST_FULL
+		return pb.DataRequestType_DATA_REQUEST_FULL, true
 	case "static":
-		return pb.DataRequestType_DATA_REQUEST_STATIC
+		return pb.DataRequestType_DATA_REQUEST_STATIC, true
 	case "disk_usage":
-		return pb.DataRequestType_DATA_REQUEST_DISK_USAGE
+		return pb.DataRequestType_DATA_REQUEST_DISK_USAGE, true
 	case "network_info":
-		return pb.DataRequestType_DATA_REQUEST_NETWORK_INFO
+		return pb.DataRequestType_DATA_REQUEST_NETWORK_INFO, true
 	case "user_sessions":
-		return pb.DataRequestType_DATA_REQUEST_USER_SESSIONS
+		return pb.DataRequestType_DATA_REQUEST_USER_SESSIONS, true
 	case "gpu_info":
-		return pb.DataRequestType_DATA_REQUEST_GPU_INFO
+		return pb.DataRequestType_DATA_REQUEST_GPU_INFO, true
 	case "health":
-		return pb.DataRequestType_DATA_REQUEST_HEALTH
+		return pb.DataRequestType_DATA_REQUEST_HEALTH, true
 	default:
-		return pb.DataRequestType_DATA_REQUEST_FULL
+		return pb.DataRequestType_DATA_REQUEST_FULL, false
 	}
 }

@@ -198,11 +198,8 @@ func main() {
 			protected.PATCH("/devices/:id", deviceHandler.UpdateDevice)
 			protected.DELETE("/devices/:id", deviceHandler.DeleteDevice)
 
-			// Configuration generator routes
-			configGen := handler.NewConfigGenHandler(cfg, sugar)
-			protected.POST("/config/generate", configGen.GenerateConfig)
-			protected.POST("/config/add-server", configGen.GenerateAddServerCommand)
-			protected.POST("/config/remove-server", configGen.GenerateRemoveServerCommand)
+			// Configuration generator routes are registered under the super-admin group below.
+			configGen := handler.NewConfigGenHandler(cfg, sugar, agentTokenService)
 
 			// Alerts (read + ack for authenticated users)
 			alertHandler := handler.NewAlertHandler(alertService, sugar)
@@ -259,6 +256,9 @@ func main() {
 				admin.POST("/agent-tokens/:id/regenerate", agentTokenHandler.RegenerateAgentToken)
 				admin.PUT("/agent-tokens/reorder", agentTokenHandler.ReorderAgentTokens)
 
+				admin.POST("/config/generate", configGen.GenerateConfig)
+				admin.POST("/config/add-server", configGen.GenerateAddServerCommand)
+				admin.POST("/config/remove-server", configGen.GenerateRemoveServerCommand)
 				admin.GET("/config/tokens", configGen.ListTokens)
 				admin.POST("/config/generate-token", configGen.GenerateToken)
 
@@ -394,8 +394,8 @@ func main() {
 		var transport mcp.Transport
 		switch cfg.MCP.Transport {
 		case "sse":
-			transport = mcp.NewSSETransport(fmt.Sprintf(":%d", cfg.MCP.SSEPort), sugar)
-			sugar.Infof("MCP server using SSE transport on port %d", cfg.MCP.SSEPort)
+			sugar.Fatalf("MCP SSE transport is not available yet; set mcp.transport to 'stdio'")
+			return
 		default:
 			transport = mcp.NewStdioTransport(sugar)
 			sugar.Info("MCP server using stdio transport")

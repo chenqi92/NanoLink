@@ -64,9 +64,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.authService.RegisterUser(req.Username, req.Password, req.Email)
+	user, err := h.authService.RegisterFirstSuperAdmin(req.Username, req.Password, req.Email)
 	if err != nil {
-		if err == service.ErrUserExists {
+		if errors.Is(err, service.ErrRegistrationClosed) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "registration is closed; ask a super admin to create new users"})
+			return
+		}
+		if errors.Is(err, service.ErrUserExists) {
 			c.JSON(http.StatusConflict, gin.H{"error": "username already exists"})
 			return
 		}

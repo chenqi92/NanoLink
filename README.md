@@ -279,10 +279,10 @@ This token is used to authenticate the Agent with the Server.
 
 | Where to get it | Description |
 |-----------------|-------------|
-| Server config `auth.tokens[].token` | Configured in server's `config.yaml` |
-| Admin Dashboard | Generated through the management interface |
+| Admin Dashboard | DB-backed agent token generated through the management interface |
+| Server config `auth.tokens[].token` | Optional legacy static token configured in `config.yaml` when `auth.enabled: true` |
 
-> **Important:** If `auth.enabled: false` on the server, any token value will be accepted.
+> **Important:** DB-backed agent tokens are required by default. `auth.enabled: false` only disables legacy static `auth.tokens`; arbitrary token values are still rejected.
 
 ### Step 3: Permission Level
 
@@ -379,7 +379,7 @@ NanoLink uses **two different types of tokens** for different purposes:
 
 | Token Type | Purpose | Where Configured |
 |------------|---------|------------------|
-| **Authentication Token** | Agent ↔ Server connection auth | Agent: `servers[].token`<br>Server: `auth.tokens[].token` |
+| **Authentication Token** | Agent ↔ Server connection auth | Agent: `servers[].token`<br>Server: Admin Dashboard agent tokens or legacy `auth.tokens[].token` |
 | **API Token** | Local Management API access | Agent: `management.api_token` |
 | **Shell SuperToken** | Shell command execution | Agent: `shell.super_token` |
 
@@ -391,7 +391,8 @@ Agent                                Server
   │  Connect with token="xxx"          │
   ├───────────────────────────────────►│
   │                                    │
-  │  Server checks auth.tokens[]       │
+  │  Server checks DB agent tokens     │
+  │  then legacy auth.tokens[]         │
   │  ◄─────────────────────────────────┤
   │  Returns: permission level         │
   │                                    │
@@ -559,7 +560,7 @@ Agent supports connecting to multiple servers simultaneously with dynamic add/re
 **Add a new server:**
 ```bash
 # Using install script
-sudo ./install.sh --add-server --host "second.example.com" --port 39100 --token "token2"
+sudo ./install.sh --add-server --url "second.example.com:39100" --token "token2"
 
 # Using Agent CLI
 nanolink-agent server add --host "second.example.com" --port 39100 --token "token2" --permission 1
@@ -567,6 +568,7 @@ nanolink-agent server add --host "second.example.com" --port 39100 --token "toke
 # Using Management API (hot-reload)
 curl -X POST http://localhost:9101/api/servers \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <management_token>" \
   -d '{"host":"second.example.com","port":39100,"token":"token2","permission":1}'
 ```
 
@@ -576,7 +578,7 @@ curl -X POST http://localhost:9101/api/servers \
 nanolink-agent server remove --host "old.example.com" --port 39100
 
 # Using Management API
-curl -X DELETE "http://localhost:9101/api/servers?host=old.example.com&port=39100"
+curl -X DELETE -H "Authorization: Bearer <management_token>" "http://localhost:9101/api/servers?host=old.example.com&port=39100"
 ```
 
 **List configured servers:**

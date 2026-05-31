@@ -32,24 +32,24 @@ type DataRequestInput struct {
 }
 
 // mapRequestType converts string request type to proto enum
-func mapRequestType(reqType string) pb.DataRequestType {
+func mapRequestType(reqType string) (pb.DataRequestType, bool) {
 	switch reqType {
 	case "full":
-		return pb.DataRequestType_DATA_REQUEST_FULL
+		return pb.DataRequestType_DATA_REQUEST_FULL, true
 	case "static":
-		return pb.DataRequestType_DATA_REQUEST_STATIC
+		return pb.DataRequestType_DATA_REQUEST_STATIC, true
 	case "disk_usage":
-		return pb.DataRequestType_DATA_REQUEST_DISK_USAGE
+		return pb.DataRequestType_DATA_REQUEST_DISK_USAGE, true
 	case "network_info":
-		return pb.DataRequestType_DATA_REQUEST_NETWORK_INFO
+		return pb.DataRequestType_DATA_REQUEST_NETWORK_INFO, true
 	case "user_sessions":
-		return pb.DataRequestType_DATA_REQUEST_USER_SESSIONS
+		return pb.DataRequestType_DATA_REQUEST_USER_SESSIONS, true
 	case "gpu_info":
-		return pb.DataRequestType_DATA_REQUEST_GPU_INFO
+		return pb.DataRequestType_DATA_REQUEST_GPU_INFO, true
 	case "health":
-		return pb.DataRequestType_DATA_REQUEST_HEALTH
+		return pb.DataRequestType_DATA_REQUEST_HEALTH, true
 	default:
-		return pb.DataRequestType_DATA_REQUEST_FULL
+		return pb.DataRequestType_DATA_REQUEST_FULL, false
 	}
 }
 
@@ -64,7 +64,11 @@ func (h *DataRequestHandler) RequestData(c *gin.Context) {
 		return
 	}
 
-	reqType := mapRequestType(input.RequestType)
+	reqType, ok := mapRequestType(input.RequestType)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown requestType"})
+		return
+	}
 
 	err := h.grpcServer.RequestDataFromAgent(agentID, reqType, input.Target)
 	if err != nil {
@@ -93,7 +97,11 @@ func (h *DataRequestHandler) RequestDataFromAll(c *gin.Context) {
 		return
 	}
 
-	reqType := mapRequestType(input.RequestType)
+	reqType, ok := mapRequestType(input.RequestType)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown requestType"})
+		return
+	}
 
 	results := h.grpcServer.RequestDataFromAllAgents(reqType, input.Target)
 

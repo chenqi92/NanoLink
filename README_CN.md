@@ -279,10 +279,10 @@ Authentication Token:
 
 | 来源 | 说明 |
 |------|------|
-| 服务端配置 `auth.tokens[].token` | 在服务端 `config.yaml` 中配置 |
-| 管理后台 | 通过 Dashboard 界面生成 |
+| 管理后台 | 通过 Dashboard 界面生成并落库的 Agent 令牌 |
+| 服务端配置 `auth.tokens[].token` | `auth.enabled: true` 时可选的旧版静态令牌 |
 
-> **提示:** 如果服务端 `auth.enabled: false`，任何令牌值都会被接受。
+> **提示:** 默认需要使用落库的 Agent 令牌。`auth.enabled: false` 只会禁用旧版静态 `auth.tokens`，任意令牌值仍会被拒绝。
 
 ### 第三步：权限级别
 
@@ -379,7 +379,7 @@ NanoLink 使用**多种不同类型的 Token**，用途各不相同：
 
 | Token 类型 | 用途 | 配置位置 |
 |------------|------|----------|
-| **认证令牌 (Authentication Token)** | Agent ↔ Server 连接认证 | Agent: `servers[].token`<br>Server: `auth.tokens[].token` |
+| **认证令牌 (Authentication Token)** | Agent ↔ Server 连接认证 | Agent: `servers[].token`<br>Server: 管理后台 Agent 令牌或旧版 `auth.tokens[].token` |
 | **API 令牌 (API Token)** | 本地管理 API 访问 | Agent: `management.api_token` |
 | **Shell 超级令牌 (Shell SuperToken)** | Shell 命令执行 | Agent: `shell.super_token` |
 
@@ -391,7 +391,8 @@ Agent                                Server
   │  携带 token="xxx" 连接              │
   ├───────────────────────────────────►│
   │                                    │
-  │  Server 验证 auth.tokens[]          │
+  │  Server 先验证数据库 Agent 令牌      │
+  │  再验证旧版 auth.tokens[]           │
   │  ◄─────────────────────────────────┤
   │  返回：权限级别                     │
   │                                    │
@@ -559,7 +560,7 @@ Agent 支持同时连接多个服务端，可以动态添加/删除/更新服务
 **添加新服务端:**
 ```bash
 # 使用安装脚本
-sudo ./install.sh --add-server --host "second.example.com" --port 39100 --token "token2"
+sudo ./install.sh --add-server --url "second.example.com:39100" --token "token2"
 
 # 使用 Agent CLI
 nanolink-agent server add --host "second.example.com" --port 39100 --token "token2" --permission 1
@@ -567,6 +568,7 @@ nanolink-agent server add --host "second.example.com" --port 39100 --token "toke
 # 使用管理 API (热更新)
 curl -X POST http://localhost:9101/api/servers \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <management_token>" \
   -d '{"host":"second.example.com","port":39100,"token":"token2","permission":1}'
 ```
 
@@ -576,7 +578,7 @@ curl -X POST http://localhost:9101/api/servers \
 nanolink-agent server remove --host "old.example.com" --port 39100
 
 # 使用管理 API
-curl -X DELETE "http://localhost:9101/api/servers?host=old.example.com&port=39100"
+curl -X DELETE -H "Authorization: Bearer <management_token>" "http://localhost:9101/api/servers?host=old.example.com&port=39100"
 ```
 
 **查看当前服务端:**
