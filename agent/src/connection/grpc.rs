@@ -401,6 +401,26 @@ impl GrpcClient {
         let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(100);
         let request_stream = ReceiverStream::new(rx);
 
+        // Queue AgentInit as the FIRST message BEFORE opening the stream. The
+        // server blocks on Recv() for the first message before sending any
+        // response headers, so awaiting the stream open with an empty request
+        // stream would deadlock (server waits for our message, we wait for the
+        // server's headers). The bounded channel buffers it until tonic starts
+        // draining the request stream.
+        let agent_init = AgentInit {
+            agent_id: self.config.agent.agent_id.clone().unwrap_or_default(),
+            hostname: self.config.get_hostname(),
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+            agent_version: env!("CARGO_PKG_VERSION").to_string(),
+        };
+        info!("Sending AgentInit with agent_id: {}", agent_init.agent_id);
+        tx.send(MetricsStreamRequest {
+            request: Some(metrics_stream_request::Request::AgentInit(agent_init)),
+        })
+        .await
+        .context("Failed to send AgentInit")?;
+
         // Start the bidirectional stream
         let request = self.with_agent_auth(Request::new(request_stream))?;
         let response = self
@@ -410,22 +430,6 @@ impl GrpcClient {
             .context("Failed to start metrics stream")?;
 
         let mut response_stream: Streaming<MetricsStreamResponse> = response.into_inner();
-
-        // Send AgentInit as the FIRST message to identify this agent with its persistent ID
-        let agent_init = AgentInit {
-            agent_id: self.config.agent.agent_id.clone().unwrap_or_default(),
-            hostname: self.config.get_hostname(),
-            os: std::env::consts::OS.to_string(),
-            arch: std::env::consts::ARCH.to_string(),
-            agent_version: env!("CARGO_PKG_VERSION").to_string(),
-        };
-        info!("Sending AgentInit with agent_id: {}", agent_init.agent_id);
-        let init_request = MetricsStreamRequest {
-            request: Some(metrics_stream_request::Request::AgentInit(agent_init)),
-        };
-        tx.send(init_request)
-            .await
-            .context("Failed to send AgentInit")?;
 
         // Create layered collector with cleanup guard
         let (metrics_tx, mut metrics_rx) = mpsc::channel::<LayeredMetricsMessage>(100);
