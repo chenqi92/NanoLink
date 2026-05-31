@@ -3,8 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'providers/app_provider.dart';
 import 'providers/theme_provider.dart';
-import 'theme/app_theme.dart';
-import 'widgets/app_shell.dart';
+import 'design/nano_theme.dart';
+import 'widgets/nano_shell.dart';
 import 'screens/server_welcome_screen.dart';
 
 void main() async {
@@ -33,12 +33,13 @@ class NanoLinkApp extends StatelessWidget {
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
+          final style = NanoTheme.styleForPlatform();
           return MaterialApp(
             title: 'NanoLink',
             debugShowCheckedModeBanner: false,
             themeMode: themeProvider.materialThemeMode,
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
+            theme: NanoTheme.build(style, Brightness.light),
+            darkTheme: NanoTheme.build(style, Brightness.dark),
             localizationsDelegates: context.localizationDelegates,
             supportedLocales: context.supportedLocales,
             locale: context.locale,
@@ -55,7 +56,7 @@ class NanoLinkApp extends StatelessWidget {
                   return const ServerWelcomeScreen();
                 }
                 // Otherwise show main app shell
-                return const AppShell();
+                return const NanoShell();
               },
             ),
           );

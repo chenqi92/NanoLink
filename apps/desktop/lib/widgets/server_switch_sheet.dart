@@ -1,0 +1,92 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../design/nano_tokens.dart';
+import '../providers/app_provider.dart';
+import '../screens/add_server_page.dart';
+import 'nano/nano_card.dart';
+import 'nano/nano_primitives.dart';
+
+/// Bottom sheet to switch the active server (and jump to add-server).
+Future<void> showServerSwitchSheet(BuildContext context) {
+  final t = context.nano;
+  return showModalBottomSheet(
+    context: context,
+    backgroundColor: t.card,
+    showDragHandle: true,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(t.isIOS ? 16 : 28)),
+    ),
+    builder: (ctx) {
+      final provider = ctx.watch<AppProvider>();
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text('切换服务器',
+                    style: TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w600, color: t.fg)),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final s in provider.servers)
+                      NanoListRow(
+                        onTap: () {
+                          provider.setActiveServer(s.id);
+                          Navigator.pop(ctx);
+                        },
+                        leading: NanoIconBox(Icons.dns_rounded),
+                        trailing: s.id == provider.activeServerId
+                            ? Icon(Icons.check_rounded, color: t.accent, size: 20)
+                            : NanoStatusDot(
+                                color: s.isConnected ? t.ok : t.crit,
+                                pulse: s.isConnected),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(s.name,
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    color: t.fg)),
+                            NanoMono(s.url, size: 12, color: t.fg4),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => const AddServerPage()));
+                    },
+                    icon: Icon(Icons.add_rounded, color: t.accent),
+                    label: Text('添加服务器', style: TextStyle(color: t.accent)),
+                    style: TextButton.styleFrom(
+                      backgroundColor: t.card2,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(t.fieldRadius)),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}

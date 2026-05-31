@@ -49,12 +49,57 @@ class AppProvider extends ChangeNotifier {
   Map<String, AgentMetrics> _allMetrics = {};
   Map<String, ServerSummary> _serverSummaries = {};
   bool _isLoading = true;
+  String? _activeServerId;
 
   List<ServerConnection> get servers => _servers;
   List<Agent> get allAgents => _allAgents;
   Map<String, AgentMetrics> get allMetrics => _allMetrics;
   Map<String, ServerSummary> get serverSummaries => _serverSummaries;
   bool get isLoading => _isLoading;
+
+  /// Currently focused server (defaults to the first one). The new mobile
+  /// design exposes a server switcher; screens scope their data to this server.
+  String? get activeServerId {
+    if (_activeServerId != null &&
+        _servers.any((s) => s.id == _activeServerId)) {
+      return _activeServerId;
+    }
+    return _servers.isNotEmpty ? _servers.first.id : null;
+  }
+
+  ServerConnection? get activeServer {
+    final id = activeServerId;
+    if (id == null) return null;
+    for (final s in _servers) {
+      if (s.id == id) return s;
+    }
+    return null;
+  }
+
+  void setActiveServer(String serverId) {
+    _activeServerId = serverId;
+    notifyListeners();
+  }
+
+  /// Agents that belong to [serverId] (or the active server when null).
+  List<Agent> agentsForServer([String? serverId]) {
+    final id = serverId ?? activeServerId;
+    if (id == null) return const [];
+    return _allAgents.where((a) => a.serverId == id).toList();
+  }
+
+  /// Connection mode of the active server.
+  ConnectionMode get activeConnectionMode =>
+      getConnectionMode(activeServerId ?? '');
+
+  AgentMetrics? metricsFor(String agentId) => _allMetrics[agentId];
+
+  Agent? agentById(String agentId) {
+    for (final a in _allAgents) {
+      if (a.id == agentId) return a;
+    }
+    return null;
+  }
 
   /// Get connection mode for a server
   ConnectionMode getConnectionMode(String serverId) {
