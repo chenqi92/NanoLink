@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../design/nano_tokens.dart';
 import '../models/models.dart';
 import '../providers/app_provider.dart';
+import '../services/server_service.dart';
 import '../utils/format.dart';
 import '../widgets/nano/nano_card.dart';
 import '../widgets/nano/nano_charts.dart';
@@ -680,7 +681,35 @@ class _RealtimeTab extends StatelessWidget {
   }
 }
 
-// ─── History (placeholder until backend history wiring) ──────────────────────
+// ─── History (real data from /api/metrics/history) ──────────────────────────
+class _RangeSpec {
+  final Duration window;
+  final String interval;
+  final List<String> labels;
+  const _RangeSpec(this.window, this.interval, this.labels);
+}
+
+const _kRanges = ['5m', '30m', '1h', '6h', '1d', '7d'];
+
+_RangeSpec _rangeSpec(String r) {
+  switch (r) {
+    case '5m':
+      return const _RangeSpec(
+          Duration(minutes: 5), '1m', ['-5m', '-2m', 'now']);
+    case '30m':
+      return const _RangeSpec(
+          Duration(minutes: 30), '1m', ['-30m', '-15m', 'now']);
+    case '6h':
+      return const _RangeSpec(Duration(hours: 6), '5m', ['-6h', '-3h', 'now']);
+    case '1d':
+      return const _RangeSpec(Duration(days: 1), '1h', ['-24h', '-12h', 'now']);
+    case '7d':
+      return const _RangeSpec(Duration(days: 7), '1h', ['-7d', '-3d', 'now']);
+    default:
+      return const _RangeSpec(Duration(hours: 1), 'auto', ['-60m', '-30m', 'now']);
+  }
+}
+
 class _HistoryTab extends StatefulWidget {
   final Agent agent;
   final AgentMetrics? metrics;
@@ -692,11 +721,35 @@ class _HistoryTab extends StatefulWidget {
 
 class _HistoryTabState extends State<_HistoryTab> {
   String _range = '1h';
+  Future<MetricsHistory?>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    final svc = context.read<AppProvider>().serviceForAgent(widget.agent.id);
+    final spec = _rangeSpec(_range);
+    setState(() {
+      _future = svc == null
+          ? Future.value(null)
+          : svc.fetchMetricsHistory(widget.agent.id,
+              window: spec.window, interval: spec.interval);
+    });
+  }
+
+  void _pick(String r) {
+    if (r == _range) return;
+    _range = r;
+    _load();
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.nano;
-    const ranges = ['5m', '30m', '1h', '6h', '1d', '7d'];
+    final spec = _rangeSpec(_range);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
       children: [
@@ -708,10 +761,10 @@ class _HistoryTabState extends State<_HistoryTab> {
           ),
           child: Row(
             children: [
-              for (final r in ranges)
+              for (final r in _kRanges)
                 Expanded(
                   child: GestureDetector(
-                    onTap: () => setState(() => _range = r),
+                    onTap: () => _pick(r),
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       alignment: Alignment.center,
@@ -730,22 +783,266 @@ class _HistoryTabState extends State<_HistoryTab> {
             ],
           ),
         ),
-        const SizedBox(height: 40),
-        Center(
-          child: Column(
-            children: [
-              Icon(Icons.show_chart_rounded, color: t.fg4, size: 30),
-              const SizedBox(height: 12),
-              Text('历史曲线即将接入',
-                  style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w500, color: t.fg2)),
-              const SizedBox(height: 6),
-              Text('将从服务器拉取该节点的历史指标',
-                  style: TextStyle(fontSize: 12.5, color: t.fg4)),
-            ],
-          ),
+        const SizedBox(height: 12),
+        FutureBuilder<MetricsHistory?>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return _hint(t,
+                  child: const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2)));
+            }
+            final h = snap.data;
+            if (h == null) {
+              return _hint(t,
+                  icon: Icons.cloud_off_rounded,
+                  title: '无法加载历史数据',
+                  sub: '请检查与服务器的连接',
+                  action: _retry(t));
+            }
+            if (h.isEmpty) {
+              return _hint(t,
+                  icon: Icons.show_chart_rounded,
+                  title: '无可用历史数据',
+                  sub: '该时间范围内暂无采集记录');
+            }
+            return _charts(context, h, spec.labels);
+          },
         ),
       ],
+    );
+  }
+
+  Widget _retry(NanoTokens t) => Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: TextButton.icon(
+          onPressed: _load,
+          icon: Icon(Icons.refresh_rounded, size: 16, color: t.accent),
+          label: Text('重试', style: TextStyle(color: t.accent)),
+        ),
+      );
+
+  Widget _hint(NanoTokens t,
+      {IconData? icon,
+      String? title,
+      String? sub,
+      Widget? child,
+      Widget? action}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (child != null) child,
+            if (icon != null) Icon(icon, color: t.fg4, size: 30),
+            if (title != null) ...[
+              const SizedBox(height: 12),
+              Text(title,
+                  style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w500, color: t.fg2)),
+            ],
+            if (sub != null) ...[
+              const SizedBox(height: 6),
+              Text(sub, style: TextStyle(fontSize: 12.5, color: t.fg4)),
+            ],
+            if (action != null) action,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _charts(BuildContext context, MetricsHistory h, List<String> labels) {
+    final t = context.nano;
+    final cpuPeak = h.cpu.isEmpty ? 0.0 : h.cpu.reduce((a, b) => a > b ? a : b);
+    final memPeak = h.mem.isEmpty ? 0.0 : h.mem.reduce((a, b) => a > b ? a : b);
+    final m = widget.metrics;
+    String f(List<double> s) =>
+        s.isEmpty ? '0' : s.last.toStringAsFixed(s.last >= 100 ? 0 : 1);
+
+    return Column(
+      children: [
+        if (cpuPeak > 90 || memPeak > 90) ...[
+          _anomalyBanner(t, cpuPeak, memPeak),
+          const SizedBox(height: 12),
+        ],
+        _HistoryChartCard(
+          title: 'CPU',
+          stat: '${(m?.cpuPercent ?? (h.cpu.isEmpty ? 0 : h.cpu.last)).toStringAsFixed(0)}%',
+          peak: cpuPeak,
+          unit: '%',
+          xLabels: labels,
+          yMax: 100,
+          series: [NanoSeries(h.cpu, t.accent, fill: true)],
+          thresholds: [NanoThreshold(90, t.crit, label: '90%')],
+        ),
+        _HistoryChartCard(
+          title: '内存',
+          stat: '${(m?.memoryPercent ?? (h.mem.isEmpty ? 0 : h.mem.last)).toStringAsFixed(0)}%',
+          peak: memPeak,
+          unit: '%',
+          xLabels: labels,
+          yMax: 100,
+          series: [NanoSeries(h.mem, t.fg2, fill: true)],
+          thresholds: [NanoThreshold(90, t.crit, label: '90%')],
+        ),
+        _HistoryChartCard(
+          title: '网络',
+          stat: '↓${f(h.netRx)} ↑${f(h.netTx)}',
+          unit: ' MB/s',
+          xLabels: labels,
+          series: [
+            NanoSeries(h.netRx, t.accent, fill: true, label: 'RX'),
+            NanoSeries(h.netTx, t.warn, dashed: true, label: 'TX'),
+          ],
+        ),
+        _HistoryChartCard(
+          title: '磁盘 IO',
+          stat: 'R ${f(h.diskRead)} · W ${f(h.diskWrite)}',
+          unit: ' MB/s',
+          xLabels: labels,
+          series: [
+            NanoSeries(h.diskRead, t.ok, fill: true, label: 'Read'),
+            NanoSeries(h.diskWrite, t.warn, dashed: true, label: 'Write'),
+          ],
+        ),
+        if (h.hasGpu)
+          _HistoryChartCard(
+            title: 'GPU',
+            stat: '${h.gpuUsage.isEmpty ? 0 : h.gpuUsage.last.toStringAsFixed(0)}%',
+            unit: '%',
+            xLabels: labels,
+            yMax: 100,
+            series: [
+              NanoSeries(h.gpuUsage, t.tertiary, fill: true, label: 'Util'),
+              if (h.gpuTemp.isNotEmpty)
+                NanoSeries(h.gpuTemp, t.crit, dashed: true, label: 'Temp'),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _anomalyBanner(NanoTokens t, double cpuPeak, double memPeak) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: t.warn.withValues(alpha: 0.1),
+        border: Border.all(color: t.warn.withValues(alpha: 0.25), width: 0.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 15, color: t.warn),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('近期异常',
+                    style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500, color: t.fg)),
+                if (cpuPeak > 90)
+                  Text('· CPU 峰值 ${cpuPeak.toStringAsFixed(0)}%',
+                      style: TextStyle(fontSize: 11.5, color: t.fg3)),
+                if (memPeak > 90)
+                  Text('· 内存峰值 ${memPeak.toStringAsFixed(0)}%',
+                      style: TextStyle(fontSize: 11.5, color: t.fg3)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryChartCard extends StatelessWidget {
+  final String title;
+  final String stat;
+  final double? peak;
+  final String unit;
+  final double? yMax;
+  final List<NanoSeries> series;
+  final List<NanoThreshold> thresholds;
+  final List<String> xLabels;
+  const _HistoryChartCard({
+    required this.title,
+    required this.stat,
+    required this.unit,
+    required this.series,
+    required this.xLabels,
+    this.peak,
+    this.yMax,
+    this.thresholds = const [],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nano;
+    return NanoCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: t.fg3)),
+                    const SizedBox(height: 1),
+                    NanoMono(stat, size: 16, weight: FontWeight.w600, color: t.fg),
+                  ],
+                ),
+              ),
+              if (peak != null)
+                NanoBadge('峰值 ${peak!.toStringAsFixed(0)}$unit',
+                    color: peak! > 90 ? t.crit : t.fg3),
+              if (series.length > 1) ...[
+                for (final s in series)
+                  if (s.label != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 2,
+                            color: s.color,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(s.label!,
+                              style: TextStyle(fontSize: 10.5, color: t.fg4)),
+                        ],
+                      ),
+                    ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          NanoLineChart(
+            series: series,
+            unit: unit,
+            yMax: yMax,
+            thresholds: thresholds,
+            xLabels: xLabels,
+            height: 130,
+          ),
+        ],
+      ),
     );
   }
 }

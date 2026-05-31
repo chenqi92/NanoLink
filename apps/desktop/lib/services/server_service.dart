@@ -58,6 +58,126 @@ class ServerSummary {
   }
 }
 
+/// Parsed historical metrics for one agent, shaped for the history charts.
+///
+/// Handles both backend response shapes (DB-aggregated and in-memory): each
+/// sample exposes `cpu.usagePercent`, `memory.used/total`, `networks[].rx/tx`,
+/// `disks[].read/write` and optional `gpus[]`. Network/disk rates are converted
+/// to MB/s; memory is normalised to a percentage.
+class MetricsHistory {
+  final List<DateTime> times;
+  final List<double> cpu; // %
+  final List<double> mem; // %
+  final List<double> netRx; // MB/s
+  final List<double> netTx; // MB/s
+  final List<double> diskRead; // MB/s
+  final List<double> diskWrite; // MB/s
+  final List<double> gpuUsage; // %
+  final List<double> gpuTemp; // °C (may be empty)
+
+  const MetricsHistory({
+    required this.times,
+    required this.cpu,
+    required this.mem,
+    required this.netRx,
+    required this.netTx,
+    required this.diskRead,
+    required this.diskWrite,
+    required this.gpuUsage,
+    required this.gpuTemp,
+  });
+
+  bool get isEmpty => cpu.isEmpty;
+  bool get hasGpu => gpuUsage.any((v) => v > 0) && gpuUsage.isNotEmpty;
+
+  factory MetricsHistory.parse(List<dynamic> raw) {
+    final times = <DateTime>[];
+    final cpu = <double>[];
+    final mem = <double>[];
+    final netRx = <double>[];
+    final netTx = <double>[];
+    final diskRead = <double>[];
+    final diskWrite = <double>[];
+    final gpuUsage = <double>[];
+    final gpuTemp = <double>[];
+    var anyGpuTemp = false;
+
+    double n(dynamic v) => (v as num?)?.toDouble() ?? 0;
+    const mb = 1000000.0;
+
+    for (final e in raw) {
+      if (e is! Map) continue;
+      final m = e.cast<String, dynamic>();
+
+      times.add(_parseTime(m['timestamp']));
+
+      cpu.add(n((m['cpu'] as Map?)?['usagePercent']));
+
+      final memMap = (m['memory'] as Map?) ?? const {};
+      final total = n(memMap['total']);
+      final used = n(memMap['used']);
+      mem.add(total > 0 ? (used / total * 100).clamp(0, 100).toDouble() : 0);
+
+      double rx = 0, tx = 0;
+      for (final net in (m['networks'] as List? ?? const [])) {
+        if (net is Map) {
+          rx += n(net['rxBytesPerSec']);
+          tx += n(net['txBytesPerSec']);
+        }
+      }
+      netRx.add(rx / mb);
+      netTx.add(tx / mb);
+
+      double rd = 0, wr = 0;
+      for (final d in (m['disks'] as List? ?? const [])) {
+        if (d is Map) {
+          rd += n(d['readBytesPerSec']);
+          wr += n(d['writeBytesPerSec']);
+        }
+      }
+      diskRead.add(rd / mb);
+      diskWrite.add(wr / mb);
+
+      final gpus = m['gpus'] as List? ?? const [];
+      if (gpus.isNotEmpty && gpus.first is Map) {
+        final g = (gpus.first as Map);
+        gpuUsage.add(n(g['usagePercent']));
+        if (g.containsKey('temperature')) {
+          anyGpuTemp = true;
+          gpuTemp.add(n(g['temperature']));
+        } else {
+          gpuTemp.add(0);
+        }
+      } else {
+        gpuUsage.add(0);
+        gpuTemp.add(0);
+      }
+    }
+
+    return MetricsHistory(
+      times: times,
+      cpu: cpu,
+      mem: mem,
+      netRx: netRx,
+      netTx: netTx,
+      diskRead: diskRead,
+      diskWrite: diskWrite,
+      gpuUsage: gpuUsage,
+      gpuTemp: anyGpuTemp ? gpuTemp : const [],
+    );
+  }
+
+  static DateTime _parseTime(dynamic v) {
+    if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
+    if (v is String) {
+      final ms = int.tryParse(v);
+      if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
+      return DateTime.tryParse(v) ?? DateTime.now();
+    }
+    return DateTime.now();
+  }
+}
+
 /// Server version information from welcome message
 class ServerInfo {
   final String version;
@@ -466,6 +586,46 @@ class ServerService {
       return {};
     } catch (e) {
       return {};
+    }
+  }
+
+  /// Fetch historical metrics for [agentId] over the trailing [window].
+  ///
+  /// Sends `start`/`end` (Unix ms) so the server uses its DB-aggregated path
+  /// when persistence is available, otherwise it falls back to the in-memory
+  /// ring buffer (same JSON shape, capped by [limit]).
+  Future<MetricsHistory?> fetchMetricsHistory(
+    String agentId, {
+    required Duration window,
+    String interval = 'auto',
+    int limit = 240,
+  }) async {
+    try {
+      final end = DateTime.now();
+      final start = end.subtract(window);
+      final uri = Uri.parse(_buildUrl('/metrics/history')).replace(
+        queryParameters: {
+          'agentId': agentId,
+          'start': '${start.millisecondsSinceEpoch}',
+          'end': '${end.millisecondsSinceEpoch}',
+          'interval': interval,
+          'limit': '$limit',
+        },
+      );
+      final response =
+          await _client.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is List) return MetricsHistory.parse(data);
+        return const MetricsHistory(
+          times: [], cpu: [], mem: [], netRx: [], netTx: [],
+          diskRead: [], diskWrite: [], gpuUsage: [], gpuTemp: [],
+        );
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[History] fetch error: $e');
+      return null;
     }
   }
 

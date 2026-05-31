@@ -100,6 +100,10 @@ class NanoLineChart extends StatelessWidget {
   final String unit;
   final List<NanoThreshold> thresholds;
   final bool grid;
+
+  /// Exactly three x-axis labels (start / mid / now). Defaults to a 60-minute
+  /// window when omitted.
+  final List<String> xLabels;
   const NanoLineChart({
     super.key,
     required this.series,
@@ -109,6 +113,7 @@ class NanoLineChart extends StatelessWidget {
     this.unit = '%',
     this.thresholds = const [],
     this.grid = true,
+    this.xLabels = const ['-60m', '-30m', 'now'],
   });
 
   @override
@@ -125,6 +130,7 @@ class NanoLineChart extends StatelessWidget {
           unit: unit,
           thresholds: thresholds,
           grid: grid,
+          xLabels: xLabels,
           gridColor: t.sep2,
           axisText: t.fg4,
         ),
@@ -140,6 +146,7 @@ class _LinePainter extends CustomPainter {
   final String unit;
   final List<NanoThreshold> thresholds;
   final bool grid;
+  final List<String> xLabels;
   final Color gridColor;
   final Color axisText;
   _LinePainter({
@@ -149,6 +156,7 @@ class _LinePainter extends CustomPainter {
     required this.unit,
     required this.thresholds,
     required this.grid,
+    required this.xLabels,
     required this.gridColor,
     required this.axisText,
   });
@@ -251,7 +259,7 @@ class _LinePainter extends CustomPainter {
     }
 
     // x labels
-    const labels = ['-60m', '-30m', 'now'];
+    final labels = xLabels.length >= 3 ? xLabels : const ['', '', 'now'];
     for (var i = 0; i < 3; i++) {
       final x = padL + (i / 2) * innerW;
       _text(canvas, labels[i], Offset(x, size.height - 8), axisText,
