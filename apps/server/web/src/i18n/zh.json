@@ -415,7 +415,17 @@
     "export": "导出",
     "lines2": "行",
     "query": "查询",
-    "allAgents": "全部节点"
+    "allAgents": "全部节点",
+    "addTarget": "新增目标",
+    "addPath": "新增路径",
+    "view": "查看",
+    "valid": "有效",
+    "invalid": "无效",
+    "backups": "备份",
+    "runAll": "全部检测",
+    "remove": "移除",
+    "noTargets": "暂无目标 —— 添加一个进行探测。",
+    "noConfigs": "暂无受管配置文件 —— 添加路径。"
   },
   "plat": {
     "auditSubtitle": "每一条命令、文件变更与授权操作 · 可检索",

@@ -439,6 +439,26 @@ export interface AgentFileEntry {
   size?: number
   modified?: number
 }
+export interface HealthCheckItemDTO {
+  name: string
+  passed: boolean
+  message?: string
+  durationMs?: number
+}
+export interface ConfigBackupDTO {
+  path: string
+  createdAt?: string
+  size?: number
+  checksum?: string
+}
+export interface AgentConfigResult {
+  path?: string
+  content?: string
+  sanitized?: boolean
+  valid?: boolean
+  validationError?: string
+  backups?: ConfigBackupDTO[]
+}
 export interface CommandResultData {
   commandId: string
   success: boolean
@@ -451,6 +471,8 @@ export interface CommandResultData {
   services?: AgentServiceInfo[]
   files?: AgentFileEntry[]
   logResult?: AgentLogResult
+  healthResult?: { healthy: boolean; checks?: HealthCheckItemDTO[] }
+  configResult?: AgentConfigResult
 }
 
 export const commandsApi = {

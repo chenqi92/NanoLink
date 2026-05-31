@@ -4,9 +4,25 @@ import { commandsApi, type CommandResultData } from "@/lib/api"
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
- * Dispatches an agent command and polls for its structured result.
- * The agent executes asynchronously; the server caches the result and we poll
- * GET /agents/:id/command/:commandId/result until it arrives (or times out).
+ * Dispatch an agent command and poll for its structured result (imperative).
+ * Throws on agent error or timeout.
+ */
+export async function runAgentCommand(agentId: string, type: string, opts: { target?: string; params?: Record<string, string> } = {}): Promise<CommandResultData> {
+  const { commandId } = await commandsApi.send(agentId, { type, target: opts.target, params: opts.params })
+  for (let i = 0; i < 30; i++) {
+    await sleep(500)
+    const res = await commandsApi.result(agentId, commandId)
+    if (res && !("status" in res)) {
+      const r = res as CommandResultData
+      if (r.success === false && r.error) throw new Error(r.error)
+      return r
+    }
+  }
+  throw new Error("timeout")
+}
+
+/**
+ * Hook wrapper around runAgentCommand: auto-runs on mount/dep change.
  */
 export function useAgentCommand(agentId: string, type: string, opts: { target?: string; params?: Record<string, string>; enabled?: boolean } = {}) {
   const { target, params, enabled = true } = opts
@@ -21,18 +37,8 @@ export function useAgentCommand(agentId: string, type: string, opts: { target?: 
     setLoading(true)
     setError(null)
     try {
-      const { commandId } = await commandsApi.send(agentId, { type, target, params: paramsKey ? JSON.parse(paramsKey) : undefined })
-      let res: CommandResultData | { status: "pending" } | null = null
-      for (let i = 0; i < 30; i++) {
-        await sleep(500)
-        if (reqId.current !== myReq) return // superseded
-        res = await commandsApi.result(agentId, commandId)
-        if (!res || !("status" in res) || res.status !== "pending") break
-      }
+      const result = await runAgentCommand(agentId, type, { target, params: paramsKey ? JSON.parse(paramsKey) : undefined })
       if (reqId.current !== myReq) return
-      if (!res || ("status" in res && res.status === "pending")) throw new Error("timeout")
-      const result = res as CommandResultData
-      if (result.success === false && result.error) throw new Error(result.error)
       setData(result)
     } catch (e) {
       if (reqId.current !== myReq) return

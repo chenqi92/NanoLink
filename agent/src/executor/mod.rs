@@ -1,6 +1,7 @@
 mod config_mgr;
 mod docker_ops;
 mod file_ops;
+mod health;
 mod log_ops;
 mod package_mgr;
 mod process_mgr;
@@ -12,6 +13,7 @@ mod update;
 pub use config_mgr::ConfigManager;
 pub use docker_ops::DockerExecutor;
 pub use file_ops::FileExecutor;
+pub use health::HealthExecutor;
 pub use log_ops::LogExecutor;
 pub use package_mgr::PackageManager;
 pub use process_mgr::ProcessExecutor;

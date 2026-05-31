@@ -409,7 +409,17 @@
     "export": "Export",
     "lines2": "lines",
     "query": "Query",
-    "allAgents": "All agents"
+    "allAgents": "All agents",
+    "addTarget": "Add target",
+    "addPath": "Add path",
+    "view": "View",
+    "valid": "valid",
+    "invalid": "invalid",
+    "backups": "Backups",
+    "runAll": "Run all",
+    "remove": "Remove",
+    "noTargets": "No targets — add one to probe.",
+    "noConfigs": "No managed config files — add a path."
   },
   "plat": {
     "auditSubtitle": "Every command, file change and permission grant — searchable",

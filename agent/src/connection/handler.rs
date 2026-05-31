@@ -4,8 +4,8 @@ use tracing::{info, warn};
 use crate::buffer::RingBuffer;
 use crate::config::Config;
 use crate::executor::{
-    ConfigManager, DockerExecutor, FileExecutor, LogExecutor, PackageManager, ProcessExecutor,
-    ScriptExecutor, ServiceExecutor, ShellExecutor, UpdateExecutor,
+    ConfigManager, DockerExecutor, FileExecutor, HealthExecutor, LogExecutor, PackageManager,
+    ProcessExecutor, ScriptExecutor, ServiceExecutor, ShellExecutor, UpdateExecutor,
 };
 use crate::proto::{Command, CommandResult, CommandType};
 use crate::security::PermissionChecker;
@@ -28,6 +28,7 @@ pub struct MessageHandler {
     script_executor: ScriptExecutor,
     config_manager: ConfigManager,
     package_manager: PackageManager,
+    health_executor: HealthExecutor,
 }
 
 impl MessageHandler {
@@ -48,6 +49,7 @@ impl MessageHandler {
             script_executor: ScriptExecutor::new(config.clone()),
             config_manager: ConfigManager::new(config.clone()),
             package_manager: PackageManager::new(config.clone()),
+            health_executor: HealthExecutor::new(),
         }
     }
 
@@ -198,6 +200,13 @@ impl MessageHandler {
                 self.package_manager.update_package(&command.params).await
             }
             CommandType::SystemUpdate => self.package_manager.system_update(&command.params).await,
+
+            // Health / connectivity probes
+            CommandType::ConnectivityTest | CommandType::HealthCheck => {
+                self.health_executor
+                    .connectivity_test(&command.target, &command.params)
+                    .await
+            }
 
             _ => CommandResult {
                 command_id: command.command_id.clone(),
