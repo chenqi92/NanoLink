@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../design/nano_tokens.dart';
@@ -51,14 +52,15 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
     if (service == null) {
       setState(() {
         _status = ShellStatus.error;
-        _lines.add(const ShellLine(
-            ShellLineKind.error, '找不到该节点所属的服务器连接。'));
+        _lines.add(ShellLine(
+            ShellLineKind.error, 'terminal.consoleNoServer'.tr()));
       });
       return;
     }
     final session = service.openShell(widget.agent.id);
     _session = session;
-    _lines.add(ShellLine(ShellLineKind.sys, '[nano] 正在连接 ${session.displayUrl}'));
+    _lines.add(ShellLine(ShellLineKind.sys,
+        'terminal.consoleConnecting'.tr(namedArgs: {'url': session.displayUrl})));
 
     session.lines.listen((line) {
       if (!mounted) return;
@@ -70,8 +72,10 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
       setState(() {
         _status = s;
         if (s == ShellStatus.connected) {
-          _lines.add(ShellLine(ShellLineKind.sys,
-              '[nano] 已认证 · L${widget.agent.permissionLevel}'));
+          _lines.add(ShellLine(
+              ShellLineKind.sys,
+              'terminal.consoleAuthenticated'.tr(
+                  namedArgs: {'level': '${widget.agent.permissionLevel}'})));
         }
       });
       _scrollToBottom();
@@ -242,16 +246,16 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
     switch (_status) {
       case ShellStatus.connected:
         dot = t.ok;
-        label = '已连接';
+        label = 'status.connected'.tr();
       case ShellStatus.connecting:
         dot = t.warn;
-        label = '连接中';
+        label = 'status.connecting'.tr();
       case ShellStatus.error:
         dot = t.crit;
-        label = '连接出错';
+        label = 'status.error'.tr();
       case ShellStatus.closed:
         dot = t.fg4;
-        label = '已断开';
+        label = 'status.closed'.tr();
     }
     final url = _session?.displayUrl ?? '/ws/shell';
     return Row(
@@ -272,7 +276,7 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
                 children: [
                   Icon(Icons.refresh_rounded, size: 14, color: t.accent),
                   const SizedBox(width: 3),
-                  Text('重连',
+                  Text('status.reconnect'.tr(),
                       style: TextStyle(
                           fontSize: 12,
                           color: t.accent,
@@ -379,7 +383,9 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
                 isDense: true,
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.zero,
-                hintText: enabled ? '输入命令…' : '等待连接…',
+                hintText: enabled
+                    ? 'terminal.inputHint'.tr()
+                    : 'terminal.inputHintWaiting'.tr(),
                 hintStyle: const TextStyle(
                     color: Color(0xFF6B7280),
                     fontFamilyFallback: kMonoFallback,
@@ -450,11 +456,11 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
           children: [
             Icon(Icons.shield_outlined, size: 32, color: t.fg4),
             const SizedBox(height: 10),
-            Text('权限不足',
+            Text('terminal.lockedTitle'.tr(),
                 style: TextStyle(
                     fontSize: 16, fontWeight: FontWeight.w600, color: t.fg)),
             const SizedBox(height: 6),
-            Text('该节点为只读 (L0)。需管理员提升至 L3 系统管理权限才能打开远程终端。',
+            Text('terminal.lockedDesc'.tr(),
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13, color: t.fg3, height: 1.4)),
           ],

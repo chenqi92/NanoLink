@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -27,7 +28,8 @@ class ServerDetailScreen extends StatelessWidget {
             backgroundColor: t.bg,
             appBar: AppBar(backgroundColor: t.bg),
             body: Center(
-                child: Text('服务器不存在', style: TextStyle(color: t.fg3))),
+                child: Text('serverDetail.notFound'.tr(),
+                    style: TextStyle(color: t.fg3))),
           );
         }
         final s = server;
@@ -65,13 +67,19 @@ class ServerDetailScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-                    _kv(context, '连接方式', _modeLabel(mode)),
-                    _kv(context, '认证类型',
-                        s.hasFullPermissions ? '账号登录（完整权限）' : '设备令牌（只读）'),
-                    _kv(context, '节点数', '${agents.length}'),
+                    _kv(context, 'serverDetail.connectionMode'.tr(),
+                        _modeLabel(mode)),
+                    _kv(
+                        context,
+                        'serverDetail.authType'.tr(),
+                        s.hasFullPermissions
+                            ? 'serverDetail.authFull'.tr()
+                            : 'serverDetail.authReadonly'.tr()),
+                    _kv(context, 'serverDetail.nodeCount'.tr(),
+                        '${agents.length}'),
                     if (s.username != null && s.username!.isNotEmpty)
-                      _kv(context, '用户名', s.username!),
-                    _kv(context, '上次连接',
+                      _kv(context, 'serverDetail.username'.tr(), s.username!),
+                    _kv(context, 'serverDetail.lastConnected'.tr(),
                         s.lastConnected != null
                             ? s.lastConnected!.toLocal().toString().split('.').first
                             : '—',
@@ -89,9 +97,9 @@ class ServerDetailScreen extends StatelessWidget {
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: s.url));
                         ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('已复制服务器地址')));
+                            SnackBar(content: Text('serverDetail.urlCopied'.tr())));
                       },
-                      child: Text('复制服务器地址',
+                      child: Text('serverDetail.copyUrl'.tr(),
                           style: TextStyle(fontSize: 15, color: t.fg)),
                     ),
                     if (!isActive)
@@ -100,10 +108,11 @@ class ServerDetailScreen extends StatelessWidget {
                             size: 36, fg: t.accent),
                         onTap: () {
                           provider.setActiveServer(s.id);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('已切换到 ${s.name}')));
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('serverDetail.switchedTo'
+                                  .tr(namedArgs: {'name': s.name}))));
                         },
-                        child: Text('设为当前服务器',
+                        child: Text('serverDetail.setActive'.tr(),
                             style: TextStyle(fontSize: 15, color: t.fg)),
                       ),
                     NanoListRow(
@@ -118,8 +127,8 @@ class ServerDetailScreen extends StatelessWidget {
                         child: Icon(Icons.delete_outline_rounded,
                             color: t.crit, size: 18),
                       ),
-                      onTap: () => _confirmRemove(context, provider, s!),
-                      child: Text('移除服务器',
+                      onTap: () => _confirmRemove(context, provider, s),
+                      child: Text('serverDetail.removeServer'.tr(),
                           style: TextStyle(fontSize: 15, color: t.crit)),
                     ),
                   ],
@@ -135,11 +144,11 @@ class ServerDetailScreen extends StatelessWidget {
   String _modeLabel(ConnectionMode m) {
     switch (m) {
       case ConnectionMode.websocket:
-        return 'WebSocket（实时）';
+        return 'serverDetail.modeWebsocket'.tr();
       case ConnectionMode.httpPolling:
-        return 'HTTP 轮询';
+        return 'serverDetail.modeHttp'.tr();
       default:
-        return '已断开';
+        return 'serverDetail.modeDisconnected'.tr();
     }
   }
 
@@ -164,16 +173,19 @@ class ServerDetailScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: t.card,
-        title: Text('移除服务器？', style: TextStyle(color: t.fg)),
-        content: Text('将断开并删除 “${s.name}” 的本地配置。',
+        title: Text('serverDetail.removeConfirmTitle'.tr(),
+            style: TextStyle(color: t.fg)),
+        content: Text(
+            'serverDetail.removeConfirmBody'.tr(namedArgs: {'name': s.name}),
             style: TextStyle(color: t.fg2)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('取消', style: TextStyle(color: t.fg2))),
+              child: Text('common.cancel'.tr(), style: TextStyle(color: t.fg2))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text('移除', style: TextStyle(color: t.crit))),
+              child: Text('serverDetail.remove'.tr(),
+                  style: TextStyle(color: t.crit))),
         ],
       ),
     );

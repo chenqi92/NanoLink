@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import '../design/nano_tokens.dart';
 import '../widgets/nano/nano_card.dart';
@@ -39,7 +40,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
               child: const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
             ),
             const SizedBox(width: 10),
-            Text('AI 运维助手',
+            Text('assistant.title'.tr(),
                 style: TextStyle(
                     fontSize: 17, fontWeight: FontWeight.w600, color: t.fg)),
           ],
@@ -63,28 +64,28 @@ class _AssistantScreenState extends State<AssistantScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('你好，我是 NanoLink 助手',
+                      Text('assistant.greeting'.tr(),
                           style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w600,
                               color: t.fg)),
                       const SizedBox(height: 6),
                       Text(
-                        '通过 MCP 协议连接，我可以帮你查询节点指标、诊断异常、生成运维建议。',
+                        'assistant.intro'.tr(),
                         style: TextStyle(fontSize: 13, color: t.fg2, height: 1.5),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text('试试这些',
+                Text('assistant.tryThese'.tr(),
                     style: TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w600, color: t.fg2)),
                 const SizedBox(height: 8),
-                for (final s in const [
-                  '哪些节点 CPU 最高？',
-                  '有没有磁盘快满的服务器？',
-                  '汇总当前集群健康状况',
+                for (final s in [
+                  'assistant.suggestTopCpu'.tr(),
+                  'assistant.suggestDiskFull'.tr(),
+                  'assistant.suggestHealth'.tr(),
                 ])
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
@@ -119,7 +120,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                       controller: _controller,
                       style: TextStyle(color: t.fg),
                       decoration: InputDecoration(
-                        hintText: '询问运维助手…',
+                        hintText: 'assistant.inputHint'.tr(),
                         hintStyle: TextStyle(color: t.fg4),
                         filled: true,
                         fillColor: t.card2,
@@ -140,7 +141,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                       icon: Icon(Icons.arrow_upward_rounded, color: t.onAccent),
                       onPressed: () {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('AI 助手即将上线')),
+                          SnackBar(content: Text('assistant.comingSoon'.tr())),
                         );
                       },
                     ),

@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../design/nano_tokens.dart';
@@ -127,12 +128,19 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
             child: Row(
               children: [
-                NanoMono('agent ${a.version ?? '—'}', size: 11, color: t.fg4),
+                NanoMono(
+                    'agentDetail.agentVersion'
+                        .tr(namedArgs: {'version': a.version ?? '—'}),
+                    size: 11,
+                    color: t.fg4),
                 const SizedBox(width: 8),
                 Text('·', style: TextStyle(color: t.fg4, fontSize: 11)),
                 const SizedBox(width: 8),
-                NanoMono('心跳 ${Fmt.ago(a.lastHeartbeat)} 前',
-                    size: 11, color: t.fg4),
+                NanoMono(
+                    'agentDetail.heartbeat'
+                        .tr(namedArgs: {'ago': Fmt.ago(a.lastHeartbeat)}),
+                    size: 11,
+                    color: t.fg4),
               ],
             ),
           ),
@@ -143,7 +151,11 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
   Widget _segmented(BuildContext context, bool locked) {
     final t = context.nano;
-    final items = ['实时', '历史', '终端'];
+    final items = [
+      'agentDetail.tabRealtime'.tr(),
+      'agentDetail.tabHistory'.tr(),
+      'agentDetail.tabTerminal'.tr(),
+    ];
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
@@ -174,7 +186,9 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                         : null,
                   ),
                   child: Text(
-                    i == 2 && locked ? '终端 🔒' : items[i],
+                    i == 2 && locked
+                        ? 'agentDetail.tabTerminalLocked'.tr()
+                        : items[i],
                     style: TextStyle(
                       fontSize: 13.5,
                       fontWeight: _tab == i ? FontWeight.w600 : FontWeight.w500,
@@ -208,11 +222,13 @@ class _RealtimeTab extends StatelessWidget {
           children: [
             Icon(Icons.cloud_off_rounded, size: 30, color: t.fg4),
             const SizedBox(height: 12),
-            Text('节点离线',
+            Text('agentDetail.nodeOffline'.tr(),
                 style: TextStyle(
                     fontSize: 16, fontWeight: FontWeight.w600, color: t.fg2)),
             const SizedBox(height: 6),
-            Text('最后心跳 ${Fmt.ago(agent.lastHeartbeat)} 前',
+            Text(
+                'agentDetail.lastHeartbeat'
+                    .tr(namedArgs: {'ago': Fmt.ago(agent.lastHeartbeat)}),
                 style: TextStyle(fontSize: 13, color: t.fg4)),
           ],
         ),
@@ -226,7 +242,7 @@ class _RealtimeTab extends StatelessWidget {
         const SizedBox(height: 12),
         _memCard(context, m),
         if (m.disks.isNotEmpty) ...[
-          NanoSectionLabel('存储'),
+          NanoSectionLabel('agentDetail.storage'.tr()),
           NanoCard(
             child: Column(
               children: [
@@ -238,7 +254,7 @@ class _RealtimeTab extends StatelessWidget {
           const SizedBox(height: 4),
         ],
         if (m.networks.isNotEmpty) ...[
-          NanoSectionLabel('网络接口'),
+          NanoSectionLabel('agentDetail.networkInterfaces'.tr()),
           NanoCard(
             child: Column(
               children: [
@@ -250,15 +266,19 @@ class _RealtimeTab extends StatelessWidget {
           const SizedBox(height: 4),
         ],
         if (m.gpus.isNotEmpty) ...[
-          NanoSectionLabel('GPU',
-              trailing: NanoMono('${m.gpus.length} 个', size: 11, color: t.fg4)),
+          NanoSectionLabel('agentDetail.gpu'.tr(),
+              trailing: NanoMono(
+                  'agentDetail.gpuCount'
+                      .tr(namedArgs: {'n': '${m.gpus.length}'}),
+                  size: 11,
+                  color: t.fg4)),
           for (final g in m.gpus) ...[
             _gpuCard(context, g),
             const SizedBox(height: 8),
           ],
         ],
         if (m.npus.isNotEmpty) ...[
-          NanoSectionLabel('AI 加速器'),
+          NanoSectionLabel('agentDetail.aiAccelerator'.tr()),
           NanoCard(
             child: Column(
               children: [
@@ -279,7 +299,8 @@ class _RealtimeTab extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 6),
-                        _bar(context, '利用率', m.npus[i].usagePercent,
+                        _bar(context, 'agentDetail.utilization'.tr(),
+                            m.npus[i].usagePercent,
                             '${m.npus[i].usagePercent.toStringAsFixed(0)}%'),
                       ],
                     ),
@@ -290,7 +311,7 @@ class _RealtimeTab extends StatelessWidget {
           const SizedBox(height: 4),
         ],
         if (m.userSessions.isNotEmpty) ...[
-          NanoSectionLabel('登录会话',
+          NanoSectionLabel('agentDetail.loginSessions'.tr(),
               trailing:
                   NanoMono('${m.userSessions.length}', size: 11, color: t.fg4)),
           NanoCard(
@@ -318,7 +339,7 @@ class _RealtimeTab extends StatelessWidget {
           const SizedBox(height: 4),
         ],
         if (m.systemInfo != null) ...[
-          NanoSectionLabel('系统信息'),
+          NanoSectionLabel('agentDetail.systemInfo'.tr()),
           NanoCard(child: _systemInfo(context, m.systemInfo!)),
         ],
       ],
@@ -345,7 +366,7 @@ class _RealtimeTab extends StatelessWidget {
                       children: [
                         Icon(Icons.memory_rounded, size: 13, color: t.fg3),
                         const SizedBox(width: 5),
-                        Text('CPU',
+                        Text('agentDetail.cpu'.tr(),
                             style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -415,7 +436,7 @@ class _RealtimeTab extends StatelessWidget {
                       children: [
                         Icon(Icons.sd_storage_outlined, size: 13, color: t.fg3),
                         const SizedBox(width: 5),
-                        Text('内存',
+                        Text('agentDetail.memory'.tr(),
                             style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -449,8 +470,10 @@ class _RealtimeTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          _kv(context, '已用', '${Fmt.gib(m.memory.used).toStringAsFixed(1)} GiB'),
-          _kv(context, '可用', '${Fmt.gib(m.memory.available).toStringAsFixed(1)} GiB'),
+          _kv(context, 'agentDetail.memUsed'.tr(),
+              '${Fmt.gib(m.memory.used).toStringAsFixed(1)} GiB'),
+          _kv(context, 'agentDetail.memAvailable'.tr(),
+              '${Fmt.gib(m.memory.available).toStringAsFixed(1)} GiB'),
           if (m.memory.swapTotal > 0)
             _kv(context, 'Swap',
                 '${Fmt.gib(m.memory.swapUsed).toStringAsFixed(1)} / ${Fmt.gib(m.memory.swapTotal).toStringAsFixed(0)} GiB',
@@ -590,18 +613,19 @@ class _RealtimeTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          _bar(context, '利用率', g.usagePercent,
+          _bar(context, 'agentDetail.utilization'.tr(), g.usagePercent,
               '${g.usagePercent.toStringAsFixed(0)}%'),
           const SizedBox(height: 5),
           if (g.memoryTotal > 0)
-            _bar(context, '显存', g.memoryPercent,
+            _bar(context, 'agentDetail.vram'.tr(), g.memoryPercent,
                 '${Fmt.gib(g.memoryUsed).toStringAsFixed(1)}/${Fmt.gib(g.memoryTotal).toStringAsFixed(0)} GB'),
           if (g.powerWatts > 0) ...[
             const SizedBox(height: 5),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('功耗', style: TextStyle(fontSize: 11.5, color: t.fg4)),
+                Text('agentDetail.power'.tr(),
+                    style: TextStyle(fontSize: 11.5, color: t.fg4)),
                 NanoMono('${g.powerWatts}W', size: 11.5, color: t.fg2),
               ],
             ),
@@ -645,12 +669,14 @@ class _RealtimeTab extends StatelessWidget {
 
   Widget _systemInfo(BuildContext context, SystemInfo s) {
     final rows = <List<String>>[
-      ['OS', '${s.osName} ${s.osVersion}'.trim()],
-      ['内核', s.kernelVersion],
-      ['运行时长', Fmt.uptime(s.uptimeSeconds)],
-      if (s.motherboardModel.isNotEmpty) ['主板', s.motherboardModel],
-      if (s.systemModel.isNotEmpty) ['整机', s.systemModel],
-      if (s.biosVersion.isNotEmpty) ['BIOS', s.biosVersion],
+      ['agentDetail.osLabel'.tr(), '${s.osName} ${s.osVersion}'.trim()],
+      ['agentDetail.kernel'.tr(), s.kernelVersion],
+      ['agentDetail.uptime'.tr(), Fmt.uptime(s.uptimeSeconds)],
+      if (s.motherboardModel.isNotEmpty)
+        ['agentDetail.motherboard'.tr(), s.motherboardModel],
+      if (s.systemModel.isNotEmpty)
+        ['agentDetail.systemModel'.tr(), s.systemModel],
+      if (s.biosVersion.isNotEmpty) ['agentDetail.bios'.tr(), s.biosVersion],
     ].where((r) => r[1].trim().isNotEmpty).toList();
     final t = context.nano;
     return Column(
@@ -798,15 +824,15 @@ class _HistoryTabState extends State<_HistoryTab> {
             if (h == null) {
               return _hint(t,
                   icon: Icons.cloud_off_rounded,
-                  title: '无法加载历史数据',
-                  sub: '请检查与服务器的连接',
+                  title: 'history.loadFailed'.tr(),
+                  sub: 'history.loadFailedSub'.tr(),
                   action: _retry(t));
             }
             if (h.isEmpty) {
               return _hint(t,
                   icon: Icons.show_chart_rounded,
-                  title: '无可用历史数据',
-                  sub: '该时间范围内暂无采集记录');
+                  title: 'history.noData'.tr(),
+                  sub: 'history.noDataSub'.tr());
             }
             return _charts(context, h, spec.labels);
           },
@@ -820,7 +846,7 @@ class _HistoryTabState extends State<_HistoryTab> {
         child: TextButton.icon(
           onPressed: _load,
           icon: Icon(Icons.refresh_rounded, size: 16, color: t.accent),
-          label: Text('重试', style: TextStyle(color: t.accent)),
+          label: Text('common.retry'.tr(), style: TextStyle(color: t.accent)),
         ),
       );
 
@@ -870,7 +896,7 @@ class _HistoryTabState extends State<_HistoryTab> {
           const SizedBox(height: 12),
         ],
         _HistoryChartCard(
-          title: 'CPU',
+          title: 'history.cpu'.tr(),
           stat: '${(m?.cpuPercent ?? (h.cpu.isEmpty ? 0 : h.cpu.last)).toStringAsFixed(0)}%',
           peak: cpuPeak,
           unit: '%',
@@ -880,7 +906,7 @@ class _HistoryTabState extends State<_HistoryTab> {
           thresholds: [NanoThreshold(90, t.crit, label: '90%')],
         ),
         _HistoryChartCard(
-          title: '内存',
+          title: 'history.memory'.tr(),
           stat: '${(m?.memoryPercent ?? (h.mem.isEmpty ? 0 : h.mem.last)).toStringAsFixed(0)}%',
           peak: memPeak,
           unit: '%',
@@ -890,7 +916,7 @@ class _HistoryTabState extends State<_HistoryTab> {
           thresholds: [NanoThreshold(90, t.crit, label: '90%')],
         ),
         _HistoryChartCard(
-          title: '网络',
+          title: 'history.network'.tr(),
           stat: '↓${f(h.netRx)} ↑${f(h.netTx)}',
           unit: ' MB/s',
           xLabels: labels,
@@ -900,7 +926,7 @@ class _HistoryTabState extends State<_HistoryTab> {
           ],
         ),
         _HistoryChartCard(
-          title: '磁盘 IO',
+          title: 'history.diskIo'.tr(),
           stat: 'R ${f(h.diskRead)} · W ${f(h.diskWrite)}',
           unit: ' MB/s',
           xLabels: labels,
@@ -911,7 +937,7 @@ class _HistoryTabState extends State<_HistoryTab> {
         ),
         if (h.hasGpu)
           _HistoryChartCard(
-            title: 'GPU',
+            title: 'history.gpu'.tr(),
             stat: '${h.gpuUsage.isEmpty ? 0 : h.gpuUsage.last.toStringAsFixed(0)}%',
             unit: '%',
             xLabels: labels,
@@ -943,14 +969,18 @@ class _HistoryTabState extends State<_HistoryTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('近期异常',
+                Text('history.anomaly'.tr(),
                     style: TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w500, color: t.fg)),
                 if (cpuPeak > 90)
-                  Text('· CPU 峰值 ${cpuPeak.toStringAsFixed(0)}%',
+                  Text(
+                      'history.anomalyCpu'.tr(
+                          namedArgs: {'value': cpuPeak.toStringAsFixed(0)}),
                       style: TextStyle(fontSize: 11.5, color: t.fg3)),
                 if (memPeak > 90)
-                  Text('· 内存峰值 ${memPeak.toStringAsFixed(0)}%',
+                  Text(
+                      'history.anomalyMem'.tr(
+                          namedArgs: {'value': memPeak.toStringAsFixed(0)}),
                       style: TextStyle(fontSize: 11.5, color: t.fg3)),
               ],
             ),
@@ -1008,7 +1038,11 @@ class _HistoryChartCard extends StatelessWidget {
                 ),
               ),
               if (peak != null)
-                NanoBadge('峰值 ${peak!.toStringAsFixed(0)}$unit',
+                NanoBadge(
+                    'history.peak'.tr(namedArgs: {
+                      'value': peak!.toStringAsFixed(0),
+                      'unit': unit
+                    }),
                     color: peak! > 90 ? t.crit : t.fg3),
               if (series.length > 1) ...[
                 for (final s in series)

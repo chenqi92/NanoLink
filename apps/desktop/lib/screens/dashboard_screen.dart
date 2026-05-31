@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../design/nano_tokens.dart';
@@ -65,7 +66,7 @@ class DashboardScreen extends StatelessWidget {
                 childAspectRatio: 1.55,
                 children: [
                   NanoKpiTile(
-                    label: '在线节点',
+                    label: 'dashboard.onlineNodes'.tr(),
                     icon: Icons.dns_rounded,
                     value: Text.rich(TextSpan(children: [
                       TextSpan(text: '${online.length}'),
@@ -74,27 +75,29 @@ class DashboardScreen extends StatelessWidget {
                         style: TextStyle(color: t.fg4, fontSize: 18),
                       ),
                     ])),
-                    sub: '${offline.length} 离线',
+                    sub: 'dashboard.nodesOffline'
+                        .tr(namedArgs: {'n': '${offline.length}'}),
                   ),
                   NanoKpiTile(
-                    label: '平均 CPU',
+                    label: 'dashboard.avgCpu'.tr(),
                     icon: Icons.memory_rounded,
                     value: Text('${avgCpu.toStringAsFixed(1)}%'),
-                    sub: '过去 60s',
+                    sub: 'dashboard.avgCpuLast60s'.tr(),
                     tone: avgCpu > 80 ? 'warn' : null,
                   ),
                   NanoKpiTile(
-                    label: '平均内存',
+                    label: 'dashboard.avgMemory'.tr(),
                     icon: Icons.sd_storage_outlined,
                     value: Text('${avgMem.toStringAsFixed(1)}%'),
-                    sub: '${online.length} 节点',
+                    sub: 'dashboard.avgMemNodes'
+                        .tr(namedArgs: {'n': '${online.length}'}),
                     tone: avgMem > 80 ? 'warn' : null,
                   ),
                   NanoKpiTile(
-                    label: '磁盘告警',
+                    label: 'dashboard.diskAlerts'.tr(),
                     icon: Icons.warning_amber_rounded,
                     value: Text('$diskAlerts'),
-                    sub: '≥ 85% 使用率',
+                    sub: 'dashboard.diskAlertsSub'.tr(),
                     tone: diskAlerts > 0 ? 'warn' : null,
                   ),
                 ],
@@ -104,11 +107,13 @@ class DashboardScreen extends StatelessWidget {
                 _OfflineBanner(offline: offline),
               ],
               const SizedBox(height: 4),
-              NanoSectionLabel('CPU 最高'),
+              NanoSectionLabel('dashboard.topCpu'.tr()),
               if (topCpu.isEmpty)
                 _EmptyHint(
                   icon: Icons.dns_outlined,
-                  text: provider.servers.isEmpty ? '尚未添加服务器' : '暂无在线节点',
+                  text: provider.servers.isEmpty
+                      ? 'dashboard.noServersYet'.tr()
+                      : 'dashboard.noOnlineNodes'.tr(),
                 )
               else
                 NanoCard(
@@ -124,12 +129,12 @@ class DashboardScreen extends StatelessWidget {
                   ),
                 ),
               const SizedBox(height: 4),
-              NanoSectionLabel('最近活动'),
+              NanoSectionLabel('dashboard.recentActivity'.tr()),
               NanoCard(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 22),
                   child: Center(
-                    child: Text('暂无活动记录',
+                    child: Text('dashboard.noActivity'.tr(),
                         style: TextStyle(color: t.fg4, fontSize: 13)),
                   ),
                 ),
@@ -162,7 +167,7 @@ class _Header extends StatelessWidget {
             ),
           Expanded(
             child: Text(
-              '总览',
+              'dashboard.title'.tr(),
               style: TextStyle(
                 fontSize: t.isIOS ? 32 : 28,
                 fontWeight: t.displayWeight,
@@ -284,7 +289,8 @@ class _ServerChips extends StatelessWidget {
                 children: [
                   Icon(Icons.add_rounded, size: 14, color: t.fg3),
                   const SizedBox(width: 4),
-                  Text('添加', style: TextStyle(fontSize: 13, color: t.fg3)),
+                  Text('dashboard.add'.tr(),
+                      style: TextStyle(fontSize: 13, color: t.fg3)),
                 ],
               ),
             ),
@@ -317,7 +323,9 @@ class _OfflineBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${offline.length} 节点离线',
+                Text(
+                    'dashboard.offlineBanner'
+                        .tr(namedArgs: {'n': '${offline.length}'}),
                     style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w500,

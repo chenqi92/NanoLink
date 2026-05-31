@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../design/nano_tokens.dart';
@@ -39,15 +40,15 @@ class AlertsScreen extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(child: _MiniStat('严重', crit, t.crit)),
+                  Expanded(child: _MiniStat('alerts.critical'.tr(), crit, t.crit)),
                   const SizedBox(width: 8),
-                  Expanded(child: _MiniStat('警告', warn, t.warn)),
+                  Expanded(child: _MiniStat('alerts.warning'.tr(), warn, t.warn)),
                   const SizedBox(width: 8),
-                  Expanded(child: _MiniStat('信息', info, t.info)),
+                  Expanded(child: _MiniStat('alerts.info'.tr(), info, t.info)),
                 ],
               ),
               const SizedBox(height: 4),
-              NanoSectionLabel('当前告警'),
+              NanoSectionLabel('alerts.current'.tr()),
               if (alerts.isEmpty)
                 NanoCard(
                   child: Padding(
@@ -57,13 +58,13 @@ class AlertsScreen extends StatelessWidget {
                         Icon(Icons.check_circle_outline_rounded,
                             color: t.ok, size: 30),
                         const SizedBox(height: 10),
-                        Text('一切正常',
+                        Text('alerts.allClear'.tr(),
                             style: TextStyle(
                                 color: t.fg2,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w500)),
                         const SizedBox(height: 4),
-                        Text('当前没有需要关注的告警',
+                        Text('alerts.allClearSub'.tr(),
                             style: TextStyle(color: t.fg4, fontSize: 12.5)),
                       ],
                     ),
@@ -90,7 +91,10 @@ class AlertsScreen extends StatelessWidget {
     final agents = provider.agentsForServer();
     for (final a in agents) {
       if (!a.isOnline) {
-        out.add(_Alert(_Level.crit, '${a.hostname} 离线', '节点未上报心跳',
+        out.add(_Alert(
+            _Level.crit,
+            'alerts.nodeOffline'.tr(namedArgs: {'host': a.hostname}),
+            'alerts.nodeOfflineDetail'.tr(),
             agent: a.hostname));
         continue;
       }
@@ -99,27 +103,53 @@ class AlertsScreen extends StatelessWidget {
       final cpu = m.cpuPercent;
       final mem = m.memoryPercent;
       if (cpu > 90) {
-        out.add(_Alert(_Level.crit, '${a.hostname} CPU 压力',
-            '使用率 ${cpu.toStringAsFixed(0)}%', agent: a.hostname));
+        out.add(_Alert(
+            _Level.crit,
+            'alerts.cpuPressure'.tr(namedArgs: {'host': a.hostname}),
+            'alerts.usageDetail'
+                .tr(namedArgs: {'value': cpu.toStringAsFixed(0)}),
+            agent: a.hostname));
       } else if (cpu > 80) {
-        out.add(_Alert(_Level.warn, '${a.hostname} CPU 偏高',
-            '使用率 ${cpu.toStringAsFixed(0)}%', agent: a.hostname));
+        out.add(_Alert(
+            _Level.warn,
+            'alerts.cpuHigh'.tr(namedArgs: {'host': a.hostname}),
+            'alerts.usageDetail'
+                .tr(namedArgs: {'value': cpu.toStringAsFixed(0)}),
+            agent: a.hostname));
       }
       if (mem > 90) {
-        out.add(_Alert(_Level.crit, '${a.hostname} 内存压力',
-            '使用率 ${mem.toStringAsFixed(0)}%', agent: a.hostname));
+        out.add(_Alert(
+            _Level.crit,
+            'alerts.memPressure'.tr(namedArgs: {'host': a.hostname}),
+            'alerts.usageDetail'
+                .tr(namedArgs: {'value': mem.toStringAsFixed(0)}),
+            agent: a.hostname));
       } else if (mem > 80) {
-        out.add(_Alert(_Level.warn, '${a.hostname} 内存偏高',
-            '使用率 ${mem.toStringAsFixed(0)}%', agent: a.hostname));
+        out.add(_Alert(
+            _Level.warn,
+            'alerts.memHigh'.tr(namedArgs: {'host': a.hostname}),
+            'alerts.usageDetail'
+                .tr(namedArgs: {'value': mem.toStringAsFixed(0)}),
+            agent: a.hostname));
       }
       for (final d in m.disks) {
         if (d.usagePercent > 90) {
-          out.add(_Alert(_Level.crit, '${a.hostname} 磁盘将满',
-              '${d.mountPoint} ${d.usagePercent.toStringAsFixed(0)}%',
+          out.add(_Alert(
+              _Level.crit,
+              'alerts.diskFull'.tr(namedArgs: {'host': a.hostname}),
+              'alerts.diskDetail'.tr(namedArgs: {
+                'mount': d.mountPoint,
+                'value': d.usagePercent.toStringAsFixed(0)
+              }),
               agent: a.hostname));
         } else if (d.usagePercent > 85) {
-          out.add(_Alert(_Level.warn, '${a.hostname} 磁盘空间不足',
-              '${d.mountPoint} ${d.usagePercent.toStringAsFixed(0)}%',
+          out.add(_Alert(
+              _Level.warn,
+              'alerts.diskLow'.tr(namedArgs: {'host': a.hostname}),
+              'alerts.diskDetail'.tr(namedArgs: {
+                'mount': d.mountPoint,
+                'value': d.usagePercent.toStringAsFixed(0)
+              }),
               agent: a.hostname));
         }
       }
@@ -145,7 +175,7 @@ class _Header extends StatelessWidget {
               ),
             ),
           Expanded(
-            child: Text('活动 & 告警',
+            child: Text('alerts.title'.tr(),
                 style: TextStyle(
                     fontSize: t.isIOS ? 32 : 28,
                     fontWeight: t.displayWeight,

@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../design/nano_tokens.dart';
@@ -40,7 +41,7 @@ class TerminalScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                    Text('远程终端',
+                    Text('terminal.navTitle'.tr(),
                         style: TextStyle(
                             fontSize: t.isIOS ? 32 : 28,
                             fontWeight: t.displayWeight,
@@ -51,7 +52,7 @@ class TerminalScreen extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
-                child: Text('选择要打开终端的节点。L0 只读节点不可用，会话需要 L3 系统管理权限。',
+                child: Text('terminal.navDesc'.tr(),
                     style: TextStyle(fontSize: 13.5, color: t.fg3, height: 1.5)),
               ),
               Expanded(
@@ -89,11 +90,11 @@ class TerminalScreen extends StatelessWidget {
         children: [
           Icon(Icons.terminal_rounded, size: 30, color: t.fg4),
           const SizedBox(height: 12),
-          Text('暂无可用节点',
+          Text('terminal.noAvailableNodes'.tr(),
               style: TextStyle(
                   fontSize: 15, fontWeight: FontWeight.w500, color: t.fg2)),
           const SizedBox(height: 6),
-          Text('需要至少一个在线且非只读 (L1+) 的节点',
+          Text('terminal.noAvailableNodesSub'.tr(),
               style: TextStyle(fontSize: 12.5, color: t.fg4)),
         ],
       ),

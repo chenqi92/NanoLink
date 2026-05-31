@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../design/nano_tokens.dart';
@@ -49,10 +50,13 @@ class _AgentsScreenState extends State<AgentsScreen> {
         }).toList();
 
         final filters = <List<dynamic>>[
-          ['all', '全部', all.length],
-          ['online', '在线', all.where((a) => a.isOnline).length],
-          ['warn', '告警', all.where((a) => _warn(provider, a)).length],
-          ['offline', '离线', all.where((a) => !a.isOnline).length],
+          ['all', 'agents.filterAll'.tr(), all.length],
+          ['online', 'agents.filterOnline'.tr(),
+              all.where((a) => a.isOnline).length],
+          ['warn', 'agents.filterWarn'.tr(),
+              all.where((a) => _warn(provider, a)).length],
+          ['offline', 'agents.filterOffline'.tr(),
+              all.where((a) => !a.isOnline).length],
         ];
 
         return SafeArea(
@@ -76,7 +80,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                               ),
                             ),
                           ),
-                        Text('节点',
+                        Text('agents.title'.tr(),
                             style: TextStyle(
                                 fontSize: t.isIOS ? 32 : 28,
                                 fontWeight: t.displayWeight,
@@ -102,7 +106,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                               decoration: InputDecoration(
                                 isDense: true,
                                 border: InputBorder.none,
-                                hintText: '搜索节点、主机名、OS',
+                                hintText: 'agents.searchHint'.tr(),
                                 hintStyle: TextStyle(color: t.fg4),
                               ),
                               onChanged: (v) => setState(() => _query = v),
@@ -139,7 +143,9 @@ class _AgentsScreenState extends State<AgentsScreen> {
                 child: filtered.isEmpty
                     ? Center(
                         child: Text(
-                          all.isEmpty ? '该服务器暂无节点' : '没有匹配的节点',
+                          all.isEmpty
+                              ? 'agents.noNodes'.tr()
+                              : 'agents.noMatch'.tr(),
                           style: TextStyle(color: t.fg4, fontSize: 13.5),
                         ),
                       )
@@ -274,7 +280,7 @@ class _AgentCard extends StatelessWidget {
           children: [
             Icon(Icons.warning_amber_rounded, size: 14, color: t.fg4),
             const SizedBox(width: 6),
-            Text('离线 · 无实时数据',
+            Text('agents.offlineNoData'.tr(),
                 style: TextStyle(fontSize: 12, color: t.fg4)),
           ],
         ),

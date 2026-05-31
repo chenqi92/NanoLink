@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -53,7 +54,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           icon: Icon(Icons.arrow_back_rounded, color: t.fg),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text('配对新设备',
+        title: Text('pairing.title'.tr(),
             style: TextStyle(
                 fontSize: 18, fontWeight: FontWeight.w600, color: t.fg)),
       ),
@@ -80,7 +81,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
-        Text('用新设备的 NanoLink 扫描下方二维码，或手动输入配对码即可加入「$serverName」。',
+        Text('pairing.intro'.tr(namedArgs: {'name': serverName}),
             style: TextStyle(fontSize: 14, color: t.fg3, height: 1.5)),
         const SizedBox(height: 20),
         Center(
@@ -107,7 +108,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           ),
         ),
         const SizedBox(height: 24),
-        NanoSectionLabel('配对码', grouped: true),
+        NanoSectionLabel('pairing.pairingCode'.tr(), grouped: true),
         NanoCard(
           child: NanoListRow(
             divider: false,
@@ -116,7 +117,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: r.pairingCode));
                 ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('已复制配对码')));
+                    SnackBar(content: Text('pairing.codeCopied'.tr())));
               },
             ),
             child: Text(_fmtCode(r.pairingCode),
@@ -142,7 +143,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                    '二维码内含访问令牌，请勿截图外传。完成配对后可在「设备」中随时撤销。',
+                    'pairing.securityNote'.tr(),
                     style: TextStyle(fontSize: 12.5, color: t.fg2, height: 1.45)),
               ),
             ],
@@ -154,7 +155,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           child: OutlinedButton.icon(
             onPressed: _generate,
             icon: Icon(Icons.refresh_rounded, size: 18, color: t.accent),
-            label: Text('重新生成', style: TextStyle(color: t.accent)),
+            label: Text('pairing.regenerate'.tr(), style: TextStyle(color: t.accent)),
             style: OutlinedButton.styleFrom(
               side: BorderSide(color: t.sep),
               shape: RoundedRectangleBorder(
@@ -176,18 +177,18 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           children: [
             Icon(Icons.qr_code_2_rounded, size: 36, color: t.fg4),
             const SizedBox(height: 12),
-            Text('无法生成配对码',
+            Text('pairing.errorTitle'.tr(),
                 style: TextStyle(
                     fontSize: 16, fontWeight: FontWeight.w600, color: t.fg)),
             const SizedBox(height: 6),
-            Text('生成配对码需要使用账号登录的服务器连接。请确认该服务器已用账号登录，且网络可达。',
+            Text('pairing.errorDesc'.tr(),
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13, color: t.fg3, height: 1.45)),
             const SizedBox(height: 16),
             TextButton.icon(
               onPressed: _generate,
               icon: Icon(Icons.refresh_rounded, size: 16, color: t.accent),
-              label: Text('重试', style: TextStyle(color: t.accent)),
+              label: Text('common.retry'.tr(), style: TextStyle(color: t.accent)),
             ),
           ],
         ),

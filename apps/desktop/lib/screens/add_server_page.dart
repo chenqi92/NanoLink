@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -101,7 +102,7 @@ class _AddServerPageState extends State<AddServerPage> {
       final version = json['v'] as int?;
       final serverUrl = json['s'] as String?;
       final token = json['t'] as String?;
-      final name = json['n'] as String? ?? 'NanoLink 服务器';
+      final name = json['n'] as String? ?? 'addServer.defaultServerName'.tr();
       if (version != 1 || serverUrl == null || token == null) {
         throw const FormatException('invalid');
       }
@@ -115,7 +116,7 @@ class _AddServerPageState extends State<AddServerPage> {
         setState(() {
           _loading = false;
           _hasScanned = false;
-          _error = '连接失败，请检查服务器地址与令牌';
+          _error = 'addServer.connectionFailed'.tr();
         });
         _scanner?.start();
       }
@@ -124,7 +125,7 @@ class _AddServerPageState extends State<AddServerPage> {
       setState(() {
         _loading = false;
         _hasScanned = false;
-        _error = '二维码无效，请对准 NanoLink 配对二维码';
+        _error = 'addServer.qrInvalid'.tr();
       });
       _scanner?.start();
     }
@@ -148,7 +149,7 @@ class _AddServerPageState extends State<AddServerPage> {
     } else {
       setState(() {
         _loading = false;
-        _error = '连接失败，请检查服务器地址与令牌';
+        _error = 'addServer.connectionFailed'.tr();
       });
     }
   }
@@ -172,7 +173,7 @@ class _AddServerPageState extends State<AddServerPage> {
     } else {
       setState(() {
         _loading = false;
-        _error = '登录失败，请检查地址与账号密码';
+        _error = 'addServer.loginFailed'.tr();
       });
     }
   }
@@ -203,11 +204,11 @@ class _AddServerPageState extends State<AddServerPage> {
 
   Widget _header(NanoTokens t) {
     final title = _method == null
-        ? '添加服务器'
+        ? 'addServer.title'.tr()
         : switch (_method!) {
-            ConnectionMethod.qrCode => '扫描二维码',
-            ConnectionMethod.account => '账号登录',
-            ConnectionMethod.manual => '手动输入',
+            ConnectionMethod.qrCode => 'addServer.headerScanQr'.tr(),
+            ConnectionMethod.account => 'addServer.headerAccount'.tr(),
+            ConnectionMethod.manual => 'addServer.headerManual'.tr(),
           };
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
@@ -242,16 +243,31 @@ class _AddServerPageState extends State<AddServerPage> {
   Widget _methodSelection(NanoTokens t) {
     final methods = <List<dynamic>>[
       if (_qrSupported)
-        [ConnectionMethod.qrCode, Icons.qr_code_scanner_rounded, '扫描二维码', '对准 Web 后台生成的二维码'],
-      [ConnectionMethod.account, Icons.shield_outlined, '账号登录', '用户名 / 密码 · 完整权限'],
-      [ConnectionMethod.manual, Icons.link_rounded, '手动输入', 'Server URL + 设备令牌'],
+        [
+          ConnectionMethod.qrCode,
+          Icons.qr_code_scanner_rounded,
+          'addServer.methodScanQr'.tr(),
+          'addServer.methodScanQrDesc'.tr()
+        ],
+      [
+        ConnectionMethod.account,
+        Icons.shield_outlined,
+        'addServer.methodAccount'.tr(),
+        'addServer.methodAccountDesc'.tr()
+      ],
+      [
+        ConnectionMethod.manual,
+        Icons.link_rounded,
+        'addServer.methodManual'.tr(),
+        'addServer.methodManualDesc'.tr()
+      ],
     ];
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
-          child: Text('选择连接方式。所有方式建议在 TLS 下使用，令牌仅保存在本机安全存储。',
+          child: Text('addServer.chooseMethodHint'.tr(),
               style: TextStyle(fontSize: 14, color: t.fg3, height: 1.5)),
         ),
         NanoCard(
@@ -297,12 +313,13 @@ class _AddServerPageState extends State<AddServerPage> {
             children: [
               Icon(Icons.qr_code_scanner_rounded, size: 60, color: t.fg4),
               const SizedBox(height: 20),
-              Text('当前平台不支持扫码',
+              Text('addServer.qrUnsupported'.tr(),
                   style: TextStyle(fontSize: 15, color: t.fg2)),
               const SizedBox(height: 16),
               TextButton(
                 onPressed: () => _select(ConnectionMethod.manual),
-                child: Text('改用手动输入', style: TextStyle(color: t.accent)),
+                child: Text('addServer.useManualInstead'.tr(),
+                    style: TextStyle(color: t.accent)),
               ),
             ],
           ),
@@ -362,13 +379,14 @@ class _AddServerPageState extends State<AddServerPage> {
                 _errorBanner(t, _error!),
                 const SizedBox(height: 14),
               ],
-              Text('将二维码置于取景框内，从 Web 后台「设备配对」生成',
+              Text('addServer.qrHint'.tr(),
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13.5, color: t.fg3)),
               const SizedBox(height: 10),
               TextButton(
                 onPressed: () => _select(ConnectionMethod.manual),
-                child: Text('改用手动输入', style: TextStyle(color: t.accent)),
+                child: Text('addServer.useManualInstead'.tr(),
+                    style: TextStyle(color: t.accent)),
               ),
             ],
           ),
@@ -385,26 +403,28 @@ class _AddServerPageState extends State<AddServerPage> {
         children: [
           _field(t,
               controller: _name,
-              label: '服务器名称',
-              hint: '生产环境',
-              validator: (v) => v == null || v.trim().isEmpty ? '请输入名称' : null),
+              label: 'addServer.serverName'.tr(),
+              hint: 'addServer.serverNameHint'.tr(),
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'addServer.nameRequired'.tr()
+                  : null),
           _field(t,
               controller: _url,
-              label: '服务器地址',
+              label: 'addServer.serverUrl'.tr(),
               hint: 'http://192.168.1.100:39100',
               keyboardType: TextInputType.url,
               validator: _urlValidator),
           _field(t,
               controller: _token,
-              label: '设备令牌（可选）',
-              hint: '只读访问可留空',
+              label: 'addServer.deviceTokenOptional'.tr(),
+              hint: 'addServer.deviceTokenHint'.tr(),
               obscure: true),
           if (_error != null) ...[
             const SizedBox(height: 4),
             _errorBanner(t, _error!),
           ],
           const SizedBox(height: 24),
-          _primary(t, '连接', _submitManual),
+          _primary(t, 'addServer.connect'.tr(), _submitManual),
         ],
       ),
     );
@@ -427,7 +447,7 @@ class _AddServerPageState extends State<AddServerPage> {
                 Icon(Icons.info_outline_rounded, color: t.ok, size: 18),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text('账号登录获得与该用户一致的完整权限。',
+                  child: Text('addServer.accountNotice'.tr(),
                       style: TextStyle(fontSize: 13, color: t.fg2)),
                 ),
               ],
@@ -436,23 +456,27 @@ class _AddServerPageState extends State<AddServerPage> {
           const SizedBox(height: 16),
           _field(t,
               controller: _name,
-              label: '服务器名称',
-              hint: '生产环境',
-              validator: (v) => v == null || v.trim().isEmpty ? '请输入名称' : null),
+              label: 'addServer.serverName'.tr(),
+              hint: 'addServer.serverNameHint'.tr(),
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'addServer.nameRequired'.tr()
+                  : null),
           _field(t,
               controller: _url,
-              label: '服务器地址',
+              label: 'addServer.serverUrl'.tr(),
               hint: 'http://192.168.1.100:39100',
               keyboardType: TextInputType.url,
               validator: _urlValidator),
           _field(t,
               controller: _username,
-              label: '用户名',
+              label: 'addServer.username'.tr(),
               hint: 'admin',
-              validator: (v) => v == null || v.trim().isEmpty ? '请输入用户名' : null),
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'addServer.usernameRequired'.tr()
+                  : null),
           _field(t,
               controller: _password,
-              label: '密码',
+              label: 'addServer.password'.tr(),
               hint: '••••••••',
               obscure: _obscure,
               suffix: IconButton(
@@ -460,22 +484,24 @@ class _AddServerPageState extends State<AddServerPage> {
                     color: t.fg4, size: 20),
                 onPressed: () => setState(() => _obscure = !_obscure),
               ),
-              validator: (v) => v == null || v.isEmpty ? '请输入密码' : null),
+              validator: (v) => v == null || v.isEmpty
+                  ? 'addServer.passwordRequired'.tr()
+                  : null),
           if (_error != null) ...[
             const SizedBox(height: 4),
             _errorBanner(t, _error!),
           ],
           const SizedBox(height: 24),
-          _primary(t, '登录', _submitAccount),
+          _primary(t, 'addServer.login'.tr(), _submitAccount),
         ],
       ),
     );
   }
 
   String? _urlValidator(String? v) {
-    if (v == null || v.trim().isEmpty) return '请输入服务器地址';
+    if (v == null || v.trim().isEmpty) return 'addServer.urlRequired'.tr();
     final uri = Uri.tryParse(v.trim());
-    if (uri == null || !uri.hasScheme) return '地址格式无效（需含 http(s)://）';
+    if (uri == null || !uri.hasScheme) return 'addServer.urlInvalid'.tr();
     return null;
   }
 

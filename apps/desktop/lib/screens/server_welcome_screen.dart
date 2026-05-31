@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import '../design/nano_tokens.dart';
 import '../widgets/nano/nano_card.dart';
@@ -7,15 +8,26 @@ import 'add_server_page.dart';
 class ServerWelcomeScreen extends StatelessWidget {
   const ServerWelcomeScreen({super.key});
 
-  static const _features = [
-    [Icons.dashboard_rounded, '实时指标 + 历史图表', 'CPU、内存、磁盘、网络、GPU、NPU'],
-    [Icons.terminal_rounded, '权限分级的远程终端', 'L0 只读 → L3 系统管理'],
-    [Icons.notifications_active_rounded, '告警 · 审计 · 设备配对', '所有命令可追溯'],
-  ];
-
   @override
   Widget build(BuildContext context) {
     final t = context.nano;
+    final features = <List<dynamic>>[
+      [
+        Icons.dashboard_rounded,
+        'welcome.featureMetricsTitle'.tr(),
+        'welcome.featureMetricsDesc'.tr()
+      ],
+      [
+        Icons.terminal_rounded,
+        'welcome.featureTerminalTitle'.tr(),
+        'welcome.featureTerminalDesc'.tr()
+      ],
+      [
+        Icons.notifications_active_rounded,
+        'welcome.featureAuditTitle'.tr(),
+        'welcome.featureAuditDesc'.tr()
+      ],
+    ];
     return Scaffold(
       backgroundColor: t.bg,
       body: SafeArea(
@@ -50,11 +62,11 @@ class ServerWelcomeScreen extends StatelessWidget {
                                 height: 1.1,
                                 color: t.fg)),
                         const SizedBox(height: 10),
-                        Text('为运维而生的服务器监控与远程管理。',
+                        Text('welcome.tagline'.tr(),
                             style: TextStyle(
                                 fontSize: 15.5, color: t.fg3, height: 1.5)),
                         const SizedBox(height: 28),
-                        for (final f in _features)
+                        for (final f in features)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: NanoCard(
@@ -100,8 +112,8 @@ class ServerWelcomeScreen extends StatelessWidget {
                         MaterialPageRoute(builder: (_) => const AddServerPage()),
                       ),
                       icon: const Icon(Icons.add_rounded, size: 22),
-                      label: const Text('添加服务器',
-                          style: TextStyle(
+                      label: Text('welcome.addServer'.tr(),
+                          style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w600)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: t.accent,

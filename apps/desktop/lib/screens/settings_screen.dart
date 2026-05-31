@@ -47,7 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
-              Text('设置',
+              Text('settings.title'.tr(),
                   style: TextStyle(
                       fontSize: t.isIOS ? 32 : 28,
                       fontWeight: t.displayWeight,
@@ -73,19 +73,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(loggedIn ? '已登录账号' : '未登录',
+                  Text(
+                      loggedIn
+                          ? 'settings.loggedIn'.tr()
+                          : 'settings.notLoggedIn'.tr(),
                       style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: t.fg)),
-                  Text(loggedIn ? '使用账号连接，拥有完整权限' : '设备令牌模式 · 只读访问',
+                  Text(
+                      loggedIn
+                          ? 'settings.loggedInSub'.tr()
+                          : 'settings.notLoggedInSub'.tr(),
                       style: TextStyle(fontSize: 12.5, color: t.fg3)),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 16),
-          NanoSectionLabel('服务器 (${provider.servers.length})', grouped: true),
+          NanoSectionLabel(
+              'settings.servers'
+                  .tr(namedArgs: {'n': '${provider.servers.length}'}),
+              grouped: true),
           NanoCard(
             child: Column(
               children: [
@@ -107,7 +116,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         if (s.id == provider.activeServerId) ...[
                           const SizedBox(width: 6),
-                          NanoBadge('当前', color: t.info),
+                          NanoBadge('settings.current'.tr(), color: t.info),
                         ],
                       ],
                     ),
@@ -118,7 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       builder: (_) => const AddServerPage())),
                   leading: NanoIconBox(Icons.add_rounded,
                       bg: t.accent.withValues(alpha: 0.14), fg: t.accent),
-                  child: Text('添加新服务器',
+                  child: Text('settings.addNewServer'.tr(),
                       style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w500,
@@ -128,7 +137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          NanoSectionLabel('工具', grouped: true),
+          NanoSectionLabel('settings.tools'.tr(), grouped: true),
           NanoCard(
             child: Column(
               children: [
@@ -150,7 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(width: 8),
                     Icon(Icons.chevron_right_rounded, color: t.fg4),
                   ]),
-                  child: Text('AI 运维助手',
+                  child: Text('settings.aiAssistant'.tr(),
                       style: TextStyle(fontSize: 15, color: t.fg)),
                 ),
                 NanoListRow(
@@ -159,53 +168,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: NanoIconBox(Icons.qr_code_rounded,
                       size: 30, iconSize: 16, fg: t.accent),
                   trailing: Icon(Icons.chevron_right_rounded, color: t.fg4),
-                  child: Text('配对新设备',
+                  child: Text('settings.pairDevice'.tr(),
                       style: TextStyle(fontSize: 15, color: t.fg)),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          NanoSectionLabel('外观', grouped: true),
+          NanoSectionLabel('settings.appearance'.tr(), grouped: true),
           NanoCard(
             child: Column(
               children: [
                 _row(context,
-                    label: '主题',
+                    label: 'settings.theme'.tr(),
                     value: _themeLabel(themeProvider.themeMode),
                     onTap: () => _pickTheme(context, themeProvider)),
                 _row(context,
-                    label: '语言',
+                    label: 'settings.language'.tr(),
                     value: context.locale.languageCode == 'zh'
-                        ? '中文（简体）'
-                        : 'English',
+                        ? 'settings.langChinese'.tr()
+                        : 'settings.langEnglish'.tr(),
                     onTap: () => _pickLanguage(context),
                     divider: false),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          NanoSectionLabel('通知', grouped: true),
+          NanoSectionLabel('settings.notifications'.tr(), grouped: true),
           NanoCard(
             child: Column(
               children: [
-                _toggle(context, '离线告警', _notifyOffline,
+                _toggle(context, 'settings.notifyOffline'.tr(), _notifyOffline,
                     (v) => setState(() => _notifyOffline = v)),
-                _toggle(context, '高 CPU / 内存', _notifyHigh,
+                _toggle(context, 'settings.notifyHigh'.tr(), _notifyHigh,
                     (v) => setState(() => _notifyHigh = v)),
-                _toggle(context, '磁盘空间', _notifyDisk,
+                _toggle(context, 'settings.notifyDisk'.tr(), _notifyDisk,
                     (v) => setState(() => _notifyDisk = v), divider: false),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          NanoSectionLabel('关于', grouped: true),
+          NanoSectionLabel('settings.about'.tr(), grouped: true),
           NanoCard(
             child: Column(
               children: [
-                _row(context, label: '版本', value: 'v0.5.0', onTap: null),
                 _row(context,
-                    label: '源码',
+                    label: 'settings.version'.tr(),
+                    value: 'v0.5.0',
+                    onTap: null),
+                _row(context,
+                    label: 'settings.sourceCodeLabel'.tr(),
                     value: 'github.com/chenqi92/NanoLink',
                     onTap: null,
                     divider: false),
@@ -214,7 +226,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 20),
           Center(
-            child: NanoMono('NanoLink Mobile · v0.5.0', size: 11, color: t.fg4),
+            child: NanoMono('settings.footer'.tr(), size: 11, color: t.fg4),
           ),
         ],
       ),
@@ -225,7 +237,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final full = provider.servers.where((s) => s.hasFullPermissions).toList();
     if (full.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('生成配对码需要先用账号登录一个服务器')));
+          SnackBar(content: Text('settings.pairNeedsLogin'.tr())));
       return;
     }
     final active = provider.activeServer;
@@ -238,11 +250,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _themeLabel(AppThemeMode m) {
     switch (m) {
       case AppThemeMode.light:
-        return '浅色';
+        return 'settings.themeLight'.tr();
       case AppThemeMode.dark:
-        return '深色';
+        return 'settings.themeDark'.tr();
       case AppThemeMode.system:
-        return '跟随系统';
+        return 'settings.themeSystem'.tr();
     }
   }
 
@@ -293,9 +305,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final lang in const [
-              ['zh', '中文（简体）'],
-              ['en', 'English'],
+            for (final lang in [
+              ['zh', 'settings.langChinese'.tr()],
+              ['en', 'settings.langEnglish'.tr()],
             ])
               NanoListRow(
                 divider: lang[0] == 'zh',
