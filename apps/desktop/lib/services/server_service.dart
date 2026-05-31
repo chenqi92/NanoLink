@@ -629,6 +629,72 @@ class ServerService {
     }
   }
 
+  /// Send a control command to an agent (`POST /api/agents/:id/command`).
+  ///
+  /// [type] is a backend `CommandType` enum name (e.g. `SYSTEM_REBOOT`,
+  /// `HEALTH_CHECK`, `SERVICE_RESTART`). Returns `null` on success, otherwise a
+  /// human-readable error message. Requires L1+ (server enforces per-route).
+  Future<String?> sendCommand(
+    String agentId,
+    String type, {
+    String target = '',
+    Map<String, String>? params,
+  }) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/agents/$agentId/command')),
+            headers: _headers,
+            body: jsonEncode({
+              'type': type,
+              'target': target,
+              if (params != null) 'params': params,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) return null;
+      return _errorMessage(response);
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// Ask an agent to push fresh data on demand
+  /// (`POST /api/agents/:id/data-request`). [requestType] ∈
+  /// full / static / disk_usage / network_info / user_sessions / gpu_info /
+  /// health. Returns `null` on success, otherwise an error message.
+  Future<String?> requestData(
+    String agentId, {
+    String requestType = 'full',
+    String target = '',
+  }) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/agents/$agentId/data-request')),
+            headers: _headers,
+            body: jsonEncode({'requestType': requestType, 'target': target}),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) return null;
+      return _errorMessage(response);
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// Extract a readable error from a failed JSON response.
+  String _errorMessage(http.Response response) {
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map) {
+        final err = body['error'] ?? body['details'];
+        if (err is String && err.isNotEmpty) return err;
+      }
+    } catch (_) {}
+    return 'HTTP ${response.statusCode}';
+  }
+
   /// Fetch server summary
   Future<ServerSummary?> fetchSummary() async {
     try {

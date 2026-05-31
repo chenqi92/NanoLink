@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../design/nano_tokens.dart';
 import '../models/models.dart';
+import '../providers/app_provider.dart';
 import 'nano/nano_card.dart';
 
-/// Bottom sheet of quick actions for an agent (open terminal, request data,
-/// copy id, restart). Restart/data-request hit the backend in a later milestone.
+/// Bottom sheet of quick actions for an agent: open terminal, request fresh
+/// data (POST /data-request), copy id, and reboot host (POST /command →
+/// SYSTEM_REBOOT). The data/command actions hit the backend directly via the
+/// agent's [ServerService].
 Future<void> showAgentActionsSheet(
   BuildContext context, {
   required Agent agent,
   VoidCallback? onOpenTerminal,
-  Future<void> Function()? onRequestData,
-  Future<void> Function()? onRestart,
 }) {
   final t = context.nano;
   return showModalBottomSheet(
@@ -42,7 +44,7 @@ Future<void> showAgentActionsSheet(
               _ActionRow(
                 icon: Icons.terminal_rounded,
                 label: '打开远程终端',
-                sub: '开启 SSH/PTY 通道',
+                sub: '开启远程 Shell 通道',
                 onTap: () {
                   Navigator.pop(ctx);
                   onOpenTerminal?.call();
@@ -53,12 +55,15 @@ Future<void> showAgentActionsSheet(
               label: '请求最新数据',
               sub: '强制 Agent 立即上报指标',
               onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                final svc = context.read<AppProvider>().serviceForAgent(agent.id);
                 Navigator.pop(ctx);
-                if (onRequestData != null) {
-                  await onRequestData();
-                } else {
-                  _toast(context, '已请求新数据');
+                if (svc == null) {
+                  _show(messenger, '无法连接该节点所属服务器');
+                  return;
                 }
+                final err = await svc.requestData(agent.id);
+                _show(messenger, err == null ? '已请求新数据' : '请求失败：$err');
               },
             ),
             _ActionRow(
@@ -66,26 +71,30 @@ Future<void> showAgentActionsSheet(
               label: '复制 Agent ID',
               onTap: () {
                 Clipboard.setData(ClipboardData(text: agent.id));
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(ctx);
-                _toast(context, '已复制 Agent ID');
+                _show(messenger, '已复制 Agent ID');
               },
             ),
             if (agent.permissionLevel >= 3)
               _ActionRow(
                 icon: Icons.power_settings_new_rounded,
-                label: '重启 Agent 进程',
+                label: '重启主机',
                 sub: '需要 L3 · 危险操作',
                 danger: true,
                 onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  final provider = context.read<AppProvider>();
                   Navigator.pop(ctx);
-                  final ok = await _confirmRestart(context);
-                  if (ok == true) {
-                    if (onRestart != null) {
-                      await onRestart();
-                    } else {
-                      _toast(context, '已发送重启命令');
-                    }
+                  final ok = await _confirmReboot(context);
+                  if (ok != true) return;
+                  final svc = provider.serviceForAgent(agent.id);
+                  if (svc == null) {
+                    _show(messenger, '无法连接该节点所属服务器');
+                    return;
                   }
+                  final err = await svc.sendCommand(agent.id, 'SYSTEM_REBOOT');
+                  _show(messenger, err == null ? '已发送重启命令' : '发送失败：$err');
                 },
               ),
             const SizedBox(height: 8),
@@ -96,19 +105,19 @@ Future<void> showAgentActionsSheet(
   );
 }
 
-void _toast(BuildContext context, String msg) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+void _show(ScaffoldMessengerState messenger, String msg) {
+  messenger.showSnackBar(SnackBar(content: Text(msg)));
 }
 
-Future<bool?> _confirmRestart(BuildContext context) {
+Future<bool?> _confirmReboot(BuildContext context) {
   final t = context.nano;
   return showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: t.card,
-      title: Text('重启 Agent 进程？', style: TextStyle(color: t.fg)),
+      title: Text('重启该节点主机？', style: TextStyle(color: t.fg)),
       content: Text(
-        '将断开当前 SSH 会话与远程 Shell，指标采集会暂停约 30 秒。',
+        '将向 Agent 下发系统重启命令，主机会断开并重新启动，指标采集中断直至恢复。',
         style: TextStyle(color: t.fg2),
       ),
       actions: [
