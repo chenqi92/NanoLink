@@ -362,6 +362,16 @@ export interface AgentLogResult {
   totalLines?: number
   logSource?: string
 }
+export interface AgentScript {
+  name: string
+  description?: string
+  category?: string
+  requiredArgs?: string[]
+  requiredPermission?: number
+  fileSize?: number
+  lastModified?: string
+  signatureVerified?: boolean
+}
 export interface CommandResultData {
   commandId: string
   success: boolean
@@ -370,6 +380,7 @@ export interface CommandResultData {
   processes?: AgentProcess[]
   containers?: AgentContainer[]
   packages?: AgentPackage[]
+  scripts?: AgentScript[]
   logResult?: AgentLogResult
 }
 

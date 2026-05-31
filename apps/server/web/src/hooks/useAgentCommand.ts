@@ -8,8 +8,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
  * The agent executes asynchronously; the server caches the result and we poll
  * GET /agents/:id/command/:commandId/result until it arrives (or times out).
  */
-export function useAgentCommand(agentId: string, type: string, opts: { target?: string; enabled?: boolean } = {}) {
-  const { target, enabled = true } = opts
+export function useAgentCommand(agentId: string, type: string, opts: { target?: string; params?: Record<string, string>; enabled?: boolean } = {}) {
+  const { target, params, enabled = true } = opts
+  const paramsKey = params ? JSON.stringify(params) : ""
   const [data, setData] = useState<CommandResultData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -20,7 +21,7 @@ export function useAgentCommand(agentId: string, type: string, opts: { target?: 
     setLoading(true)
     setError(null)
     try {
-      const { commandId } = await commandsApi.send(agentId, { type, target })
+      const { commandId } = await commandsApi.send(agentId, { type, target, params: paramsKey ? JSON.parse(paramsKey) : undefined })
       let res: CommandResultData | { status: "pending" } | null = null
       for (let i = 0; i < 30; i++) {
         await sleep(500)
@@ -40,7 +41,7 @@ export function useAgentCommand(agentId: string, type: string, opts: { target?: 
     } finally {
       if (reqId.current === myReq) setLoading(false)
     }
-  }, [agentId, type, target])
+  }, [agentId, type, target, paramsKey])
 
   useEffect(() => {
     if (enabled) run()
