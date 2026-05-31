@@ -271,6 +271,10 @@
     "tabFiles": "Files",
     "tabLogs": "Logs",
     "noAccess": "(no access)",
-    "offlineNoHistory": "Agent offline — no live data available"
+    "offlineNoHistory": "Agent offline — no live data available",
+    "onDemandDesc": "This view streams live data from the agent on demand. Trigger a request to fetch the latest snapshot from {{host}}.",
+    "requestFromAgent": "Request from agent",
+    "requestSent": "Request sent to agent",
+    "requestFailed": "Request failed"
   }
 }

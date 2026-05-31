@@ -277,6 +277,10 @@
     "tabFiles": "文件",
     "tabLogs": "日志",
     "noAccess": "(权限不足)",
-    "offlineNoHistory": "节点离线，暂无实时数据"
+    "offlineNoHistory": "节点离线，暂无实时数据",
+    "onDemandDesc": "该视图按需从节点拉取实时数据。点击下方按钮向 {{host}} 请求最新快照。",
+    "requestFromAgent": "向节点请求",
+    "requestSent": "请求已发送至节点",
+    "requestFailed": "请求失败"
   }
 }

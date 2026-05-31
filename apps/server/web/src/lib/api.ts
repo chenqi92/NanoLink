@@ -249,10 +249,19 @@ export const agentsApi = {
     api.post<{ status: string }>(`/agents/${id}/command`, { type: "shell", command }),
 }
 
+export const commandsApi = {
+  send: (agentId: string, body: { type: string; target?: string; params?: Record<string, unknown> }) =>
+    api.post<{ status: string; commandId: string }>(`/agents/${agentId}/command`, body),
+  dataRequest: (agentId: string, requestType: string, target?: string) =>
+    api.post<{ success: boolean; message?: string }>(`/agents/${agentId}/data-request`, { requestType, target }),
+}
+
 export const metricsApi = {
   all: () => api.get<Record<string, Metrics>>("/metrics"),
   get: (agentId: string) => api.get<Metrics>(`/agents/${agentId}/metrics`),
   summary: () => api.get<Summary>("/summary"),
+  history: (agentId: string, start: number, end: number, interval: string) =>
+    api.get<Metrics[]>(`/metrics/history?agentId=${agentId}&start=${start}&end=${end}&interval=${interval}`),
 }
 
 export const usersApi = {

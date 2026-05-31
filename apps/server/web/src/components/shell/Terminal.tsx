@@ -147,9 +147,13 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
   return (
     <div
       ref={terminalRef}
-      className="h-full w-full rounded-lg overflow-hidden border border-[var(--color-border)]"
       style={{
+        height: "100%",
+        width: "100%",
         padding: "8px",
+        borderRadius: "var(--radius)",
+        overflow: "hidden",
+        border: "1px solid var(--border)",
         backgroundColor: theme.theme.background,
       }}
     />

@@ -6,6 +6,9 @@ import { useRouter } from "@/store/router"
 import { metricsApi, type Metrics } from "@/lib/api"
 import { Status, Perm } from "@/components/shell/primitives"
 import { RealtimeTab } from "@/components/monitor/realtime"
+import { HistoryTab } from "@/components/monitor/HistoryTab"
+import { TerminalTab } from "@/components/monitor/TerminalTab"
+import { OnDemandTab } from "@/components/monitor/OnDemandTab"
 import { agentStatus, osFamily } from "@/lib/format"
 
 type Tab = "realtime" | "history" | "processes" | "services" | "docker" | "files" | "logs" | "terminal"
@@ -112,22 +115,15 @@ export function AgentDetailScreen() {
       </div>
 
       <div style={{ flex: 1, overflow: "auto" }}>
-        {tab === "realtime" ? (
-          m ? (
-            <RealtimeTab m={m} history={hist} />
-          ) : (
-            <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>
-              {status === "online" ? t("common.loading") : t("mon.offlineNoHistory")}
-            </div>
-          )
-        ) : (
-          <div style={{ padding: 24 }}>
-            <div className="card" style={{ padding: "40px 24px", textAlign: "center", color: "var(--fg-4)" }}>
-              <div style={{ marginBottom: 10, color: "var(--fg-dim)" }}>{I.bolt({ size: 24 })}</div>
-              <div style={{ fontSize: 12.5 }}>{tabs.find((x) => x.k === tab)?.label} · {t("common.loading")}</div>
-            </div>
-          </div>
-        )}
+        {tab === "realtime" &&
+          (m ? <RealtimeTab m={m} history={hist} /> : <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{status === "online" ? t("common.loading") : t("mon.offlineNoHistory")}</div>)}
+        {tab === "history" && <HistoryTab agentId={a.id} />}
+        {tab === "terminal" && <TerminalTab agentId={a.id} permission={a.permission} />}
+        {tab === "processes" && <OnDemandTab agentId={a.id} host={a.hostname} kind="processes" icon={I.cpu({ size: 24 })} disabled={status !== "online"} />}
+        {tab === "services" && <OnDemandTab agentId={a.id} host={a.hostname} kind="services" icon={I.bolt({ size: 24 })} disabled={status !== "online"} />}
+        {tab === "docker" && <OnDemandTab agentId={a.id} host={a.hostname} kind="docker" icon={I.disk({ size: 24 })} disabled={status !== "online"} />}
+        {tab === "files" && <OnDemandTab agentId={a.id} host={a.hostname} kind="files" icon={I.audit({ size: 24 })} disabled={status !== "online"} />}
+        {tab === "logs" && <OnDemandTab agentId={a.id} host={a.hostname} kind="logs" icon={I.audit({ size: 24 })} disabled={status !== "online"} />}
       </div>
     </div>
   )
