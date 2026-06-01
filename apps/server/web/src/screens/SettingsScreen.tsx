@@ -21,7 +21,7 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
 
 function Section({ title, icon, children }: { title: ReactNode; icon: ReactNode; children: ReactNode }) {
   return (
-    <div className="card" style={{ padding: 0, maxWidth: 760 }}>
+    <div className="card" style={{ padding: 0 }}>
       <div className="row gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", alignItems: "center", color: "var(--fg-2)" }}>
         <span style={{ color: "var(--fg-4)" }}>{icon}</span>
         <span style={{ fontSize: 12.5, fontWeight: 500 }}>{title}</span>
@@ -60,7 +60,7 @@ export function SettingsScreen() {
   return (
     <div className="col" style={{ flex: 1, overflow: "hidden" }}>
       <PageHeader title={t("nav.settings")} subtitle={t("plat.settingsSubtitle")} />
-      <div className="col" style={{ padding: "0 24px 24px", overflow: "auto", flex: 1, gap: 16 }}>
+      <div style={{ padding: "0 24px 24px", overflow: "auto", flex: 1, display: "grid", gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
         <Section title={t("plat.appearance")} icon={I.settings({ size: 13 })}>
           <FormBlock label={t("plat.theme")}>
             <Segmented value={tweaks.theme} onChange={(v) => set("theme", v)} options={[{ v: "dark", label: t("plat.dark") }, { v: "light", label: t("plat.light") }]} />
@@ -87,24 +87,26 @@ export function SettingsScreen() {
           </FormBlock>
         </Section>
 
-        <Section title={t("plat.server")} icon={I.dashboard({ size: 13 })}>
-          <KVRow label={t("plat.version")} value={info?.version ? `v${info.version}` : "—"} />
-          {info?.serverUrl && <KVRow label="URL" value={info.serverUrl} />}
-          {info?.grpcPort && <KVRow label="gRPC" value={String(info.grpcPort)} />}
-        </Section>
+        <div className="col" style={{ gap: 16 }}>
+          <Section title={t("plat.server")} icon={I.dashboard({ size: 13 })}>
+            <KVRow label={t("plat.version")} value={info?.version ? `v${info.version}` : "—"} />
+            {info?.serverUrl && <KVRow label="URL" value={info.serverUrl} />}
+            {info?.grpcPort && <KVRow label="gRPC" value={String(info.grpcPort)} />}
+          </Section>
 
-        <Section title={t("plat.account")} icon={I.user({ size: 13 })}>
-          <KVRow label={t("acc.user")} value={user?.username || "—"} mono />
-          <KVRow label={t("acc.role")} value={user?.isSuperAdmin ? "SuperAdmin" : "User"} />
-          <FormBlock label={t("plat.changePassword")}>
-            <div className="row gap-2">
-              <input className="input" type="password" autoComplete="new-password" value={pwd} onChange={(e) => { setPwd(e.target.value); setPwdStatus("idle") }} placeholder={t("plat.newPassword")} />
-              <button className="btn btn-sm" onClick={updatePassword} disabled={pwd.length < 8 || pwdStatus === "busy"}>{pwdStatus === "busy" && <span className="dot pulse ok" />}{t("plat.updatePassword")}</button>
-            </div>
-            {pwdStatus === "done" && <span className="badge ok" style={{ marginTop: 6 }}>{t("plat.passwordUpdated")}</span>}
-            {pwdStatus === "error" && <span className="badge crit" style={{ marginTop: 6 }}>{t("common.error")}</span>}
-          </FormBlock>
-        </Section>
+          <Section title={t("plat.account")} icon={I.user({ size: 13 })}>
+            <KVRow label={t("acc.user")} value={user?.username || "—"} mono />
+            <KVRow label={t("acc.role")} value={user?.isSuperAdmin ? "SuperAdmin" : "User"} />
+            <FormBlock label={t("plat.changePassword")}>
+              <div className="row gap-2">
+                <input className="input" type="password" autoComplete="new-password" value={pwd} onChange={(e) => { setPwd(e.target.value); setPwdStatus("idle") }} placeholder={t("plat.newPassword")} />
+                <button className="btn btn-sm" onClick={updatePassword} disabled={pwd.length < 8 || pwdStatus === "busy"}>{pwdStatus === "busy" && <span className="dot pulse ok" />}{t("plat.updatePassword")}</button>
+              </div>
+              {pwdStatus === "done" && <span className="badge ok" style={{ marginTop: 6 }}>{t("plat.passwordUpdated")}</span>}
+              {pwdStatus === "error" && <span className="badge crit" style={{ marginTop: 6 }}>{t("common.error")}</span>}
+            </FormBlock>
+          </Section>
+        </div>
       </div>
     </div>
   )
