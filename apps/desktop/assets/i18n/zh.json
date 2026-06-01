@@ -256,7 +256,14 @@
     "inputHint": "输入命令…",
     "inputHintWaiting": "等待连接…",
     "lockedTitle": "权限不足",
-    "lockedDesc": "该节点为只读 (L0)。需管理员提升至 L3 系统管理权限才能打开远程终端。"
+    "lockedDesc": "该节点为只读 (L0)。需管理员提升至 L3 系统管理权限才能打开远程终端。",
+    "connectFailed": "连接失败：{error}",
+    "sessionDenied": "无法建立终端会话。请确认拥有 L3 系统管理权限，且服务器已启用远程 Shell。",
+    "connectError": "连接错误：{error}",
+    "sessionEnded": "[nano] 会话已结束"
+  },
+  "notify": {
+    "channelName": "NanoLink 告警"
   },
   "alerts": {
     "title": "活动 & 告警",

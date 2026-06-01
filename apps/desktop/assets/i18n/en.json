@@ -256,7 +256,14 @@
     "inputHint": "Enter command…",
     "inputHintWaiting": "Waiting for connection…",
     "lockedTitle": "Insufficient permission",
-    "lockedDesc": "This node is read-only (L0). An admin must raise it to L3 system admin permission to open a remote terminal."
+    "lockedDesc": "This node is read-only (L0). An admin must raise it to L3 system admin permission to open a remote terminal.",
+    "connectFailed": "Connection failed: {error}",
+    "sessionDenied": "Couldn't open the terminal session. Make sure you have L3 system-admin permission and remote shell is enabled on the server.",
+    "connectError": "Connection error: {error}",
+    "sessionEnded": "[nano] session ended"
+  },
+  "notify": {
+    "channelName": "NanoLink Alerts"
   },
   "alerts": {
     "title": "Activity & Alerts",

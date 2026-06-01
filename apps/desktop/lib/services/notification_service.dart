@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -7,7 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// every call is a guarded no-op so the rest of the app stays unaffected.
 class NotificationService {
   static const _channelId = 'nanolink_alerts';
-  static const _channelName = 'NanoLink 告警';
+  String get _channelName => tr('notify.channelName');
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -39,7 +40,7 @@ class NotificationService {
           AndroidFlutterLocalNotificationsPlugin>();
       await android13?.requestNotificationsPermission();
       await android13?.createNotificationChannel(
-        const AndroidNotificationChannel(
+        AndroidNotificationChannel(
           _channelId,
           _channelName,
           importance: Importance.high,
@@ -60,15 +61,15 @@ class NotificationService {
         key.hashCode & 0x7fffffff,
         title,
         body,
-        const NotificationDetails(
+        NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
             _channelName,
             importance: Importance.high,
             priority: Priority.high,
           ),
-          iOS: DarwinNotificationDetails(),
-          macOS: DarwinNotificationDetails(),
+          iOS: const DarwinNotificationDetails(),
+          macOS: const DarwinNotificationDetails(),
         ),
       );
     } catch (e) {
