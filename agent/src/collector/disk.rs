@@ -312,13 +312,16 @@ impl DiskCollector {
                 if parts.len() >= 14 {
                     let device = parts[2].to_string();
 
-                    // Skip partitions, only track whole disks
+                    // Skip plain partitions (e.g. sda1), but keep whole disks,
+                    // nvme namespaces, and device-mapper targets (dm-N) — the
+                    // latter back LVM/encrypted roots and carry the real I/O.
                     if device
                         .chars()
                         .last()
                         .map(|c| c.is_numeric())
                         .unwrap_or(false)
                         && !device.starts_with("nvme")
+                        && !device.starts_with("dm-")
                     {
                         continue;
                     }
@@ -468,24 +471,44 @@ impl DiskCollector {
                 .cloned()
                 .unwrap_or_default();
 
+            // Resolve the kernel device name used in /proc/diskstats. sysinfo may
+            // report an LVM/mapper path (/dev/mapper/<vg>-<lv>) that symlinks to
+            // /dev/dm-N; canonicalize so LVM/encrypted roots map to their real
+            // dm-* device. Fall back to base_device (handles sdaN → sda) when the
+            // exact key isn't tracked.
+            let io_key = {
+                let path = if device.starts_with('/') {
+                    device.clone()
+                } else {
+                    format!("/dev/{device}")
+                };
+                std::fs::canonicalize(&path)
+                    .ok()
+                    .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                    .unwrap_or_else(|| base_device.clone())
+            };
+            let key = if current_io_stats.contains_key(&io_key) {
+                &io_key
+            } else {
+                &base_device
+            };
+
             // Calculate I/O rates
             let (read_bytes_sec, write_bytes_sec, read_iops, write_iops) =
-                if let Some(current) = current_io_stats.get(&base_device) {
-                    if let Some(prev) = self.prev_stats.get(&base_device) {
-                        let read_diff = current.read_bytes.saturating_sub(prev.read_bytes);
-                        let write_diff = current.write_bytes.saturating_sub(prev.write_bytes);
-                        let read_ops_diff = current.read_ops.saturating_sub(prev.read_ops);
-                        let write_ops_diff = current.write_ops.saturating_sub(prev.write_ops);
+                if let (Some(current), Some(prev)) =
+                    (current_io_stats.get(key), self.prev_stats.get(key))
+                {
+                    let read_diff = current.read_bytes.saturating_sub(prev.read_bytes);
+                    let write_diff = current.write_bytes.saturating_sub(prev.write_bytes);
+                    let read_ops_diff = current.read_ops.saturating_sub(prev.read_ops);
+                    let write_ops_diff = current.write_ops.saturating_sub(prev.write_ops);
 
-                        (
-                            (read_diff as f64 / elapsed_secs) as u64,
-                            (write_diff as f64 / elapsed_secs) as u64,
-                            (read_ops_diff as f64 / elapsed_secs) as u64,
-                            (write_ops_diff as f64 / elapsed_secs) as u64,
-                        )
-                    } else {
-                        (0, 0, 0, 0)
-                    }
+                    (
+                        (read_diff as f64 / elapsed_secs) as u64,
+                        (write_diff as f64 / elapsed_secs) as u64,
+                        (read_ops_diff as f64 / elapsed_secs) as u64,
+                        (write_ops_diff as f64 / elapsed_secs) as u64,
+                    )
                 } else {
                     (0, 0, 0, 0)
                 };
