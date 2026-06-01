@@ -42,6 +42,9 @@ const formatTime = (timestamp: string | number) => {
 }
 
 const formatValue = (value: number, unit?: string) => {
+  // recharts feeds this to axis ticks / tooltips and may pass undefined or NaN
+  // when a series has missing points — guard so it never throws.
+  if (value == null || !Number.isFinite(value)) return "—"
   if (unit === "bytes") {
     if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`
     if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`

@@ -25,13 +25,16 @@ export function Sparkline({
   min?: number
 }) {
   if (!data?.length) return <svg width={w} height={h} />
-  const lo = min ?? Math.min(...data)
-  const hi = max ?? Math.max(...data)
+  // Coerce non-finite values (undefined/NaN) so a missing metric never yields a
+  // NaN path coordinate.
+  const clean = data.map((v) => (Number.isFinite(v) ? v : 0))
+  const lo = min ?? Math.min(...clean)
+  const hi = max ?? Math.max(...clean)
   const range = hi - lo || 1
-  const step = w / (data.length - 1 || 1)
+  const step = w / (clean.length - 1 || 1)
   let d = ""
   let area = ""
-  data.forEach((v, i) => {
+  clean.forEach((v, i) => {
     const x = i * step
     const y = h - ((v - lo) / range) * (h - 2) - 1
     d += (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1)
@@ -99,7 +102,7 @@ export function LineChart({
   const padT = 8
   const padB = showAxis ? 22 : 4
 
-  const allData = series.flatMap((s) => s.data || [])
+  const allData = series.flatMap((s) => s.data || []).filter((v) => Number.isFinite(v))
   const dataMin = allData.length ? Math.min(...allData) : 0
   const dataMax = allData.length ? Math.max(...allData) : 1
   const ymax = yMax ?? Math.max(dataMax * 1.1, 1)
@@ -118,11 +121,12 @@ export function LineChart({
     return out
   }, [ymin, ymax])
 
+  const safeY = (v: number) => yFor(Number.isFinite(v) ? v : ymin)
   function pathFor(data: number[]) {
     if (!data?.length) return ""
     let d = ""
     data.forEach((v, i) => {
-      d += (i === 0 ? "M" : "L") + xFor(i).toFixed(1) + "," + yFor(v).toFixed(1)
+      d += (i === 0 ? "M" : "L") + xFor(i).toFixed(1) + "," + safeY(v).toFixed(1)
     })
     return d
   }
@@ -130,7 +134,7 @@ export function LineChart({
     if (!data?.length) return ""
     let d = `M${xFor(0)},${yFor(ymin)}`
     data.forEach((v, i) => {
-      d += `L${xFor(i).toFixed(1)},${yFor(v).toFixed(1)}`
+      d += `L${xFor(i).toFixed(1)},${safeY(v).toFixed(1)}`
     })
     d += `L${xFor(data.length - 1)},${yFor(ymin)} Z`
     return d
@@ -245,7 +249,8 @@ export function CoreMatrix({ cores }: { cores: number[] }) {
   const cols = Math.min(16, Math.ceil(Math.sqrt(cores.length * 2)))
   return (
     <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 3 }}>
-      {cores.map((v, i) => {
+      {cores.map((raw, i) => {
+        const v = Number.isFinite(raw) ? raw : 0
         const tone = v > 90 ? "var(--crit)" : v > 70 ? "var(--warn)" : v > 30 ? "var(--fg-2)" : "var(--fg-dim)"
         return (
           <div key={i} title={`Core ${i}: ${v.toFixed(0)}%`} style={{ height: 18, background: "var(--panel-3)", position: "relative", borderRadius: 2, overflow: "hidden" }}>

@@ -88,8 +88,8 @@ export function HistoryTab({ agentId }: { agentId: string }) {
     const diskR = history.map((m) => toMB((m.disks ?? []).reduce((s, d) => s + (d.readBytesPerSec || 0), 0)))
     const diskW = history.map((m) => toMB((m.disks ?? []).reduce((s, d) => s + (d.writeBytesPerSec || 0), 0)))
     const hasGpu = history.some((m) => (m.gpus?.length ?? 0) > 0)
-    const gpuUse = hasGpu ? history.map((m) => (m.gpus?.length ? m.gpus.reduce((s, g) => s + g.usagePercent, 0) / m.gpus.length : 0)) : null
-    const gpuTemp = hasGpu ? history.map((m) => (m.gpus?.length ? m.gpus.reduce((s, g) => s + g.temperature, 0) / m.gpus.length : 0)) : null
+    const gpuUse = hasGpu ? history.map((m) => (m.gpus?.length ? m.gpus.reduce((s, g) => s + (g.usagePercent ?? 0), 0) / m.gpus.length : 0)) : null
+    const gpuTemp = hasGpu ? history.map((m) => (m.gpus?.length ? m.gpus.reduce((s, g) => s + (g.temperature ?? 0), 0) / m.gpus.length : 0)) : null
     return { cpu, mem, netRx, netTx, diskR, diskW, gpuUse, gpuTemp }
   }, [history])
 
