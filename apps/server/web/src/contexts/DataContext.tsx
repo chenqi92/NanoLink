@@ -75,6 +75,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const handleMetrics = useCallback((newMetrics: Record<string, Metrics>) => {
     setMetrics(prev => ({ ...prev, ...newMetrics }))
+    // Receiving metrics for an agent means it is alive. The agent list (with
+    // lastHeartbeat) is pushed far less often than metrics, so without this the
+    // heartbeat ages past the 60s window between pushes and the node flaps
+    // offline even while data keeps streaming. Keep it fresh on every tick.
+    const ids = Object.keys(newMetrics)
+    if (ids.length) {
+      const now = new Date().toISOString()
+      setAgents(prev => prev.map(a => (ids.includes(a.id) ? { ...a, lastHeartbeat: now } : a)))
+    }
   }, [])
 
   const handleAgentUpdate = useCallback((agentId: string, agent: Agent) => {
