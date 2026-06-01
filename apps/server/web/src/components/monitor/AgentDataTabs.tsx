@@ -34,9 +34,9 @@ export function ProcessesTab({ agentId }: { agentId: string }) {
   const { data, loading, error, reload } = useAgentCommand(agentId, "PROCESS_LIST")
   const [q, setQ] = useState("")
   const rows = useMemo(() => {
-    const list = [...(data?.processes ?? [])].sort((a, b) => b.cpuPercent - a.cpuPercent)
+    const list = [...(data?.processes ?? [])].sort((a, b) => (b.cpuPercent ?? 0) - (a.cpuPercent ?? 0))
     const ql = q.toLowerCase()
-    return ql ? list.filter((p) => p.name.toLowerCase().includes(ql) || String(p.pid).includes(ql) || p.user.toLowerCase().includes(ql)) : list
+    return ql ? list.filter((p) => (p.name ?? "").toLowerCase().includes(ql) || String(p.pid ?? "").includes(ql) || (p.user ?? "").toLowerCase().includes(ql)) : list
   }, [data, q])
 
   return (
@@ -54,8 +54,8 @@ export function ProcessesTab({ agentId }: { agentId: string }) {
                   <td className="mono dim">{p.user || "—"}</td>
                   <td>
                     <div className="row gap-2" style={{ alignItems: "center" }}>
-                      <div className="meter" style={{ flex: 1, height: 4 }}><div className={`meter-fill ${toneFor(p.cpuPercent)}`} style={{ width: `${Math.min(100, p.cpuPercent)}%` }} /></div>
-                      <span className="mono num" style={{ fontSize: 11, minWidth: 38, textAlign: "right", color: toneFor(p.cpuPercent) ? `var(--${toneFor(p.cpuPercent)})` : "var(--fg-2)" }}>{p.cpuPercent.toFixed(1)}%</span>
+                      <div className="meter" style={{ flex: 1, height: 4 }}><div className={`meter-fill ${toneFor(p.cpuPercent ?? 0)}`} style={{ width: `${Math.min(100, p.cpuPercent ?? 0)}%` }} /></div>
+                      <span className="mono num" style={{ fontSize: 11, minWidth: 38, textAlign: "right", color: toneFor(p.cpuPercent ?? 0) ? `var(--${toneFor(p.cpuPercent ?? 0)})` : "var(--fg-2)" }}>{(p.cpuPercent ?? 0).toFixed(1)}%</span>
                     </div>
                   </td>
                   <td className="mono num dim" style={{ textAlign: "right" }}>{formatBytes(p.memoryBytes)}</td>

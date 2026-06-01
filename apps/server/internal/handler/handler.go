@@ -574,7 +574,10 @@ func (h *Handler) GetCommandResult(c *gin.Context) {
 		c.JSON(http.StatusAccepted, gin.H{"status": "pending", "commandId": commandID})
 		return
 	}
-	data, err := protojson.Marshal(res)
+	// EmitDefaultValues so proto3 zero-valued fields (e.g. a process at 0% CPU,
+	// an empty string) appear in the JSON rather than being omitted — otherwise
+	// the dashboard reads them as undefined and crashes on .toFixed / string ops.
+	data, err := protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(res)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encode result"})
 		return
