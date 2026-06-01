@@ -23,7 +23,8 @@ class ApiClient {
     })
 
     if (response.status === 401) {
-      throw { error: "Authentication required", status: 401 } as ApiError
+      const data = await response.json().catch(() => ({}))
+      throw { error: data.error || "Authentication required", status: 401 } as ApiError
     }
 
     if (!response.ok) {
