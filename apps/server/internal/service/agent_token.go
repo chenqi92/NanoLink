@@ -95,6 +95,34 @@ func (s *AgentTokenService) GetAll() ([]database.AgentToken, error) {
 	return tokens, nil
 }
 
+// GetPaged returns a page of tokens ordered for display. limit<=0 returns all rows.
+func (s *AgentTokenService) GetPaged(offset, limit int) ([]database.AgentToken, error) {
+	var tokens []database.AgentToken
+	q := s.db.Order("sort_order ASC, created_at DESC")
+	if limit > 0 {
+		q = q.Limit(limit).Offset(offset)
+	}
+	if err := q.Find(&tokens).Error; err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
+// Stats returns aggregate counts for the token list header (total / online / L3).
+// "online" uses the same 30s window as AgentToken.IsOnline so the header agrees
+// with the per-row status.
+func (s *AgentTokenService) Stats() (total, online, l3 int64, err error) {
+	if err = s.db.Model(&database.AgentToken{}).Count(&total).Error; err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-30 * time.Second)
+	if err = s.db.Model(&database.AgentToken{}).Where("last_seen_at > ?", cutoff).Count(&online).Error; err != nil {
+		return
+	}
+	err = s.db.Model(&database.AgentToken{}).Where("permission = ?", 3).Count(&l3).Error
+	return
+}
+
 // Update updates an agent token
 func (s *AgentTokenService) Update(id uint, name string, permission int) error {
 	return s.db.Model(&database.AgentToken{}).Where("id = ?", id).Updates(map[string]interface{}{

@@ -60,11 +60,26 @@ type UpdateAgentTokenRequest struct {
 	Permission int    `json:"permission"`
 }
 
-// ListAgentTokens returns all agent tokens
+// ListAgentTokens returns a page of agent tokens plus global aggregate counts.
 func (h *AgentTokenHandler) ListAgentTokens(c *gin.Context) {
-	tokens, err := h.tokenService.GetAll()
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "100"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 500 {
+		pageSize = 100
+	}
+
+	tokens, err := h.tokenService.GetPaged((page-1)*pageSize, pageSize)
 	if err != nil {
 		h.logger.Errorf("Failed to list agent tokens: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list agent tokens"})
+		return
+	}
+	total, online, l3, err := h.tokenService.Stats()
+	if err != nil {
+		h.logger.Errorf("Failed to compute token stats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list agent tokens"})
 		return
 	}
@@ -100,7 +115,14 @@ func (h *AgentTokenHandler) ListAgentTokens(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, responses)
+	c.JSON(http.StatusOK, gin.H{
+		"items":    responses,
+		"total":    total,
+		"online":   online,
+		"l3":       l3,
+		"page":     page,
+		"pageSize": pageSize,
+	})
 }
 
 // CreateAgentToken creates a new agent token

@@ -50,8 +50,8 @@ export function AgentManagement() {
   const fetchTokens = async () => {
     try {
       setLoading(true)
-      const data = await agentTokensApi.list()
-      setTokens(data)
+      const data = await agentTokensApi.list(1, 500)
+      setTokens(data.items)
       setError(null)
     } catch (e) {
       setError("加载代理列表失败")

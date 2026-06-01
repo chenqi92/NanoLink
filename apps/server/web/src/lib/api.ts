@@ -522,8 +522,18 @@ export interface CreateAgentTokenResponse extends AgentToken {
   token: string // Full token, only returned on creation
 }
 
+export interface AgentTokenList {
+  items: AgentToken[]
+  total: number
+  online: number
+  l3: number
+  page: number
+  pageSize: number
+}
+
 export const agentTokensApi = {
-  list: () => api.get<AgentToken[]>("/agent-tokens"),
+  list: (page = 1, pageSize = 100) =>
+    api.get<AgentTokenList>(`/agent-tokens?page=${page}&pageSize=${pageSize}`),
   create: (data: CreateAgentTokenRequest) => api.post<CreateAgentTokenResponse>("/agent-tokens", data),
   update: (id: number, data: { name: string; permission: number }) => api.put(`/agent-tokens/${id}`, data),
   delete: (id: number) => api.delete(`/agent-tokens/${id}`),

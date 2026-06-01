@@ -399,6 +399,13 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 
 // processStreamMessage processes a message from the stream
 func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamRequest) {
+	// Any message from the agent means it is alive — refresh DB online status.
+	// The layered stream sends Realtime/Periodic (not full Metrics), so refreshing
+	// only in the Metrics case left connected agents showing offline after 30s.
+	if s.agentTokenService != nil {
+		s.agentTokenService.UpdateLastSeen(agent.AgentID, agent.RemoteIP)
+	}
+
 	switch req := msg.GetRequest().(type) {
 	case *pb.MetricsStreamRequest_Metrics:
 		agent.LastMetricsAt = time.Now()
@@ -422,11 +429,6 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 
 		// Notify metrics subscribers
 		s.notifyMetrics(agent.AgentID, req.Metrics)
-
-		// Update last seen in database for online status
-		if s.agentTokenService != nil {
-			s.agentTokenService.UpdateLastSeen(agent.AgentID, agent.RemoteIP)
-		}
 
 	case *pb.MetricsStreamRequest_Realtime:
 		agent.LastMetricsAt = time.Now()

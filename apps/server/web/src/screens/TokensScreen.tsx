@@ -29,10 +29,15 @@ function PermSelect({ value, onChange }: { value: number; onChange: (v: number) 
   )
 }
 
+const PAGE_SIZE = 50
+
 export function TokensScreen() {
   const { t } = useTranslation()
   const [items, setItems] = useState<AgentToken[]>([])
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [counts, setCounts] = useState({ online: 0, offline: 0, l3: 0 })
   const [dragId, setDragId] = useState<number | null>(null)
   const [editing, setEditing] = useState<AgentToken | null>(null)
   const [creating, setCreating] = useState(false)
@@ -42,13 +47,18 @@ export function TokensScreen() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setItems(await agentTokensApi.list())
+      const r = await agentTokensApi.list(page, PAGE_SIZE)
+      setItems(r.items)
+      setTotal(r.total)
+      setCounts({ online: r.online, offline: r.total - r.online, l3: r.l3 })
     } catch {
       setItems([])
+      setTotal(0)
+      setCounts({ online: 0, offline: 0, l3: 0 })
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page])
 
   useEffect(() => { load() }, [load])
 
@@ -57,11 +67,7 @@ export function TokensScreen() {
     try { await agentTokensApi.reorder(next.map((x) => x.id)) } catch { /* ignore */ }
   }
 
-  const counts = {
-    online: items.filter((i) => i.isOnline).length,
-    offline: items.filter((i) => !i.isOnline).length,
-    l3: items.filter((i) => i.permission === 3).length,
-  }
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="col" style={{ flex: 1, overflow: "hidden" }}>
@@ -79,7 +85,7 @@ export function TokensScreen() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
           <MiniStat label={t("acc.online")} value={counts.online} color="var(--ok)" />
           <MiniStat label={t("acc.offline")} value={counts.offline} color="var(--crit)" />
-          <MiniStat label={t("nav.tokens")} value={items.length} color="var(--fg-3)" />
+          <MiniStat label={t("nav.tokens")} value={total} color="var(--fg-3)" />
           <MiniStat label={t("acc.l3admin")} value={counts.l3} color="var(--crit)" />
         </div>
 
@@ -149,6 +155,14 @@ export function TokensScreen() {
             </tbody>
           </table>
         </div>
+
+        {pageCount > 1 && (
+          <div className="row" style={{ justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 12 }}>
+            <button className="btn btn-sm btn-icon" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>‹</button>
+            <span className="mono muted" style={{ fontSize: 12 }}>{page} / {pageCount}</span>
+            <button className="btn btn-sm btn-icon" disabled={page >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>›</button>
+          </div>
+        )}
       </div>
 
       {creating && <TokenEditor onClose={() => setCreating(false)} onDone={(tokenStr, name) => { setCreating(false); if (tokenStr) setReveal({ token: tokenStr, name }); load() }} />}

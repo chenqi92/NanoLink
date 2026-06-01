@@ -43,7 +43,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Fetch agent order from database
   const fetchAgentOrder = useCallback(async () => {
     try {
-      const tokens = await agentTokensApi.list()
+      const tokens = (await agentTokensApi.list(1, 500)).items
       const orderMap = new Map<string, number>()
       tokens.forEach((t: AgentToken) => {
         if (t.agentId) {
