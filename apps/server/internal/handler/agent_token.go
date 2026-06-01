@@ -12,13 +12,15 @@ import (
 // AgentTokenHandler handles agent token management API
 type AgentTokenHandler struct {
 	tokenService *service.AgentTokenService
+	agentSvc     *service.AgentService
 	logger       *zap.SugaredLogger
 }
 
 // NewAgentTokenHandler creates a new agent token handler
-func NewAgentTokenHandler(tokenService *service.AgentTokenService, logger *zap.SugaredLogger) *AgentTokenHandler {
+func NewAgentTokenHandler(tokenService *service.AgentTokenService, agentSvc *service.AgentService, logger *zap.SugaredLogger) *AgentTokenHandler {
 	return &AgentTokenHandler{
 		tokenService: tokenService,
+		agentSvc:     agentSvc,
 		logger:       logger,
 	}
 }
@@ -77,11 +79,22 @@ func (h *AgentTokenHandler) ListAgentTokens(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list agent tokens"})
 		return
 	}
-	total, online, l3, err := h.tokenService.Stats()
+	total, l3, err := h.tokenService.Stats()
 	if err != nil {
 		h.logger.Errorf("Failed to compute token stats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list agent tokens"})
 		return
+	}
+
+	// Online status from the live connection registry (single source of truth),
+	// not a DB timestamp that every message path must remember to refresh.
+	onlineSet := make(map[string]bool)
+	var online int64
+	if h.agentSvc != nil {
+		for _, a := range h.agentSvc.GetAllAgents() {
+			onlineSet[a.ID] = true
+		}
+		online = int64(h.agentSvc.GetAgentCount())
 	}
 
 	// Convert to response format
@@ -98,7 +111,7 @@ func (h *AgentTokenHandler) ListAgentTokens(c *gin.Context) {
 			Version:    token.Version,
 			Permission: token.Permission,
 			SortOrder:  token.SortOrder,
-			IsOnline:   token.IsOnline(),
+			IsOnline:   onlineSet[token.AgentID],
 			CreatedAt:  token.CreatedAt.UnixMilli(),
 		}
 		if token.FirstSeenAt != nil {

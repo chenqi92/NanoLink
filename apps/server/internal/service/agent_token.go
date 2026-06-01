@@ -18,6 +18,13 @@ type AgentTokenService struct {
 
 // NewAgentTokenService creates a new agent token service
 func NewAgentTokenService(db *gorm.DB, logger *zap.SugaredLogger) *AgentTokenService {
+	// Guarantee at most one token row per (live) agent. Partial index so the many
+	// admin-created tokens not yet bound to an agent (agent_id == '') don't collide.
+	// This is what historically prevented duplicate/auto-mirrored token rows.
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_tokens_agent_id ` +
+		`ON agent_tokens(agent_id) WHERE agent_id != '' AND deleted_at IS NULL`).Error; err != nil {
+		logger.Warnf("Failed to create unique index on agent_tokens.agent_id: %v", err)
+	}
 	return &AgentTokenService{
 		db:     db,
 		logger: logger,
@@ -108,15 +115,11 @@ func (s *AgentTokenService) GetPaged(offset, limit int) ([]database.AgentToken, 
 	return tokens, nil
 }
 
-// Stats returns aggregate counts for the token list header (total / online / L3).
-// "online" uses the same 30s window as AgentToken.IsOnline so the header agrees
-// with the per-row status.
-func (s *AgentTokenService) Stats() (total, online, l3 int64, err error) {
+// Stats returns aggregate counts for the token list header. Online status is
+// derived from the live connection registry in the handler (single source of
+// truth), not from a database timestamp.
+func (s *AgentTokenService) Stats() (total, l3 int64, err error) {
 	if err = s.db.Model(&database.AgentToken{}).Count(&total).Error; err != nil {
-		return
-	}
-	cutoff := time.Now().Add(-30 * time.Second)
-	if err = s.db.Model(&database.AgentToken{}).Where("last_seen_at > ?", cutoff).Count(&online).Error; err != nil {
 		return
 	}
 	err = s.db.Model(&database.AgentToken{}).Where("permission = ?", 3).Count(&l3).Error
@@ -233,6 +236,22 @@ func (s *AgentTokenService) CleanupExpired() (int64, error) {
 	return result.RowsAffected, nil
 }
 
+// CleanupStaleAnonymous removes auto-created tokens that were never properly
+// identified (no name) and have not been seen for a while — the residue of
+// agents that connected without a persistent agent_id. Named tokens (real,
+// admin-managed agents) are never touched.
+func (s *AgentTokenService) CleanupStaleAnonymous() (int64, error) {
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	result := s.db.Where("(name IS NULL OR name = '') AND (last_seen_at IS NULL OR last_seen_at < ?)", cutoff).Delete(&database.AgentToken{})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	if result.RowsAffected > 0 {
+		s.logger.Infof("Cleaned up %d stale anonymous agent tokens", result.RowsAffected)
+	}
+	return result.RowsAffected, nil
+}
+
 // Reorder updates the sort order of agent tokens
 func (s *AgentTokenService) Reorder(orderedIDs []uint) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
@@ -269,34 +288,14 @@ func (s *AgentTokenService) EnsureAgentExists(agentID, hostname, os, arch, versi
 		return nil, err
 	}
 
-	// Agent doesn't exist, create new record (auto-generated token)
-	newToken, _ := GenerateToken()
-
-	// Get max sort order to place new agent at the end
-	var maxOrder int
-	s.db.Model(&database.AgentToken{}).Select("COALESCE(MAX(sort_order), 0)").Scan(&maxOrder)
-
-	token = database.AgentToken{
-		Token:       newToken,
-		TokenHint:   database.MaskToken(newToken),
-		Name:        hostname, // Use hostname as default name
-		AgentID:     agentID,
-		Hostname:    hostname,
-		OS:          os,
-		Arch:        arch,
-		Version:     version,
-		Permission:  permission,
-		SortOrder:   maxOrder + 1,
-		FirstSeenAt: &now,
-		LastSeenAt:  &now,
-	}
-
-	if err := s.db.Create(&token).Error; err != nil {
-		return nil, err
-	}
-
-	s.logger.Infof("Auto-created agent record for %s (%s)", hostname, agentID)
-	return &token, nil
+	// No token row bound to this agent_id. Under token auth the agent has already
+	// authenticated with a valid token that gets bound to its agent_id during the
+	// stream handshake, so a miss here means an agent that does not persist its
+	// agent_id (legacy) — auto-minting a token on every such reconnect is exactly
+	// what ballooned this table to thousands of rows. Skip instead of creating;
+	// tokens are only issued via the admin "create token" / pairing flow.
+	s.logger.Warnf("EnsureAgentExists: no token bound to agent_id %s (%s); not auto-creating", agentID, hostname)
+	return nil, nil
 }
 
 // StartCleanupJob starts a background job to clean up expired tokens
@@ -308,6 +307,9 @@ func (s *AgentTokenService) StartCleanupJob() {
 		for range ticker.C {
 			if _, err := s.CleanupExpired(); err != nil {
 				s.logger.Errorf("Failed to cleanup expired tokens: %v", err)
+			}
+			if _, err := s.CleanupStaleAnonymous(); err != nil {
+				s.logger.Errorf("Failed to cleanup stale anonymous tokens: %v", err)
 			}
 		}
 	}()

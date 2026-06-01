@@ -248,7 +248,7 @@ func main() {
 				admin.GET("/audit/recent", auditHandler.GetRecentLogs)
 
 				// Agent token management (super admin only)
-				agentTokenHandler := handler.NewAgentTokenHandler(agentTokenService, sugar)
+				agentTokenHandler := handler.NewAgentTokenHandler(agentTokenService, agentService, sugar)
 				admin.GET("/agent-tokens", agentTokenHandler.ListAgentTokens)
 				admin.POST("/agent-tokens", agentTokenHandler.CreateAgentToken)
 				admin.PUT("/agent-tokens/:id", agentTokenHandler.UpdateAgentToken)
