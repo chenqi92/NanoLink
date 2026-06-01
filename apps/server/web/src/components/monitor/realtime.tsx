@@ -126,9 +126,9 @@ export function GpuCard({ gpu }: { gpu: GpuMetrics }) {
           {gpu.fanSpeedPercent > 0 && <span>fan {gpu.fanSpeedPercent}%</span>}
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginBottom: 8 }}>
         <GpuMetric label={t("mon.util")} pct={gpu.usagePercent} val={`${Math.round(gpu.usagePercent)}%`} tone={toneFor(gpu.usagePercent)} />
-        <GpuMetric label={t("mon.vram")} pct={memPct} val={`${formatBytes(gpu.memoryUsed)} / ${formatBytes(gpu.memoryTotal)}`} tone={toneFor(memPct)} />
+        {gpu.memoryTotal > 0 && <GpuMetric label={t("mon.vram")} pct={memPct} val={`${formatBytes(gpu.memoryUsed)} / ${formatBytes(gpu.memoryTotal)}`} tone={toneFor(memPct)} />}
         {gpu.powerLimitWatts > 0 && <GpuMetric label={t("metrics.power")} pct={pwrPct} val={`${gpu.powerWatts} / ${gpu.powerLimitWatts} W`} tone={pwrPct > 90 ? "warn" : ""} />}
       </div>
       <div className="row gap-3" style={{ fontSize: 10.5, color: "var(--fg-4)", fontFamily: "var(--font-mono)", flexWrap: "wrap" }}>
@@ -152,7 +152,7 @@ export function NpuCard({ npu }: { npu: NpuMetrics }) {
         </div>
         <span className="mono dim" style={{ fontSize: 10.5 }}>{npu.temperature > 0 ? `${Math.round(npu.temperature)}°C` : ""}{npu.powerWatts ? ` · ${npu.powerWatts}W` : ""}</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
         <GpuMetric label="Util" pct={npu.usagePercent} val={`${Math.round(npu.usagePercent)}%`} tone={toneFor(npu.usagePercent)} />
         {npu.memoryTotal > 0 && <GpuMetric label="Memory" pct={memPct} val={`${formatBytes(npu.memoryUsed)} / ${formatBytes(npu.memoryTotal)}`} />}
       </div>
