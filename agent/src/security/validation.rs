@@ -121,7 +121,7 @@ pub fn validate_pid_killable(pid: u32) -> Result<(), String> {
 
     // PIDs below 100 are typically kernel threads and critical system processes
     // This is a conservative protection - users can still kill most processes
-    if pid < 10 {
+    if pid < 100 {
         warn!("[SECURITY] Blocked kill of low PID: {}", pid);
         return Err(format!("Cannot kill PID {pid} (protected system process)"));
     }

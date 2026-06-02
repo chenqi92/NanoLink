@@ -40,6 +40,44 @@ fn escape_path(path: &Path) -> Result<String, String> {
     Ok(s.to_string())
 }
 
+/// Decode a lowercase/uppercase hex string into bytes.
+fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
+    let s = s.trim();
+    if s.len() % 2 != 0 {
+        return Err("hex string has odd length".to_string());
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|e| format!("invalid hex: {e}")))
+        .collect()
+}
+
+/// Verify an Ed25519 detached signature over `data` against a pinned public key.
+///
+/// `public_key_hex` is the 32-byte Ed25519 public key (hex). `signature_hex` is
+/// the 64-byte signature (hex). This is the integrity root for self-updates: a
+/// server that supplies a malicious binary cannot also produce a matching
+/// signature without the operator's private key.
+fn verify_ed25519(data: &[u8], public_key_hex: &str, signature_hex: &str) -> Result<(), String> {
+    use ring::signature;
+
+    let key_bytes = hex_decode(public_key_hex)
+        .map_err(|e| format!("invalid update public key: {e}"))?;
+    let sig_bytes = hex_decode(signature_hex)
+        .map_err(|e| format!("invalid update signature encoding: {e}"))?;
+
+    let public_key = signature::UnparsedPublicKey::new(&signature::ED25519, key_bytes);
+    public_key
+        .verify(data, &sig_bytes)
+        .map_err(|_| "signature does not match the configured update public key".to_string())
+}
+
+/// Read a file fully into memory (used for signature verification of the
+/// downloaded binary, which is bounded by the configured max download size).
+fn read_file_bytes(path: &Path) -> Result<Vec<u8>, String> {
+    std::fs::read(path).map_err(|e| format!("Failed to read update file: {e}"))
+}
+
 /// Calculate SHA256 checksum of a file
 fn calculate_sha256(path: &Path) -> Result<String, String> {
     use std::fs::File;
@@ -66,6 +104,10 @@ fn calculate_sha256(path: &Path) -> Result<String, String> {
 
 /// Agent version from Cargo.toml
 pub const AGENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Upper bound on a downloaded update artifact. Generous for an agent binary
+/// while preventing a malicious/buggy server from filling the temp dir (DoS).
+const MAX_UPDATE_DOWNLOAD_BYTES: u64 = 200 * 1024 * 1024;
 
 /// Update executor for agent self-upgrade operations
 pub struct UpdateExecutor {
@@ -335,24 +377,59 @@ impl UpdateExecutor {
             ));
         }
 
-        // Verify checksum if provided
-        if let Some(expected_checksum) = params.get("checksum") {
-            info!("Verifying checksum...");
-            match calculate_sha256(&update_path) {
-                Ok(actual_checksum) => {
-                    if actual_checksum.to_lowercase() != expected_checksum.to_lowercase() {
-                        return Self::error_result(format!(
-                            "Checksum mismatch! Expected: {expected_checksum}, Got: {actual_checksum}. Update file may be corrupted or tampered."
-                        ));
+        // Cryptographic signature verification against a pinned public key is
+        // the real integrity gate (a server-supplied checksum proves nothing,
+        // since the same server supplies the binary).
+        match self.config.public_key.as_deref() {
+            Some(public_key) => {
+                let signature = match params.get("signature") {
+                    Some(sig) if !sig.trim().is_empty() => sig,
+                    _ => {
+                        return Self::error_result(
+                            "Update rejected: a signature is required (update.public_key is configured) but none was provided.".to_string(),
+                        );
                     }
-                    info!("Checksum verified successfully");
+                };
+                info!("Verifying update signature against pinned public key...");
+                let data = match read_file_bytes(&update_path) {
+                    Ok(d) => d,
+                    Err(e) => return Self::error_result(e),
+                };
+                if let Err(e) = verify_ed25519(&data, public_key, signature) {
+                    warn!("[AUDIT] Update signature verification failed: {e}");
+                    return Self::error_result(format!(
+                        "Update rejected: signature verification failed ({e}). The binary may be tampered or from an untrusted source."
+                    ));
                 }
-                Err(e) => {
-                    return Self::error_result(format!("Failed to calculate checksum: {e}"));
+                info!("[AUDIT] Update signature verified successfully");
+            }
+            None => {
+                if self.config.require_signature {
+                    return Self::error_result(
+                        "Update rejected: update.require_signature is set but no update.public_key is configured to verify against.".to_string(),
+                    );
+                }
+                warn!("[SECURITY] No update.public_key configured: the update binary is NOT cryptographically verified. Configure update.public_key and sign releases to protect against a malicious server pushing arbitrary code.");
+                // Best-effort integrity check against a caller-supplied checksum
+                // (detects corruption / non-malicious tampering only).
+                if let Some(expected_checksum) = params.get("checksum") {
+                    match calculate_sha256(&update_path) {
+                        Ok(actual_checksum) => {
+                            if actual_checksum.to_lowercase() != expected_checksum.to_lowercase() {
+                                return Self::error_result(format!(
+                                    "Checksum mismatch! Expected: {expected_checksum}, Got: {actual_checksum}. Update file may be corrupted or tampered."
+                                ));
+                            }
+                            info!("Checksum verified successfully");
+                        }
+                        Err(e) => {
+                            return Self::error_result(format!("Failed to calculate checksum: {e}"));
+                        }
+                    }
+                } else {
+                    warn!("No checksum provided, skipping verification (not recommended)");
                 }
             }
-        } else {
-            warn!("No checksum provided, skipping verification (not recommended)");
         }
 
         // Get current binary path
@@ -591,12 +668,23 @@ del /F "%~f0"
         // Validate destination path
         let dest_str = escape_path(dest)?;
 
+        let max_bytes_str = MAX_UPDATE_DOWNLOAD_BYTES.to_string();
+
         #[cfg(unix)]
         {
             use std::process::Command;
 
+            // --max-filesize aborts early when the server declares/streams more
+            // than the cap; the post-download check below is the backstop.
             let output = Command::new("curl")
-                .args(["-sL", "-o", &dest_str, url])
+                .args([
+                    "-sL",
+                    "--max-filesize",
+                    &max_bytes_str,
+                    "-o",
+                    &dest_str,
+                    url,
+                ])
                 .output()
                 .map_err(|e| format!("Failed to execute curl: {e}"))?;
 
@@ -607,9 +695,7 @@ del /F "%~f0"
                 ));
             }
 
-            std::fs::metadata(dest)
-                .map(|m| m.len() as usize)
-                .map_err(|e| format!("Failed to get file size: {e}"))
+            Self::checked_download_size(dest)
         }
 
         #[cfg(windows)]
@@ -631,10 +717,23 @@ del /F "%~f0"
                 ));
             }
 
-            std::fs::metadata(dest)
-                .map(|m| m.len() as usize)
-                .map_err(|e| format!("Failed to get file size: {e}"))
+            Self::checked_download_size(dest)
         }
+    }
+
+    /// Return the downloaded file size, rejecting (and deleting) anything over
+    /// the size cap so an oversized artifact cannot linger in the temp dir.
+    fn checked_download_size(dest: &Path) -> Result<usize, String> {
+        let size = std::fs::metadata(dest)
+            .map(|m| m.len())
+            .map_err(|e| format!("Failed to get file size: {e}"))?;
+        if size > MAX_UPDATE_DOWNLOAD_BYTES {
+            let _ = std::fs::remove_file(dest);
+            return Err(format!(
+                "Downloaded update is too large ({size} bytes, max {MAX_UPDATE_DOWNLOAD_BYTES})"
+            ));
+        }
+        Ok(size as usize)
     }
 
     /// Get platform identifier for downloads
@@ -853,4 +952,53 @@ struct ReleaseInfo {
     /// SHA256 checksum (if available)
     #[allow(dead_code)]
     checksum: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ring::rand::SystemRandom;
+    use ring::signature::{Ed25519KeyPair, KeyPair};
+
+    fn hex_encode(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[test]
+    fn hex_decode_roundtrip_and_rejects_bad() {
+        assert_eq!(hex_decode("00ff10").unwrap(), vec![0u8, 255u8, 16u8]);
+        assert!(hex_decode("abc").is_err()); // odd length
+        assert!(hex_decode("zz").is_err()); // non-hex
+    }
+
+    #[test]
+    fn ed25519_verify_accepts_valid_and_rejects_tampering() {
+        let rng = SystemRandom::new();
+        let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
+        let key_pair = Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).unwrap();
+        let pubkey_hex = hex_encode(key_pair.public_key().as_ref());
+
+        let data = b"new nanolink-agent binary contents";
+        let sig = key_pair.sign(data);
+        let sig_hex = hex_encode(sig.as_ref());
+
+        // Correct data + signature + key verifies.
+        assert!(verify_ed25519(data, &pubkey_hex, &sig_hex).is_ok());
+
+        // Tampered binary is rejected.
+        assert!(verify_ed25519(b"tampered binary", &pubkey_hex, &sig_hex).is_err());
+
+        // Corrupted signature is rejected.
+        let mut bad_sig = sig.as_ref().to_vec();
+        bad_sig[0] ^= 0xff;
+        assert!(verify_ed25519(data, &pubkey_hex, &hex_encode(&bad_sig)).is_err());
+
+        // Wrong public key is rejected.
+        let other = Ed25519KeyPair::from_pkcs8(
+            Ed25519KeyPair::generate_pkcs8(&rng).unwrap().as_ref(),
+        )
+        .unwrap();
+        let other_pub = hex_encode(other.public_key().as_ref());
+        assert!(verify_ed25519(data, &other_pub, &sig_hex).is_err());
+    }
 }

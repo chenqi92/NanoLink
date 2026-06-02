@@ -44,6 +44,30 @@ pub struct AuditLogEntry {
     pub duration_ms: u64,
 }
 
+/// Audit log entry for a server-issued command executed over the gRPC stream.
+/// Unlike the HTTP middleware entry, this captures the privileged operation
+/// itself: which command ran, at what permission level, and whether it
+/// succeeded — the tamper-evident trail for shell/file/service/config/package
+/// operations that never touch the HTTP management API.
+#[derive(Debug, Serialize)]
+pub struct CommandAuditEntry {
+    /// Timestamp in RFC3339 format
+    pub ts: String,
+    /// Event discriminator ("command")
+    pub event: &'static str,
+    /// Command type (e.g. "ShellExecute", "FileUpload")
+    pub command: String,
+    /// Command target (path/service/container/command), truncated
+    pub target: String,
+    /// Permission level the connection was granted by the server
+    pub permission: u8,
+    /// Whether the command executed successfully
+    pub success: bool,
+    /// Error detail when the command failed or was denied (truncated)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// State for audit logging
 pub struct AuditState {
     config: AuditConfig,
@@ -53,8 +77,8 @@ pub struct AuditState {
 }
 
 impl AuditState {
-    pub fn new(config: AuditConfig) -> Self {
-        let log_path = Self::get_log_path();
+    pub fn new(config: AuditConfig, file_name: &str) -> Self {
+        let log_path = Self::get_log_path(file_name);
 
         let writer = if config.enabled {
             Self::open_log_file(&log_path).ok().map(BufWriter::new)
@@ -76,7 +100,7 @@ impl AuditState {
         }
     }
 
-    fn get_log_path() -> PathBuf {
+    fn get_log_path(file_name: &str) -> PathBuf {
         #[cfg(windows)]
         {
             let base =
@@ -84,11 +108,11 @@ impl AuditState {
             PathBuf::from(base)
                 .join("nanolink")
                 .join("logs")
-                .join("audit.log")
+                .join(file_name)
         }
         #[cfg(unix)]
         {
-            PathBuf::from("/var/log/nanolink/audit.log")
+            PathBuf::from("/var/log/nanolink").join(file_name)
         }
     }
 
@@ -105,15 +129,27 @@ impl AuditState {
         if !self.config.enabled {
             return;
         }
+        match serde_json::to_string(entry) {
+            Ok(json) => self.write_line(json).await,
+            Err(e) => error!("Failed to serialize audit log entry: {}", e),
+        }
+    }
 
-        let json = match serde_json::to_string(entry) {
-            Ok(j) => j,
-            Err(e) => {
-                error!("Failed to serialize audit log entry: {}", e);
-                return;
-            }
-        };
+    /// Append a structured command-execution entry to the audit log.
+    pub async fn write_command_entry(&self, entry: &CommandAuditEntry) {
+        if !self.config.enabled {
+            return;
+        }
+        match serde_json::to_string(entry) {
+            Ok(json) => self.write_line(json).await,
+            Err(e) => error!("Failed to serialize command audit entry: {}", e),
+        }
+    }
 
+    /// Append one already-serialized JSON record as a line, rotating first if
+    /// the configured size cap would be exceeded. Flushes immediately so an
+    /// entry survives a crash.
+    async fn write_line(&self, json: String) {
         let line = format!("{json}\n");
         let line_len = line.len() as u64;
 
@@ -252,7 +288,9 @@ pub async fn cleanup_old_logs(config: &AuditConfig) {
         return;
     }
 
-    let log_dir = AuditState::get_log_path().parent().map(|p| p.to_path_buf());
+    let log_dir = AuditState::get_log_path("audit.log")
+        .parent()
+        .map(|p| p.to_path_buf());
 
     if let Some(dir) = log_dir {
         if let Ok(entries) = std::fs::read_dir(&dir) {
@@ -279,5 +317,45 @@ pub async fn cleanup_old_logs(config: &AuditConfig) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_audit_entry_serializes_expected_shape() {
+        let entry = CommandAuditEntry {
+            ts: "2026-06-02T00:00:00+00:00".to_string(),
+            event: "command",
+            command: "ShellExecute".to_string(),
+            target: "whoami".to_string(),
+            permission: 3,
+            success: true,
+            error: None,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains(r#""event":"command""#));
+        assert!(json.contains(r#""command":"ShellExecute""#));
+        assert!(json.contains(r#""permission":3"#));
+        // error is omitted when None
+        assert!(!json.contains("error"));
+    }
+
+    #[test]
+    fn command_audit_entry_includes_error_when_present() {
+        let entry = CommandAuditEntry {
+            ts: "2026-06-02T00:00:00+00:00".to_string(),
+            event: "command",
+            command: "FileUpload".to_string(),
+            target: "/etc/cron.d/x".to_string(),
+            permission: 2,
+            success: false,
+            error: Some("permission denied".to_string()),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains(r#""success":false"#));
+        assert!(json.contains(r#""error":"permission denied""#));
     }
 }

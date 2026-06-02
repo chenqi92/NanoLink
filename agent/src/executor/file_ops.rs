@@ -25,8 +25,15 @@ impl FileExecutor {
     }
 
     /// Validate and sanitize a file path according to security config
-    /// Returns the canonicalized path if valid, or an error message
-    fn validate_path(&self, path_str: &str) -> Result<PathBuf, String> {
+    /// Returns the canonicalized path if valid, or an error message.
+    ///
+    /// `for_write` enables fail-closed behavior: a write to a path is rejected
+    /// when no `allowed_paths` allowlist is configured, so the default (empty)
+    /// config cannot be used to drop files anywhere the denylist doesn't
+    /// explicitly cover (cron jobs, systemd units, shell profiles, ...). Reads
+    /// remain governed by the denylist only, to keep monitoring working
+    /// out of the box.
+    fn validate_path(&self, path_str: &str, for_write: bool) -> Result<PathBuf, String> {
         let path = Path::new(path_str);
 
         // Check for path traversal attempts if protection is enabled
@@ -95,8 +102,27 @@ impl FileExecutor {
             }
         }
 
+        // Fail closed for writes when no allowlist is configured: without an
+        // explicit allowed_paths, an empty list previously meant "write
+        // anywhere not denied", a direct root-persistence/RCE primitive.
+        if self.config.security.allowed_paths.is_empty() {
+            if for_write {
+                warn!(
+                    "[AUDIT] Write blocked (fail-closed, no allowed_paths configured): {}",
+                    canonical_str
+                );
+                return Err(
+                    "File write disabled: configure security.allowed_paths to enable writes"
+                        .to_string(),
+                );
+            }
+            // Reads: denylist-only (checked above).
+            info!("[AUDIT] Path validated: {}", canonical_str);
+            return Ok(canonical);
+        }
+
         // Check allowed paths (if list is not empty)
-        if !self.config.security.allowed_paths.is_empty() {
+        {
             let is_allowed = self.config.security.allowed_paths.iter().any(|allowed| {
                 // Check prefix match
                 if canonical_str.starts_with(allowed) {
@@ -135,7 +161,7 @@ impl FileExecutor {
     /// List directory entries as structured FileEntry items (FILE_LIST).
     pub async fn list_directory(&self, path: &str) -> CommandResult {
         use std::time::UNIX_EPOCH;
-        let validated_path = match self.validate_path(path) {
+        let validated_path = match self.validate_path(path, false) {
             Ok(p) => p,
             Err(e) => return Self::error_result(e),
         };
@@ -191,7 +217,7 @@ impl FileExecutor {
         }
 
         // Validate path first
-        let validated_path = match self.validate_path(path) {
+        let validated_path = match self.validate_path(path, false) {
             Ok(p) => p,
             Err(e) => return Self::error_result(e),
         };
@@ -265,7 +291,7 @@ impl FileExecutor {
     /// Download a file (read full content)
     pub async fn download_file(&self, path: &str) -> CommandResult {
         // Validate path first
-        let validated_path = match self.validate_path(path) {
+        let validated_path = match self.validate_path(path, false) {
             Ok(p) => p,
             Err(e) => return Self::error_result(e),
         };
@@ -337,7 +363,7 @@ impl FileExecutor {
         }
 
         // Validate path
-        let validated_path = match self.validate_path(path) {
+        let validated_path = match self.validate_path(path, true) {
             Ok(p) => p,
             Err(e) => return Self::error_result(e),
         };
@@ -376,7 +402,7 @@ impl FileExecutor {
     /// Truncate a file (clear its content)
     pub async fn truncate_file(&self, path: &str) -> CommandResult {
         // Validate path first
-        let validated_path = match self.validate_path(path) {
+        let validated_path = match self.validate_path(path, true) {
             Ok(p) => p,
             Err(e) => return Self::error_result(e),
         };

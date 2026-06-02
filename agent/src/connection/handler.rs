@@ -1,4 +1,6 @@
 use std::sync::Arc;
+
+use chrono::Utc;
 use tracing::{info, warn};
 
 use crate::buffer::RingBuffer;
@@ -7,8 +9,19 @@ use crate::executor::{
     ConfigManager, DockerExecutor, FileExecutor, HealthExecutor, LogExecutor, PackageManager,
     ProcessExecutor, ScriptExecutor, ServiceExecutor, ShellExecutor, UpdateExecutor,
 };
+use crate::management::audit::{AuditState, CommandAuditEntry};
 use crate::proto::{Command, CommandResult, CommandType};
 use crate::security::PermissionChecker;
+
+/// Truncate a string to at most `max` characters (char-boundary safe) for audit
+/// fields, so a large target/error cannot bloat the audit log.
+fn truncate_for_audit(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        s.chars().take(max).collect()
+    }
+}
 
 /// Handles incoming commands from the server
 pub struct MessageHandler {
@@ -29,6 +42,7 @@ pub struct MessageHandler {
     config_manager: ConfigManager,
     package_manager: PackageManager,
     health_executor: HealthExecutor,
+    audit: Arc<AuditState>,
 }
 
 impl MessageHandler {
@@ -50,7 +64,35 @@ impl MessageHandler {
             config_manager: ConfigManager::new(config.clone()),
             package_manager: PackageManager::new(config.clone()),
             health_executor: HealthExecutor::new(),
+            // Structured, rotating, flushed audit trail for privileged commands
+            // (separate file from the HTTP management API audit to avoid two
+            // writers contending for one file). Gated by config.audit.enabled.
+            audit: Arc::new(AuditState::new(
+                config.management.audit.clone(),
+                "command-audit.log",
+            )),
         }
+    }
+
+    /// Record a privileged command in the structured audit log.
+    async fn audit_command(
+        &self,
+        command_type: CommandType,
+        target: &str,
+        success: bool,
+        error: Option<String>,
+    ) {
+        self.audit
+            .write_command_entry(&CommandAuditEntry {
+                ts: Utc::now().to_rfc3339(),
+                event: "command",
+                command: format!("{command_type:?}"),
+                target: truncate_for_audit(target, 256),
+                permission: self.permission_level,
+                success,
+                error: error.map(|e| truncate_for_audit(&e, 256)),
+            })
+            .await;
     }
 
     /// Handle a command
@@ -63,6 +105,8 @@ impl MessageHandler {
             command_type, command.target, command.command_id
         );
 
+        let required_level = self.permission_checker.required_level(command_type);
+
         // Check permission
         if !self
             .permission_checker
@@ -70,10 +114,18 @@ impl MessageHandler {
         {
             warn!(
                 "Permission denied for command {:?} (required: {}, have: {})",
-                command_type,
-                self.permission_checker.required_level(command_type),
-                self.permission_level
+                command_type, required_level, self.permission_level
             );
+            self.audit_command(
+                command_type,
+                &command.target,
+                false,
+                Some(format!(
+                    "permission denied (required {}, have {})",
+                    required_level, self.permission_level
+                )),
+            )
+            .await;
             return CommandResult {
                 command_id: command.command_id,
                 success: false,
@@ -216,6 +268,19 @@ impl MessageHandler {
                 ..Default::default()
             },
         };
+
+        // Audit privileged (level >= 1) operations: file writes, service/docker
+        // control, shell, config writes, package updates, reboot, scripts.
+        // Read-only queries (level 0) are skipped to keep the trail signal-dense.
+        if required_level >= 1 {
+            let err = if result.error.is_empty() {
+                None
+            } else {
+                Some(result.error.clone())
+            };
+            self.audit_command(command_type, &command.target, result.success, err)
+                .await;
+        }
 
         CommandResult {
             command_id: command.command_id,

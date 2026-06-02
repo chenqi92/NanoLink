@@ -153,7 +153,7 @@ impl ManagementServer {
         // Create middleware states
         let auth_state = self.state.clone();
         let rate_limit_state = Arc::new(rate_limit::RateLimitState::new(rate_limit_config.clone()));
-        let audit_state = Arc::new(audit::AuditState::new(audit_config.clone()));
+        let audit_state = Arc::new(audit::AuditState::new(audit_config.clone(), "audit.log"));
 
         // Start background cleanup task for rate limit buckets
         if rate_limit_config.enabled {

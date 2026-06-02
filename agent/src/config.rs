@@ -109,6 +109,22 @@ pub struct UpdateConfig {
     /// Custom update URL (used when source = "custom")
     #[serde(default)]
     pub custom_url: Option<String>,
+
+    /// Ed25519 public key (hex or base64, 32 bytes) used to verify the signature
+    /// of a downloaded binary before it replaces the running agent. When set,
+    /// applying an update REQUIRES a valid detached signature over the binary;
+    /// this is the only integrity root a malicious/compromised server cannot
+    /// forge (a server-supplied checksum is not, since the server supplies both
+    /// the binary and the checksum).
+    #[serde(default)]
+    pub public_key: Option<String>,
+
+    /// Reject updates that are not cryptographically signed. Has effect only
+    /// when no public_key is configured (with a key, signatures are always
+    /// required); set this to fail closed instead of falling back to a
+    /// checksum-only, unverified update.
+    #[serde(default)]
+    pub require_signature: bool,
 }
 
 impl Default for UpdateConfig {
@@ -122,6 +138,8 @@ impl Default for UpdateConfig {
             allow_prerelease: false,
             source: UpdateSource::default(),
             custom_url: None,
+            public_key: None,
+            require_signature: false,
         }
     }
 }
@@ -777,6 +795,29 @@ fn default_denied_paths() -> Vec<String> {
         "/root/.ssh".to_string(),
         "/home/*/.ssh".to_string(),
         "/etc/ssh".to_string(),
+        // Root-persistence / privilege-escalation locations: blocking these for
+        // the generic file API closes the most direct drop-a-file-as-root
+        // vectors even when an allowlist is configured.
+        "/etc/cron.d".to_string(),
+        "/etc/cron.daily".to_string(),
+        "/etc/cron.hourly".to_string(),
+        "/etc/cron.weekly".to_string(),
+        "/etc/cron.monthly".to_string(),
+        "/etc/crontab".to_string(),
+        "/var/spool/cron".to_string(),
+        "/etc/systemd".to_string(),
+        "/usr/lib/systemd".to_string(),
+        "/lib/systemd".to_string(),
+        "/etc/init.d".to_string(),
+        "/etc/rc.local".to_string(),
+        "/etc/ld.so.preload".to_string(),
+        "/etc/ld.so.conf".to_string(),
+        "/etc/ld.so.conf.d".to_string(),
+        "/etc/pam.d".to_string(),
+        "/etc/profile".to_string(),
+        "/etc/profile.d".to_string(),
+        "/etc/bash.bashrc".to_string(),
+        "/etc/environment".to_string(),
         "C:\\Windows\\System32\\config".to_string(),
     ]
 }

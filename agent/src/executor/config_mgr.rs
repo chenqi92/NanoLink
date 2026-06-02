@@ -48,15 +48,43 @@ const SENSITIVE_PATTERNS: &[(&str, &str)] = &[
     (r"glpat-[A-Za-z0-9\-]{20,}", "***GITLAB_TOKEN_REDACTED***"),
 ];
 
-/// Forbidden paths that should never be read or written
+/// Forbidden paths that should never be read or written. Beyond credential
+/// stores, this also blocks the common root-persistence / privilege-escalation
+/// locations so they cannot be reached even if allowed_configs is configured
+/// broadly.
 const FORBIDDEN_PATHS: &[&str] = &[
     "/etc/shadow",
     "/etc/gshadow",
     "/etc/sudoers",
+    "/etc/sudoers.d",
     "/root/.ssh",
     "/home/*/.ssh",
     "/etc/ssh/ssh_host_*_key",
     "/etc/ssl/private",
+    // Scheduled-task persistence
+    "/etc/cron.d",
+    "/etc/cron.daily",
+    "/etc/cron.hourly",
+    "/etc/cron.weekly",
+    "/etc/cron.monthly",
+    "/etc/crontab",
+    "/var/spool/cron",
+    // Service / init persistence
+    "/etc/systemd",
+    "/usr/lib/systemd",
+    "/lib/systemd",
+    "/etc/init.d",
+    "/etc/rc.local",
+    // Dynamic-linker and PAM hijacks
+    "/etc/ld.so.preload",
+    "/etc/ld.so.conf",
+    "/etc/ld.so.conf.d",
+    "/etc/pam.d",
+    // Shell-profile persistence
+    "/etc/profile",
+    "/etc/profile.d",
+    "/etc/bash.bashrc",
+    "/etc/environment",
     "C:\\Windows\\System32\\config\\SAM",
     "C:\\Windows\\System32\\config\\SECURITY",
 ];
@@ -92,8 +120,8 @@ impl ConfigManager {
             }
         };
 
-        // Security checks
-        if let Err(e) = self.validate_config_path(path) {
+        // Security checks (read path: denylist-only when no allowlist set)
+        if let Err(e) = self.validate_config_path(path, false) {
             warn!("Config path validation failed: {} - {}", path, e);
             return CommandResult {
                 command_id: String::new(),
@@ -107,13 +135,9 @@ impl ConfigManager {
         // Read file
         match fs::read_to_string(path) {
             Ok(content) => {
-                // Sanitize sensitive data
-                let sanitize = params.get("sanitize").map(|v| v == "true").unwrap_or(true);
-                let output = if sanitize {
-                    self.sanitize_content(&content)
-                } else {
-                    content
-                };
+                // Always sanitize: a client-supplied sanitize=false must not be
+                // able to exfiltrate secrets (passwords, keys, tokens) verbatim.
+                let output = self.sanitize_content(&content);
 
                 info!("Read config file: {}", path);
                 CommandResult {
@@ -173,7 +197,7 @@ impl ConfigManager {
         };
 
         // Security checks
-        if let Err(e) = self.validate_config_path(path) {
+        if let Err(e) = self.validate_config_path(path, true) {
             warn!("Config path validation failed: {} - {}", path, e);
             return CommandResult {
                 command_id: String::new(),
@@ -318,7 +342,7 @@ impl ConfigManager {
         };
 
         // Security check
-        if let Err(e) = self.validate_config_path(path) {
+        if let Err(e) = self.validate_config_path(path, true) {
             return CommandResult {
                 command_id: String::new(),
                 success: false,
@@ -419,7 +443,7 @@ impl ConfigManager {
     }
 
     /// Validate config path against whitelist and forbidden paths
-    fn validate_config_path(&self, path: &str) -> Result<(), String> {
+    fn validate_config_path(&self, path: &str, for_write: bool) -> Result<(), String> {
         // Check for obvious path traversal patterns
         if path.contains("..") {
             return Err("Path traversal detected".to_string());
@@ -464,22 +488,34 @@ impl ConfigManager {
             }
         }
 
-        // Check whitelist if not empty - must match canonical path
-        if !self.config.config_management.allowed_configs.is_empty() {
-            let allowed = self
-                .config
-                .config_management
-                .allowed_configs
-                .iter()
-                .any(|allowed| {
-                    glob::Pattern::new(allowed)
-                        .map(|p| p.matches(&canonical_str) || p.matches(path))
-                        .unwrap_or(allowed == path || allowed == &*canonical_str)
-                });
-
-            if !allowed {
-                return Err("Path not in allowed list".to_string());
+        // Fail closed for writes when no whitelist is configured: an empty
+        // allowed_configs previously meant "write any non-forbidden config",
+        // which lets a service-control caller overwrite systemd units,
+        // sudoers.d, the agent's own config, etc. Reads stay denylist-only.
+        if self.config.config_management.allowed_configs.is_empty() {
+            if for_write {
+                return Err(
+                    "Config write disabled: configure config_management.allowed_configs to enable writes"
+                        .to_string(),
+                );
             }
+            return Ok(());
+        }
+
+        // Check whitelist - must match canonical path
+        let allowed = self
+            .config
+            .config_management
+            .allowed_configs
+            .iter()
+            .any(|allowed| {
+                glob::Pattern::new(allowed)
+                    .map(|p| p.matches(&canonical_str) || p.matches(path))
+                    .unwrap_or(allowed == path || allowed == &*canonical_str)
+            });
+
+        if !allowed {
+            return Err("Path not in allowed list".to_string());
         }
 
         Ok(())
@@ -544,6 +580,16 @@ impl ConfigManager {
             .and_then(|n| n.to_str())
             .unwrap_or("");
 
+        // Match only this file's backups exactly: "{filename}_YYYYMMDD_HHMMSS.bak".
+        // A plain starts_with(filename) would mismatch configs that share a
+        // prefix (querying "app" would match "app.conf_*.bak"), which on
+        // rollback could restore the wrong file's contents.
+        let re = regex::Regex::new(&format!(
+            r"^{}_\d{{8}}_\d{{6}}\.bak$",
+            regex::escape(filename)
+        ))
+        .ok();
+
         let mut backups: Vec<PathBuf> = fs::read_dir(&backup_dir)
             .ok()
             .map(|entries| {
@@ -553,13 +599,18 @@ impl ConfigManager {
                     .filter(|p| {
                         p.file_name()
                             .and_then(|n| n.to_str())
-                            .map(|n| n.starts_with(filename) && n.ends_with(".bak"))
+                            .map(|n| match &re {
+                                Some(re) => re.is_match(n),
+                                None => n.starts_with(filename) && n.ends_with(".bak"),
+                            })
                             .unwrap_or(false)
                     })
                     .collect()
             })
             .unwrap_or_default();
 
+        // Lexical sort == chronological here because the timestamp is
+        // zero-padded YYYYMMDD_HHMMSS and the prefix is identical across matches.
         backups.sort();
         backups
     }

@@ -163,7 +163,7 @@ impl ProcessExecutor {
                 _ => "KILL",
             };
 
-            match Command::new("pkill").args(["-", sig, name]).output() {
+            match Command::new("pkill").args(["--signal", sig, name]).output() {
                 Ok(output) => CommandResult {
                     command_id: String::new(),
                     success: output.status.success(),
