@@ -10,6 +10,7 @@ import com.kkape.sdk.model.StaticInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -83,8 +84,13 @@ public class NanoLinkServer {
             });
         }
 
+        if (config.getTokenValidator() == NanoLinkConfig.DEFAULT_TOKEN_VALIDATOR) {
+            log.warn("No TokenValidator configured — every agent is accepted (READ_ONLY) and "
+                    + "anonymous metrics streams can register. Set a TokenValidator before production use.");
+        }
+
         grpcServicer = new NanoLinkServiceImpl(this, config.getTokenValidator());
-        grpcServer = ServerBuilder.forPort(config.getGrpcPort())
+        ServerBuilder<?> serverBuilder = ServerBuilder.forPort(config.getGrpcPort())
                 .addService(grpcServicer)
                 // Keepalive settings - server sends pings to keep connection alive
                 .keepAliveTime(30, TimeUnit.SECONDS)
@@ -96,9 +102,26 @@ public class NanoLinkServer {
                 .maxConnectionIdle(Long.MAX_VALUE, TimeUnit.SECONDS)
                 .maxConnectionAge(Long.MAX_VALUE, TimeUnit.SECONDS)
                 .maxConnectionAgeGrace(Long.MAX_VALUE, TimeUnit.SECONDS)
-                .maxInboundMessageSize(16 * 1024 * 1024)
-                .build()
-                .start();
+                .maxInboundMessageSize(16 * 1024 * 1024);
+
+        // Wire TLS when configured. Previously tlsCert/tlsKey were stored but never
+        // applied, so a server believed to be encrypted ran plaintext — exposing
+        // agent tokens, metrics and commands to MITM. Fail closed if only one of
+        // cert/key is provided.
+        String tlsCert = config.getTlsCertPath();
+        String tlsKey = config.getTlsKeyPath();
+        if (tlsCert != null || tlsKey != null) {
+            if (tlsCert == null || tlsKey == null) {
+                throw new IllegalArgumentException("both tlsCert and tlsKey must be set to enable TLS");
+            }
+            serverBuilder.useTransportSecurity(new File(tlsCert), new File(tlsKey));
+            log.info("gRPC server TLS enabled");
+        } else {
+            log.warn("gRPC server starting WITHOUT TLS (plaintext). Set tlsCert/tlsKey to encrypt "
+                    + "agent traffic (tokens, metrics, commands).");
+        }
+
+        grpcServer = serverBuilder.build().start();
 
         // Start heartbeat checker
         startHeartbeatChecker();

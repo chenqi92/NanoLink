@@ -15,7 +15,7 @@ import grpc
 
 from .proto import nanolink_pb2, nanolink_pb2_grpc
 from .connection import AgentConnection, ValidationResult, TokenValidator, PermissionLevel
-from .sanitize import sanitize_hostname
+from .sanitize import sanitize_hostname, sanitize_string
 from .metrics import (
     Metrics, RealtimeMetrics, StaticInfo, PeriodicData,
     CpuMetrics, MemoryMetrics, DiskMetrics, NetworkMetrics,
@@ -118,26 +118,31 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 
     def Authenticate(self, request, context):
         """Handle authentication request"""
-        logger.debug(f"Authentication request from: {request.hostname} ({request.agent_version})")
+        # Sanitize agent-controlled fields before logging to prevent log
+        # injection (CRLF / control chars forging audit entries).
+        hostname = sanitize_hostname(request.hostname)
+        version = sanitize_string(request.agent_version)
+        logger.debug(f"Authentication request from: {hostname} ({version})")
 
         try:
             result = self.token_validator(request.token)
 
             if result.valid:
-                # Check for existing agent with same hostname
-                existing = self.get_agent_by_hostname(request.hostname)
+                # Check for existing agent with same hostname. This request passed
+                # token validation, so an authenticated takeover is allowed.
+                existing = self.get_agent_by_hostname(hostname)
                 if existing:
                     self._unregister_agent(existing)
-                    logger.info(f"Replacing stale agent for hostname: {request.hostname}")
+                    logger.info(f"Replacing stale agent for hostname: {hostname}")
 
                 # Create agent connection
                 agent_id = str(uuid.uuid4())
                 agent = AgentConnection(
                     agent_id=agent_id,
-                    hostname=request.hostname,
+                    hostname=hostname,
                     os=request.os,
                     arch=request.arch,
-                    version=request.agent_version,
+                    version=version,
                     permission_level=result.permission_level,
                     connected_at=datetime.now(),
                     last_heartbeat=datetime.now(),
@@ -145,7 +150,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 
                 self._register_agent(agent, context)
 
-                logger.info(f"Agent authenticated: {request.hostname} ({agent_id}) "
+                logger.info(f"Agent authenticated: {hostname} ({agent_id}) "
                            f"with permission level {result.permission_level}")
 
                 return nanolink_pb2.AuthResponse(
@@ -153,7 +158,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                     permission_level=result.permission_level
                 )
             else:
-                logger.warning(f"Authentication failed for: {request.hostname}")
+                logger.warning(f"Authentication failed for: {hostname}")
                 return nanolink_pb2.AuthResponse(
                     success=False,
                     error_message=result.error_message or "Invalid token"
@@ -194,9 +199,24 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 
                             hostname = sanitize_hostname(proto_metrics.hostname)
 
-                            # Check for existing agent
+                            # Check for existing agent. Security: an unauthenticated
+                            # metrics stream must NOT evict a live connection by
+                            # reusing its hostname (would let anyone disconnect /
+                            # hijack an active, possibly authenticated, agent). Only
+                            # take over a stale connection; reject otherwise.
                             existing = self.get_agent_by_hostname(hostname)
                             if existing:
+                                age = (datetime.now() - existing.last_heartbeat).total_seconds()
+                                if existing._active and age < 90.0:
+                                    logger.warning(
+                                        f"SECURITY: refusing unauthenticated stream takeover of "
+                                        f"active connection for hostname {hostname} (heartbeat age: {age:.0f}s)"
+                                    )
+                                    context.abort(
+                                        grpc.StatusCode.ALREADY_EXISTS,
+                                        "a connection for this host is already active",
+                                    )
+                                    return
                                 self._unregister_agent(existing)
 
                             agent_id = str(uuid.uuid4())
@@ -796,8 +816,17 @@ def create_grpc_server(
     servicer: NanoLinkServicer,
     port: int = 39100,
     max_workers: int = 10,
+    tls_cert_path: Optional[str] = None,
+    tls_key_path: Optional[str] = None,
 ) -> grpc.Server:
-    """Create a gRPC server with the NanoLink servicer"""
+    """Create a gRPC server with the NanoLink servicer.
+
+    When tls_cert_path/tls_key_path are provided the listener is bound with TLS.
+    Previously these settings were ignored and the server always ran plaintext,
+    so an integrator who configured TLS still exposed agent tokens, metrics and
+    commands to MITM. Loading failures raise (fail closed) rather than silently
+    downgrading to plaintext.
+    """
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=max_workers),
         options=[
@@ -808,5 +837,21 @@ def create_grpc_server(
         ]
     )
     nanolink_pb2_grpc.add_NanoLinkServiceServicer_to_server(servicer, server)
-    server.add_insecure_port(f'[::]:{port}')
+    addr = f'[::]:{port}'
+    if tls_cert_path or tls_key_path:
+        if not (tls_cert_path and tls_key_path):
+            raise ValueError("both tls_cert_path and tls_key_path must be set to enable TLS")
+        with open(tls_key_path, 'rb') as f:
+            private_key = f.read()
+        with open(tls_cert_path, 'rb') as f:
+            certificate_chain = f.read()
+        credentials = grpc.ssl_server_credentials([(private_key, certificate_chain)])
+        server.add_secure_port(addr, credentials)
+        logger.info("gRPC server TLS enabled")
+    else:
+        logger.warning(
+            "gRPC server starting WITHOUT TLS (plaintext). Set tls_cert_path/tls_key_path "
+            "to encrypt agent traffic (tokens, metrics, commands)."
+        )
+        server.add_insecure_port(addr)
     return server

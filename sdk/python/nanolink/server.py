@@ -89,6 +89,12 @@ class NanoLinkServer:
 
     def __init__(self, config: Optional[ServerConfig] = None):
         self.config = config or ServerConfig()
+        if self.config.token_validator is default_token_validator:
+            logger.warning(
+                "no token_validator configured — every agent is accepted (READ_ONLY) and "
+                "anonymous metrics streams can register. Provide a token_validator before "
+                "production use."
+            )
         self._agents: Dict[str, AgentConnection] = {}
         self._grpc_server = None
         self._grpc_servicer = None
@@ -280,6 +286,8 @@ class NanoLinkServer:
         self._grpc_server = create_grpc_server(
             self._grpc_servicer,
             port=self.config.grpc_port,
+            tls_cert_path=self.config.tls_cert_path,
+            tls_key_path=self.config.tls_key_path,
         )
         self._grpc_server.start()
 

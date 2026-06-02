@@ -8,14 +8,15 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	pb "github.com/chenqi92/NanoLink/sdk/go/nanolink/proto"
 )
 
 // Default timeouts
 const (
-	DefaultHeartbeatTimeout  = 90 * time.Second  // Agent considered dead after this
-	DefaultHeartbeatInterval = 30 * time.Second  // Check interval
+	DefaultHeartbeatTimeout  = 90 * time.Second // Agent considered dead after this
+	DefaultHeartbeatInterval = 30 * time.Second // Check interval
 )
 
 // Default ports
@@ -93,6 +94,9 @@ func NewServer(config Config) *Server {
 	}
 	if config.TokenValidator == nil {
 		config.TokenValidator = DefaultTokenValidator
+		if !config.RequireAuthentication {
+			log.Printf("WARNING: no TokenValidator configured and RequireAuthentication=false — every agent is accepted (READ_ONLY) and anonymous metrics streams can register. Provide a TokenValidator and/or set RequireAuthentication=true before production use.")
+		}
 	}
 	if config.HeartbeatTimeout == 0 {
 		config.HeartbeatTimeout = DefaultHeartbeatTimeout
@@ -198,7 +202,24 @@ func (s *Server) startGRPC() error {
 	}
 
 	s.grpcServicer = NewNanoLinkServicer(s)
-	s.grpcServer = CreateGRPCServer(s.grpcServicer)
+
+	// Wire TLS when configured. Previously TLSCert/TLSKey were silently ignored,
+	// so a server the integrator believed was encrypted actually ran plaintext —
+	// exposing agent tokens, metrics, and commands to MITM. Fail closed if the
+	// cert/key are set but cannot be loaded.
+	var extraOpts []grpc.ServerOption
+	if s.config.TLSCert != "" || s.config.TLSKey != "" {
+		creds, err := credentials.NewServerTLSFromFile(s.config.TLSCert, s.config.TLSKey)
+		if err != nil {
+			return fmt.Errorf("failed to load TLS cert/key: %w", err)
+		}
+		extraOpts = append(extraOpts, grpc.Creds(creds))
+		log.Printf("gRPC server TLS enabled")
+	} else {
+		log.Printf("WARNING: gRPC server starting WITHOUT TLS (plaintext). Set TLSCert and TLSKey to encrypt agent traffic (tokens, metrics, commands).")
+	}
+
+	s.grpcServer = CreateGRPCServer(s.grpcServicer, extraOpts...)
 
 	go func() {
 		log.Printf("gRPC Server started on port %d (Agent connections)", s.config.GrpcPort)

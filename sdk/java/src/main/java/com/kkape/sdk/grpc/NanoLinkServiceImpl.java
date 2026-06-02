@@ -54,39 +54,45 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
     @Override
     public void authenticate(AuthRequest request, StreamObserver<AuthResponse> responseObserver) {
-        log.debug("Authentication request from: {} ({})", request.getHostname(), request.getAgentVersion());
+        // Sanitize agent-controlled fields before logging to prevent log injection
+        // (CRLF / control chars forging audit entries).
+        String hostname = SanitizeUtils.sanitizeHostname(request.getHostname());
+        String version = SanitizeUtils.sanitizeString(request.getAgentVersion());
+        log.debug("Authentication request from: {} ({})", hostname, version);
 
         try {
             TokenValidator.ValidationResult result = tokenValidator.validate(request.getToken());
 
             if (result.isValid()) {
-                // Check if agent with same hostname already exists (reconnection case)
-                AgentConnection existingAgent = server.getAgentByHostname(request.getHostname());
+                // Check if agent with same hostname already exists (reconnection case).
+                // This request passed token validation, so an authenticated takeover
+                // is allowed.
+                AgentConnection existingAgent = server.getAgentByHostname(hostname);
                 if (existingAgent != null) {
                     server.unregisterAgent(existingAgent);
-                    log.info("Replacing stale agent connection for hostname: {}", request.getHostname());
+                    log.info("Replacing stale agent connection for hostname: {}", hostname);
                 }
 
                 // Create agent connection
                 String agentId = UUID.randomUUID().toString();
                 AgentConnection agent = new AgentConnection(
                         agentId,
-                        request.getHostname(),
+                        hostname,
                         request.getOs(),
                         request.getArch(),
-                        request.getAgentVersion(),
+                        version,
                         result.getPermissionLevel());
 
                 server.registerAgent(agent);
                 log.info("Agent authenticated: {} ({}) with permission level {}",
-                        request.getHostname(), agentId, result.getPermissionLevel());
+                        hostname, agentId, result.getPermissionLevel());
 
                 responseObserver.onNext(AuthResponse.newBuilder()
                         .setSuccess(true)
                         .setPermissionLevel(result.getPermissionLevel())
                         .build());
             } else {
-                log.warn("Authentication failed for: {}", request.getHostname());
+                log.warn("Authentication failed for: {}", hostname);
                 responseObserver.onNext(AuthResponse.newBuilder()
                         .setSuccess(false)
                         .setErrorMessage(result.getErrorMessage() != null ? result.getErrorMessage() : "Invalid token")
@@ -139,10 +145,24 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
                             String hostname = SanitizeUtils.sanitizeHostname(protoMetrics.getHostname());
 
-                            // Check if agent with same hostname already exists (reconnection case)
+                            // Check if agent with same hostname already exists.
+                            // Security: an unauthenticated metrics stream must NOT evict
+                            // a live connection by reusing its hostname — that would let
+                            // anyone disconnect/hijack an active (possibly authenticated)
+                            // agent. Only take over a stale connection; reject otherwise.
                             AgentConnection existingAgent = server.getAgentByHostname(hostname);
                             if (existingAgent != null) {
-                                // Remove stale agent and reuse info
+                                long ageSec = java.time.Duration
+                                        .between(existingAgent.getLastHeartbeat(), java.time.Instant.now())
+                                        .getSeconds();
+                                if (existingAgent.isActive() && ageSec < 90) {
+                                    log.warn("SECURITY: refusing unauthenticated stream takeover of active "
+                                            + "connection for hostname {} (heartbeat age: {}s)", hostname, ageSec);
+                                    responseObserver.onError(io.grpc.Status.ALREADY_EXISTS
+                                            .withDescription("a connection for this host is already active")
+                                            .asRuntimeException());
+                                    return;
+                                }
                                 server.unregisterAgent(existingAgent);
                                 log.info("Replacing stale agent connection for hostname: {}", hostname);
                             }

@@ -93,41 +93,46 @@ func (s *NanoLinkServicer) getAgentStreamByHostname(hostname string) (*AgentStre
 
 // Authenticate handles agent authentication
 func (s *NanoLinkServicer) Authenticate(ctx context.Context, req *pb.AuthRequest) (*pb.AuthResponse, error) {
-	log.Printf("Authentication request from: %s (%s)", req.Hostname, req.AgentVersion)
+	// Sanitize agent-controlled fields before they reach any log line to prevent
+	// log injection (CRLF / control chars forging audit entries).
+	hostname := SanitizeHostname(req.Hostname)
+	version := SanitizeString(req.AgentVersion)
+	log.Printf("Authentication request from: %s (%s)", hostname, version)
 
 	result := s.tokenValidator(req.Token)
 
 	if result.Valid {
 		// Check for existing agent with same hostname - handle gracefully
-		if existingStream, ok := s.getAgentStreamByHostname(req.Hostname); ok {
+		if existingStream, ok := s.getAgentStreamByHostname(hostname); ok {
 			// Check if existing connection is still active
 			if existingStream.IsActive && existingStream.Agent != nil {
 				// Check heartbeat age - if recent, this might be a duplicate
 				if existingStream.Agent.HeartbeatAge() < 30*time.Second {
 					log.Printf("WARNING: Agent %s attempting reconnect while existing connection is active (heartbeat age: %v)",
-						req.Hostname, existingStream.Agent.HeartbeatAge())
+						hostname, existingStream.Agent.HeartbeatAge())
 				}
 			}
-			// Clean up old connection
+			// Clean up old connection (the new request passed token validation, so
+			// this is an authenticated takeover).
 			existingStream.Agent.Close()
 			s.server.unregisterAgent(existingStream.Agent)
 			s.cleanupAgent(existingStream.Agent, existingStream.Stream)
-			log.Printf("Replaced stale agent connection for hostname: %s", req.Hostname)
+			log.Printf("Replaced stale agent connection for hostname: %s", hostname)
 		}
 
 		// Create agent connection
 		agent := NewAgentConnectionFromGRPC(
-			req.Hostname,
+			hostname,
 			req.Os,
 			req.Arch,
-			req.AgentVersion,
+			version,
 			result.PermissionLevel,
 		)
 		agentID := agent.AgentID
 
 		s.server.registerAgent(agent)
 		log.Printf("Agent authenticated: %s (%s) with permission level %d",
-			req.Hostname, agentID, result.PermissionLevel)
+			hostname, agentID, result.PermissionLevel)
 
 		return &pb.AuthResponse{
 			Success:         true,
@@ -135,7 +140,7 @@ func (s *NanoLinkServicer) Authenticate(ctx context.Context, req *pb.AuthRequest
 		}, nil
 	}
 
-	log.Printf("Authentication failed for: %s", req.Hostname)
+	log.Printf("Authentication failed for: %s", hostname)
 	errMsg := result.ErrorMessage
 	if errMsg == "" {
 		errMsg = "Invalid token"
@@ -200,11 +205,16 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 
 				// Check for existing agent with same hostname
 				if existingStream, ok := s.getAgentStreamByHostname(hostname); ok {
-					if existingStream.IsActive && existingStream.Agent != nil {
-						if existingStream.Agent.HeartbeatAge() < 30*time.Second {
-							log.Printf("WARNING: Agent %s stream reconnect while existing is active (heartbeat age: %v)",
-								hostname, existingStream.Agent.HeartbeatAge())
-						}
+					// Security: an unauthenticated metrics stream must NOT be able
+					// to evict a live connection by reusing its hostname — that
+					// would let anyone disconnect/hijack an active (possibly
+					// authenticated) agent. Only take over a connection that is
+					// already stale; reject otherwise.
+					if existingStream.IsActive && existingStream.Agent != nil &&
+						existingStream.Agent.HeartbeatAge() < s.server.config.HeartbeatTimeout {
+						log.Printf("SECURITY: refusing unauthenticated stream takeover of active connection for hostname %s (heartbeat age: %v)",
+							hostname, existingStream.Agent.HeartbeatAge())
+						return fmt.Errorf("a connection for this host is already active")
 					}
 					existingStream.Agent.Close()
 					s.server.unregisterAgent(existingStream.Agent)
@@ -383,9 +393,10 @@ func (s *NanoLinkServicer) GetAgentInfo(ctx context.Context, req *pb.AgentInfoRe
 	return &pb.AgentInfoResponse{AgentId: req.AgentId}, nil
 }
 
-// CreateGRPCServer creates a gRPC server with the NanoLink servicer
-func CreateGRPCServer(servicer *NanoLinkServicer) *grpc.Server {
-	server := grpc.NewServer(
+// CreateGRPCServer creates a gRPC server with the NanoLink servicer.
+// extraOpts (e.g. grpc.Creds for TLS) are appended to the base options.
+func CreateGRPCServer(servicer *NanoLinkServicer, extraOpts ...grpc.ServerOption) *grpc.Server {
+	opts := []grpc.ServerOption{
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    30 * time.Second,
 			Timeout: 10 * time.Second,
@@ -394,9 +405,11 @@ func CreateGRPCServer(servicer *NanoLinkServicer) *grpc.Server {
 			MinTime:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
-		grpc.MaxRecvMsgSize(16*1024*1024), // 16MB max receive message size
-		grpc.MaxSendMsgSize(16*1024*1024), // 16MB max send message size
-	)
+		grpc.MaxRecvMsgSize(16 * 1024 * 1024), // 16MB max receive message size
+		grpc.MaxSendMsgSize(16 * 1024 * 1024), // 16MB max send message size
+	}
+	opts = append(opts, extraOpts...)
+	server := grpc.NewServer(opts...)
 	pb.RegisterNanoLinkServiceServer(server, servicer)
 	return server
 }
