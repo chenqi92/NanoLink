@@ -215,21 +215,29 @@ func (s *MetricsService) SetBroadcastCallback(callback func(agentID string, metr
 	s.broadcastCallback = callback
 }
 
-// GetCurrentMetrics returns current metrics for an agent
+// GetCurrentMetrics returns a snapshot of current metrics for an agent.
+//
+// It returns a deep copy: the stored *MetricsData is mutated in place by
+// MergeRealtimeMetrics under the write lock, so handing out the live pointer
+// would let callers (alert evaluation, dashboard, gRPC) read fields and iterate
+// slices while the writer appends to them — a data race that can panic. Cloning
+// under the read lock gives each caller an independent, consistent snapshot.
 func (s *MetricsService) GetCurrentMetrics(agentID string) *MetricsData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.current[agentID]
+	return cloneMetricsData(s.current[agentID])
 }
 
-// GetAllCurrentMetrics returns current metrics for all agents
+// GetAllCurrentMetrics returns snapshots of current metrics for all agents.
+// Each value is a deep copy (see GetCurrentMetrics) so callers never observe
+// concurrent in-place mutation of the stored metrics.
 func (s *MetricsService) GetAllCurrentMetrics() map[string]*MetricsData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make(map[string]*MetricsData)
+	result := make(map[string]*MetricsData, len(s.current))
 	for id, data := range s.current {
-		result[id] = data
+		result[id] = cloneMetricsData(data)
 	}
 	return result
 }

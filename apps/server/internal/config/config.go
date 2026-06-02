@@ -40,6 +40,12 @@ type ServerConfig struct {
 type AuthConfig struct {
 	Enabled bool          `mapstructure:"enabled"`
 	Tokens  []TokenConfig `mapstructure:"tokens"`
+	// AllowPublicRegistration opens the unauthenticated /api/auth/register
+	// endpoint that bootstraps the first super admin. Disabled by default so a
+	// freshly exposed server cannot be hijacked by whoever registers first;
+	// bootstrap the admin via NANOLINK_ADMIN_USERNAME/PASSWORD instead, or set
+	// NANOLINK_ALLOW_PUBLIC_REGISTRATION=true to opt in.
+	AllowPublicRegistration bool `mapstructure:"allow_public_registration"`
 }
 
 // TokenConfig holds token configuration
@@ -198,6 +204,7 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("superadmin.username", "NANOLINK_ADMIN_USERNAME")
 	_ = viper.BindEnv("superadmin.password", "NANOLINK_ADMIN_PASSWORD")
 	_ = viper.BindEnv("server.external_url", "NANOLINK_EXTERNAL_URL")
+	_ = viper.BindEnv("auth.allow_public_registration", "NANOLINK_ALLOW_PUBLIC_REGISTRATION")
 
 	// Try to read config file (optional - environment variables take precedence)
 	configErr := viper.ReadInConfig()
@@ -223,6 +230,14 @@ func Load(path string) (*Config, error) {
 	}
 	if externalURL := os.Getenv("NANOLINK_EXTERNAL_URL"); externalURL != "" {
 		cfg.Server.ExternalURL = externalURL
+	}
+	if v := os.Getenv("NANOLINK_ALLOW_PUBLIC_REGISTRATION"); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			cfg.Auth.AllowPublicRegistration = true
+		default:
+			cfg.Auth.AllowPublicRegistration = false
+		}
 	}
 
 	return &cfg, configErr

@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -200,7 +201,36 @@ func (h *AlertHandler) ListChannels(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list channels"})
 		return
 	}
-	c.JSON(http.StatusOK, channels)
+	// Target holds webhook URLs / SMTP creds (often with embedded tokens). Never
+	// echo it back verbatim — mask it so listing a channel can't leak the secret.
+	out := make([]gin.H, 0, len(channels))
+	for i := range channels {
+		ch := &channels[i]
+		out = append(out, gin.H{
+			"id":      ch.ID,
+			"kind":    ch.Kind,
+			"name":    ch.Name,
+			"target":  maskChannelTarget(ch.Target),
+			"enabled": ch.Enabled,
+		})
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// maskChannelTarget hides the secret portion of a notification target while
+// keeping enough to identify it. For URLs it keeps scheme+host (the token
+// usually lives in the path/query); for anything else it shows a short prefix.
+func maskChannelTarget(target string) string {
+	if target == "" {
+		return ""
+	}
+	if u, err := url.Parse(target); err == nil && u.Host != "" {
+		return u.Scheme + "://" + u.Host + "/***"
+	}
+	if len(target) <= 6 {
+		return "***"
+	}
+	return target[:3] + "***"
 }
 
 type channelRequest struct {

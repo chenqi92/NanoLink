@@ -16,12 +16,17 @@ import (
 
 // AuthService handles user authentication
 type AuthService struct {
-	db           *gorm.DB
-	logger       *zap.SugaredLogger
-	jwtSecret    []byte
-	jwtExpire    time.Duration
-	loginLimiter *LoginRateLimiter
-	bootstrapMu  sync.Mutex
+	db                      *gorm.DB
+	logger                  *zap.SugaredLogger
+	jwtSecret               []byte
+	jwtExpire               time.Duration
+	loginLimiter            *LoginRateLimiter
+	bootstrapMu             sync.Mutex
+	allowPublicRegistration bool
+	// dummyHash is compared against when a username is unknown so that the
+	// failure path takes the same time as a real bcrypt verification, defeating
+	// username enumeration via response timing.
+	dummyHash []byte
 }
 
 // JWTClaims represents JWT claims
@@ -38,10 +43,11 @@ type JWTClaims struct {
 
 // AuthConfig holds authentication configuration
 type AuthConfig struct {
-	JWTSecret string
-	JWTExpire time.Duration
-	AdminUser string
-	AdminPass string
+	JWTSecret               string
+	JWTExpire               time.Duration
+	AdminUser               string
+	AdminPass               string
+	AllowPublicRegistration bool
 }
 
 // NewAuthService creates a new authentication service
@@ -56,11 +62,18 @@ func NewAuthService(db *gorm.DB, cfg AuthConfig, logger *zap.SugaredLogger) *Aut
 	}
 
 	svc := &AuthService{
-		db:           db,
-		logger:       logger,
-		jwtSecret:    []byte(cfg.JWTSecret),
-		jwtExpire:    cfg.JWTExpire,
-		loginLimiter: NewLoginRateLimiter(5, 5*time.Minute), // 5 attempts, 5 min lockout
+		db:                      db,
+		logger:                  logger,
+		jwtSecret:               []byte(cfg.JWTSecret),
+		jwtExpire:               cfg.JWTExpire,
+		loginLimiter:            NewLoginRateLimiter(5, 5*time.Minute), // 5 attempts, 5 min lockout
+		allowPublicRegistration: cfg.AllowPublicRegistration,
+	}
+
+	// Precompute a bcrypt hash to compare against for unknown usernames, so login
+	// timing does not leak whether an account exists.
+	if dummy, err := bcrypt.GenerateFromPassword([]byte("nanolink-timing-equalizer"), bcrypt.DefaultCost); err == nil {
+		svc.dummyHash = dummy
 	}
 
 	// Initialize super admin if configured
@@ -75,15 +88,16 @@ func NewAuthService(db *gorm.DB, cfg AuthConfig, logger *zap.SugaredLogger) *Aut
 
 // Auth errors
 var (
-	ErrUserNotFound       = errors.New("user not found")
-	ErrInvalidPassword    = errors.New("invalid password")
-	ErrUserExists         = errors.New("user already exists")
-	ErrInvalidToken       = errors.New("invalid token")
-	ErrTokenExpired       = errors.New("token expired")
-	ErrPermissionDenied   = errors.New("permission denied")
-	ErrWeakPassword       = errors.New("password does not meet strength requirements")
-	ErrTooManyAttempts    = errors.New("too many login attempts, please try again later")
-	ErrRegistrationClosed = errors.New("registration is closed")
+	ErrUserNotFound         = errors.New("user not found")
+	ErrInvalidPassword      = errors.New("invalid password")
+	ErrUserExists           = errors.New("user already exists")
+	ErrInvalidToken         = errors.New("invalid token")
+	ErrTokenExpired         = errors.New("token expired")
+	ErrPermissionDenied     = errors.New("permission denied")
+	ErrWeakPassword         = errors.New("password does not meet strength requirements")
+	ErrTooManyAttempts      = errors.New("too many login attempts, please try again later")
+	ErrRegistrationClosed   = errors.New("registration is closed")
+	ErrRegistrationDisabled = errors.New("public registration is disabled")
 )
 
 // LoginRateLimiter is an in-memory per-key counter that locks out a key after
@@ -289,6 +303,10 @@ func (s *AuthService) RegisterUser(username, password, email string) (*database.
 
 // RegisterFirstSuperAdmin creates the first user as a super admin and then closes public registration.
 func (s *AuthService) RegisterFirstSuperAdmin(username, password, email string) (*database.User, error) {
+	if !s.allowPublicRegistration {
+		return nil, ErrRegistrationDisabled
+	}
+
 	s.bootstrapMu.Lock()
 	defer s.bootstrapMu.Unlock()
 
@@ -396,6 +414,11 @@ func (s *AuthService) LoginUser(username, password, remoteIP string) (string, *d
 	var user database.User
 	if err := s.db.Where("username = ?", username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Run a bcrypt comparison against a dummy hash so the unknown-user
+			// path costs the same as a real verification (anti-enumeration).
+			if s.dummyHash != nil {
+				_ = bcrypt.CompareHashAndPassword(s.dummyHash, []byte(password))
+			}
 			recordFailure()
 			return "", nil, ErrUserNotFound
 		}

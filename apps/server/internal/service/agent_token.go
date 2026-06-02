@@ -51,7 +51,7 @@ func (s *AgentTokenService) Create(name string, permission int) (*database.Agent
 	expiresAt := time.Now().Add(24 * time.Hour)
 
 	agentToken := &database.AgentToken{
-		Token:      token,
+		Token:      database.HashToken(token),
 		TokenHint:  database.MaskToken(token),
 		Name:       name,
 		Permission: permission,
@@ -75,10 +75,10 @@ func (s *AgentTokenService) GetByID(id uint) (*database.AgentToken, error) {
 	return &token, nil
 }
 
-// GetByToken retrieves an agent token by the token string
+// GetByToken retrieves an agent token by the (plaintext) token string
 func (s *AgentTokenService) GetByToken(tokenStr string) (*database.AgentToken, error) {
 	var token database.AgentToken
-	if err := s.db.Where("token = ?", tokenStr).First(&token).Error; err != nil {
+	if err := s.db.Where("token = ?", database.HashToken(tokenStr)).First(&token).Error; err != nil {
 		return nil, err
 	}
 	return &token, nil
@@ -147,7 +147,7 @@ func (s *AgentTokenService) RegenerateToken(id uint) (string, error) {
 	}
 
 	if err := s.db.Model(&database.AgentToken{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"token":      token,
+		"token":      database.HashToken(token),
 		"token_hint": database.MaskToken(token),
 	}).Error; err != nil {
 		return "", err
@@ -161,7 +161,7 @@ func (s *AgentTokenService) RegenerateToken(id uint) (string, error) {
 // Returns the token record and permission level if valid
 func (s *AgentTokenService) ValidateAndUpdateToken(tokenStr string, agentID string, hostname string, os string, arch string, version string) (*database.AgentToken, bool) {
 	var token database.AgentToken
-	if err := s.db.Where("token = ?", tokenStr).First(&token).Error; err != nil {
+	if err := s.db.Where("token = ?", database.HashToken(tokenStr)).First(&token).Error; err != nil {
 		return nil, false
 	}
 

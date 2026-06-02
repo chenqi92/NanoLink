@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -262,8 +263,11 @@ func (h *Handler) GetMetricsHistory(c *gin.Context) {
 	interval := c.DefaultQuery("interval", "auto")
 
 	limit, err := strconv.Atoi(limitStr)
-	if err != nil {
+	if err != nil || limit <= 0 {
 		limit = 60
+	}
+	if limit > 1000 {
+		limit = 1000
 	}
 
 	if agentID == "" {
@@ -355,7 +359,7 @@ func parseTimestamp(s string) (time.Time, error) {
 		}
 	}
 
-	return time.Time{}, nil // ignore: unable to parse timestamp
+	return time.Time{}, errors.New("unrecognized timestamp format")
 }
 
 // GetSummary returns a summary of all metrics
@@ -564,12 +568,13 @@ func (h *Handler) SendCommand(c *gin.Context) {
 // GetCommandResult returns the cached structured result for a dispatched command.
 // Returns 202 while the agent has not yet reported the result.
 func (h *Handler) GetCommandResult(c *gin.Context) {
+	agentID := c.Param("id")
 	commandID := c.Param("commandId")
 	if h.grpcServer == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "command dispatch is not configured"})
 		return
 	}
-	res, ok := h.grpcServer.GetCommandResult(commandID)
+	res, ok := h.grpcServer.GetCommandResult(agentID, commandID)
 	if !ok {
 		c.JSON(http.StatusAccepted, gin.H{"status": "pending", "commandId": commandID})
 		return

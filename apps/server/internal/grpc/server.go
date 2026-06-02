@@ -71,8 +71,9 @@ type Server struct {
 }
 
 type commandResultEntry struct {
-	result *pb.CommandResult
-	at     time.Time
+	agentID string
+	result  *pb.CommandResult
+	at      time.Time
 }
 
 const commandResultTTL = 2 * time.Minute
@@ -496,21 +497,24 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 			s.commandResultHandler(agent.AgentID, req.CommandResult.CommandId, output, req.CommandResult.Success)
 		}
 		// Cache the full structured result for dashboard polling
-		s.storeCommandResult(req.CommandResult)
+		s.storeCommandResult(agent.AgentID, req.CommandResult)
 	}
 }
 
 // storeCommandResult caches a command result so the dashboard can poll for it.
-func (s *Server) storeCommandResult(res *pb.CommandResult) {
+func (s *Server) storeCommandResult(agentID string, res *pb.CommandResult) {
 	if res == nil || res.CommandId == "" {
 		return
 	}
-	s.commandResults.Store(res.CommandId, &commandResultEntry{result: res, at: time.Now()})
+	s.commandResults.Store(res.CommandId, &commandResultEntry{agentID: agentID, result: res, at: time.Now()})
 	s.sweepCommandResults()
 }
 
-// GetCommandResult returns a cached command result by id, if still fresh.
-func (s *Server) GetCommandResult(commandID string) (*pb.CommandResult, bool) {
+// GetCommandResult returns a cached command result by id, if still fresh and it
+// belongs to the given agent. Binding the lookup to agentID prevents a caller
+// authorized for one agent from reading another agent's command output by
+// command id (IDOR).
+func (s *Server) GetCommandResult(agentID, commandID string) (*pb.CommandResult, bool) {
 	v, ok := s.commandResults.Load(commandID)
 	if !ok {
 		return nil, false
@@ -518,6 +522,9 @@ func (s *Server) GetCommandResult(commandID string) (*pb.CommandResult, bool) {
 	entry := v.(*commandResultEntry)
 	if time.Since(entry.at) > commandResultTTL {
 		s.commandResults.Delete(commandID)
+		return nil, false
+	}
+	if entry.agentID != agentID {
 		return nil, false
 	}
 	return entry.result, true
@@ -651,6 +658,8 @@ func (s *Server) GetAgentInfo(ctx context.Context, req *pb.AgentInfoRequest) (*p
 
 // WatchAgents streams agent events to dashboard
 func (s *Server) WatchAgents(req *pb.WatchAgentsRequest, stream pb.DashboardService_WatchAgentsServer) error {
+	visible, filter := s.visibleAgentFilter(stream.Context())
+
 	eventChan := make(chan *pb.AgentEvent, 100)
 
 	// Register subscriber
@@ -674,7 +683,10 @@ func (s *Server) WatchAgents(req *pb.WatchAgentsRequest, stream pb.DashboardServ
 	// Send initial agents if requested
 	if req.IncludeInitial {
 		s.agentsMu.RLock()
-		for _, agent := range s.agents {
+		for id, agent := range s.agents {
+			if filter && !visible[id] {
+				continue
+			}
 			event := &pb.AgentEvent{
 				EventType: pb.AgentEvent_CONNECTED,
 				Agent:     s.agentToProto(agent),
@@ -690,6 +702,11 @@ func (s *Server) WatchAgents(req *pb.WatchAgentsRequest, stream pb.DashboardServ
 
 	// Stream events
 	for event := range eventChan {
+		if filter {
+			if a := event.GetAgent(); a == nil || !visible[a.GetAgentId()] {
+				continue
+			}
+		}
 		if err := stream.Send(event); err != nil {
 			return err
 		}
@@ -700,15 +717,38 @@ func (s *Server) WatchAgents(req *pb.WatchAgentsRequest, stream pb.DashboardServ
 
 // WatchMetrics streams metrics to dashboard
 func (s *Server) WatchMetrics(req *pb.WatchMetricsRequest, stream pb.DashboardService_WatchMetricsServer) error {
+	visible, filter := s.visibleAgentFilter(stream.Context())
+
+	// Resolve the concrete set of agent IDs this caller is allowed to watch.
+	// pb.Metrics carries no agent ID, so authorization must happen at subscribe
+	// time: a non-super-admin can never subscribe to the "*" wildcard.
+	agentIDs := req.AgentIds
+	if filter {
+		if len(agentIDs) == 0 {
+			agentIDs = make([]string, 0, len(visible))
+			for id := range visible {
+				agentIDs = append(agentIDs, id)
+			}
+		} else {
+			allowed := agentIDs[:0:0]
+			for _, id := range agentIDs {
+				if visible[id] {
+					allowed = append(allowed, id)
+				}
+			}
+			agentIDs = allowed
+		}
+	}
+
 	metricsChan := make(chan *pb.Metrics, 100)
 
 	// Register subscriber for all requested agents (or all if empty)
 	s.subscribersMu.Lock()
-	if len(req.AgentIds) == 0 {
-		// Subscribe to all
+	if len(agentIDs) == 0 && !filter {
+		// Subscribe to all (super admin / no-auth mode only)
 		s.metricsSubscribers["*"] = append(s.metricsSubscribers["*"], metricsChan)
 	} else {
-		for _, agentID := range req.AgentIds {
+		for _, agentID := range agentIDs {
 			s.metricsSubscribers[agentID] = append(s.metricsSubscribers[agentID], metricsChan)
 		}
 	}
@@ -740,13 +780,48 @@ func (s *Server) WatchMetrics(req *pb.WatchMetricsRequest, stream pb.DashboardSe
 	return nil
 }
 
-// GetAgents returns list of connected agents
+// visibleAgentFilter returns the set of agent IDs the caller may see and whether
+// filtering should be applied. Filtering is skipped for super admins and when no
+// auth interceptor is configured (backward-compatible no-auth mode). On any
+// uncertainty (missing identity or lookup failure) it fails closed.
+func (s *Server) visibleAgentFilter(ctx context.Context) (map[string]bool, bool) {
+	if s.authInterceptor == nil {
+		return nil, false
+	}
+	userID, _, isSuperAdmin, ok := GetUserFromContext(ctx)
+	if !ok {
+		return map[string]bool{}, true
+	}
+	if isSuperAdmin {
+		return nil, false
+	}
+	ids, err := s.authInterceptor.permService.GetVisibleAgents(userID)
+	if err != nil {
+		s.logger.Errorf("Failed to resolve visible agents: %v", err)
+		return map[string]bool{}, true
+	}
+	if ids == nil { // nil means all agents are visible
+		return nil, false
+	}
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set, true
+}
+
+// GetAgents returns list of connected agents (filtered by caller permission)
 func (s *Server) GetAgents(ctx context.Context, req *pb.GetAgentsRequest) (*pb.GetAgentsResponse, error) {
+	visible, filter := s.visibleAgentFilter(ctx)
+
 	s.agentsMu.RLock()
 	defer s.agentsMu.RUnlock()
 
 	agents := make([]*pb.AgentInfoResponse, 0, len(s.agents))
-	for _, agent := range s.agents {
+	for id, agent := range s.agents {
+		if filter && !visible[id] {
+			continue
+		}
 		agents = append(agents, s.agentToProto(agent))
 	}
 
@@ -757,6 +832,12 @@ func (s *Server) GetAgents(ctx context.Context, req *pb.GetAgentsRequest) (*pb.G
 
 // GetAgentMetrics returns current metrics for an agent
 func (s *Server) GetAgentMetrics(ctx context.Context, req *pb.GetAgentMetricsRequest) (*pb.Metrics, error) {
+	if s.authInterceptor != nil {
+		if err := s.authInterceptor.CheckAgentPermission(ctx, req.AgentId, database.PermissionReadOnly); err != nil {
+			return nil, err
+		}
+	}
+
 	metrics := s.metricsService.GetCurrentMetrics(req.AgentId)
 	if metrics == nil {
 		return nil, fmt.Errorf("no metrics available for agent: %s", req.AgentId)

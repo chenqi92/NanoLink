@@ -282,12 +282,14 @@ func (s *Server) toolGetAgentProcesses(ctx context.Context, args map[string]inte
 		return nil, fmt.Errorf("agent_id is required")
 	}
 
-	// Note: This would require sending a command to the agent
-	// For now, return a placeholder indicating this needs gRPC command execution
+	// Per-process listing is not exposed over MCP in this build: it requires
+	// dispatching a PROCESS_LIST command to the agent and polling for the
+	// result, which MCP does not do. Return an honest message rather than
+	// pointing at a non-existent "execute_command" tool.
 	return map[string]interface{}{
-		"message":  "Process listing requires sending a command to the agent",
+		"message":  "Per-process listing is not available over MCP.",
 		"agent_id": agentID,
-		"note":     "Use the execute_command tool with PROCESS_LIST command type",
+		"note":     "Use request_agent_data for system metrics; per-process data must be requested via the REST/gRPC command API.",
 	}, nil
 }
 
@@ -440,6 +442,9 @@ func (s *Server) toolGetAuditStats(ctx context.Context, args map[string]interfac
 	hours := 24.0
 	if h, ok := args["hours"].(float64); ok && h > 0 {
 		hours = h
+	}
+	if hours > 8760 { // cap at one year to bound the audit-stats query window
+		hours = 8760
 	}
 
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)

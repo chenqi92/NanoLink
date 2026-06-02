@@ -9,11 +9,16 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 
 	pb "github.com/chenqi92/NanoLink/apps/server/internal/proto"
 )
+
+// shellCommandRouteTTL bounds how long a pending command->session route is kept
+// when no result ever comes back (e.g. the agent disconnects mid-command).
+const shellCommandRouteTTL = 10 * time.Minute
 
 // ShellHandler handles WebSocket shell connections.
 type ShellHandler struct {
@@ -22,8 +27,18 @@ type ShellHandler struct {
 		SendCommandToAgent(agentID string, cmd *pb.Command) error
 	}
 	upgrader        websocket.Upgrader
-	sessions        sync.Map // agentID -> []*shellSession
 	shellSuperToken string
+
+	// cmdRoutes maps a command ID to the session that issued it, so command
+	// output is delivered only to the originating session instead of being
+	// broadcast to every session attached to the agent.
+	mu        sync.Mutex
+	cmdRoutes map[string]*cmdRoute
+}
+
+type cmdRoute struct {
+	session *shellSession
+	at      time.Time
 }
 
 type shellSession struct {
@@ -32,6 +47,11 @@ type shellSession struct {
 	userID    uint
 	username  string
 	createdAt time.Time
+
+	// writeMu serializes writes to conn. gorilla/websocket forbids concurrent
+	// writers, and output arrives from the gRPC stream goroutine while the read
+	// loop may also write errors.
+	writeMu sync.Mutex
 }
 
 type shellMessage struct {
@@ -53,6 +73,7 @@ func NewShellHandler(
 		logger:          logger,
 		grpcServer:      grpcServer,
 		shellSuperToken: strings.TrimSpace(os.Getenv("NANOLINK_SHELL_SUPER_TOKEN")),
+		cmdRoutes:       make(map[string]*cmdRoute),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
 			WriteBufferSize: 4096,
@@ -91,13 +112,12 @@ func (h *ShellHandler) HandleShellWS(c *gin.Context) {
 		createdAt: time.Now(),
 	}
 
-	h.addSession(agentID, session)
-	defer h.removeSession(agentID, session)
+	defer h.dropRoutesForSession(session)
 
 	h.logger.Infof("Shell session started: user=%s agent=%s", user.Username, agentID)
 
 	if h.shellSuperToken == "" {
-		h.sendError(session.conn, "Remote shell is disabled. Configure NANOLINK_SHELL_SUPER_TOKEN on the server and use the same super_token in agent configs.")
+		h.sendError(session, "Remote shell is disabled. Configure NANOLINK_SHELL_SUPER_TOKEN on the server and use the same super_token in agent configs.")
 		_ = session.conn.WriteControl(
 			websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "shell disabled"),
@@ -133,21 +153,24 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 
 		var msg shellMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
-			h.sendError(session.conn, "invalid message format")
+			h.sendError(session, "invalid message format")
 			continue
 		}
 
 		switch msg.Type {
 		case "input":
+			commandID := uuid.New().String()
 			cmd := &pb.Command{
-				CommandId:  generateCommandID(),
+				CommandId:  commandID,
 				Type:       pb.CommandType_SHELL_EXECUTE,
 				Target:     msg.Data,
 				SuperToken: h.shellSuperToken,
 			}
 
+			h.registerRoute(commandID, session)
 			if err := h.grpcServer.SendCommandToAgent(session.agentID, cmd); err != nil {
-				h.sendError(session.conn, "failed to send command: "+err.Error())
+				h.dropRoute(commandID)
+				h.sendError(session, "failed to send command: "+err.Error())
 				continue
 			}
 
@@ -155,66 +178,73 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 			h.logger.Debugf("Terminal resize: %dx%d", msg.Cols, msg.Rows)
 
 		default:
-			h.sendError(session.conn, "unknown message type: "+msg.Type)
+			h.sendError(session, "unknown message type: "+msg.Type)
 		}
 	}
 }
 
-func (h *ShellHandler) sendOutput(conn *websocket.Conn, data string) {
+func (h *ShellHandler) sendOutput(session *shellSession, data string) {
 	msg := shellMessage{Type: "output", Data: data}
 	if jsonData, err := json.Marshal(msg); err == nil {
-		_ = conn.WriteMessage(websocket.TextMessage, jsonData)
+		session.writeMu.Lock()
+		_ = session.conn.WriteMessage(websocket.TextMessage, jsonData)
+		session.writeMu.Unlock()
 	}
 }
 
-func (h *ShellHandler) sendError(conn *websocket.Conn, errMsg string) {
+func (h *ShellHandler) sendError(session *shellSession, errMsg string) {
 	msg := shellMessage{Type: "error", Data: errMsg}
 	if jsonData, err := json.Marshal(msg); err == nil {
-		_ = conn.WriteMessage(websocket.TextMessage, jsonData)
+		session.writeMu.Lock()
+		_ = session.conn.WriteMessage(websocket.TextMessage, jsonData)
+		session.writeMu.Unlock()
 	}
 }
 
-// SendOutputToSession sends output from agent to the shell session.
+// SendOutputToSession delivers command output to the session that issued the
+// command identified by commandID. Output for commands the server did not route
+// through a shell session (e.g. data-request results) is silently dropped.
 func (h *ShellHandler) SendOutputToSession(agentID, commandID, output string) {
-	h.sessions.Range(func(key, value interface{}) bool {
-		if sessions, ok := value.([]*shellSession); ok {
-			for _, session := range sessions {
-				if session.agentID == agentID {
-					h.sendOutput(session.conn, output)
-				}
-			}
-		}
-		return true
-	})
-}
+	h.mu.Lock()
+	route, ok := h.cmdRoutes[commandID]
+	if ok {
+		delete(h.cmdRoutes, commandID)
+	}
+	h.mu.Unlock()
 
-func (h *ShellHandler) addSession(agentID string, session *shellSession) {
-	value, _ := h.sessions.LoadOrStore(agentID, []*shellSession{})
-	sessions := value.([]*shellSession)
-	sessions = append(sessions, session)
-	h.sessions.Store(agentID, sessions)
-}
-
-func (h *ShellHandler) removeSession(agentID string, session *shellSession) {
-	value, ok := h.sessions.Load(agentID)
-	if !ok {
+	if !ok || route.session.agentID != agentID {
 		return
 	}
 
-	sessions := value.([]*shellSession)
-	filtered := make([]*shellSession, 0, len(sessions))
-	for _, s := range sessions {
-		if s != session {
-			filtered = append(filtered, s)
-		}
-	}
-	if len(filtered) > 0 {
-		h.sessions.Store(agentID, filtered)
-	} else {
-		h.sessions.Delete(agentID)
-	}
+	h.sendOutput(route.session, output)
 }
 
-func generateCommandID() string {
-	return time.Now().Format("20060102150405.000000")
+// registerRoute records the session that issued commandID and opportunistically
+// sweeps stale routes whose results never arrived.
+func (h *ShellHandler) registerRoute(commandID string, session *shellSession) {
+	now := time.Now()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for id, r := range h.cmdRoutes {
+		if now.Sub(r.at) > shellCommandRouteTTL {
+			delete(h.cmdRoutes, id)
+		}
+	}
+	h.cmdRoutes[commandID] = &cmdRoute{session: session, at: now}
+}
+
+func (h *ShellHandler) dropRoute(commandID string) {
+	h.mu.Lock()
+	delete(h.cmdRoutes, commandID)
+	h.mu.Unlock()
+}
+
+func (h *ShellHandler) dropRoutesForSession(session *shellSession) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for id, r := range h.cmdRoutes {
+		if r.session == session {
+			delete(h.cmdRoutes, id)
+		}
+	}
 }

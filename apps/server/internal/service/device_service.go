@@ -79,7 +79,7 @@ func (s *DeviceService) CreateDeviceToken(createdBy uint, serverName string) (*G
 	}
 
 	deviceToken := &database.DeviceToken{
-		Token:           token,
+		Token:           database.HashToken(token),
 		DeviceName:      "Pending Connection",
 		DeviceType:      "unknown",
 		DeviceOS:        "unknown",
@@ -117,7 +117,7 @@ func (s *DeviceService) CreateDeviceToken(createdBy uint, serverName string) (*G
 // ValidateDeviceToken validates a device token and returns the device info
 func (s *DeviceService) ValidateDeviceToken(token string) (*database.DeviceToken, error) {
 	var deviceToken database.DeviceToken
-	if err := s.db.Preload("Creator").Where("token = ?", token).First(&deviceToken).Error; err != nil {
+	if err := s.db.Preload("Creator").Where("token = ?", database.HashToken(token)).First(&deviceToken).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrInvalidDeviceToken
 		}

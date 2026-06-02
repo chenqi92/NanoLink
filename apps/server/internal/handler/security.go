@@ -120,6 +120,33 @@ func IsOriginAllowed(r *http.Request, allowedOrigins []string) bool {
 	return false
 }
 
+// hasControlChars reports whether s contains a NUL or other control character.
+// These never appear in a legitimate service name, file path, device target, or
+// log filter, but are a classic vector for log injection and argument smuggling
+// once the value reaches the agent. Cheap defense-in-depth at the API boundary
+// (the agent validates too).
+func hasControlChars(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+// validateForwardedParam rejects values that should never be relayed to an
+// agent. isPath additionally rejects ".." path-traversal sequences. Returns a
+// human-readable reason and false when the value must be rejected.
+func validateForwardedParam(field, value string, isPath bool) (string, bool) {
+	if hasControlChars(value) {
+		return field + " contains invalid control characters", false
+	}
+	if isPath && strings.Contains(value, "..") {
+		return field + " must not contain '..'", false
+	}
+	return "", true
+}
+
 func extractBearerToken(header string) (string, bool) {
 	parts := strings.SplitN(strings.TrimSpace(header), " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") || parts[1] == "" {

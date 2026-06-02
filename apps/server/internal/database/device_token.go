@@ -9,7 +9,7 @@ import (
 // DeviceToken represents a device authentication token for mobile/desktop clients
 type DeviceToken struct {
 	ID              uint           `gorm:"primarykey" json:"id"`
-	Token           string         `gorm:"uniqueIndex;size:64;not null" json:"-"`
+	Token           string         `gorm:"uniqueIndex;size:128;not null" json:"-"` // stored hashed-at-rest (see HashToken)
 	DeviceName      string         `gorm:"size:100" json:"deviceName"`
 	DeviceType      string         `gorm:"size:20" json:"deviceType"` // mobile/desktop/tablet
 	DeviceOS        string         `gorm:"size:50" json:"deviceOs"`   // iOS/Android/macOS/Windows/Linux

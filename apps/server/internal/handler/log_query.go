@@ -31,25 +31,25 @@ func NewLogQueryHandler(grpcServer *grpcserver.Server, auditService *service.Aud
 
 // ServiceLogsInput represents input for service logs query
 type ServiceLogsInput struct {
-	Service string `json:"service"`           // Service name (e.g., nginx, docker)
-	Lines   int32  `json:"lines"`             // Number of lines to return (default 100)
-	Since   string `json:"since,omitempty"`   // Start time (ISO 8601)
-	Until   string `json:"until,omitempty"`   // End time (ISO 8601)
-	Filter  string `json:"filter,omitempty"`  // Filter keyword
+	Service string `json:"service"`          // Service name (e.g., nginx, docker)
+	Lines   int32  `json:"lines"`            // Number of lines to return (default 100)
+	Since   string `json:"since,omitempty"`  // Start time (ISO 8601)
+	Until   string `json:"until,omitempty"`  // End time (ISO 8601)
+	Filter  string `json:"filter,omitempty"` // Filter keyword
 }
 
 // SystemLogsInput represents input for system logs query
 type SystemLogsInput struct {
-	File   string `json:"file"`              // Log file path (must be in whitelist)
-	Lines  int32  `json:"lines"`             // Number of lines to return (default 100)
-	Filter string `json:"filter,omitempty"`  // Filter keyword
+	File   string `json:"file"`             // Log file path (must be in whitelist)
+	Lines  int32  `json:"lines"`            // Number of lines to return (default 100)
+	Filter string `json:"filter,omitempty"` // Filter keyword
 }
 
 // AuditLogsInput represents input for audit logs query
 type AuditLogsInput struct {
-	Lines  int32  `json:"lines"`             // Number of lines to return (default 100)
-	Since  string `json:"since,omitempty"`   // Start time
-	Filter string `json:"filter,omitempty"`  // Filter keyword
+	Lines  int32  `json:"lines"`            // Number of lines to return (default 100)
+	Since  string `json:"since,omitempty"`  // Start time
+	Filter string `json:"filter,omitempty"` // Filter keyword
 }
 
 // QueryServiceLogs queries service logs from an agent
@@ -71,6 +71,15 @@ func (h *LogQueryHandler) QueryServiceLogs(c *gin.Context) {
 
 	if input.Lines <= 0 {
 		input.Lines = 100
+	}
+
+	if msg, ok := validateForwardedParam("service", input.Service, false); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+	if msg, ok := validateForwardedParam("filter", input.Filter, false); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
 	}
 
 	// Build command parameters
@@ -157,6 +166,15 @@ func (h *LogQueryHandler) QuerySystemLogs(c *gin.Context) {
 		input.Lines = 100
 	}
 
+	if msg, ok := validateForwardedParam("file", input.File, true); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+	if msg, ok := validateForwardedParam("filter", input.Filter, false); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+
 	// Build command parameters
 	params := map[string]string{
 		"file":  input.File,
@@ -233,6 +251,11 @@ func (h *LogQueryHandler) QueryAuditLogs(c *gin.Context) {
 
 	if input.Lines <= 0 {
 		input.Lines = 100
+	}
+
+	if msg, ok := validateForwardedParam("filter", input.Filter, false); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
 	}
 
 	// Build command parameters

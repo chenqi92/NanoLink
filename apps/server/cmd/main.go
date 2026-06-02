@@ -92,10 +92,11 @@ func main() {
 		jwtExpire = 24 * time.Hour
 	}
 	authConfig := service.AuthConfig{
-		JWTSecret: cfg.JWT.Secret,
-		JWTExpire: jwtExpire,
-		AdminUser: cfg.SuperAdmin.Username,
-		AdminPass: cfg.SuperAdmin.Password,
+		JWTSecret:               cfg.JWT.Secret,
+		JWTExpire:               jwtExpire,
+		AdminUser:               cfg.SuperAdmin.Username,
+		AdminPass:               cfg.SuperAdmin.Password,
+		AllowPublicRegistration: cfg.Auth.AllowPublicRegistration,
 	}
 	// Debug log for super admin configuration
 	if cfg.SuperAdmin.Username != "" {
@@ -104,6 +105,20 @@ func main() {
 		sugar.Warn("No super admin username configured from NANOLINK_ADMIN_USERNAME")
 	}
 	authService := service.NewAuthService(database.GetDB(), authConfig, sugar)
+
+	// Bootstrap safety: if there is no admin to log in as and self-registration is
+	// off, the server is unreachable. Warn loudly with the remediation instead of
+	// silently leaving an unusable (or, if registration were on, hijackable) state.
+	if cfg.SuperAdmin.Username == "" && !cfg.Auth.AllowPublicRegistration {
+		var userCount int64
+		database.GetDB().Model(&database.User{}).Count(&userCount)
+		if userCount == 0 {
+			sugar.Warn("[SECURITY] No users exist and public registration is disabled. " +
+				"Bootstrap an admin with NANOLINK_ADMIN_USERNAME/NANOLINK_ADMIN_PASSWORD, " +
+				"or set NANOLINK_ALLOW_PUBLIC_REGISTRATION=true to allow one-time first-admin signup.")
+		}
+	}
+
 	groupService := service.NewGroupService(database.GetDB(), sugar)
 	permService := service.NewPermissionService(database.GetDB(), sugar)
 	auditService := service.NewAuditService(database.GetDB(), sugar)

@@ -70,6 +70,11 @@ func (h *DataRequestHandler) RequestData(c *gin.Context) {
 		return
 	}
 
+	if msg, ok := validateForwardedParam("target", input.Target, false); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+
 	err := h.grpcServer.RequestDataFromAgent(agentID, reqType, input.Target)
 	if err != nil {
 		h.logger.Errorf("Failed to send data request to agent %s: %v", agentID, err)
@@ -100,6 +105,11 @@ func (h *DataRequestHandler) RequestDataFromAll(c *gin.Context) {
 	reqType, ok := mapRequestType(input.RequestType)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown requestType"})
+		return
+	}
+
+	if msg, ok := validateForwardedParam("target", input.Target, false); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
 

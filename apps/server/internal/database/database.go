@@ -92,6 +92,11 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}
 
+	// Hash any tokens still stored in plaintext from an older schema version.
+	if err := MigratePlaintextTokens(db, log); err != nil {
+		return fmt.Errorf("failed to migrate tokens to hashed storage: %w", err)
+	}
+
 	DB = db
 	log.Info("Database initialized successfully")
 	return nil

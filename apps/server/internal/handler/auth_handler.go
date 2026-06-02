@@ -66,6 +66,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	user, err := h.authService.RegisterFirstSuperAdmin(req.Username, req.Password, req.Email)
 	if err != nil {
+		if errors.Is(err, service.ErrRegistrationDisabled) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "public registration is disabled; bootstrap the admin via NANOLINK_ADMIN_USERNAME/PASSWORD or enable NANOLINK_ALLOW_PUBLIC_REGISTRATION"})
+			return
+		}
 		if errors.Is(err, service.ErrRegistrationClosed) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "registration is closed; ask a super admin to create new users"})
 			return
