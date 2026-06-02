@@ -38,8 +38,10 @@ impl PermissionChecker {
             // Read-only operations (level 0)
             CommandType::ProcessList => 0,
             CommandType::ServiceStatus => 0,
+            CommandType::ServiceList => 0,
             CommandType::DockerList => 0,
             CommandType::FileTail => 0,
+            CommandType::FileList => 0,
 
             // Basic write operations (level 1)
             CommandType::FileDownload => 1,
@@ -354,6 +356,8 @@ impl PermissionChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
+    use std::sync::Arc;
 
     #[test]
     fn test_pattern_matching() {
@@ -379,5 +383,13 @@ mod tests {
 
         // Wildcard everywhere
         assert!(PermissionChecker::matches_pattern("*", "anything"));
+    }
+
+    #[test]
+    fn read_only_level_includes_listing_commands() {
+        let checker = PermissionChecker::new(Arc::new(Config::sample()));
+
+        assert!(checker.check_permission(CommandType::ServiceList, 0));
+        assert!(checker.check_permission(CommandType::FileList, 0));
     }
 }

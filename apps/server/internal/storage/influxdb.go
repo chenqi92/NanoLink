@@ -120,17 +120,21 @@ func (s *InfluxDBStore) Query(agentID string, start, end time.Time, limit int) (
 		end = time.Now()
 	}
 
-	// Query CPU data as primary timeline
+	// Query CPU data as primary timeline.
+	// agentID is user-controllable, so bind it as a Flux query parameter
+	// (params.agent_id) rather than interpolating it into the query string.
 	query := fmt.Sprintf(`
 		from(bucket: "%s")
 		|> range(start: %s, stop: %s)
-		|> filter(fn: (r) => r._measurement == "cpu" and r.agent_id == "%s")
+		|> filter(fn: (r) => r._measurement == "cpu" and r.agent_id == params.agent_id)
 		|> filter(fn: (r) => r._field == "usage_percent")
 		|> sort(columns: ["_time"])
 		|> limit(n: %d)
-	`, s.bucket, start.Format(time.RFC3339), end.Format(time.RFC3339), agentID, limit)
+	`, s.bucket, start.Format(time.RFC3339), end.Format(time.RFC3339), limit)
 
-	result, err := s.queryAPI.Query(ctx, query)
+	result, err := s.queryAPI.QueryWithParams(ctx, query, map[string]interface{}{
+		"agent_id": agentID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("influxdb: query failed: %w", err)
 	}

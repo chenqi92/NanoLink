@@ -15,3 +15,19 @@ func TestMapRequestTypeAcceptsKnown(t *testing.T) {
 		}
 	}
 }
+
+func TestParseTimestampRejectsInvalidInput(t *testing.T) {
+	if _, err := parseTimestamp("not-a-date"); err == nil {
+		t.Fatal("expected invalid timestamp to return an error")
+	}
+}
+
+func TestParseTimestampAcceptsUnixMilliseconds(t *testing.T) {
+	got, err := parseTimestamp("1717200000000")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.IsZero() {
+		t.Fatal("expected a parsed timestamp")
+	}
+}

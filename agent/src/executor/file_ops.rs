@@ -13,6 +13,34 @@ use crate::proto::{CommandResult, FileEntry};
 const MAX_TAIL_LINES: usize = 1_000;
 const MAX_TAIL_OUTPUT_BYTES: usize = 1024 * 1024;
 
+fn has_glob_chars(rule: &str) -> bool {
+    rule.chars().any(|c| matches!(c, '*' | '?' | '[' | ']'))
+}
+
+fn path_matches_rule(canonical: &Path, canonical_str: &str, rule: &str) -> bool {
+    let rule = rule.trim();
+    if rule.is_empty() {
+        return false;
+    }
+
+    if has_glob_chars(rule) {
+        return Pattern::new(rule)
+            .map(|pattern| pattern.matches(canonical_str))
+            .unwrap_or(false);
+    }
+
+    let rule_path = Path::new(rule);
+    let normalized_rule = if rule_path.exists() {
+        rule_path
+            .canonicalize()
+            .unwrap_or_else(|_| rule_path.to_path_buf())
+    } else {
+        rule_path.to_path_buf()
+    };
+
+    canonical.starts_with(&normalized_rule)
+}
+
 /// File operations executor with security checks
 pub struct FileExecutor {
     config: Arc<Config>,
@@ -78,26 +106,13 @@ impl FileExecutor {
 
         // Check denied paths first (always blocked)
         for denied in &self.config.security.denied_paths {
-            // Support glob patterns
-            if let Ok(pattern) = Pattern::new(denied) {
-                if pattern.matches(&canonical_str) {
-                    warn!(
-                        "[AUDIT] Access to denied path blocked: {} (matched pattern: {})",
-                        canonical_str, denied
-                    );
-                    return Err(format!(
-                        "Access denied: path matches blocked pattern '{denied}'"
-                    ));
-                }
-            }
-            // Also check prefix match for directory paths
-            if canonical_str.starts_with(denied) {
+            if path_matches_rule(&canonical, &canonical_str, denied) {
                 warn!(
-                    "[AUDIT] Access to denied path blocked: {} (prefix: {})",
+                    "[AUDIT] Access to denied path blocked: {} (rule: {})",
                     canonical_str, denied
                 );
                 return Err(format!(
-                    "Access denied: path is within restricted directory '{denied}'"
+                    "Access denied: path matches blocked rule '{denied}'"
                 ));
             }
         }
@@ -121,21 +136,16 @@ impl FileExecutor {
             return Ok(canonical);
         }
 
-        // Check allowed paths (if list is not empty)
+        // Check allowed paths (the list is non-empty here; the empty case
+        // returned early above). Use the shared matcher for consistency with the
+        // denied-paths check.
         {
-            let is_allowed = self.config.security.allowed_paths.iter().any(|allowed| {
-                // Check prefix match
-                if canonical_str.starts_with(allowed) {
-                    return true;
-                }
-                // Check glob pattern
-                if let Ok(pattern) = Pattern::new(allowed) {
-                    if pattern.matches(&canonical_str) {
-                        return true;
-                    }
-                }
-                false
-            });
+            let is_allowed = self
+                .config
+                .security
+                .allowed_paths
+                .iter()
+                .any(|allowed| path_matches_rule(&canonical, &canonical_str, allowed));
 
             if !is_allowed {
                 warn!("[AUDIT] Path not in allowed list: {}", canonical_str);
@@ -427,5 +437,91 @@ impl FileExecutor {
             },
             Err(e) => Self::error_result(format!("Failed to truncate file: {e}")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before unix epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "nanolink-file-{}-{}-{}",
+            name,
+            std::process::id(),
+            nanos
+        ));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    fn test_executor(allowed_paths: Vec<String>, denied_paths: Vec<String>) -> FileExecutor {
+        let mut config = Config::sample();
+        config.security.allowed_paths = allowed_paths;
+        config.security.denied_paths = denied_paths;
+        FileExecutor::new(Arc::new(config))
+    }
+
+    #[test]
+    fn allowed_path_match_is_component_bounded() {
+        let root = unique_temp_dir("allowed-prefix");
+        let allowed = root.join("allowed");
+        let sibling = root.join("allowed_evil");
+        fs::create_dir_all(&allowed).expect("create allowed dir");
+        fs::create_dir_all(&sibling).expect("create sibling dir");
+
+        let allowed_file = allowed.join("ok.txt");
+        let sibling_file = sibling.join("secret.txt");
+        fs::write(&allowed_file, b"ok").expect("write allowed file");
+        fs::write(&sibling_file, b"secret").expect("write sibling file");
+
+        let executor = test_executor(vec![allowed.to_string_lossy().into_owned()], vec![]);
+        assert!(
+            executor
+                .validate_path(&allowed_file.to_string_lossy(), false)
+                .is_ok()
+        );
+        assert!(
+            executor
+                .validate_path(&sibling_file.to_string_lossy(), false)
+                .is_err()
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn denied_path_match_is_component_bounded() {
+        let root = unique_temp_dir("denied-prefix");
+        let denied = root.join("blocked");
+        let sibling = root.join("blocked_evil");
+        fs::create_dir_all(&denied).expect("create denied dir");
+        fs::create_dir_all(&sibling).expect("create sibling dir");
+
+        let denied_file = denied.join("secret.txt");
+        let sibling_file = sibling.join("ok.txt");
+        fs::write(&denied_file, b"secret").expect("write denied file");
+        fs::write(&sibling_file, b"ok").expect("write sibling file");
+
+        let executor = test_executor(vec![], vec![denied.to_string_lossy().into_owned()]);
+        assert!(
+            executor
+                .validate_path(&sibling_file.to_string_lossy(), false)
+                .is_ok()
+        );
+        assert!(
+            executor
+                .validate_path(&denied_file.to_string_lossy(), false)
+                .is_err()
+        );
+
+        let _ = fs::remove_dir_all(root);
     }
 }

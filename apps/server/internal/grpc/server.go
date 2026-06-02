@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -65,18 +66,36 @@ type Server struct {
 	commandResultHandler func(agentID, commandID, output string, success bool)
 
 	// Recent command results keyed by commandId, for dashboard polling
-	commandResults  sync.Map // commandId -> *commandResultEntry
-	lastResultSweep time.Time
-	resultSweepMu   sync.Mutex
+	commandResults    sync.Map // commandId -> *commandResultEntry
+	commandDispatches sync.Map // commandId -> *commandDispatchEntry
+	lastResultSweep   time.Time
+	resultSweepMu     sync.Mutex
 }
 
 type commandResultEntry struct {
-	agentID string
-	result  *pb.CommandResult
-	at      time.Time
+	result      *pb.CommandResult
+	at          time.Time
+	agentID     string
+	ownerUserID uint
+	ownerUser   string
+	commandType string
+	registered  bool
+}
+
+type commandDispatchEntry struct {
+	agentID     string
+	userID      uint
+	username    string
+	commandType string
+	at          time.Time
 }
 
 const commandResultTTL = 2 * time.Minute
+const commandDispatchTTL = 10 * time.Minute
+
+// ErrCommandResultAccessDenied means the command result exists, but does not
+// belong to the requested agent/user.
+var ErrCommandResultAccessDenied = errors.New("command result access denied")
 
 // NewServer creates a new gRPC server (without auth interceptor for backward compatibility)
 func NewServer(
@@ -501,33 +520,71 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 	}
 }
 
+// RegisterDispatchedCommand records ownership metadata before a command is sent
+// to an agent. The HTTP result-polling endpoint uses this to prevent users who
+// merely know a commandId from reading another user's command output.
+func (s *Server) RegisterDispatchedCommand(commandID, agentID string, userID uint, username, commandType string) {
+	commandID = strings.TrimSpace(commandID)
+	agentID = strings.TrimSpace(agentID)
+	if commandID == "" || agentID == "" {
+		return
+	}
+	s.commandDispatches.Store(commandID, &commandDispatchEntry{
+		agentID:     agentID,
+		userID:      userID,
+		username:    username,
+		commandType: commandType,
+		at:          time.Now(),
+	})
+	s.sweepCommandResults()
+}
+
 // storeCommandResult caches a command result so the dashboard can poll for it.
 func (s *Server) storeCommandResult(agentID string, res *pb.CommandResult) {
 	if res == nil || res.CommandId == "" {
 		return
 	}
-	s.commandResults.Store(res.CommandId, &commandResultEntry{agentID: agentID, result: res, at: time.Now()})
+	entry := &commandResultEntry{
+		result:  res,
+		at:      time.Now(),
+		agentID: agentID,
+	}
+	if v, ok := s.commandDispatches.Load(res.CommandId); ok {
+		meta := v.(*commandDispatchEntry)
+		if meta.agentID == agentID {
+			entry.ownerUserID = meta.userID
+			entry.ownerUser = meta.username
+			entry.commandType = meta.commandType
+			entry.registered = true
+		} else if s.logger != nil {
+			s.logger.Warnf("Command result agent mismatch: command=%s dispatchedAgent=%s resultAgent=%s",
+				res.CommandId, meta.agentID, agentID)
+		}
+	}
+	s.commandResults.Store(res.CommandId, entry)
 	s.sweepCommandResults()
 }
 
-// GetCommandResult returns a cached command result by id, if still fresh and it
-// belongs to the given agent. Binding the lookup to agentID prevents a caller
-// authorized for one agent from reading another agent's command output by
-// command id (IDOR).
-func (s *Server) GetCommandResult(agentID, commandID string) (*pb.CommandResult, bool) {
+// GetCommandResultForUser returns a cached command result only when the caller
+// is the command owner, or is a super admin, and the URL's agent matches the
+// agent that produced the result.
+func (s *Server) GetCommandResultForUser(commandID, agentID string, userID uint, isSuperAdmin bool) (*pb.CommandResult, bool, error) {
 	v, ok := s.commandResults.Load(commandID)
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 	entry := v.(*commandResultEntry)
 	if time.Since(entry.at) > commandResultTTL {
 		s.commandResults.Delete(commandID)
-		return nil, false
+		return nil, false, nil
 	}
-	if entry.agentID != agentID {
-		return nil, false
+	if entry.agentID != agentID || !entry.registered {
+		return nil, true, ErrCommandResultAccessDenied
 	}
-	return entry.result, true
+	if !isSuperAdmin && entry.ownerUserID != userID {
+		return nil, true, ErrCommandResultAccessDenied
+	}
+	return entry.result, true, nil
 }
 
 func (s *Server) sweepCommandResults() {
@@ -540,6 +597,12 @@ func (s *Server) sweepCommandResults() {
 	s.commandResults.Range(func(k, v any) bool {
 		if time.Since(v.(*commandResultEntry).at) > commandResultTTL {
 			s.commandResults.Delete(k)
+		}
+		return true
+	})
+	s.commandDispatches.Range(func(k, v any) bool {
+		if time.Since(v.(*commandDispatchEntry).at) > commandDispatchTTL {
+			s.commandDispatches.Delete(k)
 		}
 		return true
 	})
@@ -869,6 +932,9 @@ func (s *Server) SendCommand(ctx context.Context, req *pb.DashboardCommandReques
 			Error:     fmt.Sprintf("agent not found: %s", req.AgentId),
 		}, nil
 	}
+
+	userID, username, _, _ := GetUserFromContext(ctx)
+	s.RegisterDispatchedCommand(req.Command.CommandId, req.AgentId, userID, username, req.Command.Type.String())
 
 	// Send command to agent via stream
 	select {

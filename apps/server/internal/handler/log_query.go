@@ -104,6 +104,7 @@ func (h *LogQueryHandler) QueryServiceLogs(c *gin.Context) {
 		Type:      pb.CommandType_SERVICE_LOGS,
 		Params:    params,
 	}
+	h.grpcServer.RegisterDispatchedCommand(commandID, agentID, userIDVal, usernameVal, "SERVICE_LOGS")
 
 	// Send command to agent
 	err := h.grpcServer.SendCommandToAgent(agentID, cmd)
@@ -191,6 +192,7 @@ func (h *LogQueryHandler) QuerySystemLogs(c *gin.Context) {
 		Type:      pb.CommandType_SYSTEM_LOGS,
 		Params:    params,
 	}
+	h.grpcServer.RegisterDispatchedCommand(commandID, agentID, userIDVal, usernameVal, "SYSTEM_LOGS")
 
 	// Send command to agent
 	err := h.grpcServer.SendCommandToAgent(agentID, cmd)
@@ -276,6 +278,7 @@ func (h *LogQueryHandler) QueryAuditLogs(c *gin.Context) {
 		Type:      pb.CommandType_AUDIT_LOGS,
 		Params:    params,
 	}
+	h.grpcServer.RegisterDispatchedCommand(commandID, agentID, userIDVal, usernameVal, "AUDIT_LOGS")
 
 	// Send command to agent
 	err := h.grpcServer.SendCommandToAgent(agentID, cmd)

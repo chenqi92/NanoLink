@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -359,7 +360,7 @@ func parseTimestamp(s string) (time.Time, error) {
 		}
 	}
 
-	return time.Time{}, errors.New("unrecognized timestamp format")
+	return time.Time{}, fmt.Errorf("invalid timestamp: %s", s)
 }
 
 // GetSummary returns a summary of all metrics
@@ -523,6 +524,7 @@ func (h *Handler) SendCommand(c *gin.Context) {
 		Target:    req.Target,
 		Params:    req.Params,
 	}
+	h.grpcServer.RegisterDispatchedCommand(commandID, agentID, user.ID, user.Username, req.Type)
 
 	dispatchErr := h.grpcServer.SendCommandToAgent(agentID, cmd)
 
@@ -574,7 +576,20 @@ func (h *Handler) GetCommandResult(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "command dispatch is not configured"})
 		return
 	}
-	res, ok := h.grpcServer.GetCommandResult(agentID, commandID)
+	user := GetCurrentUser(c)
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	res, ok, err := h.grpcServer.GetCommandResultForUser(commandID, agentID, user.ID, user.IsSuperAdmin)
+	if err != nil {
+		if errors.Is(err, grpcserver.ErrCommandResultAccessDenied) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "command result access denied"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read command result"})
+		return
+	}
 	if !ok {
 		c.JSON(http.StatusAccepted, gin.H{"status": "pending", "commandId": commandID})
 		return
