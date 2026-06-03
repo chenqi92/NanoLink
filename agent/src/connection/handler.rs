@@ -204,8 +204,18 @@ impl MessageHandler {
 
             // Shell command
             CommandType::ShellExecute => {
+                let cols = command
+                    .params
+                    .get("cols")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                let rows = command
+                    .params
+                    .get("rows")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
                 self.shell_executor
-                    .execute(&command.target, &command.super_token)
+                    .execute(&command.target, &command.super_token, cols, rows)
                     .await
             }
 

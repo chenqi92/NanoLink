@@ -201,31 +201,42 @@ impl SessionCollector {
         })
     }
 
+    /// Convert a naive local datetime to a Unix timestamp (seconds).
     #[cfg(unix)]
-    fn parse_datetime(&self, date_str: &str, time_str: &str) -> u64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        let datetime_str = format!("{} {}", date_str, time_str);
-
-        if datetime_str.contains('-') {
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0)
-        } else {
-            0
+    fn naive_local_to_unix(naive: chrono::NaiveDateTime) -> u64 {
+        use chrono::TimeZone;
+        match chrono::Local.from_local_datetime(&naive).single() {
+            Some(dt) => dt.timestamp().max(0) as u64,
+            None => 0,
         }
     }
 
     #[cfg(unix)]
     #[allow(clippy::unused_self)]
-    fn parse_datetime_basic(&self, _month: &str, _day: &str, _time: &str) -> u64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
+    fn parse_datetime(&self, date_str: &str, time_str: &str) -> u64 {
+        // `who` ISO form, e.g. "2024-06-01 10:30" (optionally with seconds).
+        let s = format!("{} {}", date_str, time_str);
+        for fmt in ["%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"] {
+            if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(&s, fmt) {
+                return Self::naive_local_to_unix(naive);
+            }
+        }
+        0
+    }
 
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
+    #[cfg(unix)]
+    #[allow(clippy::unused_self)]
+    fn parse_datetime_basic(&self, month: &str, day: &str, time: &str) -> u64 {
+        use chrono::Datelike;
+        // `who` short form has no year, e.g. "Jun 1 10:30"; assume the current year.
+        let year = chrono::Local::now().year();
+        let s = format!("{} {} {} {}", month, day, year, time);
+        for fmt in ["%b %d %Y %H:%M", "%b %e %Y %H:%M", "%b %d %Y %H:%M:%S"] {
+            if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(&s, fmt) {
+                return Self::naive_local_to_unix(naive);
+            }
+        }
+        0
     }
 
     #[cfg(unix)]

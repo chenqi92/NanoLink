@@ -12,6 +12,69 @@ use tokio::sync::mpsc;
 use tokio::time;
 use tracing::{debug, error, info};
 
+/// CPU cache level selector for [`detect_cache_kb`].
+enum CacheLevel {
+    L1,
+    L2,
+    L3,
+}
+
+/// Detect a CPU cache size in KiB. Linux reads sysfs, macOS reads sysctl; other
+/// platforms return 0 (no dependency-free source available).
+fn detect_cache_kb(level: CacheLevel) -> u64 {
+    #[cfg(target_os = "linux")]
+    {
+        let read = |idx: &str| -> u64 {
+            let p = format!("/sys/devices/system/cpu/cpu0/cache/{idx}/size");
+            std::fs::read_to_string(p)
+                .ok()
+                .map(|s| parse_cache_size(s.trim()))
+                .unwrap_or(0)
+        };
+        // L1 combines instruction (index0) + data (index1); L2=index2, L3=index3.
+        match level {
+            CacheLevel::L1 => read("index0") + read("index1"),
+            CacheLevel::L2 => read("index2"),
+            CacheLevel::L3 => read("index3"),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let sysctl = |key: &str| -> u64 {
+            std::process::Command::new("sysctl")
+                .arg("-n")
+                .arg(key)
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+                .unwrap_or(0)
+        };
+        match level {
+            CacheLevel::L1 => (sysctl("hw.l1icachesize") + sysctl("hw.l1dcachesize")) / 1024,
+            CacheLevel::L2 => sysctl("hw.l2cachesize") / 1024,
+            CacheLevel::L3 => sysctl("hw.l3cachesize") / 1024,
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = level;
+        0
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parse_cache_size(s: &str) -> u64 {
+    // sysfs reports sizes like "32K", "1024K", or "1M".
+    if let Some(n) = s.strip_suffix('K') {
+        n.parse::<u64>().unwrap_or(0)
+    } else if let Some(n) = s.strip_suffix('M') {
+        n.parse::<u64>().unwrap_or(0) * 1024
+    } else {
+        s.parse::<u64>().unwrap_or(0) / 1024
+    }
+}
+
 use crate::config::Config;
 use crate::proto::{
     CpuStaticInfo, DataRequestType, DiskIo, DiskStaticInfo, DiskUsage, GpuStaticInfo, GpuUsage,
@@ -232,9 +295,9 @@ impl LayeredCollector {
             logical_cores: cpu_info.logical_cores,
             architecture: cpu_info.architecture,
             frequency_max_mhz: cpu_info.frequency_max_mhz,
-            l1_cache_kb: 0, // TODO: implement cache detection
-            l2_cache_kb: 0,
-            l3_cache_kb: 0,
+            l1_cache_kb: detect_cache_kb(CacheLevel::L1),
+            l2_cache_kb: detect_cache_kb(CacheLevel::L2),
+            l3_cache_kb: detect_cache_kb(CacheLevel::L3),
         };
 
         // Memory static info
@@ -244,7 +307,7 @@ impl LayeredCollector {
             swap_total: mem_info.swap_total,
             memory_type: mem_info.memory_type,
             memory_speed_mhz: mem_info.memory_speed_mhz,
-            memory_slots: 0, // TODO: implement slot detection
+            memory_slots: 0, // not detectable without root/DMI (Linux) or vendor APIs
         };
 
         // Disk static info

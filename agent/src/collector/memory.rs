@@ -242,7 +242,36 @@ impl MemoryCollector {
         0
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    fn get_cached_memory() -> u64 {
+        // macOS exposes file-backed (cached) pages via `vm_stat`.
+        use std::process::Command;
+        let Ok(out) = Command::new("vm_stat").output() else {
+            return 0;
+        };
+        if !out.status.success() {
+            return 0;
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        let mut page_size: u64 = 4096;
+        let mut file_backed: u64 = 0;
+        for line in text.lines() {
+            if let Some(idx) = line.find("page size of") {
+                if let Some(n) = line[idx..].split_whitespace().nth(3) {
+                    page_size = n.parse().unwrap_or(page_size);
+                }
+            } else if line.starts_with("File-backed pages:") {
+                file_backed = line
+                    .split(':')
+                    .nth(1)
+                    .map(|v| v.trim().trim_end_matches('.').parse::<u64>().unwrap_or(0))
+                    .unwrap_or(0);
+            }
+        }
+        file_backed.saturating_mul(page_size)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     fn get_cached_memory() -> u64 {
         0
     }

@@ -562,16 +562,31 @@ async fn get_config(State(state): State<Arc<ManagementState>>) -> Json<serde_jso
 async fn list_servers(State(state): State<Arc<ManagementState>>) -> Json<Vec<ServerInfo>> {
     let config = state.config.read().await;
 
+    // Map "host:port" -> connected from the live connection status, when wired.
+    let mut connected_by_server: std::collections::HashMap<String, bool> =
+        std::collections::HashMap::new();
+    if let Some(status) = &state.connection_status {
+        for s in status.read().await.iter() {
+            connected_by_server.insert(s.server.clone(), s.connected);
+        }
+    }
+
     let servers: Vec<ServerInfo> = config
         .servers
         .iter()
-        .map(|s| ServerInfo {
-            host: s.host.clone(),
-            port: s.port,
-            permission: s.permission,
-            tls_enabled: s.tls_enabled,
-            tls_verify: s.tls_verify,
-            connected: false, // TODO: Track actual connection state
+        .map(|s| {
+            let connected = connected_by_server
+                .get(&format!("{}:{}", s.host, s.port))
+                .copied()
+                .unwrap_or(false);
+            ServerInfo {
+                host: s.host.clone(),
+                port: s.port,
+                permission: s.permission,
+                tls_enabled: s.tls_enabled,
+                tls_verify: s.tls_verify,
+                connected,
+            }
         })
         .collect();
 

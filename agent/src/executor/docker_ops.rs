@@ -4,6 +4,19 @@ use tracing::info;
 use crate::proto::{CommandResult, ContainerInfo};
 use crate::security::validation::validate_container_name;
 
+/// Parse docker's `{{.CreatedAt}}` ("2006-01-02 15:04:05 -0700 MST") into a Unix
+/// timestamp in seconds, or None when it can't be parsed.
+fn parse_docker_created(s: &str) -> Option<u64> {
+    let mut it = s.trim().split_whitespace();
+    let date = it.next()?;
+    let time = it.next()?;
+    let offset = it.next().unwrap_or("+0000");
+    let dt = format!("{date} {time} {offset}");
+    chrono::DateTime::parse_from_str(&dt, "%Y-%m-%d %H:%M:%S %z")
+        .ok()
+        .map(|d| d.timestamp().max(0) as u64)
+}
+
 /// Docker operations executor
 pub struct DockerExecutor;
 
@@ -68,7 +81,7 @@ impl DockerExecutor {
                             image: parts.get(2).unwrap_or(&"").to_string(),
                             status: parts.get(3).unwrap_or(&"").to_string(),
                             state: parts.get(4).unwrap_or(&"").to_string(),
-                            created: 0, // Parse from parts.get(5) if needed
+                            created: parts.get(5).and_then(|s| parse_docker_created(s)).unwrap_or(0),
                         }
                     })
                     .collect();

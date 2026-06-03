@@ -24,8 +24,9 @@ impl ShellExecutor {
         }
     }
 
-    /// Execute a shell command
-    pub async fn execute(&self, command: &str, super_token: &str) -> CommandResult {
+    /// Execute a shell command. cols/rows carry the client terminal size (0 if
+    /// unknown) so the spawned process can export COLUMNS/LINES.
+    pub async fn execute(&self, command: &str, super_token: &str, cols: u16, rows: u16) -> CommandResult {
         // Check permissions
         if let Err(e) = self
             .permission_checker
@@ -44,7 +45,7 @@ impl ShellExecutor {
         info!("Executing shell command: {}", command);
 
         let timeout_secs = self.config.shell.timeout_seconds;
-        let result = self.run(command, timeout_secs).await;
+        let result = self.run(command, timeout_secs, cols, rows).await;
 
         if result.success {
             info!("Shell command completed successfully");
@@ -61,7 +62,7 @@ impl ShellExecutor {
     /// output exceeds the OS pipe buffer (~64KB on Linux) blocks the child on its next
     /// write, the child never exits, and we hit the timeout branch even though the work
     /// itself was fine. Using async streams lets the OS hand us bytes as they arrive.
-    async fn run(&self, command: &str, timeout_secs: u64) -> CommandResult {
+    async fn run(&self, command: &str, timeout_secs: u64, cols: u16, rows: u16) -> CommandResult {
         let mut cmd = if cfg!(windows) {
             let mut c = Command::new("cmd");
             c.args(["/C", command]);
@@ -71,6 +72,15 @@ impl ShellExecutor {
             c.args(["-c", command]);
             c
         };
+
+        // Export the client terminal size so width-aware tools (ls, ps, top)
+        // format their output correctly even without a real PTY.
+        if cols > 0 {
+            cmd.env("COLUMNS", cols.to_string());
+        }
+        if rows > 0 {
+            cmd.env("LINES", rows.to_string());
+        }
 
         let mut child = match cmd
             .stdout(Stdio::piped())

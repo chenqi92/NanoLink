@@ -6,6 +6,7 @@ use crate::proto::NetworkMetrics;
 #[allow(unused_imports)]
 use crate::utils::safe_command::{DEFAULT_COMMAND_TIMEOUT, exec_with_timeout};
 use std::process::Command;
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
 /// Network metrics collector
@@ -309,7 +310,27 @@ impl NetworkCollector {
             .unwrap_or(true)
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    fn is_interface_up(interface: &str) -> bool {
+        use std::process::Command;
+        // `ifconfig <iface>` reports "status: active" when the link is up.
+        match Command::new("ifconfig").arg(interface).output() {
+            Ok(out) if out.status.success() => {
+                let text = String::from_utf8_lossy(&out.stdout);
+                if text.contains("status: active") {
+                    true
+                } else if text.contains("status: inactive") {
+                    false
+                } else {
+                    // No status line (e.g. loopback): trust the UP flag.
+                    text.lines().next().map(|l| l.contains("UP")).unwrap_or(true)
+                }
+            }
+            _ => true,
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     fn is_interface_up(_interface: &str) -> bool {
         true
     }
