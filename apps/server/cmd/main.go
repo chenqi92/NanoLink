@@ -223,9 +223,18 @@ func main() {
 			protected.GET("/alerts/channels", alertHandler.ListChannels)
 			protected.POST("/alerts/ack/:id", alertHandler.AckAlert)
 
-			// AI assistant (metric-derived findings)
-			assistantHandler := handler.NewAssistantHandler(metricsService, agentService, database.GetDB(), sugar)
+			// AI assistant (metric-derived findings + optional external-LLM chat)
+			llmClient := service.NewLLMClient(service.LLMConfig{
+				Enabled:   cfg.LLM.Enabled,
+				Provider:  cfg.LLM.Provider,
+				Model:     cfg.LLM.Model,
+				BaseURL:   cfg.LLM.BaseURL,
+				APIKey:    cfg.LLM.APIKey,
+				MaxTokens: cfg.LLM.MaxTokens,
+			})
+			assistantHandler := handler.NewAssistantHandler(metricsService, agentService, database.GetDB(), llmClient, sugar)
 			protected.GET("/assistant/findings", assistantHandler.Findings)
+			protected.POST("/assistant/chat", assistantHandler.Chat)
 
 			// Super admin only routes
 			admin := protected.Group("")
@@ -409,8 +418,15 @@ func main() {
 		var transport mcp.Transport
 		switch cfg.MCP.Transport {
 		case "sse":
-			sugar.Fatalf("MCP SSE transport is not available yet; set mcp.transport to 'stdio'")
-			return
+			addr := fmt.Sprintf(":%d", cfg.MCP.SSEPort)
+			sseTransport := mcp.NewSSETransport(addr, sugar)
+			transport = sseTransport
+			go func() {
+				if err := sseTransport.Serve(); err != nil && err != http.ErrServerClosed {
+					sugar.Errorf("MCP SSE server error: %v", err)
+				}
+			}()
+			sugar.Infof("MCP server using SSE transport on %s", addr)
 		default:
 			transport = mcp.NewStdioTransport(sugar)
 			sugar.Info("MCP server using stdio transport")

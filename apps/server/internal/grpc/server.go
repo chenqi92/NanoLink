@@ -145,7 +145,14 @@ type Server struct {
 	commandDispatches sync.Map // commandId -> *commandDispatchEntry
 	lastResultSweep   time.Time
 	resultSweepMu     sync.Mutex
+
+	// Recent full Metrics per agent, served by SyncMetrics after reconnection.
+	metricsHistory   map[string][]*pb.Metrics
+	metricsHistoryMu sync.Mutex
 }
+
+// maxMetricsHistory bounds the per-agent SyncMetrics buffer.
+const maxMetricsHistory = 200
 
 type commandResultEntry struct {
 	result      *pb.CommandResult
@@ -188,6 +195,7 @@ func NewServer(
 		logger:             logger,
 		agents:             make(map[string]*GrpcAgent),
 		metricsSubscribers: make(map[string][]chan *pb.Metrics),
+		metricsHistory:     make(map[string][]*pb.Metrics),
 	}
 }
 
@@ -209,6 +217,7 @@ func NewServerWithAuth(
 		authInterceptor:    authInterceptor,
 		agents:             make(map[string]*GrpcAgent),
 		metricsSubscribers: make(map[string][]chan *pb.Metrics),
+		metricsHistory:     make(map[string][]*pb.Metrics),
 	}
 }
 
@@ -452,6 +461,9 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 
 		// Clean up metrics data to prevent accumulation on reconnect with new ID
 		s.metricsService.RemoveAgent(agentID)
+		s.metricsHistoryMu.Lock()
+		delete(s.metricsHistory, agentID)
+		s.metricsHistoryMu.Unlock()
 
 		agent.markClosed()
 
@@ -525,6 +537,9 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 
 		// Forward to metrics service (convert proto to service format)
 		s.metricsService.StoreMetrics(agent.AgentID, convertProtoMetrics(req.Metrics))
+
+		// Buffer recent metrics for SyncMetrics (reconnection catch-up)
+		s.bufferMetrics(agent.AgentID, req.Metrics)
 
 		// Notify metrics subscribers
 		s.notifyMetrics(agent.AgentID, req.Metrics)
@@ -751,19 +766,44 @@ func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.H
 	}, nil
 }
 
-// SyncMetrics handles metrics synchronization after reconnection
+// SyncMetrics returns the metrics buffered for this agent since the requested
+// timestamp, letting a reconnecting agent (or dashboard) catch up on the window
+// it missed instead of seeing a gap.
 func (s *Server) SyncMetrics(ctx context.Context, req *pb.MetricsSyncRequest) (*pb.MetricsSyncResponse, error) {
 	if _, err := s.validateAgentTokenFromContext(ctx, req.AgentId, "", "", "", ""); err != nil {
 		return nil, err
 	}
 
-	// Get buffered metrics from service
-	// For now, return empty (metrics are not persisted in current implementation)
+	s.metricsHistoryMu.Lock()
+	history := s.metricsHistory[req.AgentId]
+	out := make([]*pb.Metrics, 0, len(history))
+	for _, m := range history {
+		if req.LastSyncTimestamp == 0 || m.Timestamp > req.LastSyncTimestamp {
+			out = append(out, m)
+		}
+	}
+	s.metricsHistoryMu.Unlock()
+
 	return &pb.MetricsSyncResponse{
 		Success:         true,
-		Metrics:         []*pb.Metrics{},
+		Metrics:         out,
 		ServerTimestamp: uint64(time.Now().UnixMilli()),
 	}, nil
+}
+
+// bufferMetrics appends a full Metrics sample to the per-agent ring buffer used
+// by SyncMetrics, trimming to the most recent maxMetricsHistory samples.
+func (s *Server) bufferMetrics(agentID string, m *pb.Metrics) {
+	if m == nil {
+		return
+	}
+	s.metricsHistoryMu.Lock()
+	buf := append(s.metricsHistory[agentID], m)
+	if len(buf) > maxMetricsHistory {
+		buf = buf[len(buf)-maxMetricsHistory:]
+	}
+	s.metricsHistory[agentID] = buf
+	s.metricsHistoryMu.Unlock()
 }
 
 // GetAgentInfo returns agent information

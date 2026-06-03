@@ -22,6 +22,7 @@ type Config struct {
 	JWT        JWTConfig        `mapstructure:"jwt"`
 	SuperAdmin SuperAdminConfig `mapstructure:"superadmin"`
 	MCP        MCPConfig        `mapstructure:"mcp"`
+	LLM        LLMConfig        `mapstructure:"llm"`
 }
 
 // ServerConfig holds server configuration
@@ -120,6 +121,18 @@ type MCPConfig struct {
 	SSEPort   int    `mapstructure:"sse_port"`  // Port for SSE transport
 }
 
+// LLMConfig holds the external LLM settings backing the AI assistant chat.
+// APIKey is normally supplied via the NANOLINK_LLM_API_KEY environment variable
+// rather than the config file so the secret is not persisted to disk.
+type LLMConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`    // Enable AI assistant chat
+	Provider  string `mapstructure:"provider"`   // "anthropic" | "openai" | "openai-compatible"
+	Model     string `mapstructure:"model"`      // Model name, e.g. claude-opus-4-8 or gpt-4o
+	BaseURL   string `mapstructure:"base_url"`   // Override API base URL (optional)
+	APIKey    string `mapstructure:"api_key"`    // Prefer NANOLINK_LLM_API_KEY env instead
+	MaxTokens int    `mapstructure:"max_tokens"` // Max response tokens (default 1024)
+}
+
 // Default returns default configuration
 func Default() *Config {
 	return &Config{
@@ -163,6 +176,12 @@ func Default() *Config {
 			Enabled:   false,
 			Transport: "stdio",
 			SSEPort:   8081,
+		},
+		LLM: LLMConfig{
+			Enabled:   false,
+			Provider:  "anthropic",
+			Model:     "claude-opus-4-8",
+			MaxTokens: 1024,
 		},
 	}
 }

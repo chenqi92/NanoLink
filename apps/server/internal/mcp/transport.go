@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sync"
 
@@ -152,6 +153,63 @@ func (t *SSETransport) GetResponse(ctx context.Context) ([]byte, error) {
 	case <-t.ctx.Done():
 		return nil, t.ctx.Err()
 	}
+}
+
+// Serve runs the HTTP server backing this SSE transport. It exposes:
+//
+//	GET  /sse     — the event stream; first emits an "endpoint" event pointing
+//	               clients at the message URL, then streams JSON-RPC responses.
+//	POST /message — accepts a JSON-RPC request and enqueues it for processing.
+//
+// It blocks until the server stops, so run it in a goroutine.
+func (t *SSETransport) Serve() error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		// Advertise where clients should POST their JSON-RPC requests.
+		fmt.Fprint(w, "event: endpoint\ndata: /message\n\n")
+		flusher.Flush()
+		for {
+			data, err := t.GetResponse(r.Context())
+			if err != nil {
+				return
+			}
+			fmt.Fprintf(w, "event: message\ndata: %s\n\n", string(data))
+			flusher.Flush()
+		}
+	})
+	mux.HandleFunc("/message", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, MaxMessageSize))
+		if err != nil {
+			http.Error(w, "read error", http.StatusBadRequest)
+			return
+		}
+		if err := t.EnqueueMessage(body); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	server := &http.Server{Addr: t.addr, Handler: mux}
+	// Shut the HTTP server down when the transport is closed.
+	go func() {
+		<-t.ctx.Done()
+		_ = server.Close()
+	}()
+	t.logger.Infof("MCP SSE endpoint listening on %s (GET /sse, POST /message)", t.addr)
+	return server.ListenAndServe()
 }
 
 // JSONRPCMessage represents a JSON-RPC 2.0 message

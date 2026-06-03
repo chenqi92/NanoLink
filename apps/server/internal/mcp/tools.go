@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	pb "github.com/chenqi92/NanoLink/apps/server/internal/proto"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 )
@@ -277,20 +279,59 @@ func (s *Server) toolFindLowDiskAgents(ctx context.Context, args map[string]inte
 }
 
 func (s *Server) toolGetAgentProcesses(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	if s.grpcServer == nil {
+		return nil, fmt.Errorf("gRPC server not available")
+	}
 	agentID, ok := args["agent_id"].(string)
 	if !ok || agentID == "" {
 		return nil, fmt.Errorf("agent_id is required")
 	}
 
-	// Per-process listing is not exposed over MCP in this build: it requires
-	// dispatching a PROCESS_LIST command to the agent and polling for the
-	// result, which MCP does not do. Return an honest message rather than
-	// pointing at a non-existent "execute_command" tool.
-	return map[string]interface{}{
-		"message":  "Per-process listing is not available over MCP.",
-		"agent_id": agentID,
-		"note":     "Use request_agent_data for system metrics; per-process data must be requested via the REST/gRPC command API.",
-	}, nil
+	// Dispatch a PROCESS_LIST command to the agent and poll for its async result.
+	// MCP is a trusted system client, so the command is registered under a system
+	// identity and read back as super-admin.
+	commandID := uuid.New().String()
+	s.grpcServer.RegisterDispatchedCommand(commandID, agentID, 0, "mcp", "PROCESS_LIST")
+	cmd := &pb.Command{CommandId: commandID, Type: pb.CommandType_PROCESS_LIST}
+	if err := s.grpcServer.SendCommandToAgent(agentID, cmd); err != nil {
+		return nil, fmt.Errorf("failed to dispatch PROCESS_LIST to %s: %w", agentID, err)
+	}
+
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		res, found, err := s.grpcServer.GetCommandResultForUser(commandID, agentID, 0, true)
+		if err != nil {
+			return nil, err
+		}
+		if found && res != nil {
+			procs := make([]map[string]interface{}, 0, len(res.Processes))
+			for _, p := range res.Processes {
+				procs = append(procs, map[string]interface{}{
+					"pid":          p.Pid,
+					"name":         p.Name,
+					"user":         p.User,
+					"cpu_percent":  p.CpuPercent,
+					"memory_bytes": p.MemoryBytes,
+					"status":       p.Status,
+				})
+			}
+			return map[string]interface{}{
+				"agent_id":  agentID,
+				"count":     len(procs),
+				"processes": procs,
+				"success":   res.Success,
+				"error":     res.Error,
+			}, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out waiting for PROCESS_LIST result from agent %s", agentID)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
 }
 
 // SchemaToJSON converts the tool's InputSchema to JSON bytes

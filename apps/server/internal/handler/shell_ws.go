@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +48,11 @@ type shellSession struct {
 	userID    uint
 	username  string
 	createdAt time.Time
+
+	// cols/rows track the latest terminal size from resize messages, forwarded
+	// with each command so width-aware tools (ls, ps, top) render correctly.
+	cols int
+	rows int
 
 	// writeMu serializes writes to conn. gorilla/websocket forbids concurrent
 	// writers, and output arrives from the gRPC stream goroutine while the read
@@ -166,6 +172,14 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 				Target:     msg.Data,
 				SuperToken: h.shellSuperToken,
 			}
+			// Forward the current terminal size so the agent can export
+			// COLUMNS/LINES for width-aware commands.
+			if session.cols > 0 || session.rows > 0 {
+				cmd.Params = map[string]string{
+					"cols": strconv.Itoa(session.cols),
+					"rows": strconv.Itoa(session.rows),
+				}
+			}
 
 			h.registerRoute(commandID, session)
 			if err := h.grpcServer.SendCommandToAgent(session.agentID, cmd); err != nil {
@@ -175,6 +189,12 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 			}
 
 		case "resize":
+			if msg.Cols > 0 {
+				session.cols = msg.Cols
+			}
+			if msg.Rows > 0 {
+				session.rows = msg.Rows
+			}
 			h.logger.Debugf("Terminal resize: %dx%d", msg.Cols, msg.Rows)
 
 		default:
