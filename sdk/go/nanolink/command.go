@@ -1,6 +1,10 @@
 package nanolink
 
-import "fmt"
+import (
+	"fmt"
+
+	pb "github.com/chenqi92/NanoLink/sdk/go/nanolink/proto"
+)
 
 // CommandType represents the type of command
 type CommandType int
@@ -62,10 +66,30 @@ func (c *Command) RequiredPermission() int {
 	}
 }
 
-// ToProtobuf converts the command to protobuf bytes
-func (c *Command) ToProtobuf() []byte {
-	// Simplified - in production use generated protobuf
-	return []byte{}
+// ToProto converts the SDK command into its protobuf representation for
+// dispatch over the agent stream.
+func (c *Command) ToProto() *pb.Command {
+	return &pb.Command{
+		CommandId:  c.CommandID,
+		Type:       pb.CommandType(c.Type),
+		Target:     c.Target,
+		Params:     c.Params,
+		SuperToken: c.SuperToken,
+	}
+}
+
+// CommandFromProto builds an SDK command from its protobuf representation.
+func CommandFromProto(p *pb.Command) *Command {
+	if p == nil {
+		return &Command{}
+	}
+	return &Command{
+		CommandID:  p.GetCommandId(),
+		Type:       CommandType(p.GetType()),
+		Target:     p.GetTarget(),
+		Params:     p.GetParams(),
+		SuperToken: p.GetSuperToken(),
+	}
 }
 
 // CommandResult represents the result of a command execution

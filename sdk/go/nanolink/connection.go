@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	pb "github.com/chenqi92/NanoLink/sdk/go/nanolink/proto"
 )
 
 // AgentConnection represents a connection to a monitoring agent
@@ -24,6 +26,7 @@ type AgentConnection struct {
 	streamSend func(interface{}) error
 
 	mu          sync.Mutex
+	sendMu      sync.Mutex // Serializes Send on the gRPC stream (Send is not concurrency-safe)
 	done        chan struct{}
 	closed      bool // Track if connection is closed
 	pendingCmds map[string]chan *CommandResult
@@ -74,6 +77,21 @@ func (c *AgentConnection) SetStreamSend(send func(interface{}) error) {
 	c.streamSend = send
 }
 
+// sendOnStream serializes sends on the underlying gRPC stream. gRPC streams are
+// not safe for concurrent Send, and commands / data-requests / heartbeat-acks
+// can originate from different goroutines, so every send funnels through here.
+func (c *AgentConnection) sendOnStream(msg interface{}) error {
+	c.mu.Lock()
+	send := c.streamSend
+	c.mu.Unlock()
+	if send == nil {
+		return fmt.Errorf("agent stream not available")
+	}
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	return send(msg)
+}
+
 // HandleCommandResult processes a command result from the agent
 func (c *AgentConnection) HandleCommandResult(commandID string, result *CommandResult) {
 	c.pendingMu.Lock()
@@ -92,10 +110,10 @@ func (c *AgentConnection) HandleCommandResult(commandID string, result *CommandR
 // SendCommand sends a command to the agent
 func (c *AgentConnection) SendCommand(cmd *Command) (*CommandResult, error) {
 	c.mu.Lock()
-	send := c.streamSend
+	hasSender := c.streamSend != nil
 	c.mu.Unlock()
 
-	if send == nil {
+	if !hasSender {
 		return nil, fmt.Errorf("agent stream not available")
 	}
 
@@ -114,9 +132,11 @@ func (c *AgentConnection) SendCommand(cmd *Command) (*CommandResult, error) {
 	c.pendingCmds[cmd.CommandID] = ch
 	c.pendingMu.Unlock()
 
-	// Send command via gRPC stream
-	data := cmd.ToProtobuf()
-	if err := send(data); err != nil {
+	// Send command to the agent as a Command message on the bidirectional stream.
+	resp := &pb.MetricsStreamResponse{
+		Response: &pb.MetricsStreamResponse_Command{Command: cmd.ToProto()},
+	}
+	if err := c.sendOnStream(resp); err != nil {
 		c.pendingMu.Lock()
 		delete(c.pendingCmds, cmd.CommandID)
 		c.pendingMu.Unlock()

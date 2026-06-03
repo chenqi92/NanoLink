@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "sdk" / "python"))
 
 from nanolink import NanoLinkServer, ServerConfig
 from nanolink.connection import AgentConnection
+from nanolink.command import Command
 from nanolink.metrics import Metrics, RealtimeMetrics, StaticInfo, PeriodicData
 
 # Configure logging
@@ -433,9 +434,11 @@ async def restart_service(hostname: str, request: ServiceRequest):
 
     try:
         logger.info(f"Restarting service {request.service_name} on {hostname}")
-        # Note: Command execution is async in the Python SDK
-        # The actual command would be sent here
-        return CommandResponse(success=True, message="Service restart command sent")
+        result = await agent.send_command(Command.service_restart(request.service_name))
+        return CommandResponse(
+            success=result.success,
+            message=result.output or result.error or "Service restart command sent",
+        )
     except Exception as e:
         logger.error(f"Failed to restart service on {hostname}: {e}")
         return CommandResponse(success=False, message=str(e))
@@ -454,7 +457,11 @@ async def kill_process(hostname: str, request: ProcessRequest):
     try:
         target = request.target if request.target else str(request.pid)
         logger.info(f"Killing process {target} on {hostname}")
-        return CommandResponse(success=True, message="Process kill command sent")
+        result = await agent.send_command(Command.process_kill(request.pid))
+        return CommandResponse(
+            success=result.success,
+            message=result.output or result.error or "Process kill command sent",
+        )
     except Exception as e:
         logger.error(f"Failed to kill process on {hostname}: {e}")
         return CommandResponse(success=False, message=str(e))
@@ -472,7 +479,11 @@ async def restart_container(hostname: str, request: DockerRequest):
 
     try:
         logger.info(f"Restarting container {request.container_name} on {hostname}")
-        return CommandResponse(success=True, message="Container restart command sent")
+        result = await agent.send_command(Command.docker_restart(request.container_name))
+        return CommandResponse(
+            success=result.success,
+            message=result.output or result.error or "Container restart command sent",
+        )
     except Exception as e:
         logger.error(f"Failed to restart container on {hostname}: {e}")
         return CommandResponse(success=False, message=str(e))

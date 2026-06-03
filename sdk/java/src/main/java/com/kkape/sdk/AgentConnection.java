@@ -2,6 +2,7 @@ package com.kkape.sdk;
 
 import com.kkape.sdk.model.Command;
 import com.kkape.sdk.model.Metrics;
+import io.nanolink.proto.MetricsStreamResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,8 +33,8 @@ public class AgentConnection {
     private Instant lastMetricsAt;
     private volatile boolean active = true;
 
-    // For sending commands via gRPC stream
-    private Consumer<byte[]> streamSender;
+    // For sending commands via gRPC stream (MetricsStreamResponse messages)
+    private Consumer<MetricsStreamResponse> streamSender;
 
     private final Map<String, CompletableFuture<Command.Result>> pendingCommands = new ConcurrentHashMap<>();
 
@@ -63,7 +64,7 @@ public class AgentConnection {
     /**
      * Set the stream sender for sending commands
      */
-    public void setStreamSender(Consumer<byte[]> sender) {
+    public void setStreamSender(Consumer<MetricsStreamResponse> sender) {
         this.streamSender = sender;
     }
 
@@ -96,10 +97,10 @@ public class AgentConnection {
         future.orTimeout(30, TimeUnit.SECONDS)
                 .whenComplete((result, error) -> pendingCommands.remove(commandId));
 
-        // Send command via gRPC stream
+        // Send command to the agent as a Command message on the bidirectional stream.
         try {
-            byte[] data = command.toProtobuf();
-            streamSender.accept(data);
+            streamSender.accept(MetricsStreamResponse.newBuilder()
+                    .setCommand(command.toProto()).build());
             log.debug("Sent command {} to agent {}", command.getType(), hostname);
         } catch (Exception e) {
             pendingCommands.remove(commandId);

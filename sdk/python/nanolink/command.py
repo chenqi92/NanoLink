@@ -61,6 +61,17 @@ class Command:
             "superToken": self.super_token,
         }
 
+    def to_proto(self):
+        """Convert command to its protobuf representation for stream dispatch."""
+        from .proto import nanolink_pb2
+        return nanolink_pb2.Command(
+            command_id=self.command_id,
+            type=int(self.command_type),
+            target=self.target,
+            params=self.params,
+            super_token=self.super_token,
+        )
+
     @classmethod
     def process_list(cls) -> "Command":
         """Create a process list command"""

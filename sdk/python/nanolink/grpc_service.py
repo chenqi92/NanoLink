@@ -15,6 +15,7 @@ import grpc
 
 from .proto import nanolink_pb2, nanolink_pb2_grpc
 from .connection import AgentConnection, ValidationResult, TokenValidator, PermissionLevel
+from .command import CommandResult
 from .sanitize import sanitize_hostname, sanitize_string
 from .metrics import (
     Metrics, RealtimeMetrics, StaticInfo, PeriodicData,
@@ -85,8 +86,12 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         if context:
             self._context_agents[id(context)] = agent
 
-        # Create a queue for sending data requests to this agent
-        self._agent_queues[agent.agent_id] = queue.Queue(maxsize=100)
+        # Create a queue for sending responses (data requests, commands) to this agent
+        q: queue.Queue = queue.Queue(maxsize=100)
+        self._agent_queues[agent.agent_id] = q
+        # Wire the command sender so AgentConnection.send_command can enqueue
+        # MetricsStreamResponse messages onto this agent's response stream.
+        agent.set_stream_sender(q.put_nowait)
 
         logger.info(f"Agent registered: {agent.hostname} ({agent.agent_id})")
 
@@ -337,18 +342,17 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                             logger.debug(f"Received periodic from: {agent.hostname}")
 
                     elif request.HasField('command_result'):
-                        result = request.command_result
-                        logger.info(f"Command result: {result.command_id} success={result.success}")
+                        proto_result = request.command_result
+                        if agent is not None:
+                            agent.handle_command_result(self._convert_command_result(proto_result))
+                        logger.info(f"Command result: {proto_result.command_id} success={proto_result.success}")
 
-                    # Check for pending data requests and send them
+                    # Drain any pending outbound responses (data requests, commands)
                     if agent_id and agent_id in self._agent_queues:
                         while True:
                             try:
-                                data_request = self._agent_queues[agent_id].get_nowait()
-                                yield nanolink_pb2.MetricsStreamResponse(
-                                    data_request=data_request
-                                )
-                                logger.debug(f"Sent data request {data_request.request_type} to {agent_id}")
+                                response = self._agent_queues[agent_id].get_nowait()
+                                yield response
                             except queue.Empty:
                                 break
 
@@ -388,13 +392,74 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         )
 
     def ExecuteCommand(self, request, context):
-        """Handle command execution"""
+        """Dispatch a command to a connected agent and wait for its result.
+
+        The unary Command carries no agent id, so the target is resolved from
+        params['agent_id'] or params['hostname']; if neither is set and exactly
+        one agent is connected, that agent is used.
+        """
         logger.info(f"Execute command: {request.command_id} type={request.type}")
 
+        from .command import Command
+
+        agent = self._locate_agent_for_command(request)
+        if agent is None:
+            return nanolink_pb2.CommandResult(
+                command_id=request.command_id,
+                success=False,
+                error="no target agent: set params['agent_id'] or params['hostname'], "
+                      "or connect exactly one agent",
+            )
+
+        sdk_command = Command(
+            command_type=request.type,
+            target=request.target,
+            params=dict(request.params),
+            super_token=request.super_token,
+            command_id=request.command_id or "",
+        )
+        if not sdk_command.command_id:
+            import uuid as _uuid
+            sdk_command.command_id = str(_uuid.uuid4())
+
+        result = agent.send_command_blocking(sdk_command)
+        return self._command_result_to_proto(result)
+
+    def _locate_agent_for_command(self, request) -> Optional[AgentConnection]:
+        """Resolve the target agent for a unary ExecuteCommand."""
+        params = dict(request.params)
+        aid = params.get("agent_id")
+        if aid:
+            a = self.get_agent(aid)
+            if a:
+                return a
+        host = params.get("hostname")
+        if host:
+            a = self.get_agent_by_hostname(host)
+            if a:
+                return a
+        if len(self._agents) == 1:
+            return next(iter(self._agents.values()))
+        return None
+
+    def _convert_command_result(self, proto) -> CommandResult:
+        """Convert a protobuf CommandResult into the SDK type."""
+        return CommandResult(
+            command_id=proto.command_id,
+            success=proto.success,
+            output=proto.output,
+            error=proto.error,
+            file_content=bytes(proto.file_content) if proto.file_content else None,
+        )
+
+    def _command_result_to_proto(self, result: CommandResult):
+        """Convert an SDK CommandResult into its protobuf form."""
         return nanolink_pb2.CommandResult(
-            command_id=request.command_id,
-            success=False,
-            error="Command execution through server not yet implemented"
+            command_id=result.command_id,
+            success=result.success,
+            output=result.output or "",
+            error=result.error or "",
+            file_content=result.file_content or b"",
         )
 
     def SyncMetrics(self, request, context):
@@ -781,7 +846,9 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         )
 
         try:
-            self._agent_queues[agent_id].put_nowait(request)
+            self._agent_queues[agent_id].put_nowait(
+                nanolink_pb2.MetricsStreamResponse(data_request=request)
+            )
             logger.info(f"Queued data request {request_type} for agent {agent_id}")
             return True
         except queue.Full:
@@ -799,11 +866,12 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
             Number of agents the request was sent to
         """
         request = nanolink_pb2.DataRequest(request_type=request_type)
+        response = nanolink_pb2.MetricsStreamResponse(data_request=request)
         count = 0
 
         for agent_id, q in self._agent_queues.items():
             try:
-                q.put_nowait(request)
+                q.put_nowait(response)
                 count += 1
             except queue.Full:
                 logger.warning(f"Queue full for agent {agent_id}")

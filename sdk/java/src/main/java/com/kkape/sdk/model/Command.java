@@ -171,13 +171,29 @@ public class Command {
     }
 
     /**
-     * Convert to protobuf bytes
+     * Convert to the protobuf Command message for stream dispatch.
      */
-    public byte[] toProtobuf() {
-        // Simplified serialization - in real implementation use generated protobuf
-        // classes
-        // This is a placeholder
-        return new byte[0];
+    public io.nanolink.proto.Command toProto() {
+        io.nanolink.proto.Command.Builder b = io.nanolink.proto.Command.newBuilder();
+        if (commandId != null) {
+            b.setCommandId(commandId);
+        }
+        if (type != null) {
+            io.nanolink.proto.CommandType pt = io.nanolink.proto.CommandType.forNumber(type.getCode());
+            if (pt != null) {
+                b.setType(pt);
+            }
+        }
+        if (target != null) {
+            b.setTarget(target);
+        }
+        if (params != null) {
+            b.putAllParams(params);
+        }
+        if (superToken != null) {
+            b.setSuperToken(superToken);
+        }
+        return b.build();
     }
 
     public int getRequiredPermission() {

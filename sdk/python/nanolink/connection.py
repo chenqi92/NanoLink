@@ -4,6 +4,7 @@ Agent connection management for NanoLink SDK
 
 import asyncio
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
@@ -42,12 +43,16 @@ class AgentConnection:
     connected_at: datetime = field(default_factory=datetime.now)
     last_heartbeat: datetime = field(default_factory=datetime.now)
 
-    _stream_sender: Optional[Callable[[bytes], None]] = field(default=None, repr=False)
+    _stream_sender: Optional[Callable[[object], None]] = field(default=None, repr=False)
     _pending_commands: dict = field(default_factory=dict, repr=False)
     _active: bool = field(default=True, repr=False)
 
-    def set_stream_sender(self, sender: Callable[[bytes], None]) -> None:
-        """Set the stream sender for sending commands via gRPC"""
+    def set_stream_sender(self, sender: Callable[[object], None]) -> None:
+        """Set the stream sender for dispatching commands via the gRPC stream.
+
+        The sender receives a MetricsStreamResponse protobuf message to enqueue
+        onto the agent's response stream.
+        """
         self._stream_sender = sender
 
     async def send_command(self, command: Command, timeout: float = 30.0) -> CommandResult:
@@ -81,14 +86,16 @@ class AgentConnection:
                       f"current level: {self.permission_level}",
             )
 
-        # Create future for result
-        future: asyncio.Future[CommandResult] = asyncio.Future()
-        self._pending_commands[command.command_id] = future
+        # Create future for result, tracking the owning loop so the synchronous
+        # gRPC servicer thread can complete it via call_soon_threadsafe.
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        self._pending_commands[command.command_id] = ("async", future, loop)
 
         try:
-            # Send command via gRPC stream
-            data = command.to_protobuf()
-            self._stream_sender(data)
+            # Send command to the agent as a Command message on the stream.
+            from .proto import nanolink_pb2 as _pb
+            self._stream_sender(_pb.MetricsStreamResponse(command=command.to_proto()))
 
             # Wait for result
             result = await asyncio.wait_for(future, timeout=timeout)
@@ -146,12 +153,59 @@ class AgentConnection:
 
         return 0
 
-    def _handle_command_result(self, data: dict) -> None:
-        """Handle incoming command result"""
-        result = CommandResult.from_dict(data)
-        future = self._pending_commands.get(result.command_id)
-        if future and not future.done():
-            future.set_result(result)
+    def handle_command_result(self, result: CommandResult) -> None:
+        """Complete the pending command waiter for this result.
+
+        Safe to call from the synchronous gRPC servicer thread: async waiters are
+        completed via their event loop, blocking waiters via a threading.Event.
+        """
+        entry = self._pending_commands.get(result.command_id)
+        if not entry:
+            return
+        kind = entry[0]
+        if kind == "async":
+            _, future, loop = entry
+            if not future.done():
+                loop.call_soon_threadsafe(future.set_result, result)
+        elif kind == "sync":
+            _, event, box = entry
+            box["result"] = result
+            event.set()
+
+    def send_command_blocking(self, command: Command, timeout: float = 30.0) -> CommandResult:
+        """Synchronous command dispatch for non-async callers (e.g. unary RPC).
+
+        Mirrors send_command but blocks the calling thread instead of awaiting,
+        so it is safe to call from the gRPC servicer's thread pool.
+        """
+        if not self._active:
+            return CommandResult(command_id=command.command_id, success=False,
+                                 error="Agent is not connected")
+        if self._stream_sender is None:
+            return CommandResult(command_id=command.command_id, success=False,
+                                 error="Stream sender not available")
+
+        required_level = self._get_required_permission(command)
+        if self.permission_level < required_level:
+            return CommandResult(
+                command_id=command.command_id, success=False,
+                error=f"Permission denied. Required level: {required_level}, "
+                      f"current level: {self.permission_level}",
+            )
+
+        event = threading.Event()
+        box: dict = {}
+        self._pending_commands[command.command_id] = ("sync", event, box)
+        try:
+            from .proto import nanolink_pb2 as _pb
+            self._stream_sender(_pb.MetricsStreamResponse(command=command.to_proto()))
+            if event.wait(timeout):
+                return box.get("result") or CommandResult(
+                    command_id=command.command_id, success=False, error="empty result")
+            return CommandResult(command_id=command.command_id, success=False,
+                                 error=f"Command timed out after {timeout} seconds")
+        finally:
+            self._pending_commands.pop(command.command_id, None)
 
     async def close(self) -> None:
         """Close the agent connection"""

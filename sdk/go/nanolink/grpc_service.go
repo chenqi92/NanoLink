@@ -66,6 +66,16 @@ func (s *NanoLinkServicer) cleanupAgent(agent *AgentConnection, stream interface
 
 // registerAgentStream registers an agent and its stream
 func (s *NanoLinkServicer) registerAgentStream(agent *AgentConnection, stream pb.NanoLinkService_StreamMetricsServer) {
+	// Wire the command/data-request sender so SendCommand and SendDataRequest can
+	// reach this agent over its bidirectional stream.
+	agent.SetStreamSend(func(msg interface{}) error {
+		resp, ok := msg.(*pb.MetricsStreamResponse)
+		if !ok {
+			return fmt.Errorf("unexpected stream message type %T", msg)
+		}
+		return stream.Send(resp)
+	})
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -248,15 +258,23 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 			if agent != nil {
 				agent.UpdateHeartbeat()
 			}
-			// Send heartbeat ack
-			if err := stream.Send(&pb.MetricsStreamResponse{
+			// Send heartbeat ack. Once the agent is registered its sender is wired,
+			// so route through it to stay serialized with command/data-request sends.
+			ack := &pb.MetricsStreamResponse{
 				Response: &pb.MetricsStreamResponse_HeartbeatAck{
 					HeartbeatAck: &pb.HeartbeatAck{
 						Timestamp: uint64(time.Now().UnixMilli()),
 					},
 				},
-			}); err != nil {
-				return err
+			}
+			var ackErr error
+			if agent != nil {
+				ackErr = agent.sendOnStream(ack)
+			} else {
+				ackErr = stream.Send(ack)
+			}
+			if ackErr != nil {
+				return ackErr
 			}
 
 		case *pb.MetricsStreamRequest_Realtime:
@@ -323,6 +341,10 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 
 		case *pb.MetricsStreamRequest_CommandResult:
 			result := payload.CommandResult
+			// Route the result back to the pending SendCommand/ExecuteCommand caller.
+			if agent != nil {
+				agent.HandleCommandResult(result.CommandId, convertCommandResult(result))
+			}
 			log.Printf("Command result: %s success=%v", result.CommandId, result.Success)
 		}
 	}
@@ -351,15 +373,59 @@ func (s *NanoLinkServicer) Heartbeat(ctx context.Context, req *pb.HeartbeatReque
 	}, nil
 }
 
-// ExecuteCommand handles command execution (placeholder)
+// ExecuteCommand dispatches a command to a connected agent and waits for its
+// result. Since the unary Command message carries no agent identifier, the
+// target is resolved from params["agent_id"] or params["hostname"]; if neither
+// is set and exactly one agent is connected, that agent is used.
 func (s *NanoLinkServicer) ExecuteCommand(ctx context.Context, req *pb.Command) (*pb.CommandResult, error) {
 	log.Printf("Execute command: %s type=%v", req.CommandId, req.Type)
 
-	return &pb.CommandResult{
-		CommandId: req.CommandId,
-		Success:   false,
-		Error:     "Command execution through server not yet implemented",
-	}, nil
+	agent := s.locateAgentForCommand(req)
+	if agent == nil {
+		return &pb.CommandResult{
+			CommandId: req.CommandId,
+			Success:   false,
+			Error:     "no target agent: set params[\"agent_id\"] or params[\"hostname\"], or connect exactly one agent",
+		}, nil
+	}
+
+	result, err := agent.SendCommand(CommandFromProto(req))
+	if err != nil {
+		return &pb.CommandResult{
+			CommandId: req.CommandId,
+			Success:   false,
+			Error:     err.Error(),
+		}, nil
+	}
+
+	out := commandResultToProto(result)
+	if out.CommandId == "" {
+		out.CommandId = req.CommandId
+	}
+	return out, nil
+}
+
+// locateAgentForCommand resolves the target agent for a unary ExecuteCommand.
+func (s *NanoLinkServicer) locateAgentForCommand(req *pb.Command) *AgentConnection {
+	if req.Params != nil {
+		if id := req.Params["agent_id"]; id != "" {
+			if a := s.server.GetAgent(id); a != nil {
+				return a
+			}
+		}
+		if h := req.Params["hostname"]; h != "" {
+			if a := s.server.GetAgentByHostname(h); a != nil {
+				return a
+			}
+		}
+	}
+	agents := s.server.GetAgents()
+	if len(agents) == 1 {
+		for _, a := range agents {
+			return a
+		}
+	}
+	return nil
 }
 
 // SyncMetrics handles metrics sync requests
@@ -436,7 +502,7 @@ func (s *NanoLinkServicer) SendDataRequest(agentID string, requestType pb.DataRe
 		Target:      target,
 	}
 
-	err := agentStream.Stream.Send(&pb.MetricsStreamResponse{
+	err := agentStream.Agent.sendOnStream(&pb.MetricsStreamResponse{
 		Response: &pb.MetricsStreamResponse_DataRequest{
 			DataRequest: request,
 		},
@@ -479,7 +545,7 @@ func (s *NanoLinkServicer) BroadcastDataRequest(requestType pb.DataRequestType) 
 	successCount := 0
 	var failedAgents []*AgentStream
 	for _, agentStream := range streams {
-		if err := agentStream.Stream.Send(response); err == nil {
+		if err := agentStream.Agent.sendOnStream(response); err == nil {
 			successCount++
 		} else {
 			log.Printf("Failed to send broadcast to agent %s: %v", agentStream.Agent.Hostname, err)
@@ -791,4 +857,76 @@ func getVersionOrDefault(version string) string {
 		return "unknown"
 	}
 	return version
+}
+
+// convertCommandResult converts a protobuf CommandResult into the SDK type.
+func convertCommandResult(p *pb.CommandResult) *CommandResult {
+	if p == nil {
+		return &CommandResult{}
+	}
+	r := &CommandResult{
+		CommandID:   p.GetCommandId(),
+		Success:     p.GetSuccess(),
+		Output:      p.GetOutput(),
+		Error:       p.GetError(),
+		FileContent: p.GetFileContent(),
+	}
+	for _, pi := range p.GetProcesses() {
+		r.Processes = append(r.Processes, ProcessInfo{
+			PID:         int(pi.GetPid()),
+			Name:        pi.GetName(),
+			User:        pi.GetUser(),
+			CPUPercent:  pi.GetCpuPercent(),
+			MemoryBytes: pi.GetMemoryBytes(),
+			Status:      pi.GetStatus(),
+			StartTime:   int64(pi.GetStartTime()),
+		})
+	}
+	for _, ci := range p.GetContainers() {
+		r.Containers = append(r.Containers, ContainerInfo{
+			ID:      ci.GetId(),
+			Name:    ci.GetName(),
+			Image:   ci.GetImage(),
+			Status:  ci.GetStatus(),
+			State:   ci.GetState(),
+			Created: int64(ci.GetCreated()),
+		})
+	}
+	return r
+}
+
+// commandResultToProto converts an SDK CommandResult into its protobuf form.
+func commandResultToProto(r *CommandResult) *pb.CommandResult {
+	if r == nil {
+		return &pb.CommandResult{}
+	}
+	p := &pb.CommandResult{
+		CommandId:   r.CommandID,
+		Success:     r.Success,
+		Output:      r.Output,
+		Error:       r.Error,
+		FileContent: r.FileContent,
+	}
+	for _, pi := range r.Processes {
+		p.Processes = append(p.Processes, &pb.ProcessInfo{
+			Pid:         uint32(pi.PID),
+			Name:        pi.Name,
+			User:        pi.User,
+			CpuPercent:  pi.CPUPercent,
+			MemoryBytes: pi.MemoryBytes,
+			Status:      pi.Status,
+			StartTime:   uint64(pi.StartTime),
+		})
+	}
+	for _, ci := range r.Containers {
+		p.Containers = append(p.Containers, &pb.ContainerInfo{
+			Id:      ci.ID,
+			Name:    ci.Name,
+			Image:   ci.Image,
+			Status:  ci.Status,
+			State:   ci.State,
+			Created: uint64(ci.Created),
+		})
+	}
+	return p
 }

@@ -182,6 +182,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                                     hostname);
                             server.registerAgent(agent);
                             streamAgents.put(responseObserver, agent);
+                            wireCommandSender(agent, responseObserver);
                             log.info("Agent registered from metrics stream: {} ({})",
                                     hostname, agentId);
                         }
@@ -193,18 +194,24 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
                         log.trace("Received metrics from: {}", protoMetrics.getHostname());
                     } else if (request.hasHeartbeat()) {
-                        // Respond to heartbeat
-                        responseObserver.onNext(MetricsStreamResponse.newBuilder()
-                                .setHeartbeatAck(HeartbeatAck.newBuilder()
-                                        .setTimestamp(System.currentTimeMillis())
-                                        .build())
-                                .build());
+                        // Respond to heartbeat (synchronized: onNext is not safe to
+                        // call concurrently with command/data-request sends).
+                        synchronized (responseObserver) {
+                            responseObserver.onNext(MetricsStreamResponse.newBuilder()
+                                    .setHeartbeatAck(HeartbeatAck.newBuilder()
+                                            .setTimestamp(System.currentTimeMillis())
+                                            .build())
+                                    .build());
+                        }
                         if (agent != null) {
                             agent.updateHeartbeat();
                         }
                     } else if (request.hasCommandResult()) {
-                        // Handle command result
+                        // Route the result back to the pending sendCommand/executeCommand caller
                         CommandResult result = request.getCommandResult();
+                        if (agent != null) {
+                            agent.handleCommandResult(result.getCommandId(), convertCommandResult(result));
+                        }
                         log.info("Command result received: {} success={}",
                                 result.getCommandId(), result.getSuccess());
                     } else if (request.hasRealtime()) {
@@ -256,6 +263,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                                         hostname);
                                 server.registerAgent(agent);
                                 streamAgents.put(responseObserver, agent);
+                                wireCommandSender(agent, responseObserver);
                                 log.info("Agent registered from static info: {} ({})", hostname, agentId);
                             }
                         }
@@ -343,13 +351,111 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
             StreamObserver<CommandResult> responseObserver) {
         log.info("Execute command request: {} type={}", request.getCommandId(), request.getType());
 
-        // For now, return not implemented
-        responseObserver.onNext(CommandResult.newBuilder()
-                .setCommandId(request.getCommandId())
-                .setSuccess(false)
-                .setError("Command execution through server not yet implemented")
-                .build());
+        AgentConnection agent = locateAgentForCommand(request);
+        if (agent == null) {
+            responseObserver.onNext(CommandResult.newBuilder()
+                    .setCommandId(request.getCommandId())
+                    .setSuccess(false)
+                    .setError("no target agent: set params[\"agent_id\"] or params[\"hostname\"], "
+                            + "or connect exactly one agent")
+                    .build());
+            responseObserver.onCompleted();
+            return;
+        }
+
+        try {
+            com.kkape.sdk.model.Command.Result result = agent.sendCommand(commandFromProto(request))
+                    .get(35, java.util.concurrent.TimeUnit.SECONDS);
+            responseObserver.onNext(commandResultToProto(result, request.getCommandId()));
+        } catch (Exception e) {
+            log.warn("executeCommand failed: {}", e.getMessage());
+            responseObserver.onNext(CommandResult.newBuilder()
+                    .setCommandId(request.getCommandId())
+                    .setSuccess(false)
+                    .setError(e.getMessage() != null ? e.getMessage() : e.toString())
+                    .build());
+        }
         responseObserver.onCompleted();
+    }
+
+    /** Wire the command sender so AgentConnection.sendCommand reaches this stream. */
+    private void wireCommandSender(AgentConnection agent, StreamObserver<MetricsStreamResponse> observer) {
+        agent.setStreamSender(resp -> {
+            synchronized (observer) {
+                observer.onNext(resp);
+            }
+        });
+    }
+
+    /** Resolve the target agent for a unary executeCommand. */
+    private AgentConnection locateAgentForCommand(Command request) {
+        Map<String, String> params = request.getParamsMap();
+        String aid = params.get("agent_id");
+        if (aid != null && !aid.isEmpty()) {
+            AgentConnection a = server.getAgent(aid);
+            if (a != null) {
+                return a;
+            }
+        }
+        String host = params.get("hostname");
+        if (host != null && !host.isEmpty()) {
+            AgentConnection a = server.getAgentByHostname(host);
+            if (a != null) {
+                return a;
+            }
+        }
+        Map<String, AgentConnection> all = server.getAgents();
+        if (all.size() == 1) {
+            return all.values().iterator().next();
+        }
+        return null;
+    }
+
+    /** Build an SDK Command from its protobuf representation. */
+    private com.kkape.sdk.model.Command commandFromProto(Command proto) {
+        com.kkape.sdk.model.Command cmd = new com.kkape.sdk.model.Command();
+        for (com.kkape.sdk.model.Command.Type t : com.kkape.sdk.model.Command.Type.values()) {
+            if (t.getCode() == proto.getType().getNumber()) {
+                cmd.setType(t);
+                break;
+            }
+        }
+        cmd.setTarget(proto.getTarget());
+        cmd.setParams(new java.util.HashMap<>(proto.getParamsMap()));
+        cmd.setSuperToken(proto.getSuperToken());
+        if (!proto.getCommandId().isEmpty()) {
+            cmd.setCommandId(proto.getCommandId());
+        }
+        return cmd;
+    }
+
+    /** Convert a protobuf CommandResult into the SDK result type. */
+    private com.kkape.sdk.model.Command.Result convertCommandResult(CommandResult proto) {
+        com.kkape.sdk.model.Command.Result r = new com.kkape.sdk.model.Command.Result();
+        r.setCommandId(proto.getCommandId());
+        r.setSuccess(proto.getSuccess());
+        r.setOutput(proto.getOutput());
+        r.setError(proto.getError());
+        if (!proto.getFileContent().isEmpty()) {
+            r.setFileContent(proto.getFileContent().toByteArray());
+        }
+        return r;
+    }
+
+    /** Convert an SDK result into protobuf, falling back to the request id. */
+    private CommandResult commandResultToProto(com.kkape.sdk.model.Command.Result r, String fallbackId) {
+        CommandResult.Builder b = CommandResult.newBuilder().setSuccess(r.isSuccess());
+        b.setCommandId(r.getCommandId() != null && !r.getCommandId().isEmpty() ? r.getCommandId() : fallbackId);
+        if (r.getOutput() != null) {
+            b.setOutput(r.getOutput());
+        }
+        if (r.getError() != null) {
+            b.setError(r.getError());
+        }
+        if (r.getFileContent() != null) {
+            b.setFileContent(com.google.protobuf.ByteString.copyFrom(r.getFileContent()));
+        }
+        return b.build();
     }
 
     @Override
@@ -854,9 +960,11 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                     builder.setTarget(target);
                 }
 
-                observer.onNext(MetricsStreamResponse.newBuilder()
-                        .setDataRequest(builder.build())
-                        .build());
+                synchronized (observer) {
+                    observer.onNext(MetricsStreamResponse.newBuilder()
+                            .setDataRequest(builder.build())
+                            .build());
+                }
 
                 log.info("Sent data request {} to agent {}", requestType, agentId);
                 return true;
@@ -881,7 +989,9 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
         for (Map.Entry<StreamObserver<?>, AgentConnection> entry : streamAgents.entrySet()) {
             @SuppressWarnings("unchecked")
             StreamObserver<MetricsStreamResponse> observer = (StreamObserver<MetricsStreamResponse>) entry.getKey();
-            observer.onNext(response);
+            synchronized (observer) {
+                observer.onNext(response);
+            }
         }
         log.info("Broadcast data request {} to {} agents", requestType, streamAgents.size());
     }
