@@ -417,10 +417,9 @@ func (mp *MetricsPersistence) getAgentsWithData(start, end time.Time) []string {
 
 func (mp *MetricsPersistence) ensureMetricsTable(ts time.Time) (string, error) {
 	tableName := database.GetMetricsTableName(ts)
-	if mp.currentTable == tableName {
-		return tableName, nil
-	}
 
+	// The cached-table check must happen under the lock: a lock-free read of
+	// mp.currentTable races with the write below (data race / torn read).
 	mp.tableMu.Lock()
 	defer mp.tableMu.Unlock()
 

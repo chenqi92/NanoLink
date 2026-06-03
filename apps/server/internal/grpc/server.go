@@ -39,6 +39,81 @@ type GrpcAgent struct {
 	stream          pb.NanoLinkService_StreamMetricsServer
 	commandChan     chan *pb.Command
 	mu              sync.Mutex
+	closed          bool // guarded by mu; true once commandChan is closed on disconnect
+}
+
+// sendCommand delivers cmd to the agent's command channel without racing the
+// disconnect path that closes the channel. Sending on a closed channel panics,
+// so the closed flag and the (non-blocking) send are both serialized by mu.
+func (a *GrpcAgent) sendCommand(cmd *pb.Command) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closed {
+		return fmt.Errorf("agent disconnected")
+	}
+	select {
+	case a.commandChan <- cmd:
+		return nil
+	default:
+		return fmt.Errorf("command channel full")
+	}
+}
+
+// markClosed marks the agent as disconnected and closes its command channel
+// under mu so concurrent senders observe closed instead of panicking.
+func (a *GrpcAgent) markClosed() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closed {
+		return
+	}
+	a.closed = true
+	close(a.commandChan)
+}
+
+// The mutable identity/heartbeat fields below (Hostname, OS, LastMetricsAt) are
+// written by the single per-agent stream goroutine after the agent is published
+// into s.agents, and read concurrently by dashboard goroutines (agentToProto /
+// GetAgentInfo). All such post-registration access goes through mu to avoid a
+// data race / torn read.
+
+func (a *GrpcAgent) touchMetrics() {
+	a.mu.Lock()
+	a.LastMetricsAt = time.Now()
+	a.mu.Unlock()
+}
+
+// setHostnameIfEmpty sets Hostname when it is currently empty; returns true if
+// it changed (so the caller can propagate to AgentService outside the lock).
+func (a *GrpcAgent) setHostnameIfEmpty(hostname string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.Hostname == "" && hostname != "" {
+		a.Hostname = hostname
+		return true
+	}
+	return false
+}
+
+func (a *GrpcAgent) setOS(os string) {
+	a.mu.Lock()
+	a.OS = os
+	a.mu.Unlock()
+}
+
+// identity returns a consistent snapshot of the mutable identity fields.
+func (a *GrpcAgent) identity() (hostname, os string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.Hostname, a.OS
+}
+
+// snapshot returns a consistent copy of all fields used to build an
+// AgentInfoResponse, read under mu.
+func (a *GrpcAgent) snapshot() (agentID, hostname, os, arch, version string, perm int32, connectedAt, lastMetricsAt time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.AgentID, a.Hostname, a.OS, a.Arch, a.Version, a.PermissionLevel, a.ConnectedAt, a.LastMetricsAt
 }
 
 // Server implements the gRPC NanoLinkService
@@ -378,7 +453,7 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		// Clean up metrics data to prevent accumulation on reconnect with new ID
 		s.metricsService.RemoveAgent(agentID)
 
-		close(agent.commandChan)
+		agent.markClosed()
 
 		s.logger.Infof("gRPC agent disconnected: %s (%s)", agent.Hostname, agentID)
 		s.notifyAgentEvent(pb.AgentEvent_DISCONNECTED, agent)
@@ -396,7 +471,8 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 				},
 			}
 			if err := stream.Send(resp); err != nil {
-				s.logger.Errorf("Failed to send command to %s: %v", agent.Hostname, err)
+				hostname, _ := agent.identity()
+				s.logger.Errorf("Failed to send command to %s: %v", hostname, err)
 				return
 			}
 		}
@@ -431,18 +507,18 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 
 	switch req := msg.GetRequest().(type) {
 	case *pb.MetricsStreamRequest_Metrics:
-		agent.LastMetricsAt = time.Now()
+		agent.touchMetrics()
 
 		// Update hostname if not set
-		if agent.Hostname == "" {
-			agent.Hostname = req.Metrics.Hostname
+		if agent.setHostnameIfEmpty(req.Metrics.Hostname) {
 			osName := ""
 			if req.Metrics.SystemInfo != nil {
 				osName = req.Metrics.SystemInfo.OsName
 			}
+			hostname, _ := agent.identity()
 			// Also update AgentService entry so dashboard shows correct info
 			s.agentService.UpdateAgent(agent.AgentID, service.AgentInfo{
-				Hostname: agent.Hostname,
+				Hostname: hostname,
 				OS:       osName,
 			})
 		}
@@ -454,7 +530,7 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 		s.notifyMetrics(agent.AgentID, req.Metrics)
 
 	case *pb.MetricsStreamRequest_Realtime:
-		agent.LastMetricsAt = time.Now()
+		agent.touchMetrics()
 		// Merge realtime data into current metrics
 		s.metricsService.MergeRealtimeMetrics(agent.AgentID, convertRealtimeMetrics(req.Realtime))
 		// Notify subscribers with updated metrics
@@ -475,15 +551,14 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 		s.metricsService.MergeStaticInfo(agent.AgentID, convertStaticInfo(req.StaticInfo))
 		// Update agent info from static info
 		if req.StaticInfo.SystemInfo != nil {
-			if agent.Hostname == "" {
-				agent.Hostname = req.StaticInfo.SystemInfo.Hostname
-			}
-			agent.OS = req.StaticInfo.SystemInfo.OsName
+			agent.setHostnameIfEmpty(req.StaticInfo.SystemInfo.Hostname)
+			agent.setOS(req.StaticInfo.SystemInfo.OsName)
+			hostname, os := agent.identity()
 
 			// Also update AgentService entry so dashboard shows correct info
 			s.agentService.UpdateAgent(agent.AgentID, service.AgentInfo{
-				Hostname: agent.Hostname,
-				OS:       agent.OS,
+				Hostname: hostname,
+				OS:       os,
 			})
 		}
 
@@ -705,15 +780,16 @@ func (s *Server) GetAgentInfo(ctx context.Context, req *pb.AgentInfoRequest) (*p
 		return nil, fmt.Errorf("agent not found: %s", req.AgentId)
 	}
 
+	id, hostname, os, arch, version, perm, connectedAt, lastMetricsAt := agent.snapshot()
 	return &pb.AgentInfoResponse{
-		AgentId:         agent.AgentID,
-		Hostname:        agent.Hostname,
-		Os:              agent.OS,
-		Arch:            agent.Arch,
-		Version:         agent.Version,
-		PermissionLevel: agent.PermissionLevel,
-		ConnectedAt:     uint64(agent.ConnectedAt.UnixMilli()),
-		LastMetricsAt:   uint64(agent.LastMetricsAt.UnixMilli()),
+		AgentId:         id,
+		Hostname:        hostname,
+		Os:              os,
+		Arch:            arch,
+		Version:         version,
+		PermissionLevel: perm,
+		ConnectedAt:     uint64(connectedAt.UnixMilli()),
+		LastMetricsAt:   uint64(lastMetricsAt.UnixMilli()),
 	}, nil
 }
 
@@ -937,34 +1013,33 @@ func (s *Server) SendCommand(ctx context.Context, req *pb.DashboardCommandReques
 	s.RegisterDispatchedCommand(req.Command.CommandId, req.AgentId, userID, username, req.Command.Type.String())
 
 	// Send command to agent via stream
-	select {
-	case agent.commandChan <- req.Command:
-		return &pb.CommandResult{
-			CommandId: req.Command.CommandId,
-			Success:   true,
-			Output:    "Command sent to agent",
-		}, nil
-	default:
+	if err := agent.sendCommand(req.Command); err != nil {
 		return &pb.CommandResult{
 			CommandId: req.Command.CommandId,
 			Success:   false,
-			Error:     "Command channel full",
+			Error:     err.Error(),
 		}, nil
 	}
+	return &pb.CommandResult{
+		CommandId: req.Command.CommandId,
+		Success:   true,
+		Output:    "Command sent to agent",
+	}, nil
 }
 
 // ============== Helper Functions ==============
 
 func (s *Server) agentToProto(agent *GrpcAgent) *pb.AgentInfoResponse {
+	id, hostname, os, arch, version, perm, connectedAt, lastMetricsAt := agent.snapshot()
 	return &pb.AgentInfoResponse{
-		AgentId:         agent.AgentID,
-		Hostname:        agent.Hostname,
-		Os:              agent.OS,
-		Arch:            agent.Arch,
-		Version:         agent.Version,
-		PermissionLevel: agent.PermissionLevel,
-		ConnectedAt:     uint64(agent.ConnectedAt.UnixMilli()),
-		LastMetricsAt:   uint64(agent.LastMetricsAt.UnixMilli()),
+		AgentId:         id,
+		Hostname:        hostname,
+		Os:              os,
+		Arch:            arch,
+		Version:         version,
+		PermissionLevel: perm,
+		ConnectedAt:     uint64(connectedAt.UnixMilli()),
+		LastMetricsAt:   uint64(lastMetricsAt.UnixMilli()),
 	}
 }
 
@@ -1129,12 +1204,10 @@ func (s *Server) SendCommandToAgent(agentID string, cmd *pb.Command) error {
 		return fmt.Errorf("agent not found: %s", agentID)
 	}
 
-	select {
-	case agent.commandChan <- cmd:
-		return nil
-	default:
-		return fmt.Errorf("command channel full for agent: %s", agentID)
+	if err := agent.sendCommand(cmd); err != nil {
+		return fmt.Errorf("%w: %s", err, agentID)
 	}
+	return nil
 }
 
 // RequestDataFromAgent sends a data request to a specific agent

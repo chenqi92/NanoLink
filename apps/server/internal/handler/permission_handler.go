@@ -210,6 +210,7 @@ func (h *PermissionHandler) GetUserPermissions(c *gin.Context) {
 		result[i] = UserPermissionResponse{
 			ID:              p.ID,
 			UserID:          p.UserID,
+			Username:        p.User.Username,
 			AgentID:         p.AgentID,
 			PermissionLevel: p.PermissionLevel,
 			PermissionName:  database.PermissionLevelName(p.PermissionLevel),
