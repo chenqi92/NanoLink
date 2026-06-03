@@ -239,6 +239,8 @@
     "noAgentsDesc": "节点连接后将显示在此。创建节点令牌即可接入。",
     "offlineLast": "已离线 · 最后心跳 {{time}}",
     "openTerminal": "打开终端",
+    "copyAgentId": "复制 Agent ID",
+    "copyHostname": "复制主机名",
     "requestData": "请求数据",
     "connectedFor": "已连接",
     "heartbeat": "心跳",

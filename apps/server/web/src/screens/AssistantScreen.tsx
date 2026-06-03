@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import { PageHeader, SectionPanel } from "@/components/shell/primitives"
-import { assistantApi, type FindingDTO } from "@/lib/api"
+import { assistantApi, type FindingDTO, type ChatMessage } from "@/lib/api"
 
 type Finding = FindingDTO
 
@@ -39,6 +39,29 @@ export function AssistantScreen() {
       clearInterval(id)
     }
   }, [])
+
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState("")
+  const [sending, setSending] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
+
+  const send = async () => {
+    const text = input.trim()
+    if (!text || sending) return
+    const next: ChatMessage[] = [...messages, { role: "user", content: text }]
+    setMessages(next)
+    setInput("")
+    setChatError(null)
+    setSending(true)
+    try {
+      const { reply } = await assistantApi.chat(next)
+      setMessages((m) => [...m, { role: "assistant", content: reply }])
+    } catch (e) {
+      setChatError((e as { error?: string })?.error || "Chat failed")
+    } finally {
+      setSending(false)
+    }
+  }
 
   return (
     <div className="col" style={{ flex: 1, overflow: "hidden" }}>
@@ -79,21 +102,32 @@ export function AssistantScreen() {
                 <span className="badge mono" style={{ fontSize: 10 }}>claude-opus · {TOOLS.length} tools</span>
               </div>
               <div className="col gap-3" style={{ marginBottom: 14 }}>
-                <div className="row gap-2" style={{ alignItems: "flex-start" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--panel-3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>AZ</div>
-                  <div className="col" style={{ gap: 2 }}><span style={{ fontSize: 12 }}>Which agents are at risk right now?</span></div>
-                </div>
-                <div className="row gap-2" style={{ alignItems: "flex-start" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--panel-3)", color: "var(--fg-2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.sparkle({ size: 12 })}</div>
-                  <div className="col" style={{ gap: 6 }}>
-                    <span className="muted" style={{ fontSize: 12 }}>3 agents need attention: db-primary-2 (memory 91%), ml-train-04 (GPU sustained 96%), rpi-monitor-7 (offline 3h).</span>
-                    <div className="code" style={{ fontSize: 11 }}>get_system_summary() → 7 online · find_high_cpu_agents(85) → 2 hits</div>
+                {messages.length === 0 && (
+                  <span className="muted" style={{ fontSize: 12 }}>{t("plat.askPlaceholder")}</span>
+                )}
+                {messages.map((m, i) => (
+                  <div key={i} className="row gap-2" style={{ alignItems: "flex-start" }}>
+                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--panel-3)", color: "var(--fg-2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>
+                      {m.role === "user" ? "You" : I.sparkle({ size: 12 })}
+                    </div>
+                    <div className="col" style={{ gap: 2, minWidth: 0 }}>
+                      <span className={m.role === "assistant" ? "muted" : undefined} style={{ fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.content}</span>
+                    </div>
                   </div>
-                </div>
+                ))}
+                {sending && <div className="muted" style={{ fontSize: 12 }}><span className="dot pulse ok" /> {t("common.loading")}</div>}
+                {chatError && <div style={{ fontSize: 12, color: "var(--crit)" }}>{chatError}</div>}
               </div>
               <div className="row gap-2" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", height: 36 }}>
                 <span style={{ color: "var(--fg-4)" }}>{I.sparkle({ size: 14 })}</span>
-                <input placeholder={t("plat.askPlaceholder")} disabled style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "inherit", fontSize: 12.5 }} />
+                <input
+                  placeholder={t("plat.askPlaceholder")}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }}
+                  disabled={sending}
+                  style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "inherit", fontSize: 12.5 }}
+                />
                 <span className="kbd">↵</span>
               </div>
             </div>

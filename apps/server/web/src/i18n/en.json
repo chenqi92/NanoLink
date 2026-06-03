@@ -234,6 +234,8 @@
     "noAgentsDesc": "Agents appear here once they connect. Create an agent token to onboard one.",
     "offlineLast": "Offline · last heartbeat {{time}}",
     "openTerminal": "Open terminal",
+    "copyAgentId": "Copy agent ID",
+    "copyHostname": "Copy hostname",
     "requestData": "Request data",
     "connectedFor": "Connected for",
     "heartbeat": "Heartbeat",

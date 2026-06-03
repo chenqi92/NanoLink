@@ -8,6 +8,10 @@ import { alertsApi, type AlertInstanceDTO, type AlertRuleModel, type NotifyChann
 
 type Tab = "active" | "rules" | "channels"
 
+function errMsg(e: unknown): string {
+  return (e as { error?: string })?.error || "Request failed"
+}
+
 function MiniStat({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="card" style={{ padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -53,14 +57,22 @@ export function AlertsScreen() {
   const [newRule, setNewRule] = useState(false)
   const [newChannel, setNewChannel] = useState(false)
   const [delRule, setDelRule] = useState<AlertRuleModel | null>(null)
+  const [err, setErr] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setErr(null)
     try {
-      const [a, r, c] = await Promise.all([alertsApi.list(), alertsApi.rules().catch(() => []), alertsApi.channels().catch(() => [])])
+      const [a, r, c] = await Promise.all([
+        alertsApi.list(),
+        alertsApi.rules().catch((e) => { setErr(errMsg(e)); return [] as AlertRuleModel[] }),
+        alertsApi.channels().catch((e) => { setErr(errMsg(e)); return [] as NotifyChannelModel[] }),
+      ])
       setAlerts(a)
       setRules(r)
       setChannels(c)
+    } catch (e) {
+      setErr(errMsg(e))
     } finally {
       setLoading(false)
     }
@@ -77,16 +89,28 @@ export function AlertsScreen() {
   const unack = alerts.filter((a) => !a.ack).length
 
   async function ack(id: string) {
-    await alertsApi.ack(id).catch(() => {})
-    setAlerts((arr) => arr.map((a) => (a.id === id ? { ...a, ack: true } : a)))
+    try {
+      await alertsApi.ack(id)
+      setAlerts((arr) => arr.map((a) => (a.id === id ? { ...a, ack: true } : a)))
+    } catch (e) {
+      setErr(errMsg(e))
+    }
   }
   async function ackAll() {
-    await Promise.all(alerts.filter((a) => !a.ack).map((a) => alertsApi.ack(a.id).catch(() => {})))
+    try {
+      await Promise.all(alerts.filter((a) => !a.ack).map((a) => alertsApi.ack(a.id)))
+    } catch (e) {
+      setErr(errMsg(e))
+    }
     load()
   }
   async function toggleRule(r: AlertRuleModel) {
-    await alertsApi.updateRule(r.id, { enabled: !r.enabled }).catch(() => {})
-    setRules((rs) => rs.map((x) => (x.id === r.id ? { ...x, enabled: !x.enabled } : x)))
+    try {
+      await alertsApi.updateRule(r.id, { enabled: !r.enabled })
+      setRules((rs) => rs.map((x) => (x.id === r.id ? { ...x, enabled: !x.enabled } : x)))
+    } catch (e) {
+      setErr(errMsg(e))
+    }
   }
 
   const tabs: { k: Tab; label: string; n: number }[] = [
@@ -117,6 +141,12 @@ export function AlertsScreen() {
         </div>
       </div>
       <div style={{ padding: "20px 24px", overflow: "auto", flex: 1 }}>
+        {err && (
+          <div className="row gap-2" style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 6, background: "color-mix(in srgb, var(--crit) 10%, transparent)", border: "1px solid var(--crit)", color: "var(--crit)", fontSize: 12, alignItems: "center" }}>
+            <span style={{ flex: 1 }}>{err}</span>
+            <button className="btn btn-sm btn-ghost" onClick={() => setErr(null)} style={{ color: "var(--crit)" }}>✕</button>
+          </div>
+        )}
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{t("common.loading")}</div>
         ) : tab === "active" ? (
@@ -168,7 +198,7 @@ export function AlertsScreen() {
                       <span className="mono dim truncate" style={{ fontSize: 10.5 }}>{c.target}</span>
                     </div>
                   </div>
-                  <button className="btn btn-sm btn-ghost btn-icon" onClick={async () => { await alertsApi.deleteChannel(c.id).catch(() => {}); load() }}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 12 })}</span></button>
+                  <button className="btn btn-sm btn-ghost btn-icon" onClick={async () => { try { await alertsApi.deleteChannel(c.id) } catch (e) { setErr(errMsg(e)) } load() }}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 12 })}</span></button>
                 </div>
               </div>
             ))}
@@ -179,7 +209,7 @@ export function AlertsScreen() {
 
       {newRule && <RuleModal onClose={() => setNewRule(false)} onDone={() => { setNewRule(false); load() }} />}
       {newChannel && <ChannelModal onClose={() => setNewChannel(false)} onDone={() => { setNewChannel(false); load() }} />}
-      {delRule && <ConfirmDialog title={t("common.delete")} danger message={t("plat.deleteRuleConfirm", { name: delRule.name })} confirmLabel={t("common.delete")} onClose={() => setDelRule(null)} onConfirm={async () => { await alertsApi.deleteRule(delRule.id).catch(() => {}); setDelRule(null); load() }} />}
+      {delRule && <ConfirmDialog title={t("common.delete")} danger message={t("plat.deleteRuleConfirm", { name: delRule.name })} confirmLabel={t("common.delete")} onClose={() => setDelRule(null)} onConfirm={async () => { try { await alertsApi.deleteRule(delRule.id) } catch (e) { setErr(errMsg(e)) } setDelRule(null); load() }} />}
     </div>
   )
 }

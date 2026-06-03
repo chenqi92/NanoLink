@@ -48,6 +48,29 @@ export function AuditScreen() {
   const failed = logs.filter((l) => !l.success).length
   const successRate = stats?.successRate ?? (logs.length ? ((logs.length - failed) / logs.length) * 100 : 0)
 
+  const exportCSV = () => {
+    const esc = (v: unknown) => {
+      const s = String(v ?? "")
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const headers = ["time", "commandType", "username", "agent", "params", "ip", "result", "error"]
+    const lines = [headers.join(",")]
+    for (const l of filtered) {
+      lines.push([
+        fmtTime(l.timestamp), l.commandType, l.username,
+        l.agentHostname || l.agentId || "", l.target || l.params || "",
+        l.ipAddress, l.success ? "ok" : "fail", l.error || "",
+      ].map(esc).join(","))
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `audit-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="col" style={{ flex: 1, overflow: "hidden" }}>
       <PageHeader
@@ -56,7 +79,7 @@ export function AuditScreen() {
         actions={
           <>
             <button className="btn btn-sm" onClick={load}>{I.refresh({ size: 13 })}<span>{t("acc.refresh")}</span></button>
-            <button className="btn btn-sm">{I.external({ size: 13 })}<span>{t("dev.export")}</span></button>
+            <button className="btn btn-sm" onClick={exportCSV} disabled={filtered.length === 0}>{I.external({ size: 13 })}<span>{t("dev.export")}</span></button>
           </>
         }
       />

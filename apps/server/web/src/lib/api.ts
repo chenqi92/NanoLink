@@ -344,7 +344,7 @@ export const alertsApi = {
   deleteChannel: (id: number) => api.delete(`/alerts/channels/${id}`),
 }
 
-// AI assistant findings (metric-derived, no external LLM)
+// AI assistant findings (metric-derived) + optional external-LLM chat
 export interface FindingDTO {
   kind: "anomaly" | "warn" | "info" | "ok"
   title: string
@@ -352,8 +352,13 @@ export interface FindingDTO {
   agentId?: string
   actions: string[]
 }
+export interface ChatMessage {
+  role: "user" | "assistant"
+  content: string
+}
 export const assistantApi = {
   findings: () => api.get<FindingDTO[]>("/assistant/findings"),
+  chat: (messages: ChatMessage[]) => api.post<{ reply: string }>("/assistant/chat", { messages }),
 }
 
 export const auditApi = {

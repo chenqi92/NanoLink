@@ -19,6 +19,8 @@ export function AgentDetailScreen() {
   const { agents, metrics: ctxMetrics } = useData()
   const { route, navigate } = useRouter()
   const [tab, setTab] = useState<Tab>("realtime")
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const a = agents.find((x) => x.id === route.agentId)
   const ctxM = route.agentId ? ctxMetrics[route.agentId] : undefined
@@ -50,6 +52,16 @@ export function AgentDetailScreen() {
     setHist({ cpu: [], mem: [] })
     setFetched(null)
   }, [route.agentId])
+
+  // close the More menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener("mousedown", onDoc)
+    return () => document.removeEventListener("mousedown", onDoc)
+  }, [menuOpen])
 
   if (!a) {
     return (
@@ -98,7 +110,16 @@ export function AgentDetailScreen() {
           </div>
           <div className="row gap-2">
             <button className="btn btn-sm" disabled={a.permission < 3} onClick={() => setTab("terminal")}>{I.term({ size: 13 })}<span>{t("mon.openTerminal")}</span></button>
-            <button className="btn btn-sm btn-ghost btn-icon"><span>{I.more({ size: 14 })}</span></button>
+            <div ref={menuRef} style={{ position: "relative" }}>
+              <button className="btn btn-sm btn-ghost btn-icon" onClick={() => setMenuOpen((o) => !o)}><span>{I.more({ size: 14 })}</span></button>
+              {menuOpen && (
+                <div className="card" style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 20, minWidth: 180, padding: 4, boxShadow: "0 8px 24px rgba(0,0,0,.35)" }}>
+                  <button className="btn btn-sm btn-ghost" style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => { navigator.clipboard?.writeText(a.id); setMenuOpen(false) }}>{t("mon.copyAgentId")}</button>
+                  <button className="btn btn-sm btn-ghost" style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => { navigator.clipboard?.writeText(a.hostname); setMenuOpen(false) }}>{t("mon.copyHostname")}</button>
+                  <button className="btn btn-sm btn-ghost" style={{ width: "100%", justifyContent: "flex-start" }} onClick={() => { setTab("history"); setMenuOpen(false) }}>{t("agent.historyCharts")}</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="tabs" style={{ borderBottom: "none", marginBottom: -1, overflowX: "auto" }}>
