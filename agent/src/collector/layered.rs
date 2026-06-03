@@ -180,8 +180,13 @@ impl LayeredCollector {
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    // Collect and send realtime metrics
-                    if let Ok(realtime) = self.collect_realtime_metrics() {
+                    // Collection is synchronous and may shell out to GPU/NPU/SMART
+                    // tools that block for up to their timeouts. block_in_place
+                    // moves other tasks off this worker so a slow collect cannot
+                    // stall the gRPC stream / heartbeat futures sharing the runtime.
+                    // (Requires the multi-threaded runtime, which the agent uses.)
+                    let realtime = tokio::task::block_in_place(|| self.collect_realtime_metrics());
+                    if let Ok(realtime) = realtime {
                         if tx.send(LayeredMetricsMessage::Realtime(realtime)).await.is_err() {
                             error!("Metrics channel closed");
                             break;
@@ -189,7 +194,8 @@ impl LayeredCollector {
                     }
 
                     // Check if periodic data needs to be sent
-                    if let Some(periodic) = self.check_and_collect_periodic() {
+                    let periodic = tokio::task::block_in_place(|| self.check_and_collect_periodic());
+                    if let Some(periodic) = periodic {
                         if tx.send(LayeredMetricsMessage::Periodic(periodic)).await.is_err() {
                             error!("Metrics channel closed");
                             break;

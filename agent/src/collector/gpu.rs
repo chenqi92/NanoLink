@@ -1368,13 +1368,15 @@ impl GpuCollector {
         let gpu_models: Vec<String> = Self::extract_macos_gpu_models(&stdout);
 
         for model in gpu_models {
-            // Skip if this is an NVIDIA GPU (already detected)
-            if model.to_lowercase().contains("nvidia") {
-                for nvidia_name in nvidia_names {
-                    if model.contains(nvidia_name) || nvidia_name.contains(&model) {
-                        continue;
-                    }
-                }
+            // Skip if this NVIDIA GPU was already detected via nvidia-smi.
+            // (A previous inner-loop `continue` only skipped the inner loop, so
+            // the duplicate NVIDIA entry was still added below.)
+            if model.to_lowercase().contains("nvidia")
+                && nvidia_names
+                    .iter()
+                    .any(|nvidia_name| model.contains(nvidia_name) || nvidia_name.contains(&model))
+            {
+                continue;
             }
 
             let mut gpu = GpuMetrics {

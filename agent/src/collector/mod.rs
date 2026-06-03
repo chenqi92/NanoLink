@@ -87,7 +87,10 @@ impl MetricsCollector {
         loop {
             ticker.tick().await;
 
-            match self.collect_metrics() {
+            // Synchronous collection can block on external tools; keep it off the
+            // async poll path so it doesn't stall other tasks on this worker.
+            let result = tokio::task::block_in_place(|| self.collect_metrics());
+            match result {
                 Ok(metrics) => {
                     debug!(
                         "Collected metrics: CPU={:.1}%, MEM={:.1}%, GPUs={}, NPUs={}, Sessions={}",

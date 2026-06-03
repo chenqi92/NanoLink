@@ -359,9 +359,16 @@ impl DiskCollector {
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
+            use std::time::Duration;
 
-            // Try smartctl (requires smartmontools)
-            if let Ok(output) = Command::new("smartctl").args(["-A", device]).output() {
+            // Try smartctl (requires smartmontools). Use a timeout: smartctl can
+            // hang indefinitely on some USB bridges / sleeping or failing disks,
+            // which would otherwise stall the whole (synchronous) collection loop.
+            let mut cmd = Command::new("smartctl");
+            cmd.args(["-A", device]);
+            if let Some(output) =
+                crate::utils::safe_command::exec_with_timeout(cmd, Duration::from_secs(10))
+            {
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     for line in stdout.lines() {
@@ -409,8 +416,14 @@ impl DiskCollector {
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
+            use std::time::Duration;
 
-            if let Ok(output) = Command::new("smartctl").args(["-H", device]).output() {
+            // Timeout-guarded: see get_disk_temperature for why.
+            let mut cmd = Command::new("smartctl");
+            cmd.args(["-H", device]);
+            if let Some(output) =
+                crate::utils::safe_command::exec_with_timeout(cmd, Duration::from_secs(10))
+            {
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     if stdout.contains("PASSED") {

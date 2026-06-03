@@ -344,10 +344,14 @@ impl NetworkCollector {
         for (interface_name, data) in networks.list() {
             let interface_type = Self::get_interface_type(interface_name);
 
-            let rx_bytes = data.received();
-            let tx_bytes = data.transmitted();
-            let rx_packets = data.packets_received();
-            let tx_packets = data.packets_transmitted();
+            // Use the cumulative counters and diff them against the previous
+            // sample below. received()/transmitted() return only the delta since
+            // the last refresh, so subtracting prev_stats from them would
+            // double-difference and yield near-zero/erratic rates.
+            let rx_bytes = data.total_received();
+            let tx_bytes = data.total_transmitted();
+            let rx_packets = data.total_packets_received();
+            let tx_packets = data.total_packets_transmitted();
 
             // Calculate rates
             let (rx_bytes_sec, tx_bytes_sec, rx_packets_sec, tx_packets_sec) =
