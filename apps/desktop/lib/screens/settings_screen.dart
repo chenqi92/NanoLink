@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../design/nano_tokens.dart';
@@ -217,11 +218,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _row(context,
                     label: 'settings.version'.tr(),
                     value: 'v0.5.0',
-                    onTap: null),
+                    onTap: () {
+                      Clipboard.setData(const ClipboardData(text: 'v0.5.0'));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('settings.copied'.tr()),
+                          duration: const Duration(seconds: 1)));
+                    }),
                 _row(context,
                     label: 'settings.sourceCodeLabel'.tr(),
                     value: 'github.com/chenqi92/NanoLink',
-                    onTap: null,
+                    onTap: () {
+                      Clipboard.setData(const ClipboardData(
+                          text: 'https://github.com/chenqi92/NanoLink'));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('settings.copied'.tr()),
+                          duration: const Duration(seconds: 1)));
+                    },
                     divider: false),
               ],
             ),

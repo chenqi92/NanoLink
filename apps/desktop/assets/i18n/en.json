@@ -302,6 +302,7 @@
     "language": "Language",
     "about": "About",
     "version": "Version",
+    "copied": "Copied to clipboard",
     "sourceCode": "Source Code",
     "title": "Settings",
     "loggedIn": "Account signed in",

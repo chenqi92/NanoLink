@@ -130,19 +130,85 @@ class DashboardScreen extends StatelessWidget {
                 ),
               const SizedBox(height: 4),
               NanoSectionLabel('dashboard.recentActivity'.tr()),
-              NanoCard(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 22),
-                  child: Center(
-                    child: Text('dashboard.noActivity'.tr(),
-                        style: TextStyle(color: t.fg4, fontSize: 13)),
-                  ),
-                ),
-              ),
+              () {
+                final items = <Widget>[];
+                for (final a in offline) {
+                  if (items.length >= 6) break;
+                  items.add(_ActivityRow(
+                    icon: Icons.cloud_off_rounded,
+                    text: 'alerts.nodeOffline'.tr(namedArgs: {'host': a.hostname}),
+                    color: t.crit,
+                  ));
+                }
+                for (final a in online) {
+                  if (items.length >= 6) break;
+                  final m = provider.metricsFor(a.id);
+                  if (m == null) continue;
+                  if (m.cpuPercent > 90) {
+                    items.add(_ActivityRow(
+                        icon: Icons.memory_rounded,
+                        text: 'alerts.cpuPressure'.tr(namedArgs: {'host': a.hostname}),
+                        color: t.warn));
+                  } else if (m.memoryPercent > 90) {
+                    items.add(_ActivityRow(
+                        icon: Icons.sd_storage_outlined,
+                        text: 'alerts.memPressure'.tr(namedArgs: {'host': a.hostname}),
+                        color: t.warn));
+                  } else if (m.disks.any((d) => d.usagePercent > 90)) {
+                    items.add(_ActivityRow(
+                        icon: Icons.warning_amber_rounded,
+                        text: 'alerts.diskFull'.tr(namedArgs: {'host': a.hostname}),
+                        color: t.warn));
+                  }
+                }
+                if (items.isEmpty) {
+                  return NanoCard(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 22),
+                      child: Center(
+                        child: Text('dashboard.noActivity'.tr(),
+                            style: TextStyle(color: t.fg4, fontSize: 13)),
+                      ),
+                    ),
+                  );
+                }
+                return NanoCard(child: Column(children: items));
+              }(),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _ActivityRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+  const _ActivityRow({required this.icon, required this.text, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nano;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 15),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+              child: Text(text, style: TextStyle(fontSize: 13.5, color: t.fg))),
+        ],
+      ),
     );
   }
 }

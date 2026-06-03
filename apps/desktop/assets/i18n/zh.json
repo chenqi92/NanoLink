@@ -302,6 +302,7 @@
     "language": "语言",
     "about": "关于",
     "version": "版本",
+    "copied": "已复制到剪贴板",
     "sourceCode": "源代码",
     "title": "设置",
     "loggedIn": "已登录账号",
