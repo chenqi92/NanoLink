@@ -65,6 +65,7 @@
     "npus": "NPUs",
     "usage": "Usage",
     "temperature": "Temperature",
+    "realtime": "Realtime",
     "power": "Power",
     "download": "Download",
     "upload": "Upload",

@@ -157,10 +157,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setConnectionMode('websocket')
       setError(null)
     } else if (wsStatus === 'error' || wsStatus === 'disconnected') {
-      if (!wsDataReceived.current) {
-        setConnectionMode('polling')
-        refresh()
-      }
+      // Fall back to polling whenever the WS is down — including a mid-session
+      // drop after it had delivered data. Previously this only triggered when no
+      // WS data had ever arrived, so a dropped connection that failed to
+      // reconnect left the dashboard frozen. When the WS reconnects, the
+      // 'connected' branch switches back to websocket and clears the interval.
+      setConnectionMode('polling')
+      refresh()
     }
   }, [wsStatus, isAuthenticated, refresh])
 
