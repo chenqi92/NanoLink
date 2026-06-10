@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -101,6 +102,47 @@ type chatRequest struct {
 	Messages []service.ChatMessage `json:"messages"`
 }
 
+const (
+	maxAssistantRequestBytes = 64 * 1024
+	maxAssistantMessages     = 20
+	maxAssistantMessageBytes = 4 * 1024
+	maxAssistantTotalBytes   = 20 * 1024
+)
+
+var (
+	errAssistantTooManyMessages = errors.New("too many messages")
+	errAssistantMessageTooLong  = errors.New("message too long")
+	errAssistantPromptTooLong   = errors.New("conversation too long")
+)
+
+func sanitizeAssistantMessages(messages []service.ChatMessage) ([]service.ChatMessage, error) {
+	if len(messages) > maxAssistantMessages {
+		return nil, errAssistantTooManyMessages
+	}
+
+	msgs := make([]service.ChatMessage, 0, len(messages))
+	totalBytes := 0
+	for _, m := range messages {
+		if m.Role != "user" && m.Role != "assistant" {
+			continue
+		}
+		content := strings.TrimSpace(m.Content)
+		if content == "" {
+			continue
+		}
+		if len(content) > maxAssistantMessageBytes {
+			return nil, errAssistantMessageTooLong
+		}
+		totalBytes += len(content)
+		if totalBytes > maxAssistantTotalBytes {
+			return nil, errAssistantPromptTooLong
+		}
+		msgs = append(msgs, service.ChatMessage{Role: m.Role, Content: content})
+	}
+
+	return msgs, nil
+}
+
 // Chat answers a free-form question using the configured external LLM, grounding
 // it with a live snapshot of the fleet. Requires llm.enabled + an API key.
 // POST /assistant/chat
@@ -113,20 +155,16 @@ func (h *AssistantHandler) Chat(c *gin.Context) {
 	}
 
 	var req chatRequest
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAssistantRequestBytes)
 	if err := c.ShouldBindJSON(&req); err != nil || len(req.Messages) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "messages are required"})
 		return
 	}
 	// Only user/assistant turns are forwarded; the system prompt is injected here.
-	msgs := make([]service.ChatMessage, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		if m.Role != "user" && m.Role != "assistant" {
-			continue
-		}
-		if strings.TrimSpace(m.Content) == "" {
-			continue
-		}
-		msgs = append(msgs, m)
+	msgs, sanitizeErr := sanitizeAssistantMessages(req.Messages)
+	if sanitizeErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": sanitizeErr.Error()})
+		return
 	}
 	if len(msgs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no usable messages"})
@@ -136,7 +174,7 @@ func (h *AssistantHandler) Chat(c *gin.Context) {
 	reply, err := h.llm.Chat(c.Request.Context(), h.buildSystemPrompt(), msgs)
 	if err != nil {
 		h.logger.Warnw("assistant chat failed", "err", err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "assistant chat failed"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"reply": reply})

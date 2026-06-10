@@ -50,8 +50,11 @@ export function AuditScreen() {
 
   const exportCSV = () => {
     const esc = (v: unknown) => {
-      const s = String(v ?? "")
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+      let s = String(v ?? "")
+      if (/^[=+\-@]/.test(s.trimStart()) || /^[\t\r\n]/.test(s)) {
+        s = `'${s}`
+      }
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
     }
     const headers = ["time", "commandType", "username", "agent", "params", "ip", "result", "error"]
     const lines = [headers.join(",")]

@@ -379,6 +379,11 @@ func formatAlertText(inst database.AlertInstance) string {
 		strings.ToUpper(inst.Level), inst.Title, inst.Description, inst.AgentHostname)
 }
 
+func sanitizeEmailHeaderValue(value string) string {
+	value = strings.NewReplacer("\r", " ", "\n", " ").Replace(value)
+	return strings.Join(strings.Fields(value), " ")
+}
+
 // postJSON POSTs a JSON payload to an operator-configured webhook target URL.
 func postJSON(target string, payload interface{}) error {
 	target = strings.TrimSpace(target)
@@ -413,6 +418,10 @@ func sendEmail(to string, inst database.AlertInstance) error {
 	if to == "" {
 		return fmt.Errorf("empty recipient")
 	}
+	safeTo := sanitizeEmailHeaderValue(to)
+	if safeTo == "" {
+		return fmt.Errorf("empty recipient")
+	}
 	host := os.Getenv("SMTP_HOST")
 	if host == "" {
 		return fmt.Errorf("email channel requires SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS env")
@@ -427,12 +436,13 @@ func sendEmail(to string, inst database.AlertInstance) error {
 	if from == "" {
 		from = user
 	}
-	subject := fmt.Sprintf("[NanoLink][%s] %s", strings.ToUpper(inst.Level), inst.Title)
+	safeFrom := sanitizeEmailHeaderValue(from)
+	safeSubject := sanitizeEmailHeaderValue(fmt.Sprintf("[NanoLink][%s] %s", strings.ToUpper(inst.Level), inst.Title))
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
-		from, to, subject, formatAlertText(inst))
+		safeFrom, safeTo, safeSubject, formatAlertText(inst))
 	var auth smtp.Auth
 	if user != "" {
 		auth = smtp.PlainAuth("", user, pass, host)
 	}
-	return smtp.SendMail(host+":"+port, auth, from, []string{to}, []byte(msg))
+	return smtp.SendMail(host+":"+port, auth, safeFrom, []string{safeTo}, []byte(msg))
 }
