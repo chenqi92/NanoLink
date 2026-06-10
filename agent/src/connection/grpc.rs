@@ -125,6 +125,23 @@ impl GrpcClient {
         })
     }
 
+    /// Wrap an outbound stream in a Request that carries the agent token in
+    /// metadata, so the server can authenticate the StreamMetrics call when auth
+    /// is enabled. The unary Authenticate RPC does not cover the bidirectional
+    /// stream, so without this the server would reject the stream once auth is
+    /// turned on. No-op when the token can't be resolved or is empty/non-ASCII.
+    fn stream_request<S>(&self, stream: S) -> Request<S> {
+        let mut request = Request::new(stream);
+        if let Ok(token) = self.server_config.resolve_token() {
+            if !token.is_empty() {
+                if let Ok(val) = tonic::metadata::MetadataValue::try_from(token.as_str()) {
+                    request.metadata_mut().insert("x-agent-token", val);
+                }
+            }
+        }
+        request
+    }
+
     /// Authenticate with the server
     pub async fn authenticate(&mut self) -> Result<AuthResponse> {
         // Resolve token (supports environment variables and file references)
@@ -176,10 +193,11 @@ impl GrpcClient {
         let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(100);
         let request_stream = ReceiverStream::new(rx);
 
-        // Start the bidirectional stream
+        // Start the bidirectional stream (token in metadata for auth-enabled mode)
+        let stream_req = self.stream_request(request_stream);
         let response = self
             .client
-            .stream_metrics(Request::new(request_stream))
+            .stream_metrics(stream_req)
             .await
             .context("Failed to start metrics stream")?;
 
@@ -388,10 +406,11 @@ impl GrpcClient {
         let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(100);
         let request_stream = ReceiverStream::new(rx);
 
-        // Start the bidirectional stream
+        // Start the bidirectional stream (token in metadata for auth-enabled mode)
+        let stream_req = self.stream_request(request_stream);
         let response = self
             .client
-            .stream_metrics(Request::new(request_stream))
+            .stream_metrics(stream_req)
             .await
             .context("Failed to start metrics stream")?;
 
