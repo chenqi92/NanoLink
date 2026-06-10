@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -25,7 +26,14 @@ var upgrader = websocket.Upgrader{
 	// CheckOrigin is set dynamically in ServeHTTP using CheckOriginWithConfig
 }
 
-// CheckOriginWithConfig creates a CheckOrigin function using the provided config
+// CheckOriginWithConfig creates a CheckOrigin function using the provided config.
+//
+// It delegates to the shared, strict IsOriginAllowed policy (same-origin or exact
+// whitelist match, which correctly ignores empty/"*" entries) so the agent endpoint
+// uses the same rules as the dashboard/shell endpoints. An empty whitelist no longer
+// means "allow every cross-origin request". Loopback origins are allowed only outside
+// release mode, and matched on the parsed hostname so "http://127.0.0.1.evil.com" is
+// rejected (the old HasPrefix check accepted it).
 func CheckOriginWithConfig(cfg *config.Config) func(r *http.Request) bool {
 	return func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
@@ -33,52 +41,16 @@ func CheckOriginWithConfig(cfg *config.Config) func(r *http.Request) bool {
 			return true // No origin header (not a browser request)
 		}
 
-		// Always allow localhost for development
-		if origin == "http://localhost" || origin == "https://localhost" ||
-			strings.HasPrefix(origin, "http://localhost:") ||
-			strings.HasPrefix(origin, "https://localhost:") ||
-			strings.HasPrefix(origin, "http://127.0.0.1") ||
-			strings.HasPrefix(origin, "https://127.0.0.1") {
-			return true
-		}
-
-		// Check against configured whitelist
-		allowedOrigins := cfg.Server.AllowedOrigins
-		if len(allowedOrigins) == 0 {
-			// No whitelist configured - allow all but log warning
-			return true
-		}
-
-		// Check if origin matches any allowed origin
-		for _, allowed := range allowedOrigins {
-			if allowed == "*" {
-				return true // Wildcard allows all
-			}
-			if origin == allowed {
-				return true
-			}
-			// Support wildcard subdomains like "*.example.com"
-			if strings.HasPrefix(allowed, "*.") {
-				suffix := allowed[1:] // ".example.com"
-				if strings.HasSuffix(origin, suffix) {
-					// Extract the part before suffix and check it's a valid subdomain
-					prefix := strings.TrimSuffix(origin, suffix)
-					if strings.HasSuffix(prefix, "://") || strings.Contains(prefix, ".") ||
-						strings.HasPrefix(prefix, "http://") || strings.HasPrefix(prefix, "https://") {
-						// Handle "https://sub.example.com" matching "*.example.com"
-						if strings.HasPrefix(origin, "http://") || strings.HasPrefix(origin, "https://") {
-							// Extract host from origin
-							host := strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
-							if strings.HasSuffix(host, suffix[1:]) {
-								return true
-							}
-						}
-					}
+		if cfg.Server.Mode != "release" {
+			if u, err := url.Parse(origin); err == nil {
+				switch u.Hostname() {
+				case "localhost", "127.0.0.1", "::1":
+					return true
 				}
 			}
 		}
 
-		return false // Origin not in whitelist
+		return IsOriginAllowed(r, cfg.Server.AllowedOrigins)
 	}
 }
 

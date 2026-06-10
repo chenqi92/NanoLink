@@ -65,28 +65,40 @@ impl FileExecutor {
 
         let canonical_str = canonical.to_string_lossy().to_string();
 
-        // Check denied paths first (always blocked)
+        // Check denied paths first (always blocked).
+        //
+        // A denied entry must block the directory itself AND everything inside it.
+        // A plain glob like "/home/*/.ssh" does not match "/home/alice/.ssh/id_rsa"
+        // ('*' doesn't cross '/'), and a literal starts_with("/home/*/.ssh") never
+        // matches a real path either. So we test the canonical path and every one of
+        // its ancestors against each denied rule (glob or prefix).
         for denied in &self.config.security.denied_paths {
-            // Support glob patterns
-            if let Ok(pattern) = Pattern::new(denied) {
-                if pattern.matches(&canonical_str) {
-                    warn!(
-                        "[AUDIT] Access to denied path blocked: {} (matched pattern: {})",
-                        canonical_str, denied
-                    );
-                    return Err(format!(
-                        "Access denied: path matches blocked pattern '{denied}'"
-                    ));
+            let pattern = Pattern::new(denied).ok();
+            let matches_rule = |p: &str| -> bool {
+                if let Some(pat) = &pattern {
+                    if pat.matches(p) {
+                        return true;
+                    }
                 }
-            }
-            // Also check prefix match for directory paths
-            if canonical_str.starts_with(denied) {
+                // Prefix match on a path boundary (so "/etc" doesn't block "/etcfoo")
+                p == denied
+                    || p.strip_prefix(denied)
+                        .is_some_and(|rest| rest.starts_with('/'))
+            };
+
+            let blocked = matches_rule(&canonical_str)
+                || canonical
+                    .ancestors()
+                    .skip(1)
+                    .any(|a| matches_rule(&a.to_string_lossy()));
+
+            if blocked {
                 warn!(
-                    "[AUDIT] Access to denied path blocked: {} (prefix: {})",
+                    "[AUDIT] Access to denied path blocked: {} (rule: {})",
                     canonical_str, denied
                 );
                 return Err(format!(
-                    "Access denied: path is within restricted directory '{denied}'"
+                    "Access denied: path matches blocked rule '{denied}'"
                 ));
             }
         }

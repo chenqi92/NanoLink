@@ -189,10 +189,14 @@ func (s *MetricsService) StoreMetrics(agentID string, data *MetricsData) {
 
 	data.AgentID = agentID
 	data.Timestamp = time.Now()
+	// Two independent clones: one stored as "current" (decoupled from the caller's
+	// pointer, which it may keep mutating), one appended to history. They must not
+	// alias, or a later Merge*Metrics on current would also corrupt the history entry.
+	stored := cloneMetricsData(data)
 	snapshot := cloneMetricsData(data)
 
 	s.mu.Lock()
-	s.current[agentID] = data
+	s.current[agentID] = stored
 
 	if _, exists := s.history[agentID]; !exists {
 		s.history[agentID] = make([]*MetricsData, 0, s.maxHistory)
@@ -215,30 +219,39 @@ func (s *MetricsService) SetBroadcastCallback(callback func(agentID string, metr
 	s.broadcastCallback = callback
 }
 
-// GetCurrentMetrics returns current metrics for an agent
+// GetCurrentMetrics returns a deep copy of current metrics for an agent.
+// A copy (not the shared pointer) is essential: Merge*Metrics mutate s.current in
+// place under the write lock, so handing out the live pointer to be read/serialized
+// outside the lock is a data race that can panic on the concurrently-mutated slices.
 func (s *MetricsService) GetCurrentMetrics(agentID string) *MetricsData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.current[agentID]
+	return cloneMetricsData(s.current[agentID])
 }
 
-// GetAllCurrentMetrics returns current metrics for all agents
+// GetAllCurrentMetrics returns deep copies of current metrics for all agents.
 func (s *MetricsService) GetAllCurrentMetrics() map[string]*MetricsData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	result := make(map[string]*MetricsData)
 	for id, data := range s.current {
-		result[id] = data
+		result[id] = cloneMetricsData(data)
 	}
 	return result
 }
 
-// GetMetricsHistory returns historical metrics for an agent
+// GetMetricsHistory returns historical metrics for an agent.
 func (s *MetricsService) GetMetricsHistory(agentID string, limit int) []*MetricsData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.getMetricsHistoryLocked(agentID, limit)
+}
 
+// getMetricsHistoryLocked is the lock-free core; the caller must already hold s.mu
+// (read or write). GetAllMetricsHistory relies on this to avoid re-entering RLock —
+// a second RLock while holding one deadlocks if a writer's Lock() is queued between.
+func (s *MetricsService) getMetricsHistoryLocked(agentID string, limit int) []*MetricsData {
 	history, exists := s.history[agentID]
 	if !exists {
 		return nil
@@ -262,7 +275,7 @@ func (s *MetricsService) GetAllMetricsHistory(limit int) map[string][]*MetricsDa
 
 	result := make(map[string][]*MetricsData)
 	for id := range s.history {
-		result[id] = s.GetMetricsHistory(id, limit)
+		result[id] = s.getMetricsHistoryLocked(id, limit)
 	}
 	return result
 }

@@ -344,10 +344,13 @@ impl NetworkCollector {
         for (interface_name, data) in networks.list() {
             let interface_type = Self::get_interface_type(interface_name);
 
-            let rx_bytes = data.received();
-            let tx_bytes = data.transmitted();
-            let rx_packets = data.packets_received();
-            let tx_packets = data.packets_transmitted();
+            // sysinfo's received()/transmitted() return the delta since the last
+            // refresh, so differencing them against the previous sample double-counts.
+            // Use the cumulative total_* counters for a correct prev/cur difference.
+            let rx_bytes = data.total_received();
+            let tx_bytes = data.total_transmitted();
+            let rx_packets = data.total_packets_received();
+            let tx_packets = data.total_packets_transmitted();
 
             // Calculate rates
             let (rx_bytes_sec, tx_bytes_sec, rx_packets_sec, tx_packets_sec) =

@@ -21,8 +21,13 @@ type ShellHandler struct {
 	grpcServer interface {
 		SendCommandToAgent(agentID string, cmd *pb.Command) error
 	}
-	upgrader        websocket.Upgrader
-	sessions        sync.Map // agentID -> []*shellSession
+	upgrader   websocket.Upgrader
+	sessionsMu sync.Mutex // guards the []*shellSession slices stored in sessions
+	sessions   sync.Map   // agentID -> []*shellSession
+	// commandSessions maps a dispatched commandID to the session that issued it,
+	// so agent output is routed only back to its originator instead of being
+	// broadcast to every session on the agent (which leaks output across users).
+	commandSessions sync.Map // commandID -> *shellSession
 	shellSuperToken string
 }
 
@@ -32,6 +37,21 @@ type shellSession struct {
 	userID    uint
 	username  string
 	createdAt time.Time
+	// writeMu serializes all writes to conn. gorilla/websocket forbids concurrent
+	// writes, and the agent-result goroutine and the read loop both write here.
+	writeMu sync.Mutex
+}
+
+// send writes one framed message to the session's conn under the write lock.
+func (s *shellSession) send(msgType, data string) {
+	msg := shellMessage{Type: msgType, Data: data}
+	jsonData, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	_ = s.conn.WriteMessage(websocket.TextMessage, jsonData)
 }
 
 type shellMessage struct {
@@ -97,7 +117,7 @@ func (h *ShellHandler) HandleShellWS(c *gin.Context) {
 	h.logger.Infof("Shell session started: user=%s agent=%s", user.Username, agentID)
 
 	if h.shellSuperToken == "" {
-		h.sendError(session.conn, "Remote shell is disabled. Configure NANOLINK_SHELL_SUPER_TOKEN on the server and use the same super_token in agent configs.")
+		session.send("error", "Remote shell is disabled. Configure NANOLINK_SHELL_SUPER_TOKEN on the server and use the same super_token in agent configs.")
 		_ = session.conn.WriteControl(
 			websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "shell disabled"),
@@ -133,7 +153,7 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 
 		var msg shellMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
-			h.sendError(session.conn, "invalid message format")
+			session.send("error", "invalid message format")
 			continue
 		}
 
@@ -146,8 +166,13 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 				SuperToken: h.shellSuperToken,
 			}
 
+			// Remember which session issued this command so its output is routed
+			// back only here, not broadcast to every session on the agent.
+			h.commandSessions.Store(cmd.CommandId, session)
+
 			if err := h.grpcServer.SendCommandToAgent(session.agentID, cmd); err != nil {
-				h.sendError(session.conn, "failed to send command: "+err.Error())
+				h.commandSessions.Delete(cmd.CommandId)
+				session.send("error", "failed to send command: "+err.Error())
 				continue
 			}
 
@@ -155,40 +180,29 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 			h.logger.Debugf("Terminal resize: %dx%d", msg.Cols, msg.Rows)
 
 		default:
-			h.sendError(session.conn, "unknown message type: "+msg.Type)
+			session.send("error", "unknown message type: "+msg.Type)
 		}
 	}
 }
 
-func (h *ShellHandler) sendOutput(conn *websocket.Conn, data string) {
-	msg := shellMessage{Type: "output", Data: data}
-	if jsonData, err := json.Marshal(msg); err == nil {
-		_ = conn.WriteMessage(websocket.TextMessage, jsonData)
-	}
-}
-
-func (h *ShellHandler) sendError(conn *websocket.Conn, errMsg string) {
-	msg := shellMessage{Type: "error", Data: errMsg}
-	if jsonData, err := json.Marshal(msg); err == nil {
-		_ = conn.WriteMessage(websocket.TextMessage, jsonData)
-	}
-}
-
-// SendOutputToSession sends output from agent to the shell session.
+// SendOutputToSession routes agent command output back to the originating session.
 func (h *ShellHandler) SendOutputToSession(agentID, commandID, output string) {
-	h.sessions.Range(func(key, value interface{}) bool {
-		if sessions, ok := value.([]*shellSession); ok {
-			for _, session := range sessions {
-				if session.agentID == agentID {
-					h.sendOutput(session.conn, output)
-				}
+	if commandID != "" {
+		if v, ok := h.commandSessions.Load(commandID); ok {
+			if session, ok := v.(*shellSession); ok && session.agentID == agentID {
+				session.send("output", output)
+				return
 			}
 		}
-		return true
-	})
+	}
+	// No matching command->session mapping: drop rather than broadcast to all of
+	// the agent's sessions, which would leak one user's output to another user.
+	h.logger.Debugf("Shell output for agent=%s command=%s has no matching session; dropping", agentID, commandID)
 }
 
 func (h *ShellHandler) addSession(agentID string, session *shellSession) {
+	h.sessionsMu.Lock()
+	defer h.sessionsMu.Unlock()
 	value, _ := h.sessions.LoadOrStore(agentID, []*shellSession{})
 	sessions := value.([]*shellSession)
 	sessions = append(sessions, session)
@@ -196,23 +210,31 @@ func (h *ShellHandler) addSession(agentID string, session *shellSession) {
 }
 
 func (h *ShellHandler) removeSession(agentID string, session *shellSession) {
+	h.sessionsMu.Lock()
 	value, ok := h.sessions.Load(agentID)
-	if !ok {
-		return
-	}
-
-	sessions := value.([]*shellSession)
-	filtered := make([]*shellSession, 0, len(sessions))
-	for _, s := range sessions {
-		if s != session {
-			filtered = append(filtered, s)
+	if ok {
+		sessions := value.([]*shellSession)
+		filtered := make([]*shellSession, 0, len(sessions))
+		for _, s := range sessions {
+			if s != session {
+				filtered = append(filtered, s)
+			}
+		}
+		if len(filtered) > 0 {
+			h.sessions.Store(agentID, filtered)
+		} else {
+			h.sessions.Delete(agentID)
 		}
 	}
-	if len(filtered) > 0 {
-		h.sessions.Store(agentID, filtered)
-	} else {
-		h.sessions.Delete(agentID)
-	}
+	h.sessionsMu.Unlock()
+
+	// Drop any command->session mappings still pointing at this session.
+	h.commandSessions.Range(func(key, value interface{}) bool {
+		if s, ok := value.(*shellSession); ok && s == session {
+			h.commandSessions.Delete(key)
+		}
+		return true
+	})
 }
 
 func generateCommandID() string {

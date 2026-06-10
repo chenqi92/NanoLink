@@ -264,12 +264,14 @@ impl UpdateExecutor {
     pub async fn download_update(&self, params: &HashMap<String, String>) -> CommandResult {
         info!("[AUDIT] DownloadUpdate requested");
 
-        let download_url = match params.get("url") {
-            Some(url) => url.clone(),
+        // Resolve both the download URL and the expected checksum from the
+        // configured release source so we can verify the binary right here.
+        let (download_url, expected_checksum) = match params.get("url") {
+            Some(url) => (url.clone(), params.get("checksum").cloned()),
             None => {
                 // Fetch latest release URL using configured source
                 match self.fetch_release_info().await {
-                    Ok(release) => release.download_url,
+                    Ok(release) => (release.download_url, release.checksum),
                     Err(e) => {
                         return Self::error_result(format!("Failed to get download URL: {e}"));
                     }
@@ -291,24 +293,69 @@ impl UpdateExecutor {
         let download_path = download_path.with_extension("exe");
 
         match self.download_file(&download_url, &download_path).await {
-            Ok(size) => CommandResult {
-                command_id: String::new(),
-                success: true,
-                output: format!("Downloaded {} bytes to {}", size, download_path.display()),
-                error: String::new(),
-                update_info: Some(UpdateInfo {
-                    current_version: AGENT_VERSION.to_string(),
-                    latest_version: String::new(),
-                    update_available: true,
-                    download_url,
-                    changelog: String::new(),
-                    release_date: String::new(),
-                    download_size: size as i64,
-                    checksum: String::new(),
-                    min_version: String::new(),
-                }),
-                ..Default::default()
-            },
+            Ok(size) => {
+                // Verify integrity at download time (fail-closed). The download
+                // origin (e.g. the Cloudflare domain) is the realistic MITM point,
+                // so a known checksum mismatch — or, when verification is required,
+                // a missing checksum — must abort and remove the file.
+                match &expected_checksum {
+                    Some(expected) => match calculate_sha256(&download_path) {
+                        Ok(actual) if actual.eq_ignore_ascii_case(expected) => {
+                            info!("Downloaded update checksum verified");
+                        }
+                        Ok(actual) => {
+                            let _ = std::fs::remove_file(&download_path);
+                            return Self::error_result(format!(
+                                "Checksum mismatch! Expected {expected}, got {actual}. \
+                                 Download may be corrupted or tampered; file removed."
+                            ));
+                        }
+                        Err(e) => {
+                            let _ = std::fs::remove_file(&download_path);
+                            return Self::error_result(format!(
+                                "Failed to verify downloaded update: {e}"
+                            ));
+                        }
+                    },
+                    None => {
+                        if self.config.require_checksum {
+                            let _ = std::fs::remove_file(&download_path);
+                            return Self::error_result(
+                                "No checksum available for this update and require_checksum \
+                                 is enabled. Refusing to download an unverifiable binary. Use a \
+                                 release source that publishes checksums, or set \
+                                 update.require_checksum=false to accept the risk."
+                                    .to_string(),
+                            );
+                        }
+                        warn!(
+                            "No checksum available for downloaded update; \
+                             require_checksum is disabled, proceeding unverified"
+                        );
+                    }
+                }
+
+                CommandResult {
+                    command_id: String::new(),
+                    success: true,
+                    output: format!("Downloaded {} bytes to {}", size, download_path.display()),
+                    error: String::new(),
+                    update_info: Some(UpdateInfo {
+                        current_version: AGENT_VERSION.to_string(),
+                        latest_version: String::new(),
+                        update_available: true,
+                        download_url,
+                        changelog: String::new(),
+                        release_date: String::new(),
+                        download_size: size as i64,
+                        // Propagate the verified checksum so the orchestrator can
+                        // pass it to apply_update for a second integrity check.
+                        checksum: expected_checksum.unwrap_or_default(),
+                        min_version: String::new(),
+                    }),
+                    ..Default::default()
+                }
+            }
             Err(e) => Self::error_result(format!("Failed to download update: {e}")),
         }
     }
@@ -335,24 +382,40 @@ impl UpdateExecutor {
             ));
         }
 
-        // Verify checksum if provided
-        if let Some(expected_checksum) = params.get("checksum") {
-            info!("Verifying checksum...");
-            match calculate_sha256(&update_path) {
-                Ok(actual_checksum) => {
-                    if actual_checksum.to_lowercase() != expected_checksum.to_lowercase() {
-                        return Self::error_result(format!(
-                            "Checksum mismatch! Expected: {expected_checksum}, Got: {actual_checksum}. Update file may be corrupted or tampered."
-                        ));
+        // Verify checksum before replacing the running binary.
+        match params.get("checksum") {
+            Some(expected_checksum) => {
+                info!("Verifying checksum...");
+                match calculate_sha256(&update_path) {
+                    Ok(actual_checksum) => {
+                        if !actual_checksum.eq_ignore_ascii_case(expected_checksum) {
+                            return Self::error_result(format!(
+                                "Checksum mismatch! Expected: {expected_checksum}, Got: {actual_checksum}. Update file may be corrupted or tampered."
+                            ));
+                        }
+                        info!("Checksum verified successfully");
                     }
-                    info!("Checksum verified successfully");
-                }
-                Err(e) => {
-                    return Self::error_result(format!("Failed to calculate checksum: {e}"));
+                    Err(e) => {
+                        return Self::error_result(format!("Failed to calculate checksum: {e}"));
+                    }
                 }
             }
-        } else {
-            warn!("No checksum provided, skipping verification (not recommended)");
+            None => {
+                // Fail closed: refuse to replace the binary with an unverified file
+                // unless the operator explicitly opted out of checksum verification.
+                if self.config.require_checksum {
+                    return Self::error_result(
+                        "Refusing to apply an update without a verified checksum \
+                         (update.require_checksum is enabled). Re-run download_update \
+                         (which verifies and returns the checksum) and pass that checksum, \
+                         or set update.require_checksum=false to accept the risk."
+                            .to_string(),
+                    );
+                }
+                warn!(
+                    "No checksum provided and require_checksum is disabled; applying unverified update"
+                );
+            }
         }
 
         // Get current binary path

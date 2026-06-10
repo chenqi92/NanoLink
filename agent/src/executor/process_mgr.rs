@@ -160,17 +160,33 @@ impl ProcessExecutor {
             let sig = match signal.to_uppercase().as_str() {
                 "TERM" | "SIGTERM" | "15" => "TERM",
                 "KILL" | "SIGKILL" | "9" => "KILL",
-                _ => "KILL",
+                "HUP" | "SIGHUP" | "1" => "HUP",
+                "INT" | "SIGINT" | "2" => "INT",
+                "QUIT" | "SIGQUIT" | "3" => "QUIT",
+                "USR1" | "SIGUSR1" => "USR1",
+                "USR2" | "SIGUSR2" => "USR2",
+                _ => "TERM",
             };
 
-            match Command::new("pkill").args(["-", sig, name]).output() {
-                Ok(output) => CommandResult {
-                    command_id: String::new(),
-                    success: output.status.success(),
-                    output: format!("Sent {} signal to processes named '{}'", sig, name),
-                    error: String::from_utf8_lossy(&output.stderr).to_string(),
-                    ..Default::default()
-                },
+            // pkill expects the signal as a single option token ("--signal TERM"),
+            // not three separate args ("-", "TERM", name) which is invalid.
+            match Command::new("pkill").args(["--signal", sig, name]).output() {
+                Ok(output) => {
+                    let success = output.status.success();
+                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                    CommandResult {
+                        command_id: String::new(),
+                        success,
+                        output: if success {
+                            format!("Sent {sig} signal to processes named '{name}'")
+                        } else {
+                            // pkill exits 1 when no process matched, >1 on real errors
+                            format!("pkill for '{name}' exited with {}", output.status)
+                        },
+                        error: stderr,
+                        ..Default::default()
+                    }
+                }
                 Err(e) => CommandResult {
                     command_id: String::new(),
                     success: false,

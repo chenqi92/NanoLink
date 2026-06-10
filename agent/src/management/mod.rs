@@ -275,9 +275,11 @@ async fn auth_middleware(
     let config = state.config.read().await;
     let source_ip = addr.ip();
     let path = request.uri().path();
+    let method = request.method().clone();
 
-    // Get required permission for this endpoint
-    let required_permission = get_required_permission(path);
+    // Get required permission for this endpoint (method-aware: e.g. GET /api/servers
+    // is a read but POST/DELETE /api/servers mutate the server list)
+    let required_permission = get_required_permission(&method, path);
 
     // Public endpoints (permission 0) - no auth required
     if required_permission == 0 {
@@ -361,14 +363,28 @@ async fn auth_middleware(
     Ok(next.run(request).await)
 }
 
-/// Get required permission level for endpoint
-fn get_required_permission(path: &str) -> u8 {
+/// Get required permission level for endpoint.
+///
+/// The method matters: `/api/servers` is a read (GET) but the same path with
+/// POST/DELETE adds or removes a server (and add_server lets the caller pick the
+/// new server's permission up to 3), so those must require system-admin (3) just
+/// like `/api/servers/update`. Judging by path alone allowed a permission-1 token
+/// to add a permission-3 server and escalate.
+fn get_required_permission(method: &axum::http::Method, path: &str) -> u8 {
+    use axum::http::Method;
+
     match path {
         // Public endpoints (permission 0)
         "/api/health" | "/api/status" => 0,
 
+        // /api/servers: GET lists (read=1), POST/DELETE mutate (admin=3)
+        "/api/servers" => match *method {
+            Method::GET => 1,
+            _ => 3,
+        },
+
         // Basic read (permission 1)
-        "/api/config" | "/api/connection/status" | "/api/servers" => 1,
+        "/api/config" | "/api/connection/status" => 1,
 
         // Service control (permission 2)
         "/api/connection/reconnect" | "/api/logs" | "/api/buffer/status" => 2,

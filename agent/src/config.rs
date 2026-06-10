@@ -109,6 +109,14 @@ pub struct UpdateConfig {
     /// Custom update URL (used when source = "custom")
     #[serde(default)]
     pub custom_url: Option<String>,
+
+    /// Require a verified SHA256 checksum before applying an update.
+    /// When true (the default), an update whose checksum is unknown or does not
+    /// match is refused. This prevents a hijacked/MITM'd download server from
+    /// replacing the agent binary with arbitrary code. Set to false only if you
+    /// accept unverified updates (e.g. a GitHub source that publishes no checksum).
+    #[serde(default = "default_true")]
+    pub require_checksum: bool,
 }
 
 impl Default for UpdateConfig {
@@ -122,6 +130,7 @@ impl Default for UpdateConfig {
             allow_prerelease: false,
             source: UpdateSource::default(),
             custom_url: None,
+            require_checksum: true,
         }
     }
 }
