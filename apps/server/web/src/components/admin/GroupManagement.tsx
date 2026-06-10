@@ -36,14 +36,17 @@ export function GroupManagement() {
     fetchUsers()
   }, [])
 
-  const fetchGroups = async () => {
+  // Returns the freshly fetched groups so callers can derive state from them
+  const fetchGroups = async (): Promise<Group[]> => {
     try {
       const res = await fetch("/api/groups", { credentials: "include" })
       if (!res.ok) throw new Error("Failed to fetch groups")
       const data = await res.json()
       setGroups(data)
+      return data
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error")
+      return []
     } finally {
       setLoading(false)
     }
@@ -128,9 +131,9 @@ export function GroupManagement() {
         body: JSON.stringify({ userId })
       })
       if (!res.ok) throw new Error("Failed to add user")
-      fetchGroups()
-      // Refresh the managing group
-      const updated = groups.find(g => g.id === managingMembers.id)
+      // Derive the managing group from the freshly fetched data, not stale state
+      const latest = await fetchGroups()
+      const updated = latest.find(g => g.id === managingMembers.id)
       if (updated) setManagingMembers(updated)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error")
@@ -145,9 +148,9 @@ export function GroupManagement() {
         credentials: "include",
       })
       if (!res.ok) throw new Error("Failed to remove user")
-      fetchGroups()
-      // Refresh the managing group
-      const updated = groups.find(g => g.id === managingMembers.id)
+      // Derive the managing group from the freshly fetched data, not stale state
+      const latest = await fetchGroups()
+      const updated = latest.find(g => g.id === managingMembers.id)
       if (updated) setManagingMembers(updated)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error")

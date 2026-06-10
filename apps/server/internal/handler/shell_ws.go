@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	pb "github.com/chenqi92/NanoLink/apps/server/internal/proto"
+	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 )
 
 // ShellHandler handles WebSocket shell connections.
@@ -21,9 +22,13 @@ type ShellHandler struct {
 	grpcServer interface {
 		SendCommandToAgent(agentID string, cmd *pb.Command) error
 	}
-	upgrader   websocket.Upgrader
-	sessionsMu sync.Mutex // guards the []*shellSession slices stored in sessions
-	sessions   sync.Map   // agentID -> []*shellSession
+	// auditService records every shell command dispatch. The shell channel runs at
+	// the highest permission (PermissionSystemAdmin) and previously had no audit
+	// trail, unlike the HTTP SendCommand path.
+	auditService *service.AuditService
+	upgrader     websocket.Upgrader
+	sessionsMu   sync.Mutex // guards the []*shellSession slices stored in sessions
+	sessions     sync.Map   // agentID -> []*shellSession
 	// commandSessions maps a dispatched commandID to the session that issued it,
 	// so agent output is routed only back to its originator instead of being
 	// broadcast to every session on the agent (which leaks output across users).
@@ -36,6 +41,7 @@ type shellSession struct {
 	agentID   string
 	userID    uint
 	username  string
+	remoteIP  string
 	createdAt time.Time
 	// writeMu serializes all writes to conn. gorilla/websocket forbids concurrent
 	// writes, and the agent-result goroutine and the read loop both write here.
@@ -67,11 +73,13 @@ func NewShellHandler(
 	grpcServer interface {
 		SendCommandToAgent(agentID string, cmd *pb.Command) error
 	},
+	auditService *service.AuditService,
 	allowedOrigins []string,
 ) *ShellHandler {
 	return &ShellHandler{
 		logger:          logger,
 		grpcServer:      grpcServer,
+		auditService:    auditService,
 		shellSuperToken: strings.TrimSpace(os.Getenv("NANOLINK_SHELL_SUPER_TOKEN")),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
@@ -108,6 +116,7 @@ func (h *ShellHandler) HandleShellWS(c *gin.Context) {
 		agentID:   agentID,
 		userID:    user.ID,
 		username:  user.Username,
+		remoteIP:  c.ClientIP(),
 		createdAt: time.Now(),
 	}
 
@@ -170,9 +179,15 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 			// back only here, not broadcast to every session on the agent.
 			h.commandSessions.Store(cmd.CommandId, session)
 
-			if err := h.grpcServer.SendCommandToAgent(session.agentID, cmd); err != nil {
+			dispatchErr := h.grpcServer.SendCommandToAgent(session.agentID, cmd)
+
+			// Audit every shell dispatch (best-effort): this is the highest-privilege
+			// command path and must leave a trail like the HTTP SendCommand path.
+			h.auditCommand(session, cmd, dispatchErr)
+
+			if dispatchErr != nil {
 				h.commandSessions.Delete(cmd.CommandId)
-				session.send("error", "failed to send command: "+err.Error())
+				session.send("error", "failed to send command: "+dispatchErr.Error())
 				continue
 			}
 
@@ -198,6 +213,27 @@ func (h *ShellHandler) SendOutputToSession(agentID, commandID, output string) {
 	// No matching command->session mapping: drop rather than broadcast to all of
 	// the agent's sessions, which would leak one user's output to another user.
 	h.logger.Debugf("Shell output for agent=%s command=%s has no matching session; dropping", agentID, commandID)
+}
+
+// auditCommand records a shell command dispatch to the audit trail (best-effort).
+func (h *ShellHandler) auditCommand(session *shellSession, cmd *pb.Command, dispatchErr error) {
+	if h.auditService == nil {
+		return
+	}
+	entry := service.AuditEntry{
+		UserID:      session.userID,
+		Username:    session.username,
+		AgentID:     session.agentID,
+		CommandType: cmd.Type.String(),
+		CommandID:   cmd.CommandId,
+		Target:      cmd.Target,
+		Success:     dispatchErr == nil,
+		IPAddress:   session.remoteIP,
+	}
+	if dispatchErr != nil {
+		entry.Error = dispatchErr.Error()
+	}
+	_ = h.auditService.LogCommand(entry)
 }
 
 func (h *ShellHandler) addSession(agentID string, session *shellSession) {

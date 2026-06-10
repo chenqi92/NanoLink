@@ -17,22 +17,29 @@ type Metrics struct {
 
 // CPUMetrics represents CPU metrics
 type CPUMetrics struct {
-	UsagePercent float64   `json:"usagePercent"`
-	CoreCount    int       `json:"coreCount"`
-	PerCoreUsage []float64 `json:"perCoreUsage,omitempty"`
-	Model        string    `json:"model,omitempty"`
-	Vendor       string    `json:"vendor,omitempty"`
-	FrequencyMHz uint64    `json:"frequencyMhz,omitempty"`
-	Temperature  float64   `json:"temperature,omitempty"`
+	UsagePercent    float64   `json:"usagePercent"`
+	CoreCount       int       `json:"coreCount"`
+	PerCoreUsage    []float64 `json:"perCoreUsage,omitempty"`
+	Model           string    `json:"model,omitempty"`
+	Vendor          string    `json:"vendor,omitempty"`
+	FrequencyMHz    uint64    `json:"frequencyMhz,omitempty"`
+	FrequencyMaxMHz uint64    `json:"frequencyMaxMhz,omitempty"` // proto frequency_max_mhz
+	PhysicalCores   int       `json:"physicalCores,omitempty"`   // proto physical_cores
+	LogicalCores    int       `json:"logicalCores,omitempty"`    // proto logical_cores
+	Temperature     float64   `json:"temperature,omitempty"`
 }
 
 // MemoryMetrics represents memory metrics
 type MemoryMetrics struct {
-	Total     uint64 `json:"total"`
-	Used      uint64 `json:"used"`
-	Available uint64 `json:"available"`
-	SwapTotal uint64 `json:"swapTotal"`
-	SwapUsed  uint64 `json:"swapUsed"`
+	Total          uint64 `json:"total"`
+	Used           uint64 `json:"used"`
+	Available      uint64 `json:"available"`
+	SwapTotal      uint64 `json:"swapTotal"`
+	SwapUsed       uint64 `json:"swapUsed"`
+	Cached         uint64 `json:"cached,omitempty"`         // proto cached
+	Buffers        uint64 `json:"buffers,omitempty"`        // proto buffers (Linux)
+	MemoryType     string `json:"memoryType,omitempty"`     // proto memory_type
+	MemorySpeedMHz uint32 `json:"memorySpeedMhz,omitempty"` // proto memory_speed_mhz
 }
 
 // UsagePercent returns memory usage percentage
@@ -53,9 +60,13 @@ type DiskMetrics struct {
 	Available        uint64  `json:"available"`
 	ReadBytesPerSec  uint64  `json:"readBytesPerSec"`
 	WriteBytesPerSec uint64  `json:"writeBytesPerSec"`
+	ReadIOPS         uint64  `json:"readIops,omitempty"`  // proto read_iops
+	WriteIOPS        uint64  `json:"writeIops,omitempty"` // proto write_iops
 	Model            string  `json:"model,omitempty"`
+	Serial           string  `json:"serial,omitempty"` // proto serial
 	DiskType         string  `json:"diskType,omitempty"`
 	Temperature      float64 `json:"temperature,omitempty"`
+	HealthStatus     string  `json:"healthStatus,omitempty"` // proto health_status (S.M.A.R.T)
 }
 
 // UsagePercent returns disk usage percentage
@@ -90,9 +101,11 @@ type GPUMetrics struct {
 	Temperature     float64 `json:"temperature"`
 	FanSpeedPercent uint32  `json:"fanSpeedPercent"`
 	PowerWatts      uint32  `json:"powerWatts"`
+	PowerLimitWatts uint32  `json:"powerLimitWatts,omitempty"` // proto power_limit_watts
 	ClockCoreMHz    uint64  `json:"clockCoreMhz"`
 	ClockMemoryMHz  uint64  `json:"clockMemoryMhz"`
 	DriverVersion   string  `json:"driverVersion"`
+	PCIeGeneration  string  `json:"pcieGeneration,omitempty"` // proto pcie_generation
 	EncoderUsage    float64 `json:"encoderUsage"`
 	DecoderUsage    float64 `json:"decoderUsage"`
 }
@@ -154,23 +167,29 @@ type ContainerInfo struct {
 	Created int64  `json:"created"`
 }
 
-// MetricsType indicates the type of metrics message
+// MetricsType indicates the type of metrics message.
+// Values are aligned with the proto MetricsType enum.
 type MetricsType int
 
 const (
 	MetricsFull     MetricsType = 0
 	MetricsRealtime MetricsType = 1
-	MetricsStatic   MetricsType = 2
-	MetricsPeriodic MetricsType = 3
+	MetricsPeriodic MetricsType = 2 // proto METRICS_PERIODIC
+	MetricsStatic   MetricsType = 3 // proto METRICS_STATIC
 )
 
-// DataRequestType indicates what data the server is requesting
+// DataRequestType indicates what data the server is requesting.
+// Values are aligned with the proto DataRequestType enum.
 type DataRequestType int
 
 const (
-	DataRequestFull     DataRequestType = 0
-	DataRequestStatic   DataRequestType = 1
-	DataRequestPeriodic DataRequestType = 2
+	DataRequestFull         DataRequestType = 0
+	DataRequestStatic       DataRequestType = 1
+	DataRequestDiskUsage    DataRequestType = 2 // proto DATA_REQUEST_DISK_USAGE
+	DataRequestNetworkInfo  DataRequestType = 3 // proto DATA_REQUEST_NETWORK_INFO
+	DataRequestUserSessions DataRequestType = 4 // proto DATA_REQUEST_USER_SESSIONS
+	DataRequestGPUInfo      DataRequestType = 5 // proto DATA_REQUEST_GPU_INFO
+	DataRequestHealth       DataRequestType = 6 // proto DATA_REQUEST_HEALTH
 )
 
 // DiskIO represents disk I/O metrics for realtime data
@@ -205,19 +224,21 @@ type NPUUsage struct {
 
 // RealtimeMetrics represents high-frequency metrics (sent every ~1 second)
 type RealtimeMetrics struct {
-	Timestamp      int64       `json:"timestamp"`
-	Hostname       string      `json:"hostname"`
-	CPUUsage       float64     `json:"cpuUsage"`
-	CPUPerCore     []float64   `json:"cpuPerCore,omitempty"`
-	MemoryUsed     uint64      `json:"memoryUsed"`
-	MemoryPercent  float64     `json:"memoryPercent"`
-	SwapUsed       uint64      `json:"swapUsed"`
-	DiskIO         []DiskIO    `json:"diskIo,omitempty"`
-	NetworkIO      []NetworkIO `json:"networkIo,omitempty"`
-	GPUUsages      []GPUUsage  `json:"gpuUsages,omitempty"`
-	NPUUsages      []NPUUsage  `json:"npuUsages,omitempty"`
-	LoadAverage    []float64   `json:"loadAverage,omitempty"`
-	CPUTemperature float64     `json:"cpuTemperature,omitempty"`
+	Timestamp       int64       `json:"timestamp"`
+	Hostname        string      `json:"hostname"`
+	CPUUsage        float64     `json:"cpuUsage"`
+	CPUPerCore      []float64   `json:"cpuPerCore,omitempty"`
+	CPUFrequencyMHz uint64      `json:"cpuFrequencyMhz,omitempty"` // Current CPU frequency (proto cpu_frequency_mhz)
+	MemoryUsed      uint64      `json:"memoryUsed"`
+	MemoryCached    uint64      `json:"memoryCached,omitempty"` // Cached memory (proto memory_cached)
+	MemoryPercent   float64     `json:"memoryPercent"`
+	SwapUsed        uint64      `json:"swapUsed"`
+	DiskIO          []DiskIO    `json:"diskIo,omitempty"`
+	NetworkIO       []NetworkIO `json:"networkIo,omitempty"`
+	GPUUsages       []GPUUsage  `json:"gpuUsages,omitempty"`
+	NPUUsages       []NPUUsage  `json:"npuUsages,omitempty"`
+	LoadAverage     []float64   `json:"loadAverage,omitempty"`
+	CPUTemperature  float64     `json:"cpuTemperature,omitempty"`
 }
 
 // CPUStaticInfo represents static CPU information
@@ -242,13 +263,14 @@ type MemoryStaticInfo struct {
 
 // DiskStaticInfo represents static disk information
 type DiskStaticInfo struct {
-	Device     string `json:"device"`
-	Model      string `json:"model,omitempty"`
-	Serial     string `json:"serial,omitempty"`
-	Type       string `json:"type"` // SSD, HDD, NVMe
-	Total      uint64 `json:"total"`
-	FSType     string `json:"fsType"`
-	MountPoint string `json:"mountPoint"`
+	Device       string `json:"device"`
+	Model        string `json:"model,omitempty"`
+	Serial       string `json:"serial,omitempty"`
+	Type         string `json:"type"` // SSD, HDD, NVMe
+	Total        uint64 `json:"total"`
+	FSType       string `json:"fsType"`
+	MountPoint   string `json:"mountPoint"`
+	HealthStatus string `json:"healthStatus,omitempty"` // proto health_status (S.M.A.R.T)
 }
 
 // NetworkStaticInfo represents static network interface information
@@ -262,12 +284,13 @@ type NetworkStaticInfo struct {
 
 // GPUStaticInfo represents static GPU information
 type GPUStaticInfo struct {
-	Index          uint32 `json:"index"`
-	Name           string `json:"name"`
-	Vendor         string `json:"vendor"`
-	MemoryTotal    uint64 `json:"memoryTotal"`
-	DriverVersion  string `json:"driverVersion"`
-	PCIeGeneration uint32 `json:"pcieGeneration,omitempty"`
+	Index           uint32 `json:"index"`
+	Name            string `json:"name"`
+	Vendor          string `json:"vendor"`
+	MemoryTotal     uint64 `json:"memoryTotal"`
+	DriverVersion   string `json:"driverVersion"`
+	PCIeGeneration  string `json:"pcieGeneration,omitempty"`  // proto pcie_generation (string, e.g. "Gen4 x16")
+	PowerLimitWatts uint32 `json:"powerLimitWatts,omitempty"` // proto power_limit_watts
 }
 
 // NPUStaticInfo represents static NPU information

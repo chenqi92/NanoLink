@@ -156,7 +156,9 @@ fn get_max_scroll(app: &App) -> usize {
     match app.current_tab {
         1 => app.system.cpus().len().saturating_sub(16), // CPU Cores
         6 => app.system.processes().len().saturating_sub(15), // Processes
-        7 => 50,                                         // Ports (estimate)
+        // Ports: bound scrolling by the actual number of listening ports so the
+        // user can reach the real bottom without overscrolling past it.
+        7 => get_listening_ports().len().saturating_sub(15),
         _ => 0,
     }
 }

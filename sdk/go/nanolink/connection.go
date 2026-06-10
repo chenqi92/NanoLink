@@ -115,7 +115,14 @@ func (c *AgentConnection) SendCommand(cmd *Command) (*CommandResult, error) {
 	c.pendingMu.Unlock()
 
 	// Send command via gRPC stream
-	data := cmd.ToProtobuf()
+	// Serialize to protobuf bytes; abort if marshaling fails so callers see a real error.
+	data, err := cmd.ToProtobuf()
+	if err != nil {
+		c.pendingMu.Lock()
+		delete(c.pendingCmds, cmd.CommandID)
+		c.pendingMu.Unlock()
+		return nil, fmt.Errorf("failed to serialize command: %w", err)
+	}
 	if err := send(data); err != nil {
 		c.pendingMu.Lock()
 		delete(c.pendingCmds, cmd.CommandID)

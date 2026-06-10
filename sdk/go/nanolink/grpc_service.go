@@ -64,6 +64,25 @@ func (s *NanoLinkServicer) cleanupAgent(agent *AgentConnection, stream interface
 	delete(s.hostnameIndex, agent.Hostname)
 }
 
+// cleanupAgentByID removes an agent from all servicer maps using its agent ID.
+// Used so heartbeat-timeout reclamation also purges the servicer's stream maps,
+// not just the server's agent map (avoids leaking dead agents in the servicer).
+func (s *NanoLinkServicer) cleanupAgentByID(agentID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	agentStream, ok := s.agentStreams[agentID]
+	if !ok {
+		return
+	}
+	agentStream.IsActive = false
+	delete(s.streamAgents, agentStream.Stream)
+	delete(s.agentStreams, agentID)
+	if agentStream.Agent != nil {
+		delete(s.hostnameIndex, agentStream.Agent.Hostname)
+	}
+}
+
 // registerAgentStream registers an agent and its stream
 func (s *NanoLinkServicer) registerAgentStream(agent *AgentConnection, stream pb.NanoLinkService_StreamMetricsServer) {
 	s.mu.Lock()
@@ -98,17 +117,20 @@ func (s *NanoLinkServicer) Authenticate(ctx context.Context, req *pb.AuthRequest
 	result := s.tokenValidator(req.Token)
 
 	if result.Valid {
-		// Check for existing agent with same hostname - handle gracefully
+		// Check for existing agent with same hostname.
 		if existingStream, ok := s.getAgentStreamByHostname(req.Hostname); ok {
-			// Check if existing connection is still active
-			if existingStream.IsActive && existingStream.Agent != nil {
-				// Check heartbeat age - if recent, this might be a duplicate
-				if existingStream.Agent.HeartbeatAge() < 30*time.Second {
-					log.Printf("WARNING: Agent %s attempting reconnect while existing connection is active (heartbeat age: %v)",
-						req.Hostname, existingStream.Agent.HeartbeatAge())
-				}
+			// Refuse to evict a live connection: only replace stale/dead ones so a
+			// malicious agent cannot kick off a legitimate one by reusing its hostname.
+			if existingStream.IsActive && existingStream.Agent != nil &&
+				existingStream.Agent.HeartbeatAge() < s.server.config.HeartbeatTimeout {
+				log.Printf("Rejecting auth for %s: an active connection already owns this hostname (heartbeat age: %v)",
+					req.Hostname, existingStream.Agent.HeartbeatAge())
+				return &pb.AuthResponse{
+					Success:      false,
+					ErrorMessage: "hostname already has an active connection",
+				}, nil
 			}
-			// Clean up old connection
+			// Clean up stale connection
 			existingStream.Agent.Close()
 			s.server.unregisterAgent(existingStream.Agent)
 			s.cleanupAgent(existingStream.Agent, existingStream.Stream)
@@ -198,13 +220,15 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 
 				hostname := SanitizeHostname(protoMetrics.Hostname)
 
-				// Check for existing agent with same hostname
+				// Check for existing agent with same hostname.
 				if existingStream, ok := s.getAgentStreamByHostname(hostname); ok {
-					if existingStream.IsActive && existingStream.Agent != nil {
-						if existingStream.Agent.HeartbeatAge() < 30*time.Second {
-							log.Printf("WARNING: Agent %s stream reconnect while existing is active (heartbeat age: %v)",
-								hostname, existingStream.Agent.HeartbeatAge())
-						}
+					// Refuse to evict a live connection so a rogue stream cannot take
+					// over an active agent's hostname; only replace stale/dead ones.
+					if existingStream.IsActive && existingStream.Agent != nil &&
+						existingStream.Agent.HeartbeatAge() < s.server.config.HeartbeatTimeout {
+						log.Printf("Rejecting stream for %s: an active connection already owns this hostname (heartbeat age: %v)",
+							hostname, existingStream.Agent.HeartbeatAge())
+						return fmt.Errorf("hostname already has an active connection")
 					}
 					existingStream.Agent.Close()
 					s.server.unregisterAgent(existingStream.Agent)
@@ -232,6 +256,9 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 			// Convert and handle metrics
 			sdkMetrics := s.convertMetrics(protoMetrics)
 			sdkMetrics.Hostname = agent.Hostname
+			// Cache the latest full metrics on the connection so MCP tools
+			// (get_agent_metrics, summaries) can read them instead of nil.
+			agent.LastMetrics = sdkMetrics
 			s.server.handleMetrics(sdkMetrics)
 
 		case *pb.MetricsStreamRequest_Heartbeat:
@@ -264,13 +291,15 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 			if agent == nil && protoStatic.SystemInfo != nil {
 				hostname := SanitizeHostname(protoStatic.SystemInfo.Hostname)
 				if hostname != "" {
-					// Check for existing agent with same hostname
+					// Check for existing agent with same hostname.
 					if existingStream, ok := s.getAgentStreamByHostname(hostname); ok {
-						if existingStream.IsActive && existingStream.Agent != nil {
-							if existingStream.Agent.HeartbeatAge() < 30*time.Second {
-								log.Printf("WARNING: Agent %s static info while existing is active (heartbeat age: %v)",
-									hostname, existingStream.Agent.HeartbeatAge())
-							}
+						// Refuse to evict a live connection; only replace stale/dead ones
+						// so a rogue stream cannot hijack an active agent's hostname.
+						if existingStream.IsActive && existingStream.Agent != nil &&
+							existingStream.Agent.HeartbeatAge() < s.server.config.HeartbeatTimeout {
+							log.Printf("Rejecting static-info stream for %s: an active connection already owns this hostname (heartbeat age: %v)",
+								hostname, existingStream.Agent.HeartbeatAge())
+							return fmt.Errorf("hostname already has an active connection")
 						}
 						existingStream.Agent.Close()
 						s.server.unregisterAgent(existingStream.Agent)
@@ -497,23 +526,30 @@ func (s *NanoLinkServicer) convertMetrics(proto *pb.Metrics) *Metrics {
 
 	if proto.Cpu != nil {
 		metrics.CPU = &CPUMetrics{
-			UsagePercent: proto.Cpu.UsagePercent,
-			CoreCount:    int(proto.Cpu.CoreCount),
-			Model:        proto.Cpu.Model,
-			Vendor:       proto.Cpu.Vendor,
-			FrequencyMHz: proto.Cpu.FrequencyMhz,
-			Temperature:  proto.Cpu.Temperature,
-			PerCoreUsage: proto.Cpu.PerCoreUsage,
+			UsagePercent:    proto.Cpu.UsagePercent,
+			CoreCount:       int(proto.Cpu.CoreCount),
+			Model:           proto.Cpu.Model,
+			Vendor:          proto.Cpu.Vendor,
+			FrequencyMHz:    proto.Cpu.FrequencyMhz,
+			FrequencyMaxMHz: proto.Cpu.FrequencyMaxMhz, // map previously dropped field
+			PhysicalCores:   int(proto.Cpu.PhysicalCores),
+			LogicalCores:    int(proto.Cpu.LogicalCores),
+			Temperature:     proto.Cpu.Temperature,
+			PerCoreUsage:    proto.Cpu.PerCoreUsage,
 		}
 	}
 
 	if proto.Memory != nil {
 		metrics.Memory = &MemoryMetrics{
-			Total:     proto.Memory.Total,
-			Used:      proto.Memory.Used,
-			Available: proto.Memory.Available,
-			SwapTotal: proto.Memory.SwapTotal,
-			SwapUsed:  proto.Memory.SwapUsed,
+			Total:          proto.Memory.Total,
+			Used:           proto.Memory.Used,
+			Available:      proto.Memory.Available,
+			SwapTotal:      proto.Memory.SwapTotal,
+			SwapUsed:       proto.Memory.SwapUsed,
+			Cached:         proto.Memory.Cached,  // map previously dropped field
+			Buffers:        proto.Memory.Buffers, // map previously dropped field
+			MemoryType:     proto.Memory.MemoryType,
+			MemorySpeedMHz: proto.Memory.MemorySpeedMhz,
 		}
 	}
 
@@ -527,9 +563,13 @@ func (s *NanoLinkServicer) convertMetrics(proto *pb.Metrics) *Metrics {
 			Available:        d.Available,
 			ReadBytesPerSec:  d.ReadBytesSec,
 			WriteBytesPerSec: d.WriteBytesSec,
+			ReadIOPS:         d.ReadIops,  // map previously dropped field
+			WriteIOPS:        d.WriteIops, // map previously dropped field
 			Model:            d.Model,
+			Serial:           d.Serial, // map previously dropped field
 			DiskType:         d.DiskType,
 			Temperature:      d.Temperature,
+			HealthStatus:     d.HealthStatus, // map previously dropped S.M.A.R.T status
 		})
 	}
 
@@ -558,9 +598,11 @@ func (s *NanoLinkServicer) convertMetrics(proto *pb.Metrics) *Metrics {
 			Temperature:     g.Temperature,
 			FanSpeedPercent: g.FanSpeedPercent,
 			PowerWatts:      g.PowerWatts,
+			PowerLimitWatts: g.PowerLimitWatts, // map previously dropped field
 			ClockCoreMHz:    g.ClockCoreMhz,
 			ClockMemoryMHz:  g.ClockMemoryMhz,
 			DriverVersion:   g.DriverVersion,
+			PCIeGeneration:  g.PcieGeneration, // map previously dropped field
 			EncoderUsage:    g.EncoderUsage,
 			DecoderUsage:    g.DecoderUsage,
 		})
@@ -613,10 +655,13 @@ func (s *NanoLinkServicer) convertRealtimeMetrics(proto *pb.RealtimeMetrics) *Re
 		Timestamp:      int64(proto.Timestamp),
 		CPUUsage:       proto.CpuUsagePercent,
 		CPUTemperature: proto.CpuTemperature,
-		MemoryUsed:     proto.MemoryUsed,
-		SwapUsed:       proto.SwapUsed,
-		CPUPerCore:     proto.CpuPerCore,
-		LoadAverage:    proto.LoadAverage,
+		// Map proto fields that were previously dropped (parity with Java/Python).
+		CPUFrequencyMHz: proto.CpuFrequencyMhz,
+		MemoryUsed:      proto.MemoryUsed,
+		MemoryCached:    proto.MemoryCached,
+		SwapUsed:        proto.SwapUsed,
+		CPUPerCore:      proto.CpuPerCore,
+		LoadAverage:     proto.LoadAverage,
 	}
 
 	for _, d := range proto.DiskIo {
@@ -684,13 +729,14 @@ func (s *NanoLinkServicer) convertStaticInfo(proto *pb.StaticInfo) *StaticInfo {
 
 	for _, d := range proto.Disks {
 		static.Disks = append(static.Disks, DiskStaticInfo{
-			Device:     d.Device,
-			MountPoint: d.MountPoint,
-			FSType:     d.FsType,
-			Model:      d.Model,
-			Serial:     d.Serial,
-			Type:       d.DiskType,
-			Total:      d.TotalBytes,
+			Device:       d.Device,
+			MountPoint:   d.MountPoint,
+			FSType:       d.FsType,
+			Model:        d.Model,
+			Serial:       d.Serial,
+			Type:         d.DiskType,
+			Total:        d.TotalBytes,
+			HealthStatus: d.HealthStatus, // map previously dropped S.M.A.R.T status
 		})
 	}
 
@@ -706,11 +752,13 @@ func (s *NanoLinkServicer) convertStaticInfo(proto *pb.StaticInfo) *StaticInfo {
 
 	for _, g := range proto.Gpus {
 		static.GPUs = append(static.GPUs, GPUStaticInfo{
-			Index:         g.Index,
-			Name:          g.Name,
-			Vendor:        g.Vendor,
-			MemoryTotal:   g.MemoryTotal,
-			DriverVersion: g.DriverVersion,
+			Index:           g.Index,
+			Name:            g.Name,
+			Vendor:          g.Vendor,
+			MemoryTotal:     g.MemoryTotal,
+			DriverVersion:   g.DriverVersion,
+			PCIeGeneration:  g.PcieGeneration,  // map previously dropped field
+			PowerLimitWatts: g.PowerLimitWatts, // map previously dropped field
 		})
 	}
 

@@ -94,7 +94,12 @@ impl GrpcClient {
             .keep_alive_timeout(Duration::from_secs(10))
             .keep_alive_while_idle(true);
 
-        // Configure TLS if enabled
+        // Configure TLS if enabled.
+        // NOTE: certificate verification is always strict here. Disabling it
+        // (tls_verify=false) is NOT supported by this client, so config
+        // validation rejects that combination up-front (see Config::validate).
+        // This avoids the previous behavior where tls_verify=false was silently
+        // ignored and users believed verification was relaxed when it was not.
         if server_config.tls_enabled {
             let tls_config = ClientTlsConfig::new();
             endpoint = endpoint.tls_config(tls_config)?;
@@ -430,10 +435,20 @@ impl GrpcClient {
 
         let sender_handle = tokio::spawn(async move {
             let mut heartbeat_ticker = time::interval(Duration::from_secs(heartbeat_interval));
+            // Count realtime samples dropped when the outbound channel is full so
+            // the loss is observable rather than silent.
+            let mut dropped_realtime: u64 = 0;
 
             loop {
                 tokio::select! {
                     Some(msg) = metrics_rx.recv() => {
+                        // Realtime metrics are time-sensitive and arrive every
+                        // interval; if the outbound channel is full we drop the
+                        // sample (try_send) instead of blocking the select loop,
+                        // which would otherwise delay heartbeats and trip the
+                        // server keepalive timeout. Other message kinds are
+                        // infrequent and important, so they keep reliable send().
+                        let is_realtime = matches!(msg, LayeredMetricsMessage::Realtime(_));
                         let request = match msg {
                             LayeredMetricsMessage::Static(static_info) => {
                                 debug!("Sending static info");
@@ -460,7 +475,25 @@ impl GrpcClient {
                             }
                         };
 
-                        if tx_clone.send(request).await.is_err() {
+                        if is_realtime {
+                            match tx_clone.try_send(request) {
+                                Ok(()) => {}
+                                Err(mpsc::error::TrySendError::Full(_)) => {
+                                    dropped_realtime += 1;
+                                    // Throttle the warning to avoid log spam.
+                                    if dropped_realtime.is_power_of_two() {
+                                        warn!(
+                                            "Outbound stream full, dropped {} realtime metric sample(s)",
+                                            dropped_realtime
+                                        );
+                                    }
+                                }
+                                Err(mpsc::error::TrySendError::Closed(_)) => {
+                                    error!("Failed to send to gRPC stream (closed)");
+                                    break;
+                                }
+                            }
+                        } else if tx_clone.send(request).await.is_err() {
                             error!("Failed to send to gRPC stream");
                             break;
                         }

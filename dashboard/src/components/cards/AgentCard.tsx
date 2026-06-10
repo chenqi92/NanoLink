@@ -1,3 +1,4 @@
+import { memo, useCallback } from 'react'
 import { cn, formatBytes, formatPercentage } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -8,7 +9,9 @@ import { Monitor, Server, Apple, Terminal } from 'lucide-react'
 interface AgentCardProps {
   agent: Agent
   selected: boolean
-  onClick: () => void
+  // WebSocket connection state; drives the online badge instead of a hardcoded value
+  connected: boolean
+  onSelect: (id: string) => void
 }
 
 function getOsIcon(os: string) {
@@ -19,12 +22,18 @@ function getOsIcon(os: string) {
   return <Server className="w-5 h-5" />
 }
 
-export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
+function AgentCardImpl({ agent, selected, connected, onSelect }: AgentCardProps) {
   const metrics = agent.lastMetrics
   const cpuUsage = metrics?.cpu?.usagePercent || 0
   const memUsage = metrics?.memory?.total
     ? (metrics.memory.used / metrics.memory.total) * 100
     : 0
+
+  // Online = socket connected and the server still reports metrics for this agent
+  // (the WS removes agents on agent_offline, so presence here means it is live)
+  const isOnline = connected && !!metrics
+
+  const handleClick = useCallback(() => onSelect(agent.agentId), [onSelect, agent.agentId])
 
   return (
     <Card
@@ -32,7 +41,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
         "cursor-pointer transition-all duration-200 hover:border-primary/50",
         selected && "border-primary ring-2 ring-primary/20 bg-primary/5"
       )}
-      onClick={onClick}
+      onClick={handleClick}
     >
       <CardContent className="p-4">
         {/* Header */}
@@ -51,9 +60,12 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="success" className="text-[10px]">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse" />
-              Online
+            <Badge variant={isOnline ? "success" : "destructive"} className="text-[10px]">
+              <span className={cn(
+                "w-1.5 h-1.5 rounded-full mr-1",
+                isOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400"
+              )} />
+              {isOnline ? 'Online' : 'Offline'}
             </Badge>
           </div>
         </div>
@@ -116,3 +128,6 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
     </Card>
   )
 }
+
+// Memoize so a metrics update for one agent does not re-render every card
+export const AgentCard = memo(AgentCardImpl)

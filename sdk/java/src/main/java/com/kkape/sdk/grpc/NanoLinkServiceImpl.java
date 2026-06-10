@@ -35,6 +35,21 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
     // Map of authenticated streams to their agent connections
     private final Map<StreamObserver<?>, AgentConnection> streamAgents = new ConcurrentHashMap<>();
 
+    // Per-stream write locks: gRPC StreamObserver is not thread-safe, so downstream
+    // writes from the stream thread and from business threads must be serialized.
+    private final Map<StreamObserver<?>, Object> streamWriteLocks = new ConcurrentHashMap<>();
+
+    /**
+     * Serialize a single downstream write on the per-stream lock to satisfy the
+     * gRPC single-thread write constraint.
+     */
+    private void safeOnNext(StreamObserver<MetricsStreamResponse> observer, MetricsStreamResponse response) {
+        Object lock = streamWriteLocks.computeIfAbsent(observer, k -> new Object());
+        synchronized (lock) {
+            observer.onNext(response);
+        }
+    }
+
     public NanoLinkServiceImpl(NanoLinkServer server, TokenValidator tokenValidator) {
         this(server, tokenValidator, false);
     }
@@ -108,7 +123,8 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
         // Send initial response immediately to trigger HTTP/2 headers
         // This allows tonic/rust clients to complete the stream_metrics() call
-        responseObserver.onNext(MetricsStreamResponse.newBuilder()
+        // Use safeOnNext so writes stay serialized with later business-thread writes
+        safeOnNext(responseObserver, MetricsStreamResponse.newBuilder()
                 .setHeartbeatAck(HeartbeatAck.newBuilder()
                         .setTimestamp(System.currentTimeMillis())
                         .build())
@@ -169,12 +185,13 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                         // Convert proto metrics to SDK metrics
                         Metrics sdkMetrics = convertMetrics(protoMetrics);
                         server.handleMetrics(sdkMetrics);
-                        agent.updateLastMetricsAt();
+                        // Store latest metrics on the connection so MCP/info tools can read them
+                        agent.updateMetrics(sdkMetrics);
 
                         log.trace("Received metrics from: {}", protoMetrics.getHostname());
                     } else if (request.hasHeartbeat()) {
-                        // Respond to heartbeat
-                        responseObserver.onNext(MetricsStreamResponse.newBuilder()
+                        // Respond to heartbeat (serialized with business-thread writes)
+                        safeOnNext(responseObserver, MetricsStreamResponse.newBuilder()
                                 .setHeartbeatAck(HeartbeatAck.newBuilder()
                                         .setTimestamp(System.currentTimeMillis())
                                         .build())
@@ -276,6 +293,8 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
             }
 
             private void cleanupAgent() {
+                // Always drop the per-stream write lock to avoid leaking lock objects
+                streamWriteLocks.remove(responseObserver);
                 if (agent != null) {
                     server.unregisterAgent(agent);
                     streamAgents.remove(responseObserver);
@@ -323,11 +342,13 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
             StreamObserver<CommandResult> responseObserver) {
         log.info("Execute command request: {} type={}", request.getCommandId(), request.getType());
 
-        // For now, return not implemented
+        // Not implemented: this server-side RPC is a stub. Commands are delivered to
+        // agents over the metrics stream (DataRequest/AgentConnection.sendCommand),
+        // so return an explicit UNIMPLEMENTED result instead of silently succeeding.
         responseObserver.onNext(CommandResult.newBuilder()
                 .setCommandId(request.getCommandId())
                 .setSuccess(false)
-                .setError("Command execution through server not yet implemented")
+                .setError("UNIMPLEMENTED: ExecuteCommand RPC is not supported; send commands via the metrics stream")
                 .build());
         responseObserver.onCompleted();
     }
@@ -834,7 +855,8 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                     builder.setTarget(target);
                 }
 
-                observer.onNext(MetricsStreamResponse.newBuilder()
+                // Serialize this business-thread write with stream-thread writes
+                safeOnNext(observer, MetricsStreamResponse.newBuilder()
                         .setDataRequest(builder.build())
                         .build());
 
@@ -861,7 +883,8 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
         for (Map.Entry<StreamObserver<?>, AgentConnection> entry : streamAgents.entrySet()) {
             @SuppressWarnings("unchecked")
             StreamObserver<MetricsStreamResponse> observer = (StreamObserver<MetricsStreamResponse>) entry.getKey();
-            observer.onNext(response);
+            // Serialize this business-thread write with stream-thread writes
+            safeOnNext(observer, response);
         }
         log.info("Broadcast data request {} to {} agents", requestType, streamAgents.size());
     }

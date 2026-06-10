@@ -60,7 +60,9 @@ type UserResponse struct {
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// Generic message to the client; raw validator details only in logs.
+		h.logger.Warnf("Register invalid request body: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -99,7 +101,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// Generic message to the client; raw validator details only in logs.
+		h.logger.Warnf("Login invalid request body: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -216,7 +220,9 @@ type UpdatePasswordRequest struct {
 func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 	var req UpdatePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// Generic message to the client; raw validator details only in logs.
+		h.logger.Warnf("UpdatePassword invalid request body: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import {
   LineChart,
   Line,
@@ -25,10 +25,15 @@ interface RealtimeChartProps {
   data: MetricsHistoryPoint[]
 }
 
-export function CpuMemoryChart({ data }: RealtimeChartProps) {
+// Render the X-axis label as a wall-clock time instead of an array index
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function CpuMemoryChartImpl({ data }: RealtimeChartProps) {
   const chartData = useMemo(() => {
-    return data.map((point, index) => ({
-      time: index,
+    return data.map((point) => ({
+      time: point.timestamp,
       cpu: point.cpuUsage,
       memory: point.memoryUsage,
     }))
@@ -61,6 +66,7 @@ export function CpuMemoryChart({ data }: RealtimeChartProps) {
                 tickFormatter={(value) => `${value}%`}
                 width={45}
               />
+              {/* X label uses timestamp so tooltips read as time, not index */}
               <Tooltip
                 contentStyle={{
                   backgroundColor: '#1e293b',
@@ -68,6 +74,7 @@ export function CpuMemoryChart({ data }: RealtimeChartProps) {
                   borderRadius: '8px',
                 }}
                 labelStyle={{ color: '#94a3b8' }}
+                labelFormatter={(label) => formatTime(Number(label))}
                 formatter={(value, name) => [
                   `${Number(value ?? 0).toFixed(1)}%`,
                   name === 'cpu' ? 'CPU' : 'Memory',
@@ -107,10 +114,10 @@ export function CpuMemoryChart({ data }: RealtimeChartProps) {
   )
 }
 
-export function NetworkChart({ data }: RealtimeChartProps) {
+function NetworkChartImpl({ data }: RealtimeChartProps) {
   const chartData = useMemo(() => {
-    return data.map((point, index) => ({
-      time: index,
+    return data.map((point) => ({
+      time: point.timestamp,
       rx: point.networkRx,
       tx: point.networkTx,
     }))
@@ -145,6 +152,7 @@ export function NetworkChart({ data }: RealtimeChartProps) {
                   borderRadius: '8px',
                 }}
                 labelStyle={{ color: '#94a3b8' }}
+                labelFormatter={(label) => formatTime(Number(label))}
                 formatter={(value, name) => [
                   `${formatBytes(Number(value ?? 0))}/s`,
                   name === 'rx' ? 'Download' : 'Upload',
@@ -181,3 +189,7 @@ export function NetworkChart({ data }: RealtimeChartProps) {
     </Card>
   )
 }
+
+// Memoize charts so unrelated state updates do not re-render the SVG trees
+export const CpuMemoryChart = memo(CpuMemoryChartImpl)
+export const NetworkChart = memo(NetworkChartImpl)

@@ -60,7 +60,10 @@ export function AgentMetricsView({ agentId, agentName, onBack, embedded = false 
   
   // Ref to track last processed metrics timestamp to avoid duplicates
   const lastMetricsTimestamp = useRef<string | null>(null)
-  
+
+  // Monotonic request id so a stale history response cannot overwrite a newer one
+  const historyRequestId = useRef(0)
+
   // Ref to track if initial history has been loaded
 
 
@@ -118,6 +121,8 @@ export function AgentMetricsView({ agentId, agentName, onBack, embedded = false 
 
   // Fetch historical data from database
   const fetchHistory = useCallback(async () => {
+    // Tag this request; only the latest one is allowed to commit its result
+    const requestId = ++historyRequestId.current
     try {
       setLoading(true)
       let start: number
@@ -144,11 +149,16 @@ export function AgentMetricsView({ agentId, agentName, onBack, embedded = false 
       const response = await api.get<Metrics[]>(
         `/metrics/history?agentId=${agentId}&start=${start}&end=${end}&interval=${interval}`
       )
+      // Drop the result if a newer request started (e.g. user switched agent/range)
+      if (requestId !== historyRequestId.current) return
       setHistory(response)
     } catch (e) {
       console.error("Failed to fetch metrics history:", e)
     } finally {
-      setLoading(false)
+      // Only clear loading for the most recent request
+      if (requestId === historyRequestId.current) {
+        setLoading(false)
+      }
     }
   }, [agentId, timeRange, customStart, customEnd])
 
@@ -310,9 +320,9 @@ export function AgentMetricsView({ agentId, agentName, onBack, embedded = false 
               key={range}
               onClick={() => {
                 setTimeRange(range)
-                if (["1d", "7d", "30d"].includes(range)) {
-                  setAutoRefresh(false) // Disable auto-refresh for long ranges
-                }
+                // Disable auto-refresh for long ranges, re-enable it for short
+                // presets so real-time mode resumes after a custom/long range.
+                setAutoRefresh(!["1d", "7d", "30d"].includes(range))
               }}
               className={`px-2 py-1 text-xs sm:text-sm rounded transition-colors ${
                 timeRange === range

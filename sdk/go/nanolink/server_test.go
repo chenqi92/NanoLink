@@ -30,12 +30,10 @@ func TestNewServerWithCustomConfig(t *testing.T) {
 func TestDefaultTokenValidator(t *testing.T) {
 	result := DefaultTokenValidator("any-token")
 
-	if !result.Valid {
-		t.Error("Expected default validator to accept all tokens")
-	}
-
-	if result.PermissionLevel != 0 {
-		t.Errorf("Expected permission level 0, got %d", result.PermissionLevel)
+	// Secure by default: the fallback validator rejects every token so a
+	// misconfigured server never accepts anonymous agents.
+	if result.Valid {
+		t.Error("Expected default validator to reject all tokens")
 	}
 }
 

@@ -230,8 +230,8 @@ class _AgentCardState extends State<AgentCard>
           ),
         ),
 
-        // Online indicator with glow
-        const StatusIndicator(isOnline: true, size: 12),
+        // Online indicator with glow (reflects real heartbeat state)
+        StatusIndicator(isOnline: widget.agent.isOnline, size: 12),
       ],
     );
   }

@@ -73,6 +73,8 @@
     "verifyCode": "验证配对码",
     "pairingCodeInvalid": "请输入有效的6位配对码",
     "pairingCodeExpired": "配对码已过期或无效",
+    "pairingCodeNotImplemented": "配对码连接功能尚未实现,请改用手动设置或账号登录。",
+    "pairingCodePreview": "预览:配对码连接功能尚未接入。",
     "login": "登录"
   },
   "metrics": {
@@ -144,7 +146,8 @@
     "noOnlineAgents": "没有在线的代理",
     "connected": "已连接到 {}",
     "enterCommand": "输入命令...",
-    "notImplemented": "远程命令执行功能尚未实现"
+    "notImplemented": "远程命令执行功能尚未实现",
+    "previewBanner": "预览:远程命令执行尚未接入,命令不会真正在代理上运行"
   },
   "settings": {
     "appearance": "外观",

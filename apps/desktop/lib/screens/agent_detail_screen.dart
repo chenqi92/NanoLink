@@ -162,6 +162,10 @@ class AgentDetailScreen extends StatelessWidget {
   }
 
   Widget _buildStatusBadge(BuildContext context) {
+    // Reflect the agent's real heartbeat state instead of a hardcoded online badge.
+    final isOnline = agent.isOnline;
+    final statusColor = isOnline ? AppTheme.successGreen : AppTheme.errorRed;
+
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacingMedium,
@@ -170,24 +174,24 @@ class AgentDetailScreen extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            AppTheme.successGreen.withValues(alpha: 0.2),
-            AppTheme.successGreen.withValues(alpha: 0.1),
+            statusColor.withValues(alpha: 0.2),
+            statusColor.withValues(alpha: 0.1),
           ],
         ),
         borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         border: Border.all(
-          color: AppTheme.successGreen.withValues(alpha: 0.3),
+          color: statusColor.withValues(alpha: 0.3),
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const StatusIndicator(isOnline: true, size: 8),
+          StatusIndicator(isOnline: isOnline, size: 8),
           const SizedBox(width: AppTheme.spacingSmall),
           Text(
-            'common.online'.tr(),
+            (isOnline ? 'common.online' : 'common.offline').tr(),
             style: TextStyle(
-              color: AppTheme.successGreen,
+              color: statusColor,
               fontWeight: FontWeight.w600,
               fontSize: 12,
             ),

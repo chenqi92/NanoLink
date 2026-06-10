@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/config"
@@ -82,7 +83,13 @@ func (h *ConfigGenHandler) GenerateConfig(c *gin.Context) {
 		}
 		host = parsedURL.Hostname()
 		if parsedURL.Port() != "" {
-			fmt.Sscanf(parsedURL.Port(), "%d", &port)
+			// Reject a non-numeric/out-of-range port instead of silently using 0.
+			p, err := strconv.Atoi(parsedURL.Port())
+			if err != nil || p < 1 || p > 65535 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid port in serverUrl"})
+				return
+			}
+			port = p
 		} else {
 			port = 39102 // Default gRPC port
 		}
@@ -95,7 +102,13 @@ func (h *ConfigGenHandler) GenerateConfig(c *gin.Context) {
 		parts := strings.Split(serverURL, ":")
 		host = parts[0]
 		if len(parts) > 1 {
-			fmt.Sscanf(parts[1], "%d", &port)
+			// Reject a non-numeric/out-of-range port instead of silently using 0.
+			p, err := strconv.Atoi(parts[1])
+			if err != nil || p < 1 || p > 65535 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid port in serverUrl"})
+				return
+			}
+			port = p
 		} else {
 			port = 39102 // Default gRPC port
 		}
@@ -108,7 +121,12 @@ func (h *ConfigGenHandler) GenerateConfig(c *gin.Context) {
 	generatedToken := ""
 	token := req.Token
 	if token == "" {
-		token = generateSecureToken(32)
+		var err error
+		token, err = generateSecureToken(32)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+			return
+		}
 		generatedToken = token
 	}
 
@@ -118,10 +136,18 @@ func (h *ConfigGenHandler) GenerateConfig(c *gin.Context) {
 	}
 
 	// Generate server ID from URL
-	serverID := generateServerID(req.ServerURL)
+	serverID, err := generateServerID(req.ServerURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate server ID"})
+		return
+	}
 
 	// Generate YAML configuration (using gRPC format: host:port)
-	configYAML := generateYAMLConfig(req, token, connString)
+	configYAML, err := generateYAMLConfig(req, token, connString)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate configuration"})
+		return
+	}
 
 	// Generate installation commands
 	installUnix := generateUnixInstallCommand(req, token, connString)
@@ -169,11 +195,17 @@ func (h *ConfigGenHandler) GenerateAddServerCommand(c *gin.Context) {
 		req.ServerURL, req.Token, req.Permission, req.TLSVerify,
 	)
 
+	serverID, err := generateServerID(req.ServerURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate server ID"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"unixCommand":    unixCmd,
 		"windowsCommand": windowsCmd,
 		"curlCommand":    curlCmd,
-		"serverId":       generateServerID(req.ServerURL),
+		"serverId":       serverID,
 	})
 }
 
@@ -190,7 +222,11 @@ func (h *ConfigGenHandler) GenerateRemoveServerCommand(c *gin.Context) {
 		return
 	}
 
-	serverID := generateServerID(req.ServerURL)
+	serverID, err := generateServerID(req.ServerURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate server ID"})
+		return
+	}
 
 	unixCmd := fmt.Sprintf(`nanolink-agent server remove --url "%s"`, req.ServerURL)
 	windowsCmd := fmt.Sprintf(`nanolink-agent.exe server remove --url "%s"`, req.ServerURL)
@@ -252,7 +288,11 @@ func (h *ConfigGenHandler) ListTokens(c *gin.Context) {
 
 // GenerateToken generates a new secure token
 func (h *ConfigGenHandler) GenerateToken(c *gin.Context) {
-	token := generateSecureToken(32)
+	token, err := generateSecureToken(32)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 	})
@@ -260,17 +300,23 @@ func (h *ConfigGenHandler) GenerateToken(c *gin.Context) {
 
 // Helper functions
 
-func generateSecureToken(length int) string {
+func generateSecureToken(length int) (string, error) {
 	bytes := make([]byte, length)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
+	// Surface rand.Read failures instead of silently returning a weak/empty token.
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("failed to generate secure token: %w", err)
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
-func generateServerID(serverURL string) string {
-	// Create a short ID from the URL
+func generateServerID(serverURL string) (string, error) {
+	// Create a short random ID.
 	bytes := make([]byte, 4)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
+	// Surface rand.Read failures instead of silently returning a weak/empty ID.
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("failed to generate server ID: %w", err)
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
 func stripPort(host string) string {
@@ -290,7 +336,7 @@ func maskToken(token string) string {
 	return token[:4] + "****" + token[len(token)-4:]
 }
 
-func generateYAMLConfig(req GenerateConfigRequest, token string, connString string) string {
+func generateYAMLConfig(req GenerateConfigRequest, token string, connString string) (string, error) {
 	hostnameConfig := ""
 	if req.Hostname != "" {
 		hostnameConfig = fmt.Sprintf("  hostname: \"%s\"", req.Hostname)
@@ -303,7 +349,11 @@ func generateYAMLConfig(req GenerateConfigRequest, token string, connString stri
 			superToken = strings.TrimSpace(os.Getenv("NANOLINK_SHELL_SUPER_TOKEN"))
 		}
 		if superToken == "" {
-			superToken = generateSecureToken(32)
+			var err error
+			superToken, err = generateSecureToken(32)
+			if err != nil {
+				return "", err
+			}
 		}
 		shellConfig = fmt.Sprintf(`
 shell:
@@ -357,7 +407,7 @@ buffer:
 logging:
   level: info
   audit_enabled: true
-`, hostnameConfig, host, port, token, req.Permission, req.TLSVerify, req.TLSVerify, shellConfig)
+`, hostnameConfig, host, port, token, req.Permission, req.TLSVerify, req.TLSVerify, shellConfig), nil
 }
 
 func generateUnixInstallCommand(req GenerateConfigRequest, token string, connString string) string {

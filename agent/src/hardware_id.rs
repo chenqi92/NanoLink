@@ -43,15 +43,60 @@ fn get_machine_id() -> String {
         }
     }
 
-    // Fallback: use hostname + platform info
+    // Fallback 1: prefer a stable hardware identifier that does NOT depend on
+    // the hostname, so the agent_id stays stable across hostname changes.
+    if let Some(hw_id) = get_stable_hardware_id() {
+        if !hw_id.is_empty() {
+            tracing::debug!("Using stable hardware ID fallback (non-hostname source)");
+            return hw_id;
+        }
+    }
+
+    // Fallback 2 (last resort): hostname + platform info. This is NOT stable —
+    // a hostname change will shift the agent_id and break server-side identity,
+    // so warn prominently.
     let hostname = get_hostname();
     let platform = get_platform_info();
     let fallback_id = format!("{hostname}-{platform}");
     tracing::warn!(
-        "machine_uid unavailable, using fallback ID based on hostname: {}",
+        "machine_uid and stable hardware identifiers unavailable; falling back to \
+        hostname-based agent ID ('{}'). The agent_id will CHANGE if the hostname \
+        changes, which breaks server-side identity. Set agent.agent_id explicitly \
+        to pin it.",
         hostname
     );
     fallback_id
+}
+
+/// Tries to read a stable, hostname-independent hardware identifier.
+///
+/// Returns `None` if no such source is available on this platform.
+fn get_stable_hardware_id() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        // DMI product UUID is tied to the machine/firmware, not the hostname.
+        for path in [
+            "/sys/class/dmi/id/product_uuid",
+            "/sys/class/dmi/id/board_serial",
+            "/etc/machine-id",
+            "/var/lib/dbus/machine-id",
+        ] {
+            if let Ok(v) = std::fs::read_to_string(path) {
+                let v = v.trim();
+                if !v.is_empty() {
+                    return Some(v.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        // On other platforms machine_uid already covers the stable sources;
+        // there is no extra hostname-independent file to read here.
+        None
+    }
 }
 
 /// Gets the system hostname.

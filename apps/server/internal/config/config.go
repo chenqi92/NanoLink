@@ -271,7 +271,8 @@ func (c *Config) ValidateAndSecure() {
 // Uses timing-safe comparison to prevent timing attacks
 func (c *Config) ValidateToken(token string) (bool, int) {
 	if !c.Auth.Enabled {
-		log.Println("[SECURITY] Auth disabled, granting full access")
+		// No per-call logging: this runs on every agent connect. The disabled-auth
+		// warning is emitted once at startup in ValidateAndSecure().
 		return true, 3 // Full access when auth disabled
 	}
 

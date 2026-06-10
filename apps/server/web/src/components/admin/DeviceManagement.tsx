@@ -105,6 +105,8 @@ export function DeviceManagement() {
       setEditDevice(null)
       fetchDevices()
     } catch (e) {
+      // Surface write failures to the user instead of only logging
+      setError("更新设备失败")
       console.error(e)
     }
   }
@@ -118,6 +120,8 @@ export function DeviceManagement() {
           await api.delete(`/devices/${device.id}`)
           fetchDevices()
         } catch (e) {
+          // Surface write failures to the user instead of only logging
+          setError("删除设备失败")
           console.error(e)
         }
         setConfirmDialog(prev => ({ ...prev, open: false }))
@@ -135,9 +139,15 @@ export function DeviceManagement() {
   }
 
   const copyToClipboard = async (text: string) => {
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    try {
+      // navigator.clipboard is unavailable / rejects on non-secure (http) origins
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (e) {
+      setError("复制失败，请手动复制（需要 HTTPS 安全上下文）")
+      console.error(e)
+    }
   }
 
   const formatTime = (timestamp: string | null) => {

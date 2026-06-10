@@ -72,6 +72,11 @@ pub fn validate_service_name(name: &str) -> Result<(), String> {
         }
     }
 
+    // Reject a leading '-' so the name cannot be parsed as an option by systemctl/sc.
+    if name.starts_with('-') {
+        return Err("Service name cannot start with '-'".to_string());
+    }
+
     // Validate allowed characters
     for c in name.chars() {
         if !c.is_ascii_alphanumeric() && c != '_' && c != '-' && c != '@' && c != '.' {
@@ -101,6 +106,11 @@ pub fn validate_process_name(name: &str) -> Result<(), String> {
             );
             return Err(format!("Process name contains forbidden character: '{c}'"));
         }
+    }
+
+    // Reject a leading '-' so the name cannot be parsed as an option by pkill/kill.
+    if name.starts_with('-') {
+        return Err("Process name cannot start with '-'".to_string());
     }
 
     Ok(())
@@ -155,6 +165,9 @@ mod tests {
         assert!(validate_service_name("").is_err());
         assert!(validate_service_name("foo;id").is_err());
         assert!(validate_service_name("foo bar").is_err());
+        // A leading '-' would be parsed as a systemctl/sc option.
+        assert!(validate_service_name("--force").is_err());
+        assert!(validate_process_name("-9").is_err());
     }
 
     #[test]

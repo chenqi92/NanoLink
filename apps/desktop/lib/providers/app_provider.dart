@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/models.dart';
@@ -49,6 +50,21 @@ class AppProvider extends ChangeNotifier {
   Map<String, AgentMetrics> _allMetrics = {};
   Map<String, ServerSummary> _serverSummaries = {};
   bool _isLoading = true;
+
+  // Coalesce high-frequency update notifications (every agent emits metrics
+  // every ~2s across servers) into at most one rebuild per window.
+  Timer? _notifyThrottle;
+  bool _disposed = false;
+  static const Duration _notifyInterval = Duration(milliseconds: 200);
+
+  /// Schedule a throttled notifyListeners to avoid rebuild storms.
+  void _scheduleNotify() {
+    if (_disposed) return;
+    _notifyThrottle ??= Timer(_notifyInterval, () {
+      _notifyThrottle = null;
+      if (!_disposed) notifyListeners();
+    });
+  }
 
   List<ServerConnection> get servers => _servers;
   List<Agent> get allAgents => _allAgents;
@@ -102,18 +118,21 @@ class AppProvider extends ChangeNotifier {
 
     // Test connection first
     final service = ServerService(connection: server);
-    final connected = await service.testConnection();
+    try {
+      final connected = await service.testConnection();
 
-    if (connected) {
-      _servers.add(server.copyWith(isConnected: true, lastConnected: DateTime.now()));
-      await _storageService.saveServers(_servers);
-      await _connectToServer(server);
-      notifyListeners();
-      return true;
+      if (connected) {
+        _servers.add(server.copyWith(isConnected: true, lastConnected: DateTime.now()));
+        await _storageService.saveServers(_servers);
+        await _connectToServer(server);
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } finally {
+      // Always release the temporary test service (http.Client + controllers).
+      service.dispose();
     }
-
-    service.dispose();
-    return false;
   }
 
   /// Add a new server connection using username/password credentials
@@ -132,22 +151,25 @@ class AppProvider extends ChangeNotifier {
 
     // Test connection with login
     final service = ServerService(connection: server);
-    final token = await service.login(username, password);
+    try {
+      final token = await service.login(username, password);
 
-    if (token != null) {
-      _servers.add(server.copyWith(
-        isConnected: true,
-        lastConnected: DateTime.now(),
-        userToken: token,
-      ));
-      await _storageService.saveServers(_servers);
-      await _connectToServer(server.copyWith(userToken: token));
-      notifyListeners();
-      return true;
+      if (token != null) {
+        _servers.add(server.copyWith(
+          isConnected: true,
+          lastConnected: DateTime.now(),
+          userToken: token,
+        ));
+        await _storageService.saveServers(_servers);
+        await _connectToServer(server.copyWith(userToken: token));
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } finally {
+      // Always release the temporary login service (http.Client + controllers).
+      service.dispose();
     }
-
-    service.dispose();
-    return false;
   }
 
   /// Connect to a server and start listening for updates
@@ -189,12 +211,12 @@ class AppProvider extends ChangeNotifier {
     _allAgents.removeWhere((a) => a.serverId == serverId);
     // Add new agents
     _allAgents.addAll(agents);
-    notifyListeners();
+    _scheduleNotify();
   }
 
   void _updateMetricsFromServer(Map<String, AgentMetrics> metrics) {
     _allMetrics.addAll(metrics);
-    notifyListeners();
+    _scheduleNotify();
   }
 
   void _updateServerConnectionStatus(String serverId, ConnectionStatus status) {
@@ -205,20 +227,20 @@ class AppProvider extends ChangeNotifier {
         lastConnected: status.isConnected ? DateTime.now() : null,
       );
       _connectionModes[serverId] = status.mode;
-      notifyListeners();
+      _scheduleNotify();
     }
   }
 
   void _handleAgentOffline(String agentId) {
     _allAgents.removeWhere((a) => a.id == agentId);
     _allMetrics.remove(agentId);
-    notifyListeners();
+    _scheduleNotify();
     debugPrint('[AppProvider] Agent removed: $agentId');
   }
 
   void _updateServerSummary(String serverId, ServerSummary summary) {
     _serverSummaries[serverId] = summary;
-    notifyListeners();
+    _scheduleNotify();
   }
 
   /// Remove a server connection
@@ -226,6 +248,12 @@ class AppProvider extends ChangeNotifier {
     _serverServices[serverId]?.dispose();
     _serverServices.remove(serverId);
     _servers.removeWhere((s) => s.id == serverId);
+    // Drop cached metrics for this server's agents before removing the agents.
+    final removedAgentIds =
+        _allAgents.where((a) => a.serverId == serverId).map((a) => a.id);
+    for (final id in removedAgentIds) {
+      _allMetrics.remove(id);
+    }
     _allAgents.removeWhere((a) => a.serverId == serverId);
     _connectionModes.remove(serverId);
     _serverSummaries.remove(serverId);
@@ -270,6 +298,8 @@ class AppProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _notifyThrottle?.cancel();
     for (final service in _serverServices.values) {
       service.dispose();
     }

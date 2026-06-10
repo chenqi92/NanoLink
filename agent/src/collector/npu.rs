@@ -365,8 +365,16 @@ impl NpuCollector {
         if npus.is_empty() { None } else { Some(npus) }
     }
 
+    /// Return the slice after the first ':' (xpu-smi/npu-smi use "Label: value").
+    /// Falls back to the whole line when there is no colon.
+    fn value_part(line: &str) -> &str {
+        line.split_once(':').map(|(_, v)| v.trim()).unwrap_or(line)
+    }
+
     fn extract_number(line: &str) -> f64 {
-        for part in line.split_whitespace() {
+        // Only scan the value side of "Label: value" so unit hints embedded in the
+        // label (e.g. "GPU Power (W)") are never mistaken for the numeric reading.
+        for part in Self::value_part(line).split_whitespace() {
             let cleaned = part
                 .trim_end_matches('%')
                 .trim_end_matches('C')
@@ -379,15 +387,33 @@ impl NpuCollector {
     }
 
     fn extract_bytes(line: &str) -> u64 {
-        let parts: Vec<&str> = line.split_whitespace().collect();
+        // xpu-smi reports memory as "GPU Memory Total (MiB): 16384": the unit lives in
+        // the label parentheses, not as a trailing token, so the previous "number then
+        // next token" scan defaulted MiB values to raw bytes (~1e6x underestimate).
+        // Detect the unit from the label first, then fall back to a trailing unit token.
+        let label = line.split_once(':').map(|(l, _)| l).unwrap_or("");
+        let unit_from_label = label
+            .rfind('(')
+            .and_then(|start| {
+                label[start + 1..]
+                    .find(')')
+                    .map(|end| &label[start + 1..start + 1 + end])
+            })
+            .map(|u| u.to_uppercase());
+
+        let parts: Vec<&str> = Self::value_part(line).split_whitespace().collect();
         for (i, part) in parts.iter().enumerate() {
             if let Ok(num) = part.parse::<f64>() {
-                let unit = parts.get(i + 1).map(|s| s.to_uppercase());
+                let unit = unit_from_label
+                    .clone()
+                    .or_else(|| parts.get(i + 1).map(|s| s.to_uppercase()));
                 return match unit.as_deref() {
                     Some("KB") | Some("KIB") => (num * 1024.0) as u64,
                     Some("MB") | Some("MIB") => (num * 1024.0 * 1024.0) as u64,
                     Some("GB") | Some("GIB") => (num * 1024.0 * 1024.0 * 1024.0) as u64,
-                    _ => num as u64,
+                    Some("B") | Some("BYTES") | None => num as u64,
+                    // Unknown unit hint: treat the reading as MiB, the xpu-smi default.
+                    _ => (num * 1024.0 * 1024.0) as u64,
                 };
             }
         }
@@ -417,5 +443,25 @@ mod tests {
         assert_eq!(NpuCollector::extract_number("Usage: 50%"), 50.0);
         assert_eq!(NpuCollector::extract_number("Temperature: 45C"), 45.0);
         assert_eq!(NpuCollector::extract_number("Power: 75W"), 75.0);
+        // Unit hint in the label must not be read as the value.
+        assert_eq!(NpuCollector::extract_number("GPU Power (W): 75"), 75.0);
+    }
+
+    #[test]
+    fn test_extract_bytes() {
+        // Unit declared in the label parentheses (xpu-smi format).
+        assert_eq!(
+            NpuCollector::extract_bytes("GPU Memory Total (MiB): 16384"),
+            16384 * 1024 * 1024
+        );
+        assert_eq!(
+            NpuCollector::extract_bytes("GPU Memory Used (GiB): 2"),
+            2 * 1024 * 1024 * 1024
+        );
+        // Unit as a trailing token (fallback path).
+        assert_eq!(
+            NpuCollector::extract_bytes("HBM Total: 32 GiB"),
+            32 * 1024 * 1024 * 1024
+        );
     }
 }

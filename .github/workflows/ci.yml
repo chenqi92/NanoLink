@@ -297,7 +297,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          # Align with sdk/go/go.mod (go 1.24) instead of stale 1.21
+          go-version-file: sdk/go/go.mod
           cache: true
           cache-dependency-path: sdk/go/go.sum
 
@@ -313,6 +314,55 @@ jobs:
 
       - name: Test
         working-directory: sdk/go
+        run: go test ./...
+
+  # ============================================================
+  # Test: Go Server (apps/server)
+  # ============================================================
+  test-server:
+    name: Test Go Server
+    needs: setup
+    if: needs.setup.outputs.test_apps == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # Align with apps/server/go.mod (go 1.25)
+          go-version-file: apps/server/go.mod
+          cache: true
+          cache-dependency-path: apps/server/go.sum
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install Go protobuf plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+      - name: Generate proto code
+        working-directory: apps/server
+        run: |
+          mkdir -p internal/proto
+          protoc --proto_path=../../sdk/protocol \
+            --go_out=./internal/proto --go_opt=paths=source_relative \
+            --go-grpc_out=./internal/proto --go-grpc_opt=paths=source_relative \
+            ../../sdk/protocol/nanolink.proto
+
+      - name: Download dependencies
+        working-directory: apps/server
+        run: go mod download
+
+      - name: Vet
+        working-directory: apps/server
+        run: go vet ./...
+
+      - name: Test
+        working-directory: apps/server
         run: go test ./...
 
   # ============================================================
@@ -420,7 +470,8 @@ jobs:
   # Apps 测试汇总
   test-apps-summary:
     name: Apps Test Summary
-    needs: [setup, test-apps]
+    # Include test-server so the Go server result gates the apps release too
+    needs: [setup, test-apps, test-server]
     if: always() && needs.setup.outputs.test_apps == 'true'
     runs-on: ubuntu-latest
     outputs:
@@ -429,12 +480,13 @@ jobs:
       - name: Check results
         id: check
         run: |
-          if [[ "${{ needs.test-apps.result }}" == "success" ]]; then
+          if [[ "${{ needs.test-apps.result }}" == "success" && \
+                "${{ needs.test-server.result }}" == "success" ]]; then
             echo "success=true" >> $GITHUB_OUTPUT
             echo "✅ Apps tests passed"
           else
             echo "success=false" >> $GITHUB_OUTPUT
-            echo "❌ Apps tests failed: ${{ needs.test-apps.result }}"
+            echo "❌ Apps tests failed: dashboard=${{ needs.test-apps.result }} server=${{ needs.test-server.result }}"
           fi
 
   # ============================================================

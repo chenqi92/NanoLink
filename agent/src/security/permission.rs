@@ -256,11 +256,24 @@ impl PermissionChecker {
     }
 
     /// 检测命令注入尝试
+    ///
+    /// NOTE: This is a best-effort denylist, not a complete sandbox. A shell offers
+    /// many ways to chain/obfuscate commands (here-docs, parameter expansion, aliases,
+    /// quoting tricks), so it cannot block every bypass. It catches the common cases;
+    /// the real boundary is the permission level + super_token gate, not this check.
     fn detect_command_injection(command: &str) -> bool {
         // 命令替换 $(...) 或 `...`
         if command.contains("$(") || command.contains('`') {
             return true;
         }
+
+        // NOTE: command chaining (`;`, `&&`, `||`, `&`), newlines and `${...}`
+        // expansion are deliberately NOT blocked here. This gate guards the
+        // interactive remote shell, where `cd /tmp && ls`, `echo ${HOME}` and
+        // backgrounding are normal, legitimate usage. Blocking them would break
+        // the terminal feature while a determined attacker (who already holds the
+        // super_token + permission 3) has many other bypasses. The real boundary
+        // is the permission level + super_token gate, not this denylist.
 
         // 管道到危险解释器
         if command.contains('|') {

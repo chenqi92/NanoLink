@@ -9,7 +9,8 @@ COPY apps/server/web/ ./
 RUN npm run build
 
 # Build stage - Go server
-FROM golang:1.24-alpine AS go-builder
+# Use 1.25 to satisfy apps/server/go.mod (go 1.25)
+FROM golang:1.25-alpine AS go-builder
 
 RUN apk add --no-cache gcc musl-dev protoc
 

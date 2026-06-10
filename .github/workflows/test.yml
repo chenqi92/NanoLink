@@ -134,7 +134,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          # Align with sdk/go/go.mod (go 1.24) instead of stale 1.21
+          go-version-file: sdk/go/go.mod
           cache: true
           cache-dependency-path: sdk/go/go.sum
 
@@ -150,6 +151,51 @@ jobs:
 
       - name: Test
         working-directory: sdk/go
+        run: go test ./...
+
+  test-server:
+    name: Test Go Server
+    if: github.event.inputs.test_apps != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # Align with apps/server/go.mod (go 1.25)
+          go-version-file: apps/server/go.mod
+          cache: true
+          cache-dependency-path: apps/server/go.sum
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install Go protobuf plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+      - name: Generate proto code
+        working-directory: apps/server
+        run: |
+          mkdir -p internal/proto
+          protoc --proto_path=../../sdk/protocol \
+            --go_out=./internal/proto --go_opt=paths=source_relative \
+            --go-grpc_out=./internal/proto --go-grpc_opt=paths=source_relative \
+            ../../sdk/protocol/nanolink.proto
+
+      - name: Download dependencies
+        working-directory: apps/server
+        run: go mod download
+
+      - name: Vet
+        working-directory: apps/server
+        run: go vet ./...
+
+      - name: Test
+        working-directory: apps/server
         run: go test ./...
 
   test-python-sdk:
@@ -225,7 +271,7 @@ jobs:
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [test-agent, test-java-sdk, test-go-sdk, test-python-sdk, test-dashboard]
+    needs: [test-agent, test-java-sdk, test-go-sdk, test-python-sdk, test-server, test-dashboard]
     if: always()
     steps:
       - name: Check test results
@@ -271,6 +317,15 @@ jobs:
             echo "| Python SDK | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
           fi
           
+          # Go Server
+          if [[ "${{ needs.test-server.result }}" == "success" ]]; then
+            echo "| Go Server | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.test-server.result }}" == "skipped" ]]; then
+            echo "| Go Server | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Go Server | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
           # Dashboard
           if [[ "${{ needs.test-dashboard.result }}" == "success" ]]; then
             echo "| Dashboard | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
@@ -288,6 +343,7 @@ jobs:
           if [[ "${{ needs.test-java-sdk.result }}" == "failure" ]]; then FAILED=true; fi
           if [[ "${{ needs.test-go-sdk.result }}" == "failure" ]]; then FAILED=true; fi
           if [[ "${{ needs.test-python-sdk.result }}" == "failure" ]]; then FAILED=true; fi
+          if [[ "${{ needs.test-server.result }}" == "failure" ]]; then FAILED=true; fi
           if [[ "${{ needs.test-dashboard.result }}" == "failure" ]]; then FAILED=true; fi
           
           if [[ "$FAILED" == "true" ]]; then

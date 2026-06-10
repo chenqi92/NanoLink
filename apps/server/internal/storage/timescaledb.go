@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -24,14 +25,17 @@ func NewTimescaleDBStore(cfg Config) (*TimescaleDBStore, error) {
 	if cfg.URL != "" {
 		dsn = cfg.URL
 	} else {
-		host := cfg.URL
-		if host == "" {
-			host = "localhost"
-		}
-		port := 5432
+		// Build a key-value DSN with each value quoted/escaped. A bare %s for the
+		// password breaks the connection string when the password contains spaces,
+		// quotes or backslashes (and risks injecting extra DSN keys), so quote every
+		// value via pqDSNValue.
 		dsn = fmt.Sprintf(
 			"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-			host, port, cfg.Username, cfg.Password, cfg.Database,
+			pqDSNValue("localhost"),
+			5432,
+			pqDSNValue(cfg.Username),
+			pqDSNValue(cfg.Password),
+			pqDSNValue(cfg.Database),
 		)
 	}
 
@@ -122,11 +126,22 @@ func (s *TimescaleDBStore) initSchema() error {
 }
 
 // Write stores a metrics point
+//
+// All inserts for one timestamp run inside a single transaction so a failure on a
+// later disk/network row does not leave a partially written sample (main row present,
+// per-device rows missing) that readers would treat as a complete point.
 func (s *TimescaleDBStore) Write(point *MetricsPoint) error {
 	ctx := context.Background()
 
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("timescaledb: failed to begin transaction: %w", err)
+	}
+	// Rollback is a no-op after a successful Commit.
+	defer func() { _ = tx.Rollback() }()
+
 	// Insert main metrics
-	_, err := s.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO metrics (time, agent_id, cpu_percent, mem_total, mem_used)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (time, agent_id) DO UPDATE SET
@@ -140,7 +155,7 @@ func (s *TimescaleDBStore) Write(point *MetricsPoint) error {
 
 	// Insert disk metrics
 	for _, disk := range point.Disks {
-		_, err := s.db.ExecContext(ctx, `
+		_, err := tx.ExecContext(ctx, `
 			INSERT INTO disk_metrics (time, agent_id, mount_point, total, used, read_bps, write_bps)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT (time, agent_id, mount_point) DO UPDATE SET
@@ -156,7 +171,7 @@ func (s *TimescaleDBStore) Write(point *MetricsPoint) error {
 
 	// Insert network metrics
 	for _, net := range point.Networks {
-		_, err := s.db.ExecContext(ctx, `
+		_, err := tx.ExecContext(ctx, `
 			INSERT INTO network_metrics (time, agent_id, interface, rx_bps, tx_bps, is_up)
 			VALUES ($1, $2, $3, $4, $5, $6)
 			ON CONFLICT (time, agent_id, interface) DO UPDATE SET
@@ -169,7 +184,26 @@ func (s *TimescaleDBStore) Write(point *MetricsPoint) error {
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("timescaledb: failed to commit metrics: %w", err)
+	}
+
 	return nil
+}
+
+// pqDSNValue quotes a value for a libpq key=value DSN. Empty values and values
+// containing spaces, single quotes or backslashes are wrapped in single quotes with
+// backslashes and quotes escaped, per the libpq connection-string rules.
+func pqDSNValue(v string) string {
+	if v == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(v, " '\\") {
+		return v
+	}
+	escaped := strings.ReplaceAll(v, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `'`, `\'`)
+	return "'" + escaped + "'"
 }
 
 // Query retrieves metrics for an agent within a time range

@@ -83,7 +83,8 @@ public class NanoLinkServer {
             });
         }
 
-        grpcServicer = new NanoLinkServiceImpl(this, config.getTokenValidator());
+        // Pass requireAuthentication from config so forced authentication can be enabled
+        grpcServicer = new NanoLinkServiceImpl(this, config.getTokenValidator(), config.isRequireAuthentication());
         grpcServer = ServerBuilder.forPort(config.getGrpcPort())
                 .addService(grpcServicer)
                 // Keepalive settings - server sends pings to keep connection alive
@@ -420,6 +421,15 @@ public class NanoLinkServer {
 
         public Builder tokenValidator(TokenValidator validator) {
             config.setTokenValidator(validator);
+            return this;
+        }
+
+        /**
+         * Require authentication before streaming metrics (default: false).
+         * When enabled, unauthenticated metric streams are rejected.
+         */
+        public Builder requireAuthentication(boolean require) {
+            config.setRequireAuthentication(require);
             return this;
         }
 

@@ -14,7 +14,7 @@ English | [中文](README_CN.md)
 |-----------|-------------|------------|
 | [Agent](./agent) | Monitoring agent deployed on target servers | Rust |
 | [SDK](./sdk) | Client libraries for embedding in existing services | Java / Go / Python |
-| [Dashboard](./dashboard) | Web visualization panel | Vue 3 + TailwindCSS |
+| [Dashboard](./dashboard) | Web visualization panel | React 19 + TailwindCSS |
 | [Apps](./apps) | Standalone deployable applications | Go + Tauri |
 
 ## System Architecture
@@ -55,7 +55,7 @@ English | [中文](README_CN.md)
                                  │
                       ┌──────────▼──────────┐
                       │     Dashboard       │
-                      │     (Vue 3)         │
+                      │    (React 19)       │
                       └─────────────────────┘
 ```
 
@@ -187,6 +187,8 @@ NanoLink uses a layered communication architecture:
 | **HTTP API** | 8080 | REST management interface | Standard HTTP calls |
 
 > **Note**: Agents now use gRPC exclusively for server connections. Dashboard still uses WebSocket for real-time communication.
+>
+> **gRPC port defaults differ by deployment:** the **SDK-embedded** servers (Java/Go/Python) default to `39100` (used in the examples above), while the **standalone Docker server** (`apps/server`) defaults to `9200`. Point your agent at whichever your server actually listens on.
 
 ### Security Mechanisms
 
@@ -719,11 +721,11 @@ Run with: `docker-compose up -d`
 
 | Internal | External (Example) | Protocol | Purpose |
 |----------|-------------------|----------|---------|
-| 8080 | 8080 or 39100 | HTTP | Dashboard & REST API |
-| 9100 | 9100 or 39101 | WebSocket | Dashboard real-time updates |
-| 9200 | 9200 or 39102 | gRPC | Agent connections |
+| 8080 | 8080 or 18080 | HTTP | Dashboard & REST API |
+| 9100 | 9100 or 19100 | WebSocket | Dashboard real-time updates |
+| 9200 | 9200 or 19200 | gRPC | Agent connections |
 
-> **Tip:** For production, map to non-standard ports like `39100:8080`, `39101:9100`, `39102:9200`
+> **Tip:** For production, map to non-standard ports like `18080:8080`, `19100:9100`, `19200:9200`
 
 Access Dashboard: `http://<server-ip>:8080` (or your mapped port)
 
@@ -1046,8 +1048,8 @@ NanoLink/
 │
 ├── dashboard/                  # Web Dashboard
 │   ├── src/
-│   │   ├── components/         # Vue components
-│   │   └── composables/        # WebSocket composables
+│   │   ├── components/         # React components
+│   │   └── hooks/              # WebSocket hooks
 │   └── package.json
 │
 ├── apps/                       # Standalone Applications

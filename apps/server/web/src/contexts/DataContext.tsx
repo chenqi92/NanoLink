@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback, useEffect, useState, useRef } from 'react'
+import React, { createContext, useContext, useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import { agentsApi, metricsApi, agentTokensApi, type Agent, type Metrics, type Summary, type AgentToken } from '@/lib/api'
 import { useAuth } from './AuthContext'
 import { useWebSocket, type WebSocketStatus } from '@/hooks/use-websocket'
@@ -13,6 +13,7 @@ interface DataContextValue {
   wsStatus: WebSocketStatus
 
   refresh: () => Promise<void>
+  refreshAgentOrder: () => Promise<void>
   clearError: () => void
 }
 
@@ -148,11 +149,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setConnectionMode('websocket')
       setError(null)
     } else if (wsStatus === 'error' || wsStatus === 'disconnected') {
+      // Fall back to polling whenever the WS link drops, even if data was
+      // previously received, so the dashboard keeps refreshing while offline.
+      setConnectionMode('polling')
+      refresh()
+    }
+  }, [wsStatus, isAuthenticated, refresh])
+
+  // First-connect timeout: if the WS never reaches 'connected', fall back to
+  // polling so the UI does not stay stuck on the full-screen loader.
+  useEffect(() => {
+    if (!isAuthenticated) return
+    if (wsStatus === 'connected') return
+
+    const timeout = setTimeout(() => {
       if (!wsDataReceived.current) {
         setConnectionMode('polling')
         refresh()
       }
-    }
+    }, 5000)
+    return () => clearTimeout(timeout)
   }, [wsStatus, isAuthenticated, refresh])
 
   // Polling fallback
@@ -195,7 +211,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setError(null)
   }, [])
 
-  const value: DataContextValue = {
+  // Memoize the context value so consumers only re-render when inputs change
+  const value: DataContextValue = useMemo(() => ({
     agents,
     metrics,
     summary,
@@ -204,8 +221,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     connectionMode,
     wsStatus,
     refresh,
+    refreshAgentOrder: fetchAgentOrder,
     clearError,
-  }
+  }), [agents, metrics, summary, isLoading, error, connectionMode, wsStatus, refresh, fetchAgentOrder, clearError])
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }

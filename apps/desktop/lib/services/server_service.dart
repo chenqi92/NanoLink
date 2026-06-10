@@ -113,8 +113,12 @@ class ServerService {
   WebSocketChannel? _wsChannel;
   bool _wsConnected = false;
   bool _useWebSocket = true;
+  bool _disposed = false;
   Timer? _wsPingTimer;
   DateTime? _lastPongTime;
+
+  // Close the WS connection if no pong is received within this window.
+  static const Duration _pongTimeout = Duration(seconds: 75);
 
   // Cached data for incremental updates
   List<Agent> _cachedAgents = [];
@@ -224,7 +228,7 @@ class ServerService {
 
   /// Connect to WebSocket for real-time updates
   Future<void> _connectWebSocket() async {
-    if (!_useWebSocket || _wsConnected) return;
+    if (_disposed || !_useWebSocket || _wsConnected) return;
 
     try {
       final wsUrl = _buildWsUrl();
@@ -238,7 +242,15 @@ class ServerService {
         onDone: _onWsDone,
       );
 
+      // Wait for the handshake to actually complete before marking connected;
+      // connect() returns synchronously and a failed handshake only surfaces here.
+      await _wsChannel!.ready;
+      if (_disposed) return;
+
       _wsConnected = true;
+      _lastPongTime = DateTime.now();
+      // WS is the active channel now; stop any polling started during fallback.
+      stopPolling();
       _emitConnectionStatus(true, ConnectionMode.websocket);
 
       // Start ping timer
@@ -266,6 +278,8 @@ class ServerService {
   }
 
   void _onWsMessage(dynamic data) {
+    // Guard against late stream events after dispose (controllers are closed).
+    if (_disposed) return;
     try {
       final msg = jsonDecode(data as String) as Map<String, dynamic>;
       final type = msg['type'] as String?;
@@ -369,6 +383,8 @@ class ServerService {
   }
 
   void _onWsError(Object error) {
+    // Guard against late stream events after dispose (controllers are closed).
+    if (_disposed) return;
     debugPrint('[WS] Error: $error');
     _wsConnected = false;
     _emitConnectionStatus(false, ConnectionMode.disconnected, error.toString());
@@ -376,28 +392,42 @@ class ServerService {
   }
 
   void _onWsDone() {
+    // Guard against late stream events after dispose (controllers are closed).
+    if (_disposed) return;
     debugPrint('[WS] Connection closed');
     _wsConnected = false;
     _wsPingTimer?.cancel();
     _emitConnectionStatus(false, ConnectionMode.disconnected);
     // Try to reconnect after delay
     Timer(const Duration(seconds: 3), () {
-      if (_useWebSocket) {
+      if (!_disposed && _useWebSocket) {
         _connectWebSocket();
       }
     });
   }
 
   void _sendWsPing() {
-    if (_wsConnected && _wsChannel != null) {
-      try {
-        _wsChannel!.sink.add(jsonEncode({
-          'type': 'ping',
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        }));
-      } catch (e) {
-        debugPrint('[WS] Ping error: $e');
-      }
+    if (!_wsConnected || _wsChannel == null) return;
+
+    // Detect a half-open TCP connection: if no pong arrived within the timeout,
+    // the stream looks alive but is dead, so close it to trigger reconnect.
+    final lastPong = _lastPongTime;
+    if (lastPong != null &&
+        DateTime.now().difference(lastPong) > _pongTimeout) {
+      debugPrint('[WS] Pong timeout, closing stale connection');
+      _wsConnected = false;
+      _wsPingTimer?.cancel();
+      _wsChannel?.sink.close();
+      return;
+    }
+
+    try {
+      _wsChannel!.sink.add(jsonEncode({
+        'type': 'ping',
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      }));
+    } catch (e) {
+      debugPrint('[WS] Ping error: $e');
     }
   }
 
@@ -467,7 +497,8 @@ class ServerService {
 
   /// Start polling for updates (called when WebSocket is unavailable)
   void _startPolling({Duration interval = const Duration(seconds: 2)}) {
-    if (_wsConnected) return; // Don't poll if WebSocket is connected
+    // Don't poll if disposed or WebSocket is connected.
+    if (_disposed || _wsConnected) return;
 
     stopPolling();
     debugPrint('[HTTP] Starting polling mode');
@@ -487,6 +518,8 @@ class ServerService {
   }
 
   Future<void> _fetchAndEmit() async {
+    // Skip polling work once WS is connected to avoid dual-channel updates.
+    if (_disposed || _wsConnected) return;
     try {
       final agents = await fetchAgents();
       _cachedAgents = agents;
@@ -516,6 +549,8 @@ class ServerService {
 
   /// Dispose resources
   void dispose() {
+    // Set first so late WS callbacks (onDone/onError fire async) skip closed controllers.
+    _disposed = true;
     _useWebSocket = false;
     stopPolling();
     _wsPingTimer?.cancel();

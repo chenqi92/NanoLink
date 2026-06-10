@@ -56,18 +56,27 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         self._context_agents: Dict[Any, AgentConnection] = {}
         # Map of agent_id to response queue for sending DataRequest
         self._agent_queues: Dict[str, Any] = {}
+        # Guards the shared maps above; gRPC handlers run on a thread pool
+        self._lock = threading.Lock()
 
     @property
     def agents(self) -> Dict[str, AgentConnection]:
         """Get all connected agents"""
-        return dict(self._agents)
+        with self._lock:
+            return dict(self._agents)
 
     def get_agent(self, agent_id: str) -> Optional[AgentConnection]:
         """Get agent by ID"""
-        return self._agents.get(agent_id)
+        with self._lock:
+            return self._agents.get(agent_id)
 
     def get_agent_by_hostname(self, hostname: str) -> Optional[AgentConnection]:
         """Get agent by hostname"""
+        with self._lock:
+            return self._get_agent_by_hostname_locked(hostname)
+
+    def _get_agent_by_hostname_locked(self, hostname: str) -> Optional[AgentConnection]:
+        """Get agent by hostname; caller must hold self._lock"""
         for agent in self._agents.values():
             if agent.hostname == hostname:
                 return agent
@@ -75,18 +84,19 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 
     def _register_agent(self, agent: AgentConnection, context: Any = None):
         """Register a new agent"""
-        # Remove existing agent with same hostname
-        existing = self.get_agent_by_hostname(agent.hostname)
-        if existing:
-            self._unregister_agent(existing)
-            logger.info(f"Replacing stale agent for hostname: {agent.hostname}")
+        with self._lock:
+            # Remove existing agent with same hostname
+            existing = self._get_agent_by_hostname_locked(agent.hostname)
+            if existing:
+                self._unregister_agent_locked(existing)
+                logger.info(f"Replacing stale agent for hostname: {agent.hostname}")
 
-        self._agents[agent.agent_id] = agent
-        if context:
-            self._context_agents[id(context)] = agent
+            self._agents[agent.agent_id] = agent
+            if context:
+                self._context_agents[id(context)] = agent
 
-        # Create a queue for sending data requests to this agent
-        self._agent_queues[agent.agent_id] = queue.Queue(maxsize=100)
+            # Create a queue for sending data requests to this agent
+            self._agent_queues[agent.agent_id] = queue.Queue(maxsize=100)
 
         logger.info(f"Agent registered: {agent.hostname} ({agent.agent_id})")
 
@@ -98,6 +108,19 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 
     def _unregister_agent(self, agent: AgentConnection):
         """Unregister an agent"""
+        with self._lock:
+            self._unregister_agent_locked(agent)
+
+        logger.info(f"Agent unregistered: {agent.hostname} ({agent.agent_id})")
+
+        if self.on_agent_disconnect:
+            try:
+                self.on_agent_disconnect(agent)
+            except Exception as e:
+                logger.error(f"Error in on_agent_disconnect callback: {e}")
+
+    def _unregister_agent_locked(self, agent: AgentConnection):
+        """Remove an agent from the shared maps; caller must hold self._lock"""
         self._agents.pop(agent.agent_id, None)
 
         # Remove from context map
@@ -107,14 +130,6 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 
         # Remove the data request queue
         self._agent_queues.pop(agent.agent_id, None)
-
-        logger.info(f"Agent unregistered: {agent.hostname} ({agent.agent_id})")
-
-        if self.on_agent_disconnect:
-            try:
-                self.on_agent_disconnect(agent)
-            except Exception as e:
-                logger.error(f"Error in on_agent_disconnect callback: {e}")
 
     def Authenticate(self, request, context):
         """Handle authentication request"""
@@ -223,6 +238,8 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                         # Convert and handle metrics
                         sdk_metrics = self._convert_metrics(proto_metrics)
                         agent.last_metrics_at = datetime.now()
+                        # Cache the latest snapshot so MCP metric tools can read it
+                        agent.last_metrics = sdk_metrics
 
                         if self.on_metrics:
                             try:
@@ -246,7 +263,15 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                     elif request.HasField('realtime'):
                         proto_realtime = request.realtime
 
+                        # Realtime messages carry no hostname; recover the agent
+                        # registered for this stream context (mirrors Java
+                        # findOrCreateAgentForStream). Skip only if still unknown.
                         if agent is None:
+                            agent = self._context_agents.get(id(context))
+                            if agent is not None:
+                                agent_id = agent.agent_id
+                        if agent is None:
+                            logger.debug("No agent for realtime stream yet, waiting for initial data")
                             continue
 
                         sdk_realtime = self._convert_realtime_metrics(proto_realtime)
@@ -321,16 +346,20 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                         logger.info(f"Command result: {result.command_id} success={result.success}")
 
                     # Check for pending data requests and send them
-                    if agent_id and agent_id in self._agent_queues:
-                        while True:
-                            try:
-                                data_request = self._agent_queues[agent_id].get_nowait()
-                                yield nanolink_pb2.MetricsStreamResponse(
-                                    data_request=data_request
-                                )
-                                logger.debug(f"Sent data request {data_request.request_type} to {agent_id}")
-                            except queue.Empty:
-                                break
+                    if agent_id:
+                        # Resolve the queue under the lock; Queue.get is thread-safe
+                        with self._lock:
+                            agent_queue = self._agent_queues.get(agent_id)
+                        if agent_queue is not None:
+                            while True:
+                                try:
+                                    data_request = agent_queue.get_nowait()
+                                    yield nanolink_pb2.MetricsStreamResponse(
+                                        data_request=data_request
+                                    )
+                                    logger.debug(f"Sent data request {data_request.request_type} to {agent_id}")
+                                except queue.Empty:
+                                    break
 
                 except Exception as e:
                     logger.error(f"Error processing stream request: {e}")
@@ -751,7 +780,10 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         Returns:
             True if the request was queued successfully
         """
-        if agent_id not in self._agent_queues:
+        # Resolve the queue under the lock; the Queue itself is thread-safe
+        with self._lock:
+            q = self._agent_queues.get(agent_id)
+        if q is None:
             logger.warning(f"Agent {agent_id} not found for data request")
             return False
 
@@ -761,7 +793,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         )
 
         try:
-            self._agent_queues[agent_id].put_nowait(request)
+            q.put_nowait(request)
             logger.info(f"Queued data request {request_type} for agent {agent_id}")
             return True
         except queue.Full:
@@ -781,7 +813,10 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         request = nanolink_pb2.DataRequest(request_type=request_type)
         count = 0
 
-        for agent_id, q in self._agent_queues.items():
+        # Snapshot the queues under the lock to avoid mutation during iteration
+        with self._lock:
+            queues = list(self._agent_queues.items())
+        for agent_id, q in queues:
             try:
                 q.put_nowait(request)
                 count += 1

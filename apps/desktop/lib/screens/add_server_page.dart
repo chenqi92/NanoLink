@@ -85,12 +85,17 @@ class _AddServerPageState extends State<AddServerPage>
 
   void _selectMethod(ConnectionMethod method) {
     HapticFeedback.selectionClick();
+    // Release any previous scanner so the camera isn't left running when
+    // switching away from (or re-entering) the QR method.
+    _scannerController?.dispose();
+    _scannerController = null;
     setState(() {
       _selectedMethod = method;
       _error = null;
       _hasScanned = false;
+      _torchEnabled = false;
     });
-    
+
     // Initialize scanner when QR method is selected
     if (method == ConnectionMethod.qrCode && _isQrScanningSupported) {
       _scannerController = MobileScannerController(
@@ -253,18 +258,11 @@ class _AddServerPageState extends State<AddServerPage>
       return;
     }
 
+    // TODO: Implement pairing code validation against server.
+    // Surface an explicit "not implemented" message instead of faking an
+    // "expired" result, so the flow is not misleading.
     setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    // TODO: Implement pairing code validation against server
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-      _error = 'server.pairingCodeExpired'.tr();
+      _error = 'server.pairingCodeNotImplemented'.tr();
     });
   }
 
@@ -782,7 +780,15 @@ class _AddServerPageState extends State<AddServerPage>
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 24),
+
+          // Preview notice: pairing flow is not wired to the server yet.
+          _buildInfoBanner(
+            'server.pairingCodePreview'.tr(),
+            AppTheme.warningYellow,
+            isDark,
+          ),
+          const SizedBox(height: 24),
 
           // Pairing code input
           _buildGlassTextField(

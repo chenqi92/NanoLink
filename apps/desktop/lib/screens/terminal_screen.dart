@@ -122,26 +122,62 @@ class _TerminalScreenState extends State<TerminalScreen> {
   Widget _buildHeader(BuildContext context, ThemeData theme, bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.terminal_rounded, color: AppTheme.successGreen),
+              const SizedBox(width: 12),
+              Text(
+                'terminal.title'.tr(),
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              if (_selectedAgent != null)
+                TextButton.icon(
+                  onPressed: () => setState(() {
+                    _selectedAgent = null;
+                    _outputLines.clear();
+                  }),
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                  label: Text('terminal.switchAgent'.tr()),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Preview banner: this screen is not yet wired to a real shell channel.
+          _buildPreviewBanner(isDark),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreviewBanner(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.warningYellow.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.warningYellow.withValues(alpha: 0.3)),
+      ),
       child: Row(
         children: [
-          Icon(Icons.terminal_rounded, color: AppTheme.successGreen),
-          const SizedBox(width: 12),
-          Text(
-            'terminal.title'.tr(),
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
+          const Icon(Icons.science_outlined,
+              size: 16, color: AppTheme.warningYellow),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'terminal.previewBanner'.tr(),
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppTheme.warningYellow,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
-          const Spacer(),
-          if (_selectedAgent != null)
-            TextButton.icon(
-              onPressed: () => setState(() {
-                _selectedAgent = null;
-                _outputLines.clear();
-              }),
-              icon: const Icon(Icons.swap_horiz_rounded, size: 18),
-              label: Text('terminal.switchAgent'.tr()),
-            ),
         ],
       ),
     );

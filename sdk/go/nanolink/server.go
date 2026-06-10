@@ -14,8 +14,8 @@ import (
 
 // Default timeouts
 const (
-	DefaultHeartbeatTimeout  = 90 * time.Second  // Agent considered dead after this
-	DefaultHeartbeatInterval = 30 * time.Second  // Check interval
+	DefaultHeartbeatTimeout  = 90 * time.Second // Agent considered dead after this
+	DefaultHeartbeatInterval = 30 * time.Second // Check interval
 )
 
 // Default ports
@@ -31,10 +31,15 @@ type Config struct {
 	TokenValidator TokenValidator
 
 	// Security options
-	// RequireAuthentication if true, rejects unauthenticated agent connections
-	// When false (default), agents can connect via metrics stream without explicit auth
-	// but will have ReadOnly permission level
+	// RequireAuthentication, when true, rejects unauthenticated agent connections.
+	// Secure by default: NewServer enables it unless AllowAnonymousAgents is set,
+	// so a caller must explicitly opt in to anonymous (ReadOnly) metrics streams.
 	RequireAuthentication bool
+
+	// AllowAnonymousAgents opts out of the secure default and lets agents register
+	// via the metrics stream without authentication (they get ReadOnly permission).
+	// Only honored when RequireAuthentication was not explicitly set to true.
+	AllowAnonymousAgents bool
 
 	// Heartbeat timeout settings
 	// HeartbeatTimeout is the duration after which an agent is considered dead (default: 90s)
@@ -57,9 +62,14 @@ type ValidationResult struct {
 // Token validator function type
 type TokenValidator func(token string) ValidationResult
 
-// Default token validator (accepts all)
+// DefaultTokenValidator is secure-by-default: it rejects every token so that an
+// integrator who forgets to supply a TokenValidator does not accidentally accept
+// anonymous agents. Provide a real Config.TokenValidator to authenticate agents.
 func DefaultTokenValidator(token string) ValidationResult {
-	return ValidationResult{Valid: true, PermissionLevel: 0}
+	return ValidationResult{
+		Valid:        false,
+		ErrorMessage: "no token validator configured: set Config.TokenValidator",
+	}
 }
 
 // Permission levels
@@ -99,6 +109,11 @@ func NewServer(config Config) *Server {
 	}
 	if config.HeartbeatCheckInterval == 0 {
 		config.HeartbeatCheckInterval = DefaultHeartbeatInterval
+	}
+	// Secure by default: require authentication unless the caller explicitly
+	// opts in to anonymous agents via AllowAnonymousAgents.
+	if !config.RequireAuthentication && !config.AllowAnonymousAgents {
+		config.RequireAuthentication = true
 	}
 
 	return &Server{
@@ -285,6 +300,12 @@ func (s *Server) unregisterAgent(agent *AgentConnection) {
 	s.agentsMu.Lock()
 	delete(s.agents, agent.AgentID)
 	s.agentsMu.Unlock()
+
+	// Also purge the servicer's stream maps so heartbeat-timeout reclamation
+	// does not leave a dead agent behind in the gRPC servicer (idempotent).
+	if s.grpcServicer != nil {
+		s.grpcServicer.cleanupAgentByID(agent.AgentID)
+	}
 
 	log.Printf("Agent unregistered: %s (%s)", agent.Hostname, agent.AgentID)
 

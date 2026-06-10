@@ -118,7 +118,9 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// Generic message to the client; raw validator details only in logs.
+		h.logger.Warnf("CreateUser invalid request body: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -159,7 +161,10 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 
 	var req UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// Return a generic message; the raw validator error (field paths, tags) is
+		// only logged, not echoed to the client.
+		h.logger.Warnf("UpdateUser invalid request body: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
@@ -173,8 +178,24 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		return
 	}
 
-	// Update email if provided
+	// Update email if provided. Reject an empty string (email cannot be cleared)
+	// and enforce uniqueness explicitly so a duplicate returns 409 instead of an
+	// opaque 500 from the DB unique index.
 	if req.Email != "" {
+		if req.Email != user.Email {
+			var count int64
+			if err := h.db.Model(&database.User{}).
+				Where("email = ? AND id <> ?", req.Email, user.ID).
+				Count(&count).Error; err != nil {
+				h.logger.Errorf("Failed to check email uniqueness: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+				return
+			}
+			if count > 0 {
+				c.JSON(http.StatusConflict, gin.H{"error": "Email already in use"})
+				return
+			}
+		}
 		user.Email = req.Email
 	}
 
@@ -264,7 +285,9 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 
 	var req ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// Generic message to the client; raw validator details only in logs.
+		h.logger.Warnf("ChangePassword invalid request body: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 

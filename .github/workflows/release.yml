@@ -73,6 +73,11 @@ jobs:
             os: ubuntu-latest
             name: linux-aarch64
             cross: true
+          # Linux armv7 (hard-float) — install.sh downloads nanolink-agent-linux-armv7
+          - target: armv7-unknown-linux-musleabihf
+            os: ubuntu-latest
+            name: linux-armv7
+            cross: true
           # macOS - native builds
           - target: x86_64-apple-darwin
             os: macos-15-intel
@@ -278,6 +283,8 @@ jobs:
           | Linux | x86_64 | [${filename}](${url}) |" ;;
                 *linux-aarch64*) AGENT_SECTION="$AGENT_SECTION
           | Linux | ARM64 | [${filename}](${url}) |" ;;
+                *linux-armv7*) AGENT_SECTION="$AGENT_SECTION
+          | Linux | ARMv7 | [${filename}](${url}) |" ;;
                 *macos-x86_64*) AGENT_SECTION="$AGENT_SECTION
           | macOS | x86_64 | [${filename}](${url}) |" ;;
                 *macos-aarch64*) AGENT_SECTION="$AGENT_SECTION

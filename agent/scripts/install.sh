@@ -1130,6 +1130,9 @@ Description=NanoLink Monitoring Agent
 Documentation=https://github.com/chenqi92/NanoLink
 After=network-online.target
 Wants=network-online.target
+# StartLimit* belong in [Unit]; systemd ignores them when placed in [Service]
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -1139,8 +1142,6 @@ ExecStart=/usr/local/bin/nanolink-agent -c /etc/nanolink/nanolink.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=5
-StartLimitInterval=60
-StartLimitBurst=3
 
 # Graceful shutdown
 TimeoutStopSec=10

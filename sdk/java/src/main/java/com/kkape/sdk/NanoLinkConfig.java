@@ -11,6 +11,8 @@ public class NanoLinkConfig {
     private String tlsCertPath;
     private String tlsKeyPath;
     private TokenValidator tokenValidator = token -> new TokenValidator.ValidationResult(true, 0);
+    // When true, unauthenticated metric streams are rejected (default false for backward compatibility)
+    private boolean requireAuthentication = false;
 
     public int getGrpcPort() {
         return grpcPort;
@@ -42,5 +44,13 @@ public class NanoLinkConfig {
 
     public void setTokenValidator(TokenValidator tokenValidator) {
         this.tokenValidator = tokenValidator;
+    }
+
+    public boolean isRequireAuthentication() {
+        return requireAuthentication;
+    }
+
+    public void setRequireAuthentication(boolean requireAuthentication) {
+        this.requireAuthentication = requireAuthentication;
     }
 }

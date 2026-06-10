@@ -11,24 +11,30 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
 
+  // Load the persisted theme before the first frame to avoid a theme flash.
+  final themeProvider = ThemeProvider();
+  await themeProvider.init();
+
   runApp(
     EasyLocalization(
       supportedLocales: const [Locale('en'), Locale('zh')],
       path: 'assets/i18n',
       fallbackLocale: const Locale('en'),
-      child: const NanoLinkApp(),
+      child: NanoLinkApp(themeProvider: themeProvider),
     ),
   );
 }
 
 class NanoLinkApp extends StatelessWidget {
-  const NanoLinkApp({super.key});
+  final ThemeProvider themeProvider;
+
+  const NanoLinkApp({super.key, required this.themeProvider});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()..init()),
+        ChangeNotifierProvider.value(value: themeProvider),
         ChangeNotifierProvider(create: (_) => AppProvider()..init()),
       ],
       child: Consumer<ThemeProvider>(

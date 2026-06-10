@@ -509,10 +509,24 @@ impl UpdateExecutor {
             }
         }
 
+        // The on-disk binary is replaced, but this process still runs the old image.
+        // It only takes effect once the process restarts. Schedule a delayed graceful
+        // exit so an external supervisor (systemd Restart=always / launchd KeepAlive)
+        // re-launches the new binary; the short delay lets this success result be sent
+        // back before we exit. Without a supervisor the agent will not come back up.
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            info!("Exiting to let supervisor restart the updated binary");
+            std::process::exit(0);
+        });
+
         CommandResult {
             command_id: String::new(),
             success: true,
-            output: "Update applied successfully. Agent will restart.".to_string(),
+            output: "Update applied. Agent is exiting so the supervisor (e.g. systemd) \
+                     restarts it with the new binary; if no supervisor is configured, \
+                     restart the agent manually."
+                .to_string(),
             error: String::new(),
             ..Default::default()
         }

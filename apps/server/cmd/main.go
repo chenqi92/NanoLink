@@ -272,7 +272,7 @@ func main() {
 
 	// Register protected dashboard and shell WebSocket handlers (after gRPC server is available)
 	dashboardWSHandler := handler.NewDashboardWSHandler(sugar, permService, agentService, metricsService, cfg.Server.AllowedOrigins)
-	shellHandler := handler.NewShellHandler(sugar, grpcServer, cfg.Server.AllowedOrigins)
+	shellHandler := handler.NewShellHandler(sugar, grpcServer, auditService, cfg.Server.AllowedOrigins)
 	wsProtected := router.Group("/ws")
 	wsProtected.Use(handler.AuthMiddleware(authService))
 	{

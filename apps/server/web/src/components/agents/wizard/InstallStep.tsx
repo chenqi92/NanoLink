@@ -230,7 +230,7 @@ export function InstallStep({ platform, config, onBack, onComplete }: InstallSte
         <Button variant="outline" onClick={onBack}>
           {t('wizard.back', 'Back')}
         </Button>
-        <Button onClick={onComplete}>
+        <Button onClick={onComplete} disabled={!generatedConfig}>
           {t('wizard.done', 'Done')}
         </Button>
       </div>

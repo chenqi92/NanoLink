@@ -69,31 +69,44 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 }
 
 // OptionalAuthMiddleware creates an optional JWT authentication middleware
-// This allows both authenticated and unauthenticated access
+// This allows both authenticated and unauthenticated access.
+//
+// Distinction: a missing token means "anonymous" and is allowed through. But a
+// token that is *present yet invalid/expired/revoked* is rejected with 401 rather
+// than being silently downgraded to anonymous — a tampered or stale credential is a
+// signal, not an absence of credentials.
 func OptionalAuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, ok := ExtractRequestToken(c)
 		if !ok {
+			// No credential presented: proceed as anonymous.
 			c.Next()
 			return
 		}
 
 		claims, err := authService.VerifyToken(tokenString)
 		if err != nil {
-			c.Next()
+			errMsg := "invalid token"
+			if err == service.ErrTokenExpired {
+				errMsg = "token expired"
+			}
+			c.JSON(http.StatusUnauthorized, gin.H{"error": errMsg})
+			c.Abort()
 			return
 		}
 
 		user, err := authService.GetUserByID(claims.UserID)
 		if err != nil {
-			c.Next()
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+			c.Abort()
 			return
 		}
 
-		// Same revocation check as AuthMiddleware: a stale token is treated as
-		// "no auth" rather than failing the request, since this middleware is optional.
+		// Same revocation check as AuthMiddleware: a presented-but-revoked token is
+		// rejected rather than downgraded to anonymous.
 		if claims.TokenVersion != user.TokenVersion {
-			c.Next()
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "token revoked, please log in again"})
+			c.Abort()
 			return
 		}
 

@@ -1,6 +1,12 @@
 package nanolink
 
-import "fmt"
+import (
+	"fmt"
+
+	"google.golang.org/protobuf/proto"
+
+	pb "github.com/chenqi92/NanoLink/sdk/go/nanolink/proto"
+)
 
 // CommandType represents the type of command
 type CommandType int
@@ -45,7 +51,9 @@ type Command struct {
 	SuperToken string            `json:"superToken,omitempty"`
 }
 
-// RequiredPermission returns the required permission level for this command
+// RequiredPermission returns the required permission level for this command.
+// Permission mapping is unified across the Go/Java/Python SDKs:
+// DOCKER_LOGS=BasicWrite, FILE_UPLOAD=ServiceControl (most restrictive of the three).
 func (c *Command) RequiredPermission() int {
 	switch c.Type {
 	case CommandProcessList, CommandServiceStatus, CommandDockerList, CommandFileTail:
@@ -62,10 +70,18 @@ func (c *Command) RequiredPermission() int {
 	}
 }
 
-// ToProtobuf converts the command to protobuf bytes
-func (c *Command) ToProtobuf() []byte {
-	// Simplified - in production use generated protobuf
-	return []byte{}
+// ToProtobuf serializes the command into protobuf wire bytes using the generated
+// pb.Command type, so agents can decode it. Returns an error instead of a silent
+// empty packet when marshaling fails.
+func (c *Command) ToProtobuf() ([]byte, error) {
+	pbCmd := &pb.Command{
+		CommandId:  c.CommandID,
+		Type:       pb.CommandType(c.Type),
+		Target:     c.Target,
+		Params:     c.Params,
+		SuperToken: c.SuperToken,
+	}
+	return proto.Marshal(pbCmd)
 }
 
 // CommandResult represents the result of a command execution

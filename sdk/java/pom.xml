@@ -6,7 +6,8 @@
 
     <groupId>com.kkape</groupId>
     <artifactId>nanolink-sdk</artifactId>
-    <version>0.4.4</version>
+    <!-- SDK_VERSION marker lets scripts/version.json bump this version -->
+    <version>0.4.4</version><!-- SDK_VERSION -->
     <packaging>jar</packaging>
 
     <name>NanoLink SDK</name>

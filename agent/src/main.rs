@@ -3464,6 +3464,9 @@ pub async fn run_agent(config_path: PathBuf) -> Result<()> {
         ConnectionManager::new(Arc::new((*config_guard).clone()), ring_buffer.clone())
     };
     let connection_signal_tx = connection_manager.get_signal_sender();
+    // Keep a clone for graceful shutdown so we can tell the connection subtasks
+    // to stop even when the management API (which also takes the sender) is off.
+    let shutdown_signal_tx = connection_signal_tx.clone();
     let connection_status = connection_manager.get_status();
 
     // Start management API if enabled (with connection control)
@@ -3526,12 +3529,35 @@ pub async fn run_agent(config_path: PathBuf) -> Result<()> {
         info!("  Management API: http://localhost:{}/api", management_port);
     }
 
-    // Wait for shutdown signal
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            info!("Received Ctrl+C, shutting down...");
+    // Wait for shutdown signal. On Unix also listen for SIGTERM so that
+    // `systemctl stop` / container stop trigger a graceful shutdown instead of
+    // being a hard kill (Ctrl+C only sends SIGINT).
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received Ctrl+C, shutting down...");
+            }
+            _ = sigterm.recv() => {
+                info!("Received SIGTERM, shutting down...");
+            }
         }
     }
+    #[cfg(not(unix))]
+    {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received Ctrl+C, shutting down...");
+            }
+        }
+    }
+
+    // Tell the connection subtasks to stop first so in-flight compensation can
+    // finish at a safe point, then signal the broadcast shutdown.
+    let _ = shutdown_signal_tx.send(crate::connection::ConnectionSignal::Shutdown);
 
     // Send shutdown signal
     let _ = shutdown_tx.send(());

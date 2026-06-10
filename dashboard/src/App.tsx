@@ -8,14 +8,16 @@ import { Cpu, Server } from 'lucide-react'
 
 export default function App() {
   const { agents, selectedAgentId, selectAgent, connected } = useWebSocket()
-  const { addMetricsPoint, getHistory } = useMetricsHistory()
-  
+  const { addMetricsPoint, clearHistory, getHistory } = useMetricsHistory()
+
   // Use useMemo to prevent creating new array reference on every render
   const agentList = useMemo(() => Object.values(agents), [agents])
   const currentAgent = selectedAgentId ? agents[selectedAgentId] : null
 
   // Track last processed timestamps to prevent duplicate updates
   const lastProcessedRef = useRef<Record<string, number>>({})
+  // Track which agents were present last render so we can clean up the ones that left
+  const knownAgentsRef = useRef<Set<string>>(new Set())
 
   // Track metrics history for all agents - only run when agents object changes
   useEffect(() => {
@@ -25,7 +27,7 @@ export default function App() {
         // Skip if already processed this timestamp
         if (lastProcessedRef.current[agentId] === timestamp) return
         lastProcessedRef.current[agentId] = timestamp
-        
+
         addMetricsPoint(agentId, {
           cpu: agent.lastMetrics.cpu,
           memory: agent.lastMetrics.memory,
@@ -34,7 +36,17 @@ export default function App() {
         })
       }
     })
-  }, [agents, addMetricsPoint])
+
+    // Clear history/dedup state for agents that went offline (no longer in the map)
+    const current = new Set(Object.keys(agents))
+    knownAgentsRef.current.forEach(agentId => {
+      if (!current.has(agentId)) {
+        clearHistory(agentId)
+        delete lastProcessedRef.current[agentId]
+      }
+    })
+    knownAgentsRef.current = current
+  }, [agents, addMetricsPoint, clearHistory])
 
   const metricsHistory = selectedAgentId ? getHistory(selectedAgentId) : []
 
@@ -82,7 +94,8 @@ export default function App() {
                     key={agent.agentId}
                     agent={agent}
                     selected={selectedAgentId === agent.agentId}
-                    onClick={() => selectAgent(agent.agentId)}
+                    connected={connected}
+                    onSelect={selectAgent}
                   />
                 ))}
               </div>

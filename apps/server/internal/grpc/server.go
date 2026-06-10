@@ -15,9 +15,12 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 // GrpcAgent represents a connected agent via gRPC
@@ -34,6 +37,54 @@ type GrpcAgent struct {
 	stream          pb.NanoLinkService_StreamMetricsServer
 	commandChan     chan *pb.Command
 	mu              sync.Mutex
+}
+
+// send serializes all writes to the agent's gRPC stream. grpc.ServerStream.Send
+// is not safe for concurrent use, but heartbeat acks, the command-sender goroutine
+// and RequestDataFromAgent can all write concurrently, so every Send goes through
+// this single mutex.
+func (a *GrpcAgent) send(resp *pb.MetricsStreamResponse) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.stream == nil {
+		return fmt.Errorf("agent stream not available: %s", a.AgentID)
+	}
+	return a.stream.Send(resp)
+}
+
+// setLastMetricsAt updates LastMetricsAt under the lock; the receive loop writes it
+// while GetAgents/WatchAgents/notifyAgentEvent read it concurrently.
+func (a *GrpcAgent) setLastMetricsAt(t time.Time) {
+	a.mu.Lock()
+	a.LastMetricsAt = t
+	a.mu.Unlock()
+}
+
+// snapshot returns a copy of the mutable identity/timing fields under the lock so
+// readers never race with the receive loop mutating Hostname/OS/LastMetricsAt.
+func (a *GrpcAgent) snapshot() (hostname, os string, lastMetricsAt time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.Hostname, a.OS, a.LastMetricsAt
+}
+
+// updateIdentity sets hostname/OS under the lock (receive loop path).
+func (a *GrpcAgent) updateIdentity(hostname, os string) {
+	a.mu.Lock()
+	if hostname != "" {
+		a.Hostname = hostname
+	}
+	if os != "" {
+		a.OS = os
+	}
+	a.mu.Unlock()
+}
+
+// getHostname returns the hostname under the lock (for logging).
+func (a *GrpcAgent) getHostname() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.Hostname
 }
 
 // Server implements the gRPC NanoLinkService
@@ -184,6 +235,52 @@ func (s *Server) Authenticate(ctx context.Context, req *pb.AuthRequest) (*pb.Aut
 	}, nil
 }
 
+// authenticateStream validates the agent token carried in the stream metadata and
+// returns the granted permission level. The token is looked up in the "authorization"
+// (Bearer <token>) or "x-agent-token" metadata header.
+//
+// Backward compatibility: when config auth is disabled, no token is required and the
+// default permission level (granted by ValidateToken when auth is off) is used so
+// current agents — which do not attach a token to the stream — keep working. When
+// auth is enabled, a missing or invalid token is rejected with codes.Unauthenticated.
+func (s *Server) authenticateStream(ctx context.Context) (int, error) {
+	// Auth disabled: keep legacy passthrough (ValidateToken returns the default level).
+	if s.config == nil || !s.config.Auth.Enabled {
+		_, level := s.config.ValidateToken("")
+		return level, nil
+	}
+
+	token := ""
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if vals := md.Get("authorization"); len(vals) > 0 {
+			h := vals[0]
+			if len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
+				token = strings.TrimSpace(h[7:])
+			} else {
+				token = strings.TrimSpace(h)
+			}
+		}
+		if token == "" {
+			if vals := md.Get("x-agent-token"); len(vals) > 0 {
+				token = strings.TrimSpace(vals[0])
+			}
+		}
+	}
+
+	if token == "" {
+		s.logger.Warn("StreamMetrics: missing agent token while auth is enabled")
+		return 0, status.Error(codes.Unauthenticated, "agent token not provided")
+	}
+
+	valid, level := s.config.ValidateToken(token)
+	if !valid {
+		s.logger.Warn("StreamMetrics: invalid agent token")
+		return 0, status.Error(codes.Unauthenticated, "invalid agent token")
+	}
+
+	return level, nil
+}
+
 // StreamMetrics handles bidirectional streaming for metrics and commands
 func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) error {
 	s.logger.Info("StreamMetrics: New connection started")
@@ -204,14 +301,25 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		s.logger.Infof("StreamMetrics: Client connected from IP: %s", remoteIP)
 	}
 
+	// Authenticate the stream. When auth is disabled (the default / non-production
+	// mode) we keep the legacy passthrough so existing agents keep connecting; when
+	// auth is enabled we require a valid agent token in the stream metadata and
+	// reject otherwise. This closes the hole where any client reaching the gRPC port
+	// could register an agent and open the command channel without a token.
+	permissionLevel, err := s.authenticateStream(stream.Context())
+	if err != nil {
+		return err
+	}
+
 	// Will be populated from AgentInit or generated if old agent
 	var agentID string
 
 	agent := &GrpcAgent{
-		ConnectedAt: time.Now(),
-		stream:      stream,
-		commandChan: make(chan *pb.Command, 10),
-		RemoteIP:    remoteIP,
+		ConnectedAt:     time.Now(),
+		stream:          stream,
+		commandChan:     make(chan *pb.Command, 10),
+		RemoteIP:        remoteIP,
+		PermissionLevel: int32(permissionLevel),
 	}
 
 	// Send immediate HeartbeatAck to prevent client-side timeout
@@ -340,8 +448,10 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 					Command: cmd,
 				},
 			}
-			if err := stream.Send(resp); err != nil {
-				s.logger.Errorf("Failed to send command to %s: %v", agent.Hostname, err)
+			// Use the serialized send wrapper; this goroutine, heartbeat acks and
+			// RequestDataFromAgent must not call stream.Send concurrently.
+			if err := agent.send(resp); err != nil {
+				s.logger.Errorf("Failed to send command to %s: %v", agent.getHostname(), err)
 				return
 			}
 		}
@@ -366,18 +476,18 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamRequest) {
 	switch req := msg.GetRequest().(type) {
 	case *pb.MetricsStreamRequest_Metrics:
-		agent.LastMetricsAt = time.Now()
+		agent.setLastMetricsAt(time.Now())
 
-		// Update hostname if not set
-		if agent.Hostname == "" {
-			agent.Hostname = req.Metrics.Hostname
+		// Update hostname if not set (guarded by the agent lock)
+		if agent.getHostname() == "" {
 			osName := ""
 			if req.Metrics.SystemInfo != nil {
 				osName = req.Metrics.SystemInfo.OsName
 			}
+			agent.updateIdentity(req.Metrics.Hostname, osName)
 			// Also update AgentService entry so dashboard shows correct info
 			s.agentService.UpdateAgent(agent.AgentID, service.AgentInfo{
-				Hostname: agent.Hostname,
+				Hostname: req.Metrics.Hostname,
 				OS:       osName,
 			})
 		}
@@ -394,12 +504,11 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 		}
 
 	case *pb.MetricsStreamRequest_Realtime:
-		agent.LastMetricsAt = time.Now()
-		// Merge realtime data into current metrics
-		s.metricsService.MergeRealtimeMetrics(agent.AgentID, convertRealtimeMetrics(req.Realtime))
-		// Notify subscribers with updated metrics
-		if current := s.metricsService.GetCurrentMetrics(agent.AgentID); current != nil {
-			s.notifyMetrics(agent.AgentID, convertServiceMetrics(current))
+		agent.setLastMetricsAt(time.Now())
+		// Merge realtime data and reuse the returned snapshot directly instead of
+		// calling GetCurrentMetrics again (which would re-take the lock and clone).
+		if merged := s.metricsService.MergeRealtimeMetrics(agent.AgentID, convertRealtimeMetrics(req.Realtime)); merged != nil {
+			s.notifyMetrics(agent.AgentID, convertServiceMetrics(merged))
 		}
 
 	case *pb.MetricsStreamRequest_StaticInfo:
@@ -413,17 +522,19 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 		}
 		// Merge static info into current metrics
 		s.metricsService.MergeStaticInfo(agent.AgentID, convertStaticInfo(req.StaticInfo))
-		// Update agent info from static info
+		// Update agent info from static info (guarded by the agent lock)
 		if req.StaticInfo.SystemInfo != nil {
-			if agent.Hostname == "" {
-				agent.Hostname = req.StaticInfo.SystemInfo.Hostname
+			hostname := req.StaticInfo.SystemInfo.Hostname
+			if agent.getHostname() != "" {
+				hostname = "" // keep existing hostname
 			}
-			agent.OS = req.StaticInfo.SystemInfo.OsName
+			agent.updateIdentity(hostname, req.StaticInfo.SystemInfo.OsName)
+			newHostname, newOS, _ := agent.snapshot()
 
 			// Also update AgentService entry so dashboard shows correct info
 			s.agentService.UpdateAgent(agent.AgentID, service.AgentInfo{
-				Hostname: agent.Hostname,
-				OS:       agent.OS,
+				Hostname: newHostname,
+				OS:       newOS,
 			})
 		}
 
@@ -440,13 +551,14 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 				},
 			},
 		}
-		if err := agent.stream.Send(ack); err != nil {
-			s.logger.Errorf("Failed to send heartbeat ack to %s: %v", agent.Hostname, err)
+		// Use the serialized send wrapper to avoid concurrent stream writes.
+		if err := agent.send(ack); err != nil {
+			s.logger.Errorf("Failed to send heartbeat ack to %s: %v", agent.getHostname(), err)
 		}
 
 	case *pb.MetricsStreamRequest_CommandResult:
 		s.logger.Infof("Command result from %s: %s (success=%v)",
-			agent.Hostname, req.CommandResult.CommandId, req.CommandResult.Success)
+			agent.getHostname(), req.CommandResult.CommandId, req.CommandResult.Success)
 		// Forward command result to shell session handler
 		if s.commandResultHandler != nil {
 			output := req.CommandResult.Output
@@ -534,16 +646,8 @@ func (s *Server) GetAgentInfo(ctx context.Context, req *pb.AgentInfoRequest) (*p
 		return nil, fmt.Errorf("agent not found: %s", req.AgentId)
 	}
 
-	return &pb.AgentInfoResponse{
-		AgentId:         agent.AgentID,
-		Hostname:        agent.Hostname,
-		Os:              agent.OS,
-		Arch:            agent.Arch,
-		Version:         agent.Version,
-		PermissionLevel: agent.PermissionLevel,
-		ConnectedAt:     uint64(agent.ConnectedAt.UnixMilli()),
-		LastMetricsAt:   uint64(agent.LastMetricsAt.UnixMilli()),
-	}, nil
+	// Read mutable fields under the agent lock to avoid racing the receive loop.
+	return s.agentToProto(agent), nil
 }
 
 // ============== DashboardService Implementation ==============
@@ -698,15 +802,17 @@ func (s *Server) SendCommand(ctx context.Context, req *pb.DashboardCommandReques
 // ============== Helper Functions ==============
 
 func (s *Server) agentToProto(agent *GrpcAgent) *pb.AgentInfoResponse {
+	// Read mutable fields under the agent lock to avoid racing the receive loop.
+	hostname, os, lastMetricsAt := agent.snapshot()
 	return &pb.AgentInfoResponse{
 		AgentId:         agent.AgentID,
-		Hostname:        agent.Hostname,
-		Os:              agent.OS,
+		Hostname:        hostname,
+		Os:              os,
 		Arch:            agent.Arch,
 		Version:         agent.Version,
 		PermissionLevel: agent.PermissionLevel,
 		ConnectedAt:     uint64(agent.ConnectedAt.UnixMilli()),
-		LastMetricsAt:   uint64(agent.LastMetricsAt.UnixMilli()),
+		LastMetricsAt:   uint64(lastMetricsAt.UnixMilli()),
 	}
 }
 
@@ -810,20 +916,13 @@ func (s *Server) RequestDataFromAgent(agentID string, requestType pb.DataRequest
 		},
 	}
 
-	// Send via stream
-	agent.mu.Lock()
-	defer agent.mu.Unlock()
-
-	if agent.stream == nil {
-		return fmt.Errorf("agent stream not available: %s", agentID)
-	}
-
-	if err := agent.stream.Send(resp); err != nil {
-		s.logger.Errorf("Failed to send data request to %s: %v", agent.Hostname, err)
+	// Send via the serialized send wrapper (handles nil-stream + concurrency).
+	if err := agent.send(resp); err != nil {
+		s.logger.Errorf("Failed to send data request to %s: %v", agent.getHostname(), err)
 		return err
 	}
 
-	s.logger.Infof("Sent data request (type=%v) to agent %s", requestType, agent.Hostname)
+	s.logger.Infof("Sent data request (type=%v) to agent %s", requestType, agent.getHostname())
 	return nil
 }
 

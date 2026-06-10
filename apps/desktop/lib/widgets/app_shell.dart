@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
-import '../providers/app_provider.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/agents_screen.dart';
 import '../screens/terminal_screen.dart';
@@ -47,7 +45,10 @@ class _AppShellState extends State<AppShell> {
   Widget _buildMobileLayout(bool isDark) {
     return Column(
       children: [
-        Expanded(child: _screens[_selectedIndex]),
+        // IndexedStack keeps each tab's State alive across navigation.
+        Expanded(
+          child: IndexedStack(index: _selectedIndex, children: _screens),
+        ),
         _buildGlassNavigationBar(isDark),
       ],
     );
@@ -58,7 +59,10 @@ class _AppShellState extends State<AppShell> {
       children: [
         _buildSidebar(isDark),
         const VerticalDivider(width: 1, thickness: 1),
-        Expanded(child: _screens[_selectedIndex]),
+        // IndexedStack keeps each tab's State alive across navigation.
+        Expanded(
+          child: IndexedStack(index: _selectedIndex, children: _screens),
+        ),
       ],
     );
   }

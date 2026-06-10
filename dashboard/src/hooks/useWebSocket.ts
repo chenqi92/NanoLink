@@ -8,11 +8,18 @@ interface UseWebSocketReturn {
   connected: boolean
 }
 
+// Server dashboard WS envelope: { type, timestamp, data }
+interface DashboardMessage {
+  type: string
+  timestamp: number
+  data?: unknown
+}
+
 // Transform API metrics to dashboard format
 function transformMetrics(metrics: Record<string, unknown>): Metrics {
   const cpu = (metrics.cpu || {}) as Record<string, unknown>
   const memory = (metrics.memory || {}) as Record<string, unknown>
-  
+
   return {
     timestamp: new Date(metrics.timestamp as string).getTime(),
     cpu: {
@@ -59,7 +66,8 @@ function transformMetrics(metrics: Record<string, unknown>): Metrics {
       healthStatus: (d.healthStatus as string) || '',
     })),
     networks: ((metrics.networks as Record<string, unknown>[]) || []).map(n => ({
-      interface: (n.interfaceName as string) || '',
+      // Server JSON field is "interface", not "interfaceName"
+      interface: (n.interface as string) || '',
       rxBytesPerSec: (n.rxBytesPerSec as number) || 0,
       txBytesPerSec: (n.txBytesPerSec as number) || 0,
       rxPacketsPerSec: (n.rxPacketsPerSec as number) || 0,
@@ -124,77 +132,104 @@ function transformMetrics(metrics: Record<string, unknown>): Metrics {
   }
 }
 
+// Map a server agent record (field is "id") to the dashboard Agent shape
+function toAgent(a: Record<string, unknown>): Agent {
+  return {
+    agentId: (a.id as string) || (a.agentId as string),
+    hostname: (a.hostname as string) || '',
+    os: (a.os as string) || '',
+    arch: (a.arch as string) || '',
+    version: (a.version as string) || '',
+    lastMetrics: null,
+  }
+}
+
 export function useWebSocket(): UseWebSocketReturn {
   const [agents, setAgents] = useState<Record<string, Agent>>({})
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const initialFetchDone = useRef(false)
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Track lifecycle so a stale onclose from a disposed socket cannot reconnect
+  const shouldReconnectRef = useRef(true)
+  // Mirror connected state in a ref so the stable connect() can read it without a dep
+  const connectedRef = useRef(false)
 
+  // fetchInitialData has no React dependencies so the connect/effect chain stays stable
   const fetchInitialData = useCallback(async () => {
     try {
-      const agentsResponse = await fetch('/api/agents')
-      const agentsData = await agentsResponse.json()
-      
+      // Same-origin protected endpoints; send auth cookie with the request
+      const agentsResponse = await fetch('/api/agents', { credentials: 'include' })
+      if (!agentsResponse.ok) {
+        console.error('[WebSocket] /api/agents failed:', agentsResponse.status)
+        return
+      }
+      // Server returns a top-level array of agents (field "id")
+      const agentsData = (await agentsResponse.json()) as Record<string, unknown>[]
+
       const newAgents: Record<string, Agent> = {}
-      if (agentsData.agents) {
-        agentsData.agents.forEach((agent: Record<string, unknown>) => {
-          newAgents[agent.agentId as string] = {
-            agentId: agent.agentId as string,
-            hostname: agent.hostname as string,
-            os: agent.os as string,
-            arch: agent.arch as string,
-            version: agent.version as string,
-            lastMetrics: null,
+      if (Array.isArray(agentsData)) {
+        agentsData.forEach((agent) => {
+          const mapped = toAgent(agent)
+          newAgents[mapped.agentId] = mapped
+        })
+      }
+
+      // Fetch metrics map (keyed by agent id)
+      const metricsResponse = await fetch('/api/metrics', { credentials: 'include' })
+      if (metricsResponse.ok) {
+        const metricsMap = (await metricsResponse.json()) as Record<string, unknown>
+        Object.entries(metricsMap).forEach(([agentId, metrics]) => {
+          if (newAgents[agentId]) {
+            newAgents[agentId].lastMetrics = transformMetrics(metrics as Record<string, unknown>)
           }
         })
       }
 
-      // Fetch metrics
-      const metricsResponse = await fetch('/api/metrics')
-      const metricsMap = await metricsResponse.json()
-      
-      Object.entries(metricsMap).forEach(([agentId, metrics]) => {
-        if (newAgents[agentId]) {
-          newAgents[agentId].lastMetrics = transformMetrics(metrics as Record<string, unknown>)
-        }
-      })
-
       setAgents(newAgents)
-      
-      // Auto-select first agent
+
+      // Auto-select first agent without depending on selectedAgentId (functional update)
       const firstAgentId = Object.keys(newAgents)[0]
-      if (firstAgentId && !selectedAgentId) {
-        setSelectedAgentId(firstAgentId)
+      if (firstAgentId) {
+        setSelectedAgentId(prev => prev ?? firstAgentId)
       }
     } catch (error) {
       console.error('[WebSocket] Failed to fetch initial data:', error)
     }
-  }, [selectedAgentId])
+  }, [])
 
+  // connect only depends on fetchInitialData (stable), so the mount effect runs once
   const connect = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws`
-    
+    // Server exposes the dashboard stream at /ws/dashboard, not /ws
+    const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`
+
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     ws.onopen = () => {
+      connectedRef.current = true
       setConnected(true)
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
       }
-      if (!initialFetchDone.current) {
-        fetchInitialData()
-        initialFetchDone.current = true
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current)
+        fallbackTimerRef.current = null
       }
+      // Re-fetch on every (re)connect so state lost during downtime is restored
+      fetchInitialData()
     }
 
     ws.onclose = () => {
+      connectedRef.current = false
       setConnected(false)
-      reconnectTimerRef.current = setTimeout(connect, 3000)
+      // A disposed socket must not schedule a reconnect
+      if (shouldReconnectRef.current) {
+        reconnectTimerRef.current = setTimeout(connect, 3000)
+      }
     }
 
     ws.onerror = (error) => {
@@ -203,62 +238,124 @@ export function useWebSocket(): UseWebSocketReturn {
 
     ws.onmessage = (event) => {
       try {
-        const message = JSON.parse(event.data)
-        
-        if (message.type === 'metrics') {
-          setAgents(prev => {
-            if (!prev[message.agentId]) return prev
-            return {
-              ...prev,
-              [message.agentId]: {
-                ...prev[message.agentId],
-                lastMetrics: transformMetrics(message.metrics),
+        const message = JSON.parse(event.data) as DashboardMessage
+        const data = message.data
+
+        switch (message.type) {
+          case 'agents': {
+            // Full agent list snapshot (array of server agents)
+            if (Array.isArray(data)) {
+              setAgents(prev => {
+                const next: Record<string, Agent> = {}
+                ;(data as Record<string, unknown>[]).forEach(a => {
+                  const mapped = toAgent(a)
+                  // Preserve last known metrics across snapshots
+                  next[mapped.agentId] = {
+                    ...mapped,
+                    lastMetrics: prev[mapped.agentId]?.lastMetrics ?? null,
+                  }
+                })
+                return next
+              })
+            }
+            break
+          }
+          case 'metrics': {
+            if (data && typeof data === 'object') {
+              const d = data as Record<string, unknown>
+              if ('agentId' in d && 'metrics' in d) {
+                // Single-agent metrics update
+                const agentId = d.agentId as string
+                setAgents(prev => {
+                  if (!prev[agentId]) return prev
+                  return {
+                    ...prev,
+                    [agentId]: {
+                      ...prev[agentId],
+                      lastMetrics: transformMetrics(d.metrics as Record<string, unknown>),
+                    },
+                  }
+                })
+              } else {
+                // Full metrics map keyed by agent id
+                setAgents(prev => {
+                  const next = { ...prev }
+                  Object.entries(d).forEach(([agentId, m]) => {
+                    if (next[agentId]) {
+                      next[agentId] = {
+                        ...next[agentId],
+                        lastMetrics: transformMetrics(m as Record<string, unknown>),
+                      }
+                    }
+                  })
+                  return next
+                })
               }
             }
-          })
-        } else if (message.type === 'agent_connect') {
-          const agent = message.agent
-          setAgents(prev => ({
-            ...prev,
-            [agent.agentId]: {
-              agentId: agent.agentId,
-              hostname: agent.hostname,
-              os: agent.os,
-              arch: agent.arch,
-              version: agent.version,
-              lastMetrics: null,
+            break
+          }
+          case 'agent_update': {
+            // Server event for connect/refresh; data is a single agent (field "id")
+            if (data && typeof data === 'object') {
+              const mapped = toAgent(data as Record<string, unknown>)
+              setAgents(prev => ({
+                ...prev,
+                [mapped.agentId]: {
+                  ...mapped,
+                  lastMetrics: prev[mapped.agentId]?.lastMetrics ?? null,
+                },
+              }))
             }
-          }))
-        } else if (message.type === 'agent_disconnect') {
-          setAgents(prev => {
-            const updated = { ...prev }
-            delete updated[message.agent.agentId]
-            return updated
-          })
+            break
+          }
+          case 'agent_offline': {
+            // data is the offline agent id string
+            if (typeof data === 'string') {
+              setAgents(prev => {
+                const updated = { ...prev }
+                delete updated[data]
+                return updated
+              })
+            }
+            break
+          }
         }
       } catch (error) {
         console.error('[WebSocket] Failed to parse message:', error)
       }
     }
 
-    // Fetch data even if WebSocket fails
-    setTimeout(() => {
-      if (!initialFetchDone.current) {
+    // Fallback initial fetch if the WebSocket never opens; handle stored in ref so cleanup clears it
+    fallbackTimerRef.current = setTimeout(() => {
+      if (!connectedRef.current) {
         fetchInitialData()
-        initialFetchDone.current = true
       }
     }, 1000)
   }, [fetchInitialData])
 
   useEffect(() => {
+    shouldReconnectRef.current = true
     connect()
     return () => {
-      wsRef.current?.close()
+      // Mark disposed and detach onclose so a late close cannot reconnect or setState
+      shouldReconnectRef.current = false
+      if (wsRef.current) {
+        wsRef.current.onclose = null
+        wsRef.current.close()
+        wsRef.current = null
+      }
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current)
+        fallbackTimerRef.current = null
       }
     }
-  }, [connect])
+    // Mount-once effect: connect is stable enough; reconnection is handled internally
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const selectAgent = useCallback((id: string) => {
     setSelectedAgentId(id)

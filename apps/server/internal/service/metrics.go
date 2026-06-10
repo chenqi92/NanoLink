@@ -354,7 +354,11 @@ type RealtimeUpdate struct {
 }
 
 // MergeRealtimeMetrics merges realtime data into existing metrics
-func (s *MetricsService) MergeRealtimeMetrics(agentID string, update interface{}) {
+// MergeRealtimeMetrics merges a realtime update into the agent's current metrics
+// and returns a deep-copied snapshot of the merged state. Returning the snapshot
+// lets callers avoid a second GetCurrentMetrics() round-trip (extra RLock + clone)
+// right after merging.
+func (s *MetricsService) MergeRealtimeMetrics(agentID string, update interface{}) *MetricsData {
 	s.mu.Lock()
 	current := s.current[agentID]
 	if current == nil {
@@ -459,6 +463,7 @@ func (s *MetricsService) MergeRealtimeMetrics(agentID string, update interface{}
 	s.mu.Unlock()
 
 	s.dispatchMetrics(agentID, snapshot)
+	return snapshot
 }
 
 // StaticUpdate holds static hardware info for merging
@@ -667,32 +672,47 @@ func (s *MetricsService) addToHistory(agentID string, data *MetricsData) *Metric
 	return snapshot
 }
 
+// runDispatcher runs a dispatch loop and restarts itself if the work function
+// panics, so a single bad job (callback/SaveMetrics panic) cannot permanently
+// stop broadcasting or persistence. The defer/recover is per-job, so a panic
+// only drops the offending job and continues with the next one.
+func (s *MetricsService) runDispatcher(name string, queue chan metricsDispatch, work func(metricsDispatch)) {
+	go func() {
+		for job := range queue {
+			func(job metricsDispatch) {
+				defer func() {
+					if r := recover(); r != nil {
+						s.logger.Errorf("%s dispatcher recovered from panic: %v", name, r)
+					}
+				}()
+				work(job)
+			}(job)
+		}
+	}()
+}
+
 func (s *MetricsService) startDispatchers() {
-	go func() {
-		for job := range s.broadcastQueue {
-			s.mu.RLock()
-			callback := s.broadcastCallback
-			s.mu.RUnlock()
-			if callback != nil {
-				callback(job.agentID, job.data)
-			}
+	s.runDispatcher("broadcast", s.broadcastQueue, func(job metricsDispatch) {
+		s.mu.RLock()
+		callback := s.broadcastCallback
+		s.mu.RUnlock()
+		if callback != nil {
+			callback(job.agentID, job.data)
 		}
-	}()
+	})
 
-	go func() {
-		for job := range s.persistenceQueue {
-			s.mu.RLock()
-			persistence := s.persistence
-			s.mu.RUnlock()
-			if persistence == nil {
-				continue
-			}
-
-			if err := persistence.SaveMetrics(job.agentID, job.data); err != nil {
-				s.logger.Warnf("Failed to persist metrics for %s: %v", job.agentID, err)
-			}
+	s.runDispatcher("persistence", s.persistenceQueue, func(job metricsDispatch) {
+		s.mu.RLock()
+		persistence := s.persistence
+		s.mu.RUnlock()
+		if persistence == nil {
+			return
 		}
-	}()
+
+		if err := persistence.SaveMetrics(job.agentID, job.data); err != nil {
+			s.logger.Warnf("Failed to persist metrics for %s: %v", job.agentID, err)
+		}
+	})
 }
 
 func (s *MetricsService) dispatchMetrics(agentID string, data *MetricsData) {
@@ -705,16 +725,24 @@ func (s *MetricsService) dispatchMetrics(agentID string, data *MetricsData) {
 		data:    data,
 	}
 
+	// Broadcast is best-effort: dropping a realtime UI frame under load is harmless.
 	select {
 	case s.broadcastQueue <- job:
 	default:
 		s.logger.Warnf("Broadcast queue full, dropping metrics for %s", agentID)
 	}
 
+	// Persistence carries backpressure: a dropped sample is lost history, so block
+	// briefly to absorb transient bursts before giving up rather than dropping
+	// immediately on a full queue.
 	select {
 	case s.persistenceQueue <- job:
 	default:
-		s.logger.Warnf("Persistence queue full, dropping metrics for %s", agentID)
+		select {
+		case s.persistenceQueue <- job:
+		case <-time.After(100 * time.Millisecond):
+			s.logger.Warnf("Persistence queue full after backpressure wait, dropping metrics for %s", agentID)
+		}
 	}
 }
 

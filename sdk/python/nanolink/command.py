@@ -61,6 +61,24 @@ class Command:
             "superToken": self.super_token,
         }
 
+    def to_protobuf(self) -> bytes:
+        """Serialize the command into protobuf wire bytes.
+
+        CommandType enum values mirror the proto CommandType numbers, so the
+        IntEnum value can be assigned directly to the proto field.
+        """
+        # Imported lazily so the proto stubs are only required when sending commands
+        from .proto import nanolink_pb2
+
+        proto = nanolink_pb2.Command(
+            command_id=self.command_id,
+            type=int(self.command_type),
+            target=self.target,
+            params=self.params,
+            super_token=self.super_token,
+        )
+        return proto.SerializeToString()
+
     @classmethod
     def process_list(cls) -> "Command":
         """Create a process list command"""

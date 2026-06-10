@@ -13,12 +13,16 @@ import (
 
 // MetricsPersistence handles metrics data persistence to database
 type MetricsPersistence struct {
-	db                *gorm.DB
-	cfg               config.MetricsConfig
-	logger            *zap.SugaredLogger
-	tableMu           sync.Mutex
-	maintenanceMu     sync.Mutex
-	currentTable      string
+	db            *gorm.DB
+	cfg           config.MetricsConfig
+	logger        *zap.SugaredLogger
+	tableMu       sync.Mutex
+	maintenanceMu sync.Mutex
+	currentTable  string
+	// tableExists caches positive HasTable() results so history queries don't issue
+	// one metadata probe per monthly table on every call. Only "exists" is cached
+	// (a missing table may be created later by ensureMetricsTable).
+	tableExists       sync.Map // table name -> struct{}
 	aggregationTicker *time.Ticker
 	cleanupTicker     *time.Ticker
 	stopChan          chan struct{}
@@ -144,7 +148,7 @@ func (mp *MetricsPersistence) QueryHistory(agentID string, start, end time.Time,
 	tables := mp.getTablesForRange(start, end)
 
 	for _, table := range tables {
-		if !mp.db.Migrator().HasTable(table) {
+		if !mp.hasTableCached(table) {
 			continue
 		}
 
@@ -292,6 +296,19 @@ func (b *aggregationBucket) toMetrics() database.MetricsHistory {
 }
 
 // getTablesForRange returns the table names that cover the given time range
+// hasTableCached returns whether a monthly metrics table exists, caching positive
+// results to avoid a metadata round-trip per table on every history query.
+func (mp *MetricsPersistence) hasTableCached(table string) bool {
+	if _, ok := mp.tableExists.Load(table); ok {
+		return true
+	}
+	if mp.db.Migrator().HasTable(table) {
+		mp.tableExists.Store(table, struct{}{})
+		return true
+	}
+	return false
+}
+
 func (mp *MetricsPersistence) getTablesForRange(start, end time.Time) []string {
 	var tables []string
 	current := time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.Local)
@@ -388,7 +405,7 @@ func (mp *MetricsPersistence) getAgentsWithData(start, end time.Time) []string {
 	tables := mp.getTablesForRange(start, end)
 
 	for _, table := range tables {
-		if !mp.db.Migrator().HasTable(table) {
+		if !mp.hasTableCached(table) {
 			continue
 		}
 
@@ -432,6 +449,8 @@ func (mp *MetricsPersistence) ensureMetricsTable(ts time.Time) (string, error) {
 		return "", fmt.Errorf("failed to ensure metrics table: %w", err)
 	}
 
+	// Record the freshly ensured table so subsequent history queries skip HasTable.
+	mp.tableExists.Store(tableName, struct{}{})
 	mp.currentTable = tableName
 	return tableName, nil
 }

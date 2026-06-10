@@ -14,7 +14,7 @@
 |------|------|--------|
 | [Agent](./agent) | 部署在目标服务器的监控代理 | Rust |
 | [SDK](./sdk) | 嵌入现有服务的客户端库 | Java / Go / Python |
-| [Dashboard](./dashboard) | Web 可视化面板 | Vue 3 + TailwindCSS |
+| [Dashboard](./dashboard) | Web 可视化面板 | React 19 + TailwindCSS |
 | [Apps](./apps) | 独立部署的完整应用 | Go + Tauri |
 
 ## 系统架构
@@ -55,7 +55,7 @@
                                  │
                       ┌──────────▼──────────┐
                       │     Dashboard       │
-                      │     (Vue 3)         │
+                      │    (React 19)       │
                       └─────────────────────┘
 ```
 
@@ -187,6 +187,8 @@ NanoLink 使用分层通信架构：
 | **HTTP API** | 8080 | REST 管理接口 | 标准 HTTP 调用 |
 
 > **注意**: Agent 现在只使用 gRPC 协议连接到服务端。Dashboard 仍使用 WebSocket 进行实时通信。
+>
+> **gRPC 端口默认值因部署方式而异：** **SDK 嵌入式**服务端（Java/Go/Python）默认 `39100`（即上文示例所用），而**独立 Docker 服务端**（`apps/server`）默认 `9200`。请将 Agent 指向你的服务端实际监听的端口。
 
 ### 安全机制
 
@@ -719,11 +721,11 @@ volumes:
 
 | 容器内部端口 | 外部端口（示例） | 协议 | 用途 |
 |-------------|-----------------|------|------|
-| 8080 | 8080 或 39100 | HTTP | Dashboard 和 REST API |
-| 9100 | 9100 或 39101 | WebSocket | Dashboard 实时更新 |
-| 9200 | 9200 或 39102 | gRPC | Agent 连接 |
+| 8080 | 8080 或 18080 | HTTP | Dashboard 和 REST API |
+| 9100 | 9100 或 19100 | WebSocket | Dashboard 实时更新 |
+| 9200 | 9200 或 19200 | gRPC | Agent 连接 |
 
-> **提示：** 生产环境建议映射到非标准端口，如 `39100:8080`、`39101:9100`、`39102:9200`
+> **提示：** 生产环境建议映射到非标准端口，如 `18080:8080`、`19100:9100`、`19200:9200`
 
 访问 Dashboard：`http://<服务器IP>:8080`（或你映射的端口）
 
@@ -1070,8 +1072,8 @@ NanoLink/
 │
 ├── dashboard/                  # Web Dashboard
 │   ├── src/
-│   │   ├── components/         # Vue 组件
-│   │   └── composables/        # WebSocket 组合式函数
+│   │   ├── components/         # React 组件
+│   │   └── hooks/              # WebSocket Hooks
 │   └── package.json
 │
 ├── apps/                       # 独立应用程序

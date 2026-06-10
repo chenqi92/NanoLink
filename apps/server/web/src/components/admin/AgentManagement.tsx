@@ -22,7 +22,7 @@ interface ConfirmState {
 
 export function AgentManagement() {
   // Get real-time agent status from WebSocket
-  const { agents: liveAgents } = useData()
+  const { agents: liveAgents, refreshAgentOrder } = useData()
   
   const [tokens, setTokens] = useState<AgentToken[]>([])
   const [loading, setLoading] = useState(true)
@@ -75,6 +75,8 @@ export function AgentManagement() {
       setCreateForm({ name: "", permission: 3 })
       fetchTokens()
     } catch (e) {
+      // Surface write failures to the user instead of only logging
+      setError("创建代理失败")
       console.error(e)
     }
   }
@@ -89,6 +91,8 @@ export function AgentManagement() {
           await agentTokensApi.delete(id)
           fetchTokens()
         } catch (e) {
+          // Surface write failures to the user instead of only logging
+          setError("删除代理失败")
           console.error(e)
         }
         setConfirmDialog(prev => ({ ...prev, open: false }))
@@ -107,6 +111,8 @@ export function AgentManagement() {
           setNewToken(result.token)
           setShowTokenResult(true)
         } catch (e) {
+          // Surface write failures to the user instead of only logging
+          setError("重新生成 Token 失败")
           console.error(e)
         }
         setConfirmDialog(prev => ({ ...prev, open: false }))
@@ -115,9 +121,15 @@ export function AgentManagement() {
   }
 
   const copyToClipboard = async (text: string) => {
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    try {
+      // navigator.clipboard is unavailable / rejects on non-secure (http) origins
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (e) {
+      setError("复制失败，请手动复制（需要 HTTPS 安全上下文）")
+      console.error(e)
+    }
   }
 
   const formatTime = (timestamp?: number) => {
@@ -144,7 +156,11 @@ export function AgentManagement() {
       
       try {
         await agentTokensApi.reorder(newTokens.map(t => t.id))
+        // Refresh DataContext order so the dashboard reflects the new sort
+        refreshAgentOrder()
       } catch (e) {
+        // Surface write failures to the user instead of only logging
+        setError("保存排序失败")
         console.error("Failed to save order:", e)
         fetchTokens()
       }

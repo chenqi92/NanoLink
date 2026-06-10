@@ -73,6 +73,8 @@
     "verifyCode": "Verify Code",
     "pairingCodeInvalid": "Please enter a valid 6-digit code",
     "pairingCodeExpired": "Pairing code expired or invalid",
+    "pairingCodeNotImplemented": "Pairing code connection is not yet implemented. Use manual setup or account login instead.",
+    "pairingCodePreview": "Preview: pairing code connection is not wired up yet.",
     "login": "Sign In"
   },
   "metrics": {
@@ -144,7 +146,8 @@
     "noOnlineAgents": "No online agents available",
     "connected": "Connected to {}",
     "enterCommand": "Enter command...",
-    "notImplemented": "Remote command execution is not yet implemented"
+    "notImplemented": "Remote command execution is not yet implemented",
+    "previewBanner": "Preview: remote command execution is not wired up; commands will not actually run on the agent"
   },
   "settings": {
     "appearance": "Appearance",

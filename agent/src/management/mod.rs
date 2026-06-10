@@ -360,7 +360,16 @@ async fn auth_middleware(
         ));
     }
 
-    Ok(next.run(request).await)
+    // Capture before releasing the config read lock held across next.run.
+    let caller_permission = server.permission;
+    drop(config);
+
+    let mut response = next.run(request).await;
+    // Propagate the authenticated permission level to the outer audit middleware.
+    response
+        .extensions_mut()
+        .insert(audit::CallerPermission(caller_permission));
+    Ok(response)
 }
 
 /// Get required permission level for endpoint.
@@ -769,6 +778,9 @@ async fn remove_server(
     // Remove server from config
     {
         let mut config = state.config.write().await;
+        // Back up the list before retain so we can roll back the in-place removal if
+        // it would empty the config (retain mutates config.servers directly).
+        let backup_servers = config.servers.clone();
         let original_len = config.servers.len();
         config
             .servers
@@ -786,7 +798,8 @@ async fn remove_server(
 
         // Don't allow removing all servers
         if config.servers.is_empty() {
-            // Restore the removed server
+            // Restore the removed server so the in-memory config is not left empty.
+            config.servers = backup_servers;
             return (
                 StatusCode::BAD_REQUEST,
                 Json(ApiResponse {

@@ -174,10 +174,35 @@ public class Command {
      * Convert to protobuf bytes
      */
     public byte[] toProtobuf() {
-        // Simplified serialization - in real implementation use generated protobuf
-        // classes
-        // This is a placeholder
-        return new byte[0];
+        // Serialize via the generated proto Command so agents can decode the request
+        return toProto().toByteArray();
+    }
+
+    /**
+     * Convert to the generated proto Command message.
+     */
+    public io.nanolink.proto.Command toProto() {
+        io.nanolink.proto.Command.Builder builder = io.nanolink.proto.Command.newBuilder();
+        if (commandId != null) {
+            builder.setCommandId(commandId);
+        }
+        if (type != null) {
+            // Type codes are defined to match the proto CommandType enum numbers
+            io.nanolink.proto.CommandType protoType = io.nanolink.proto.CommandType.forNumber(type.getCode());
+            if (protoType != null) {
+                builder.setType(protoType);
+            }
+        }
+        if (target != null) {
+            builder.setTarget(target);
+        }
+        if (params != null) {
+            builder.putAllParams(params);
+        }
+        if (superToken != null) {
+            builder.setSuperToken(superToken);
+        }
+        return builder.build();
     }
 
     public int getRequiredPermission() {

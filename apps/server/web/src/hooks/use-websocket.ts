@@ -43,6 +43,10 @@ export function useWebSocket({
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Track reconnect attempts to apply exponential backoff with a ceiling
+  const reconnectAttemptsRef = useRef(0)
+  // Max reconnect delay (cap exponential growth)
+  const MAX_RECONNECT_DELAY = 30000
   
   // Store callbacks in refs to avoid dependency changes
   const onAgentsRef = useRef(onAgents)
@@ -73,6 +77,8 @@ export function useWebSocket({
       wsRef.current.close(1000, 'User disconnect')
       wsRef.current = null
     }
+    // Reset backoff so the next enable starts from the base interval
+    reconnectAttemptsRef.current = 0
     setStatus('disconnected')
   }, [])
 
@@ -99,6 +105,8 @@ export function useWebSocket({
 
     ws.onopen = () => {
       setStatus('connected')
+      // Reset backoff counter on a successful connection
+      reconnectAttemptsRef.current = 0
 
       // Start ping interval to keep connection alive
       pingIntervalRef.current = setInterval(() => {
@@ -110,7 +118,12 @@ export function useWebSocket({
 
     ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data) as DashboardMessage
+        const parsed = JSON.parse(event.data)
+        // Validate message shape before dispatching to avoid downstream crashes
+        if (!parsed || typeof parsed !== 'object' || typeof parsed.type !== 'string') {
+          return
+        }
+        const msg = parsed as DashboardMessage
 
         switch (msg.type) {
           case 'agents':
@@ -166,6 +179,10 @@ export function useWebSocket({
     ws.onerror = (error) => {
       console.error('[WS] WebSocket error:', error)
       setStatus('error')
+      // Force-close so reconnect goes through the unified onclose path (keeps state machine consistent)
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close()
+      }
     }
 
     ws.onclose = (event) => {
@@ -179,9 +196,14 @@ export function useWebSocket({
 
       // Attempt to reconnect if not intentionally closed
       if (enabled && event.code !== 1000) {
+        // Exponential backoff with jitter, capped to avoid a tight reconnect storm
+        const attempt = reconnectAttemptsRef.current
+        const base = Math.min(reconnectInterval * 2 ** attempt, MAX_RECONNECT_DELAY)
+        const delay = base / 2 + Math.random() * (base / 2)
+        reconnectAttemptsRef.current = attempt + 1
         reconnectTimeoutRef.current = setTimeout(() => {
           connect()
-        }, reconnectInterval)
+        }, delay)
       }
     }
   }, [enabled, reconnectInterval]) // Only depend on enabled and reconnectInterval

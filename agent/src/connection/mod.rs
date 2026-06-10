@@ -132,7 +132,8 @@ impl ConnectionManager {
         let mut was_previously_connected = false;
         let mut reconnect_delay = initial_delay;
 
-        loop {
+        // Labeled so the signal-drain loop below can restart the reconnect cycle.
+        'reconnect: loop {
             connection_attempts += 1;
 
             // Update status
@@ -164,9 +165,10 @@ impl ConnectionManager {
                         grpc_url, connect_elapsed
                     );
 
-                    // Reset reconnect delay and attempts on successful connection
-                    reconnect_delay = initial_delay;
-                    connection_attempts = 0;
+                    // Do NOT reset the backoff here. A "connects then immediately
+                    // drops" failure would otherwise reset the delay every cycle
+                    // and form a tight reconnect storm. The backoff is only reset
+                    // below, after the connection has run stably past a threshold.
                     was_previously_connected = true;
 
                     // Update status - connected
@@ -175,7 +177,6 @@ impl ConnectionManager {
                         if let Some(st) = s.get_mut(status_idx) {
                             st.connected = true;
                             st.last_error = None;
-                            st.connection_attempts = 0;
                         }
                     }
 
@@ -191,6 +192,24 @@ impl ConnectionManager {
                             if config.buffer.data_compensation {
                                 Self::send_compensated_data(&mut client, &buffer, &config).await;
                             }
+
+                            // While the live stream is up, metrics are reported in
+                            // real time but are also accumulating in the ring
+                            // buffer. Periodically advance the sync watermark so a
+                            // later reconnect only compensates data buffered while
+                            // offline, instead of re-sending the whole buffer.
+                            let sync_marker_handle = {
+                                let buffer = buffer.clone();
+                                let interval_secs = config.agent.heartbeat_interval.max(1);
+                                tokio::spawn(async move {
+                                    let mut ticker =
+                                        time::interval(Duration::from_secs(interval_secs));
+                                    loop {
+                                        ticker.tick().await;
+                                        buffer.mark_all_synced();
+                                    }
+                                })
+                            };
 
                             // Start streaming metrics based on config
                             let stream_result = if config.collector.enable_layered_metrics {
@@ -225,8 +244,27 @@ impl ConnectionManager {
                                     .await
                             };
 
+                            // Stop the periodic sync-watermark task; the stream is
+                            // no longer delivering data live.
+                            sync_marker_handle.abort();
+
                             let connection_duration = connection_start.elapsed();
                             total_connected_time += connection_duration.as_secs();
+
+                            // Only treat the connection as "stable" and reset the
+                            // backoff once it has run long enough. This prevents a
+                            // flapping connection from resetting the delay every
+                            // cycle. Threshold: max(30s, 2 * heartbeat_interval).
+                            let stable_threshold =
+                                30u64.max(config.agent.heartbeat_interval.saturating_mul(2));
+                            if connection_duration.as_secs() >= stable_threshold {
+                                reconnect_delay = initial_delay;
+                                connection_attempts = 0;
+                                let mut s = status.write().await;
+                                if let Some(st) = s.get_mut(status_idx) {
+                                    st.connection_attempts = 0;
+                                }
+                            }
 
                             match &stream_result {
                                 Ok(_) => {
@@ -300,6 +338,24 @@ impl ConnectionManager {
                 if let Some(st) = s.get_mut(status_idx) {
                     st.reconnect_delay_secs = reconnect_delay;
                 }
+            }
+
+            // Act on any signal that arrived while we were connected/streaming so
+            // it is not lost: the select below only observes signals during the
+            // wait window, so an ImmediateReconnect/Shutdown delivered while the
+            // stream was active would otherwise sit unhandled until the next wait.
+            match signal_rx.try_recv() {
+                Ok(ConnectionSignal::ImmediateReconnect) => {
+                    info!("Pending immediate reconnect signal, reconnecting now");
+                    reconnect_delay = initial_delay;
+                    continue 'reconnect;
+                }
+                Ok(ConnectionSignal::Shutdown) => {
+                    info!("Pending shutdown signal, stopping connection manager");
+                    return;
+                }
+                // No queued signal (or lagged); fall through to wait.
+                Err(_) => {}
             }
 
             // Wait before reconnecting with exponential backoff

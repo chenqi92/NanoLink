@@ -63,7 +63,12 @@ export function OverviewPanel({ agent, metricsHistory = [] }: OverviewPanelProps
 
   const cpuUsage = metrics.cpu.usagePercent
   const memUsage = metrics.memory.total > 0 ? (metrics.memory.used / metrics.memory.total) * 100 : 0
-  const mainDisk = metrics.disks[0]
+  // Prefer the root mount; otherwise fall back to the disk with the highest usage
+  const mainDisk = metrics.disks.find(d => d.mountPoint === '/' || d.mountPoint === 'C:\\') ??
+    metrics.disks.reduce<typeof metrics.disks[number] | undefined>(
+      (max, d) => (!max || d.usagePercent > max.usagePercent ? d : max),
+      undefined,
+    )
   const diskUsage = mainDisk ? mainDisk.usagePercent : 0
   
   // Calculate total network traffic across all interfaces

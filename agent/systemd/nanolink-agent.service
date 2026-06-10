@@ -1,24 +1,33 @@
 [Unit]
 Description=NanoLink Monitoring Agent
 Documentation=https://github.com/chenqi92/nanolink
-After=network.target
+After=network-online.target
+Wants=network-online.target
+# StartLimit* belong in [Unit] (systemd ignores them under [Service])
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
+# Runs as root: the agent reads privileged disk SMART/health data and can
+# execute remote SystemReboot/Shutdown commands, both of which need root.
 User=root
 Group=root
 ExecStart=/usr/local/bin/nanolink-agent -c /etc/nanolink/nanolink.yaml
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=5
+TimeoutStopSec=10
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=nanolink-agent
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/log/nanolink
+ReadWritePaths=/var/log/nanolink /var/lib/nanolink
 ReadOnlyPaths=/etc/nanolink
 
 # Resource limits

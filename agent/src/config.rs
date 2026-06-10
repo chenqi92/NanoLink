@@ -506,16 +506,24 @@ impl ServerConfig {
         // Environment variable format: ${VAR_NAME}
         if token.starts_with("${") && token.ends_with("}") {
             let var_name = &token[2..token.len() - 1];
-            return std::env::var(var_name).map_err(|_| {
-                format!(
-                    "Environment variable '{var_name}' not found. \
-                    Make sure it is set before starting the agent."
-                )
-            });
+            return std::env::var(var_name)
+                // Trim trailing whitespace/newlines so a stray "\n" from the
+                // environment is not sent as part of the token.
+                .map(|v| v.trim().to_string())
+                .map_err(|_| {
+                    format!(
+                        "Environment variable '{var_name}' not found. \
+                        Make sure it is set before starting the agent."
+                    )
+                });
         }
 
         // File reference format: file:///path/to/token
-        if let Some(path) = token.strip_prefix("file://") {
+        if let Some(rest) = token.strip_prefix("file://") {
+            // RFC 8089: an empty/"localhost" authority precedes the absolute
+            // path, e.g. "file:///etc/token" -> "/etc/token". Strip the optional
+            // "localhost" authority so the leading path separator is preserved.
+            let path = rest.strip_prefix("localhost").unwrap_or(rest);
             return std::fs::read_to_string(path)
                 .map(|s| s.trim().to_string())
                 .map_err(|e| format!("Failed to read token file '{path}': {e}"));
@@ -1067,6 +1075,16 @@ impl Config {
             }
             if server.permission > 3 {
                 anyhow::bail!("Server {i} permission must be 0-3");
+            }
+            // Reject tls_verify=false instead of silently ignoring it: the gRPC
+            // client always verifies certificates, so accepting this flag would
+            // mislead users into thinking verification was disabled.
+            if server.tls_enabled && !server.tls_verify {
+                anyhow::bail!(
+                    "Server {i} sets tls_verify=false, but disabling TLS certificate \
+                    verification is not supported. Use a CA-signed certificate (or add \
+                    your CA to the system trust store) and set tls_verify=true."
+                );
             }
         }
 

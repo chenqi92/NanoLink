@@ -219,6 +219,9 @@ impl LayeredCollector {
         let cpu_info = self
             .cpu_collector
             .collect(&self.system, &self.config.collector);
+        // Cache sizes are read from sysfs on Linux; 0 means "unknown" (proto3 has no
+        // optional scalar here, so consumers must treat 0 as "not reported").
+        let (l1_cache_kb, l2_cache_kb, l3_cache_kb) = Self::collect_cpu_cache_kb();
         let cpu_static = CpuStaticInfo {
             model: cpu_info.model,
             vendor: cpu_info.vendor,
@@ -226,9 +229,9 @@ impl LayeredCollector {
             logical_cores: cpu_info.logical_cores,
             architecture: cpu_info.architecture,
             frequency_max_mhz: cpu_info.frequency_max_mhz,
-            l1_cache_kb: 0, // TODO: implement cache detection
-            l2_cache_kb: 0,
-            l3_cache_kb: 0,
+            l1_cache_kb,
+            l2_cache_kb,
+            l3_cache_kb,
         };
 
         // Memory static info
@@ -238,7 +241,9 @@ impl LayeredCollector {
             swap_total: mem_info.swap_total,
             memory_type: mem_info.memory_type,
             memory_speed_mhz: mem_info.memory_speed_mhz,
-            memory_slots: 0, // TODO: implement slot detection
+            // Slot count requires dmidecode/SMBIOS (root); left as 0 ("unknown")
+            // rather than fabricated. TODO: parse `dmidecode -t memory` when privileged.
+            memory_slots: 0,
         };
 
         // Disk static info
@@ -333,6 +338,64 @@ impl LayeredCollector {
         self.cached_static_info = Some(static_info.clone());
 
         Ok(static_info)
+    }
+
+    /// Detect total per-CPU L1/L2/L3 cache size in KB.
+    ///
+    /// Reads `/sys/devices/system/cpu/cpu0/cache/index*/{level,size}` on Linux,
+    /// summing all L1 caches (data + instruction) into l1. Returns (0, 0, 0) on
+    /// platforms or kernels where the sysfs entries are unavailable.
+    fn collect_cpu_cache_kb() -> (u64, u64, u64) {
+        #[cfg(target_os = "linux")]
+        {
+            use std::fs;
+
+            let mut l1 = 0u64;
+            let mut l2 = 0u64;
+            let mut l3 = 0u64;
+            let cache_dir = "/sys/devices/system/cpu/cpu0/cache";
+
+            if let Ok(entries) = fs::read_dir(cache_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let level = fs::read_to_string(path.join("level"))
+                        .ok()
+                        .and_then(|s| s.trim().parse::<u32>().ok());
+                    let size = fs::read_to_string(path.join("size"))
+                        .ok()
+                        .and_then(|s| Self::parse_cache_size_kb(s.trim()));
+                    if let (Some(level), Some(size)) = (level, size) {
+                        match level {
+                            1 => l1 += size, // sum L1d + L1i
+                            2 => l2 += size,
+                            3 => l3 += size,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            (l1, l2, l3)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            // TODO: implement cache detection on macOS (sysctl) and Windows (CPUID/WMI).
+            (0, 0, 0)
+        }
+    }
+
+    /// Parse a sysfs cache size string such as "32K" or "8192K" into KB.
+    #[cfg(target_os = "linux")]
+    fn parse_cache_size_kb(s: &str) -> Option<u64> {
+        let s = s.trim();
+        if let Some(num) = s.strip_suffix('K') {
+            num.trim().parse::<u64>().ok()
+        } else if let Some(num) = s.strip_suffix('M') {
+            num.trim().parse::<u64>().ok().map(|m| m * 1024)
+        } else {
+            // Bare bytes value: convert to KB.
+            s.parse::<u64>().ok().map(|b| b / 1024)
+        }
     }
 
     /// Collect realtime metrics (lightweight, for frequent sending)

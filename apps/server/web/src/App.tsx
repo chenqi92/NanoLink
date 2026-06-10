@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Loader2, Plus } from "lucide-react"
 import "./i18n"
@@ -18,6 +18,7 @@ import { AgentManagement } from "@/components/admin/AgentManagement"
 import { DeviceManagement } from "@/components/admin/DeviceManagement"
 import { AddAgentWizard } from "@/components/agents/AddAgentWizard"
 import { Button } from "@/components/ui/button"
+import type { Agent } from "@/lib/api"
 
 type View = "dashboard" | "users" | "groups" | "agents-manage" | "devices" | "permissions" | "settings"
 
@@ -30,6 +31,11 @@ function App() {
   const [shellAgent, setShellAgent] = useState<{ id: string; name: string } | null>(null)
   const [showAddAgentWizard, setShowAddAgentWizard] = useState(false)
   const [detailAgent, setDetailAgent] = useState<{ id: string; name: string } | null>(null)
+
+  // Stable callback so memoized AgentCardCompact instances are not invalidated each render
+  const handleViewDetails = useCallback((a: Agent) => {
+    setDetailAgent({ id: a.id, name: a.hostname })
+  }, [])
 
   // Show loading while checking authentication
   if (authLoading) {
@@ -106,13 +112,15 @@ function App() {
                 </Button>
               </div>
             ) : (
+              // TODO: virtualize/paginate this grid for large agent counts;
+              // AgentCardCompact is memoized to limit per-tick re-renders for now.
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {agents.map((agent) => (
                   <AgentCardCompact
                     key={agent.id}
                     agent={agent}
                     metrics={metrics[agent.id]}
-                    onViewDetails={(a) => setDetailAgent({ id: a.id, name: a.hostname })}
+                    onViewDetails={handleViewDetails}
                   />
                 ))}
               </div>

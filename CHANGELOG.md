@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PyPI package distribution
 
 #### Dashboard
-- Vue 3 + Vite + TailwindCSS
+- React 19 + Vite + TailwindCSS
 - Real-time metrics display
 - Server connection status
 - CPU and memory usage charts

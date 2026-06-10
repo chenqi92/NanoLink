@@ -1,3 +1,4 @@
+import { memo } from "react"
 import { useTranslation } from "react-i18next"
 import { Cpu, MemoryStick, Eye } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,7 +14,9 @@ interface AgentCardCompactProps {
   onViewDetails: (agent: Agent) => void
 }
 
-export function AgentCardCompact({ agent, metrics, onViewDetails }: AgentCardCompactProps) {
+// Memoized so each card only re-renders when its own agent/metrics props change,
+// instead of on every per-second metrics tick from the WebSocket.
+export const AgentCardCompact = memo(function AgentCardCompact({ agent, metrics, onViewDetails }: AgentCardCompactProps) {
   const { t } = useTranslation()
 
   const cpuUsage = metrics?.cpu?.usagePercent || 0
@@ -94,4 +97,4 @@ export function AgentCardCompact({ agent, metrics, onViewDetails }: AgentCardCom
       </CardContent>
     </Card>
   )
-}
+})

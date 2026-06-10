@@ -11,10 +11,14 @@ use crate::proto::Metrics;
 /// and stored in this buffer. Upon reconnection, buffered data can
 /// be synced to the server.
 pub struct RingBuffer {
-    buffer: RwLock<VecDeque<Metrics>>,
+    /// Each entry carries a monotonic sequence number so sync tracking does not
+    /// collide when several metrics share the same millisecond timestamp.
+    buffer: RwLock<VecDeque<(u64, Metrics)>>,
     capacity: usize,
-    /// Timestamp of the last successfully synced metrics
-    last_sync_timestamp: AtomicU64,
+    /// Sequence number assigned to the next pushed entry
+    next_seq: AtomicU64,
+    /// Sequence watermark of the last successfully synced metrics
+    last_sync_seq: AtomicU64,
 }
 
 #[allow(dead_code)]
@@ -24,23 +28,25 @@ impl RingBuffer {
         Self {
             buffer: RwLock::new(VecDeque::with_capacity(capacity)),
             capacity,
-            last_sync_timestamp: AtomicU64::new(0),
+            next_seq: AtomicU64::new(1),
+            last_sync_seq: AtomicU64::new(0),
         }
     }
 
     /// Push a new metrics entry into the buffer
     /// If the buffer is full, the oldest entry will be removed
     pub fn push(&self, metrics: Metrics) {
+        let seq = self.next_seq.fetch_add(1, Ordering::Relaxed);
         let mut buffer = self.buffer.write();
         if buffer.len() >= self.capacity {
             buffer.pop_front();
         }
-        buffer.push_back(metrics);
+        buffer.push_back((seq, metrics));
     }
 
     /// Get the latest metrics entry
     pub fn latest(&self) -> Option<Metrics> {
-        self.buffer.read().back().cloned()
+        self.buffer.read().back().map(|(_, m)| m.clone())
     }
 
     /// Get all metrics since the given timestamp
@@ -48,14 +54,14 @@ impl RingBuffer {
         self.buffer
             .read()
             .iter()
-            .filter(|m| m.timestamp > timestamp)
-            .cloned()
+            .filter(|(_, m)| m.timestamp > timestamp)
+            .map(|(_, m)| m.clone())
             .collect()
     }
 
     /// Get all buffered metrics
     pub fn get_all(&self) -> Vec<Metrics> {
-        self.buffer.read().iter().cloned().collect()
+        self.buffer.read().iter().map(|(_, m)| m.clone()).collect()
     }
 
     /// Get the number of items in the buffer
@@ -75,12 +81,12 @@ impl RingBuffer {
 
     /// Get the oldest timestamp in the buffer
     pub fn oldest_timestamp(&self) -> Option<u64> {
-        self.buffer.read().front().map(|m| m.timestamp)
+        self.buffer.read().front().map(|(_, m)| m.timestamp)
     }
 
     /// Get the newest timestamp in the buffer
     pub fn newest_timestamp(&self) -> Option<u64> {
-        self.buffer.read().back().map(|m| m.timestamp)
+        self.buffer.read().back().map(|(_, m)| m.timestamp)
     }
 
     /// Get buffer capacity
@@ -94,41 +100,60 @@ impl RingBuffer {
         (len as f64 / self.capacity as f64) * 100.0
     }
 
-    /// Get the last sync timestamp
+    /// Get the timestamp at the current sync watermark (for status reporting)
     pub fn get_last_sync_timestamp(&self) -> u64 {
-        self.last_sync_timestamp.load(Ordering::Relaxed)
-    }
-
-    /// Update the last sync timestamp
-    pub fn set_last_sync_timestamp(&self, timestamp: u64) {
-        self.last_sync_timestamp.store(timestamp, Ordering::Relaxed);
-    }
-
-    /// Get all unsynced metrics (metrics with timestamp > last_sync_timestamp)
-    pub fn get_unsynced(&self) -> Vec<Metrics> {
-        let last_sync = self.last_sync_timestamp.load(Ordering::Relaxed);
+        let last_sync_seq = self.last_sync_seq.load(Ordering::Relaxed);
         self.buffer
             .read()
             .iter()
-            .filter(|m| m.timestamp > last_sync)
-            .cloned()
+            .filter(|(seq, _)| *seq <= last_sync_seq)
+            .map(|(_, m)| m.timestamp)
+            .next_back()
+            .unwrap_or(0)
+    }
+
+    /// Advance the sync watermark to cover every entry whose timestamp is <= the
+    /// given timestamp. Sequence numbers (not raw timestamps) drive the watermark so
+    /// metrics sharing a millisecond are never dropped on a partial resync.
+    pub fn set_last_sync_timestamp(&self, timestamp: u64) {
+        let seq = self
+            .buffer
+            .read()
+            .iter()
+            .filter(|(_, m)| m.timestamp <= timestamp)
+            .map(|(seq, _)| *seq)
+            .next_back();
+        if let Some(seq) = seq {
+            // Only ever move the watermark forward.
+            self.last_sync_seq.fetch_max(seq, Ordering::Relaxed);
+        }
+    }
+
+    /// Get all unsynced metrics (entries with sequence > last synced sequence)
+    pub fn get_unsynced(&self) -> Vec<Metrics> {
+        let last_sync_seq = self.last_sync_seq.load(Ordering::Relaxed);
+        self.buffer
+            .read()
+            .iter()
+            .filter(|(seq, _)| *seq > last_sync_seq)
+            .map(|(_, m)| m.clone())
             .collect()
     }
 
     /// Get unsynced metrics count
     pub fn unsynced_count(&self) -> usize {
-        let last_sync = self.last_sync_timestamp.load(Ordering::Relaxed);
+        let last_sync_seq = self.last_sync_seq.load(Ordering::Relaxed);
         self.buffer
             .read()
             .iter()
-            .filter(|m| m.timestamp > last_sync)
+            .filter(|(seq, _)| *seq > last_sync_seq)
             .count()
     }
 
-    /// Mark all current data as synced (set last_sync_timestamp to newest)
+    /// Mark all current data as synced (advance watermark to the newest sequence)
     pub fn mark_all_synced(&self) {
-        if let Some(ts) = self.newest_timestamp() {
-            self.last_sync_timestamp.store(ts, Ordering::Relaxed);
+        if let Some((seq, _)) = self.buffer.read().back() {
+            self.last_sync_seq.fetch_max(*seq, Ordering::Relaxed);
         }
     }
 }
@@ -198,5 +223,26 @@ mod tests {
         buffer.push(create_test_metrics(2));
 
         assert_eq!(buffer.latest().unwrap().timestamp, 2);
+    }
+
+    #[test]
+    fn test_unsynced_no_collision_on_same_timestamp() {
+        // Two metrics sharing a millisecond must both be tracked independently.
+        let buffer = RingBuffer::new(5);
+        buffer.push(create_test_metrics(100));
+        buffer.push(create_test_metrics(100));
+        buffer.push(create_test_metrics(100));
+
+        assert_eq!(buffer.unsynced_count(), 3);
+        assert_eq!(buffer.get_unsynced().len(), 3);
+
+        // Marking timestamp 100 as synced advances the sequence watermark to the
+        // newest entry sharing that timestamp; none are dropped before that point.
+        buffer.set_last_sync_timestamp(100);
+        assert_eq!(buffer.unsynced_count(), 0);
+
+        // A new same-timestamp entry pushed afterwards is still detected as unsynced.
+        buffer.push(create_test_metrics(100));
+        assert_eq!(buffer.unsynced_count(), 1);
     }
 }

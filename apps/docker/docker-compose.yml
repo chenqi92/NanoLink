@@ -16,14 +16,15 @@ services:
       - nanolink-data:/app/data
       - ./config.yaml:/app/config.yaml:ro
     environment:
-      - TZ=Asia/Shanghai
+      - TZ=${TZ:-Asia/Shanghai}
       - NANOLINK_SERVER_MODE=release
-      # Superadmin credentials (REQUIRED for first deployment)
-      - NANOLINK_ADMIN_USERNAME=admin
-      - NANOLINK_ADMIN_PASSWORD=changeme  # Change this in production!
-      # JWT configuration
-      - NANOLINK_JWT_SECRET=your-secret-key-change-me  # Change this in production!
-      - NANOLINK_JWT_EXPIRE_HOUR=24
+      # Superadmin credentials and JWT secret MUST be injected via the
+      # environment (e.g. a .env file); compose fails if any is unset to
+      # avoid shipping weak built-in defaults.
+      - NANOLINK_ADMIN_USERNAME=${NANOLINK_ADMIN_USERNAME:?set NANOLINK_ADMIN_USERNAME}
+      - NANOLINK_ADMIN_PASSWORD=${NANOLINK_ADMIN_PASSWORD:?set NANOLINK_ADMIN_PASSWORD}
+      - NANOLINK_JWT_SECRET=${NANOLINK_JWT_SECRET:?set NANOLINK_JWT_SECRET}
+      - NANOLINK_JWT_EXPIRE_HOUR=${NANOLINK_JWT_EXPIRE_HOUR:-24}
       # Database configuration (SQLite by default)
       - NANOLINK_DATABASE_TYPE=sqlite
       - NANOLINK_DATABASE_PATH=/app/data/nanolink.db

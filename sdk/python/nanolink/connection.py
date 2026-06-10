@@ -6,7 +6,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from .command import Command, CommandResult
 
@@ -41,6 +41,10 @@ class AgentConnection:
     permission_level: int = 0
     connected_at: datetime = field(default_factory=datetime.now)
     last_heartbeat: datetime = field(default_factory=datetime.now)
+    # Timestamp of the most recent metrics message (read by GetAgentInfo)
+    last_metrics_at: Optional[datetime] = None
+    # Most recent metrics snapshot, populated by StreamMetrics; used by MCP tools
+    last_metrics: Optional[Any] = None
 
     _stream_sender: Optional[Callable[[bytes], None]] = field(default=None, repr=False)
     _pending_commands: dict = field(default_factory=dict, repr=False)
@@ -113,18 +117,20 @@ class AgentConnection:
             CommandType.SERVICE_STATUS,
             CommandType.FILE_TAIL,
             CommandType.DOCKER_LIST,
-            CommandType.DOCKER_LOGS,
         ]:
             return 0
 
         # BASIC_WRITE (1)
+        # DOCKER_LOGS is BASIC_WRITE to match the Go/Java permission matrix
         if command.command_type in [
             CommandType.FILE_DOWNLOAD,
             CommandType.FILE_TRUNCATE,
+            CommandType.DOCKER_LOGS,
         ]:
             return 1
 
         # SERVICE_CONTROL (2)
+        # FILE_UPLOAD is SERVICE_CONTROL to match the Go/Java permission matrix
         if command.command_type in [
             CommandType.PROCESS_KILL,
             CommandType.SERVICE_START,
@@ -133,6 +139,7 @@ class AgentConnection:
             CommandType.DOCKER_START,
             CommandType.DOCKER_STOP,
             CommandType.DOCKER_RESTART,
+            CommandType.FILE_UPLOAD,
         ]:
             return 2
 
@@ -140,11 +147,11 @@ class AgentConnection:
         if command.command_type in [
             CommandType.SYSTEM_REBOOT,
             CommandType.SHELL_EXECUTE,
-            CommandType.FILE_UPLOAD,
         ]:
             return 3
 
-        return 0
+        # Default to SYSTEM_ADMIN for unknown commands (matches Go/Java default)
+        return 3
 
     def _handle_command_result(self, data: dict) -> None:
         """Handle incoming command result"""
