@@ -120,7 +120,6 @@ class AgentConnection:
             CommandType.SERVICE_STATUS,
             CommandType.FILE_TAIL,
             CommandType.DOCKER_LIST,
-            CommandType.DOCKER_LOGS,
         ]:
             return 0
 
@@ -128,6 +127,7 @@ class AgentConnection:
         if command.command_type in [
             CommandType.FILE_DOWNLOAD,
             CommandType.FILE_TRUNCATE,
+            CommandType.DOCKER_LOGS,
         ]:
             return 1
 
@@ -151,7 +151,8 @@ class AgentConnection:
         ]:
             return 3
 
-        return 0
+        # Unknown/unspecified commands are fail-closed at SYSTEM_ADMIN (3)
+        return 3
 
     def handle_command_result(self, result: CommandResult) -> None:
         """Complete the pending command waiter for this result.

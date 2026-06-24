@@ -1,0 +1,30 @@
+{
+  "_comment": "Canonical command -> required permission-level matrix, single source of truth for all NanoLink SDKs (Python, Go, Java). Levels: 0=READ_ONLY, 1=BASIC_WRITE, 2=SERVICE_CONTROL, 3=SYSTEM_ADMIN. Unknown/unspecified commands are fail-closed at SYSTEM_ADMIN (3).",
+  "levels": {
+    "READ_ONLY": 0,
+    "BASIC_WRITE": 1,
+    "SERVICE_CONTROL": 2,
+    "SYSTEM_ADMIN": 3
+  },
+  "default": 3,
+  "commands": [
+    { "name": "UNSPECIFIED",     "code": 0,  "level": 3 },
+    { "name": "PROCESS_LIST",    "code": 1,  "level": 0 },
+    { "name": "PROCESS_KILL",    "code": 2,  "level": 2 },
+    { "name": "SERVICE_START",   "code": 10, "level": 2 },
+    { "name": "SERVICE_STOP",    "code": 11, "level": 2 },
+    { "name": "SERVICE_RESTART", "code": 12, "level": 2 },
+    { "name": "SERVICE_STATUS",  "code": 13, "level": 0 },
+    { "name": "FILE_TAIL",       "code": 20, "level": 0 },
+    { "name": "FILE_DOWNLOAD",   "code": 21, "level": 1 },
+    { "name": "FILE_UPLOAD",     "code": 22, "level": 3 },
+    { "name": "FILE_TRUNCATE",   "code": 23, "level": 1 },
+    { "name": "DOCKER_LIST",     "code": 30, "level": 0 },
+    { "name": "DOCKER_START",    "code": 31, "level": 2 },
+    { "name": "DOCKER_STOP",     "code": 32, "level": 2 },
+    { "name": "DOCKER_RESTART",  "code": 33, "level": 2 },
+    { "name": "DOCKER_LOGS",     "code": 34, "level": 1 },
+    { "name": "SYSTEM_REBOOT",   "code": 40, "level": 3 },
+    { "name": "SHELL_EXECUTE",   "code": 50, "level": 3 }
+  ]
+}
