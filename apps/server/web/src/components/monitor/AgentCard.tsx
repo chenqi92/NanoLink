@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { memo, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { I, osIcon } from "@/lib/icons"
 import type { Agent, Metrics } from "@/lib/api"
@@ -22,7 +22,7 @@ function MetricRow({ icon, label, pct, tone, sub }: { icon: ReactNode; label: st
   )
 }
 
-export function AgentCard({ agent: a, metrics: m, onClick }: { agent: Agent; metrics?: Metrics; onClick: () => void }) {
+export const AgentCard = memo(function AgentCard({ agent: a, metrics: m, onClick }: { agent: Agent; metrics?: Metrics; onClick: (id: string) => void }) {
   const { t } = useTranslation()
   const status = agentStatus(a.lastHeartbeat)
   const off = status !== "online"
@@ -38,7 +38,7 @@ export function AgentCard({ agent: a, metrics: m, onClick }: { agent: Agent; met
   return (
     <div
       className="card"
-      onClick={onClick}
+      onClick={() => onClick(a.id)}
       style={{ padding: 14, cursor: "pointer", position: "relative", opacity: off ? 0.65 : 1, transition: "border-color 80ms ease" }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--border-strong)")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
@@ -100,4 +100,4 @@ export function AgentCard({ agent: a, metrics: m, onClick }: { agent: Agent; met
       </div>
     </div>
   )
-}
+})
