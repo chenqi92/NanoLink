@@ -48,15 +48,25 @@ class ServerConnection {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'url': url,
-        'token': token,
-        'userToken': userToken,
-        'username': username,
-        'lastConnected': lastConnected?.toIso8601String(),
-      };
+  /// Full serialization including secrets (for in-memory / transport use).
+  Map<String, dynamic> toJson({bool includeSecrets = true}) {
+    final map = <String, dynamic>{
+      'id': id,
+      'name': name,
+      'url': url,
+      'username': username,
+      'lastConnected': lastConnected?.toIso8601String(),
+    };
+    if (includeSecrets) {
+      map['token'] = token;
+      map['userToken'] = userToken;
+    }
+    return map;
+  }
+
+  /// Metadata-only serialization that omits secret fields (token, userToken).
+  /// Used for plaintext persistence; secrets are stored separately.
+  Map<String, dynamic> toJsonMetadata() => toJson(includeSecrets: false);
 
   factory ServerConnection.fromJson(Map<String, dynamic> json) {
     return ServerConnection(
