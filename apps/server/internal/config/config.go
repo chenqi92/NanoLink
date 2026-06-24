@@ -139,7 +139,7 @@ func Default() *Config {
 		Server: ServerConfig{
 			HTTPPort: 8080,
 			WSPort:   9100,
-			GRPCPort: 9200,
+			GRPCPort: 39100,
 			Mode:     "release",
 		},
 		Auth: AuthConfig{
@@ -194,7 +194,7 @@ func Load(path string) (*Config, error) {
 	// Set defaults
 	viper.SetDefault("server.http_port", 8080)
 	viper.SetDefault("server.ws_port", 9100)
-	viper.SetDefault("server.grpc_port", 9200)
+	viper.SetDefault("server.grpc_port", 39100)
 	viper.SetDefault("server.mode", "release")
 	viper.SetDefault("auth.enabled", false)
 	viper.SetDefault("storage.type", "memory")

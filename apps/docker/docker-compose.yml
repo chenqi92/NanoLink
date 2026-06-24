@@ -11,7 +11,7 @@ services:
     ports:
       - "8080:8080"   # HTTP API & Dashboard
       - "9100:9100"   # WebSocket for agents
-      - "9200:9200"   # gRPC for agents
+      - "39100:39100"   # gRPC for agents
     volumes:
       - nanolink-data:/app/data
       - ./config.yaml:/app/config.yaml:ro
