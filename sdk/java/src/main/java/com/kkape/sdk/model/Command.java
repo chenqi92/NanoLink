@@ -27,7 +27,7 @@ public class Command {
 
         FILE_TAIL(20, TokenValidator.PermissionLevel.READ_ONLY),
         FILE_DOWNLOAD(21, TokenValidator.PermissionLevel.BASIC_WRITE),
-        FILE_UPLOAD(22, TokenValidator.PermissionLevel.SERVICE_CONTROL),
+        FILE_UPLOAD(22, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
         FILE_TRUNCATE(23, TokenValidator.PermissionLevel.BASIC_WRITE),
 
         DOCKER_LIST(30, TokenValidator.PermissionLevel.READ_ONLY),

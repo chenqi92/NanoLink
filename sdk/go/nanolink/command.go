@@ -57,9 +57,9 @@ func (c *Command) RequiredPermission() int {
 	case CommandFileDownload, CommandFileTruncate, CommandDockerLogs:
 		return PermissionBasicWrite
 	case CommandProcessKill, CommandServiceStart, CommandServiceStop, CommandServiceRestart,
-		CommandDockerStart, CommandDockerStop, CommandDockerRestart, CommandFileUpload:
+		CommandDockerStart, CommandDockerStop, CommandDockerRestart:
 		return PermissionServiceControl
-	case CommandSystemReboot, CommandShellExecute:
+	case CommandSystemReboot, CommandShellExecute, CommandFileUpload:
 		return PermissionSystemAdmin
 	default:
 		return PermissionSystemAdmin
