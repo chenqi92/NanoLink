@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
@@ -71,6 +72,15 @@ func generatePairingCode() string {
 	return fmt.Sprintf("%06d", num)
 }
 
+// trimPairingCode normalizes a user-supplied pairing code (strips surrounding
+// whitespace) so lookups match the stored value.
+func trimPairingCode(code string) string {
+	return strings.TrimSpace(code)
+}
+
+// pairingCodeTTL is how long a generated pairing code remains redeemable.
+const pairingCodeTTL = 15 * time.Minute
+
 // CreateDeviceToken generates a new device token
 func (s *DeviceService) CreateDeviceToken(createdBy uint, serverName string) (*GenerateTokenResult, *database.DeviceToken, error) {
 	token, err := generateSecureToken()
@@ -78,14 +88,22 @@ func (s *DeviceService) CreateDeviceToken(createdBy uint, serverName string) (*G
 		return nil, nil, err
 	}
 
+	// Generate the manual pairing code before persisting so it can be stored
+	// alongside the token and later redeemed by a client.
+	pairingCode := generatePairingCode()
+	pairingExpires := time.Now().Add(pairingCodeTTL)
+
 	deviceToken := &database.DeviceToken{
-		Token:           database.HashToken(token),
-		DeviceName:      "Pending Connection",
-		DeviceType:      "unknown",
-		DeviceOS:        "unknown",
-		PermissionLevel: database.PermissionReadOnly,
-		IsActive:        true,
-		CreatedBy:       createdBy,
+		Token:              database.HashToken(token),
+		DeviceName:         "Pending Connection",
+		DeviceType:         "unknown",
+		DeviceOS:           "unknown",
+		PermissionLevel:    database.PermissionReadOnly,
+		IsActive:           true,
+		CreatedBy:          createdBy,
+		PairingCode:        pairingCode,
+		PairingCodeExpires: &pairingExpires,
+		PairingRedeemed:    false,
 	}
 
 	if err := s.db.Create(deviceToken).Error; err != nil {
@@ -108,10 +126,69 @@ func (s *DeviceService) CreateDeviceToken(createdBy uint, serverName string) (*G
 	result := &GenerateTokenResult{
 		Token:       token,
 		QRData:      base64.StdEncoding.EncodeToString(jsonData),
-		PairingCode: generatePairingCode(),
+		PairingCode: pairingCode,
 	}
 
 	return result, deviceToken, nil
+}
+
+// RedeemPairingResult is returned to a client that successfully redeems a code.
+type RedeemPairingResult struct {
+	Token      string
+	ServerURL  string
+	ServerName string
+}
+
+// RedeemPairingCode exchanges a one-time pairing code for a fresh device token.
+//
+// The stored Token is hashed-at-rest, so the original plaintext cannot be
+// recovered. Instead this rotates the token: a new secure token is generated,
+// its hash replaces the stored value, the pairing code is consumed (marked
+// redeemed and cleared), and the new plaintext token is returned. Codes are
+// single-use and expire after pairingCodeTTL.
+func (s *DeviceService) RedeemPairingCode(code, serverName string) (*RedeemPairingResult, error) {
+	code = trimPairingCode(code)
+	if code == "" {
+		return nil, ErrInvalidDeviceToken
+	}
+
+	var deviceToken database.DeviceToken
+	err := s.db.Where(
+		"pairing_code = ? AND pairing_redeemed = ? AND is_active = ?",
+		code, false, true,
+	).First(&deviceToken).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidDeviceToken
+		}
+		return nil, err
+	}
+
+	// Reject expired codes.
+	if deviceToken.PairingCodeExpires == nil || time.Now().After(*deviceToken.PairingCodeExpires) {
+		return nil, ErrInvalidDeviceToken
+	}
+
+	// Rotate the token so the client receives a usable plaintext credential.
+	newToken, err := generateSecureToken()
+	if err != nil {
+		return nil, err
+	}
+
+	updates := map[string]interface{}{
+		"token":            database.HashToken(newToken),
+		"pairing_redeemed": true,
+		"pairing_code":     "",
+	}
+	if err := s.db.Model(&database.DeviceToken{}).Where("id = ?", deviceToken.ID).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+
+	return &RedeemPairingResult{
+		Token:      newToken,
+		ServerURL:  s.serverURL,
+		ServerName: serverName,
+	}, nil
 }
 
 // ValidateDeviceToken validates a device token and returns the device info
