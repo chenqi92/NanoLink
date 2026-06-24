@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import { useData } from "@/contexts/DataContext"
@@ -6,7 +6,7 @@ import { useRouter } from "@/store/router"
 import { PageHeader, KPI } from "@/components/shell/primitives"
 import { EmptyState } from "@/components/shell/primitives"
 import { LineChart } from "@/components/charts"
-import { AgentCard } from "@/components/monitor/AgentCard"
+import { VirtualAgentGrid } from "@/components/monitor/VirtualAgentGrid"
 import { agentStatus, formatBytes, toneFor } from "@/lib/format"
 
 const MAX_PULSE = 80
@@ -15,6 +15,8 @@ export function DashboardScreen() {
   const { t } = useTranslation()
   const { agents, metrics, summary, refresh } = useData()
   const { navigate } = useRouter()
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const openAgent = useCallback((id: string) => navigate("agent-detail", { agentId: id }), [navigate])
 
   const onlineAgents = agents.filter((a) => agentStatus(a.lastHeartbeat) === "online")
 
@@ -70,7 +72,7 @@ export function DashboardScreen() {
           </>
         }
       />
-      <div style={{ padding: "0 24px 24px", overflow: "auto", flex: 1 }}>
+      <div ref={scrollRef} style={{ padding: "0 24px 24px", overflow: "auto", flex: 1 }}>
         {/* KPI strip */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "var(--gap)" }}>
           <KPI
@@ -135,11 +137,7 @@ export function DashboardScreen() {
             }
           />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
-            {agents.map((a) => (
-              <AgentCard key={a.id} agent={a} metrics={metrics[a.id]} onClick={() => navigate("agent-detail", { agentId: a.id })} />
-            ))}
-          </div>
+          <VirtualAgentGrid agents={agents} metrics={metrics} onOpen={openAgent} scrollRef={scrollRef} />
         )}
       </div>
     </div>
