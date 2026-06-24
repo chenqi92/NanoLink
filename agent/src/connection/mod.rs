@@ -5,6 +5,7 @@
 pub mod grpc;
 mod handler;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{RwLock, broadcast};
@@ -39,6 +40,10 @@ pub struct ConnectionStatus {
 /// Manages gRPC connections to multiple servers
 pub struct ConnectionManager {
     config: Arc<Config>,
+    /// Shared, mutable config used to persist server-pushed config_update.
+    shared_config: Arc<RwLock<Config>>,
+    /// Path to the on-disk config file (for persisting config_update).
+    config_path: PathBuf,
     buffer: Arc<RingBuffer>,
     /// Broadcast sender for connection signals
     signal_tx: broadcast::Sender<ConnectionSignal>,
@@ -48,11 +53,22 @@ pub struct ConnectionManager {
 
 impl ConnectionManager {
     /// Create a new connection manager
-    pub fn new(config: Arc<Config>, buffer: Arc<RingBuffer>) -> Self {
+    ///
+    /// `config` is an immutable snapshot used to build streams; `shared_config`
+    /// and `config_path` allow a server-pushed config_update to be persisted to
+    /// disk before triggering a reconnect that rebuilds from fresh config.
+    pub fn new(
+        config: Arc<Config>,
+        shared_config: Arc<RwLock<Config>>,
+        config_path: PathBuf,
+        buffer: Arc<RingBuffer>,
+    ) -> Self {
         let (signal_tx, _) = broadcast::channel(16);
         let status = Arc::new(RwLock::new(Vec::new()));
         Self {
             config,
+            shared_config,
+            config_path,
             buffer,
             signal_tx,
             status,
@@ -95,15 +111,29 @@ impl ConnectionManager {
 
         for (idx, server_config) in self.config.servers.iter().enumerate() {
             let config = self.config.clone();
+            let shared_config = self.shared_config.clone();
+            let config_path = self.config_path.clone();
             let buffer = self.buffer.clone();
             let server = server_config.clone();
             let signal_rx = self.signal_tx.subscribe();
+            let signal_tx = self.signal_tx.clone();
             let status = self.status.clone();
 
             info!("Connecting to gRPC server: {}:{}", server.host, server.port);
 
             let handle = tokio::spawn(async move {
-                Self::manage_grpc_connection(config, buffer, server, signal_rx, status, idx).await;
+                Self::manage_grpc_connection(
+                    config,
+                    shared_config,
+                    config_path,
+                    buffer,
+                    server,
+                    signal_rx,
+                    signal_tx,
+                    status,
+                    idx,
+                )
+                .await;
             });
 
             handles.push(handle);
@@ -116,11 +146,15 @@ impl ConnectionManager {
     }
 
     /// Manage a gRPC connection with reconnection logic
+    #[allow(clippy::too_many_arguments)]
     async fn manage_grpc_connection(
         config: Arc<Config>,
+        shared_config: Arc<RwLock<Config>>,
+        config_path: PathBuf,
         buffer: Arc<RingBuffer>,
         server: ServerConfig,
         mut signal_rx: broadcast::Receiver<ConnectionSignal>,
+        signal_tx: broadcast::Sender<ConnectionSignal>,
         status: Arc<RwLock<Vec<ConnectionStatus>>>,
         status_idx: usize,
     ) {
@@ -155,7 +189,15 @@ impl ConnectionManager {
             }
 
             let connect_start = std::time::Instant::now();
-            match grpc::GrpcClient::connect(&server, &config).await {
+            match grpc::GrpcClient::connect(
+                &server,
+                &config,
+                shared_config.clone(),
+                config_path.clone(),
+                signal_tx.clone(),
+            )
+            .await
+            {
                 Ok(mut client) => {
                     let connect_elapsed = connect_start.elapsed();
                     let connection_start = std::time::Instant::now();

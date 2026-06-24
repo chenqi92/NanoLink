@@ -15,8 +15,15 @@ impl HealthExecutor {
 
     /// Perform a TCP connectivity probe to `target` and report latency.
     /// `target` accepts "host:port", "http(s)://host[:port]" or a bare host.
-    pub async fn connectivity_test(&self, target: &str, params: &HashMap<String, String>) -> CommandResult {
-        let timeout_ms: u64 = params.get("timeoutMs").and_then(|s| s.parse().ok()).unwrap_or(3000);
+    pub async fn connectivity_test(
+        &self,
+        target: &str,
+        params: &HashMap<String, String>,
+    ) -> CommandResult {
+        let timeout_ms: u64 = params
+            .get("timeoutMs")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3000);
         let (host, port) = parse_target(target);
         info!("[AUDIT] ConnectivityTest: {host}:{port}");
 
@@ -77,9 +84,9 @@ fn split_host_port(s: &str, default_port: u16) -> (String, u16) {
 
 fn connect(host: &str, port: u16, timeout: Duration) -> std::io::Result<()> {
     let mut addrs = format!("{host}:{port}").to_socket_addrs()?;
-    let addr = addrs
-        .next()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "DNS resolution failed"))?;
+    let addr = addrs.next().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "DNS resolution failed")
+    })?;
     TcpStream::connect_timeout(&addr, timeout)?;
     Ok(())
 }

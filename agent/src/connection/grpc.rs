@@ -2,11 +2,12 @@
 //!
 //! Provides high-performance bidirectional streaming for metrics and commands.
 
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tokio_stream::wrappers::ReceiverStream;
@@ -18,6 +19,7 @@ use tracing::{debug, error, info, warn};
 use crate::buffer::RingBuffer;
 use crate::collector::layered::{DataRequest, LayeredCollector, LayeredMetricsMessage};
 use crate::config::{Config, ServerConfig};
+use crate::connection::ConnectionSignal;
 use crate::proto::{
     AgentInit, AuthRequest, AuthResponse, Command, CommandResult, DataRequestType, Heartbeat,
     Metrics, MetricsStreamRequest, MetricsStreamResponse, metrics_stream_request,
@@ -74,11 +76,25 @@ pub struct GrpcClient {
     config: Arc<Config>,
     server_config: ServerConfig,
     permission_level: i32,
+    /// Shared, mutable agent configuration used to persist server-pushed
+    /// config_update values to disk.
+    shared_config: Arc<RwLock<Config>>,
+    /// Path to the on-disk config file (for persisting config_update).
+    config_path: PathBuf,
+    /// Sender used to trigger an immediate reconnect so a persisted
+    /// config_update is picked up by rebuilding the stream from fresh config.
+    signal_tx: broadcast::Sender<ConnectionSignal>,
 }
 
 impl GrpcClient {
     /// Connect to a gRPC server
-    pub async fn connect(server_config: &ServerConfig, config: &Arc<Config>) -> Result<Self> {
+    pub async fn connect(
+        server_config: &ServerConfig,
+        config: &Arc<Config>,
+        shared_config: Arc<RwLock<Config>>,
+        config_path: PathBuf,
+        signal_tx: broadcast::Sender<ConnectionSignal>,
+    ) -> Result<Self> {
         let url = server_config.get_grpc_url();
 
         let mut endpoint = Endpoint::from_shared(url.clone())
@@ -118,7 +134,61 @@ impl GrpcClient {
             config: config.clone(),
             server_config: server_config.clone(),
             permission_level: 0,
+            shared_config,
+            config_path,
+            signal_tx,
         })
+    }
+
+    /// Persist a server-pushed config_update into the on-disk config and trigger
+    /// an immediate reconnect so the stream is rebuilt from the fresh config
+    /// (re-creating the tokio interval tickers with the new intervals).
+    ///
+    /// Field mapping (proto `ServerConfig` -> [`Config`]):
+    /// - `metrics_interval_ms`     -> `collector.realtime_interval_ms` + `collector.cpu_interval_ms`
+    /// - `heartbeat_interval_ms`   -> `agent.heartbeat_interval` (ms -> s, min 1s)
+    /// - `enable_detailed_metrics` -> `collector.enable_per_core_cpu`
+    /// - `enabled_collectors`      -> no Config equivalent, skipped
+    async fn apply_config_update(&self, new_cfg: &crate::proto::ServerConfig) {
+        {
+            let mut cfg = self.shared_config.write().await;
+
+            if new_cfg.metrics_interval_ms > 0 {
+                cfg.collector.realtime_interval_ms = new_cfg.metrics_interval_ms;
+                cfg.collector.cpu_interval_ms = new_cfg.metrics_interval_ms;
+            }
+            if new_cfg.heartbeat_interval_ms > 0 {
+                // Config stores heartbeat in whole seconds.
+                cfg.agent.heartbeat_interval = (new_cfg.heartbeat_interval_ms / 1000).max(1);
+            }
+            cfg.collector.enable_per_core_cpu = new_cfg.enable_detailed_metrics;
+
+            if let Err(e) = cfg.save(&self.config_path) {
+                error!(
+                    "Failed to persist config_update to {:?}: {}",
+                    self.config_path, e
+                );
+                return;
+            }
+        }
+
+        info!(
+            "config_update persisted to {:?} (metrics_interval_ms={}, heartbeat_interval_ms={}, \
+             enable_detailed_metrics={}); enabled_collectors={:?} has no Config field and was skipped. \
+             Triggering immediate reconnect to apply.",
+            self.config_path,
+            new_cfg.metrics_interval_ms,
+            new_cfg.heartbeat_interval_ms,
+            new_cfg.enable_detailed_metrics,
+            new_cfg.enabled_collectors,
+        );
+
+        if let Err(e) = self.signal_tx.send(ConnectionSignal::ImmediateReconnect) {
+            warn!(
+                "Failed to send ImmediateReconnect after config_update: {}",
+                e
+            );
+        }
     }
 
     fn with_agent_auth<T>(&self, mut request: Request<T>) -> Result<Request<T>> {
@@ -260,24 +330,20 @@ impl GrpcClient {
                     debug!("Heartbeat acknowledged: {}", ack.timestamp);
                 }
                 Some(metrics_stream_response::Response::ConfigUpdate(new_cfg)) => {
-                    // Hot-apply isn't wired up: the agent holds Config behind an
-                    // Arc<Config> (immutable) shared with collectors and
-                    // command executors. Mutating intervals at runtime would
-                    // require switching to Arc<RwLock<Config>> across the tree
-                    // — a non-trivial refactor we haven't done yet. We log the
-                    // proposed values so server-side operators can see the
-                    // command was received but ignored, and so the change isn't
-                    // silently swallowed.
-                    warn!(
-                        "Received config_update from server (NOT applied — hot reload not implemented): \
-                         metrics_interval_ms={}, heartbeat_interval_ms={}, \
-                         enable_detailed_metrics={}, enabled_collectors={:?}. \
-                         Restart the agent to pick up new configuration.",
+                    info!(
+                        "Received config_update from server: metrics_interval_ms={}, \
+                         heartbeat_interval_ms={}, enable_detailed_metrics={}, enabled_collectors={:?}",
                         new_cfg.metrics_interval_ms,
                         new_cfg.heartbeat_interval_ms,
                         new_cfg.enable_detailed_metrics,
                         new_cfg.enabled_collectors,
                     );
+                    // Persist the new config and trigger an immediate reconnect so
+                    // the stream is rebuilt from fresh config. The reconnect tears
+                    // down this loop (the signal also breaks us out via the
+                    // returning stream), so apply before returning.
+                    self.apply_config_update(&new_cfg).await;
+                    break;
                 }
                 Some(metrics_stream_response::Response::DataRequest(req)) => {
                     info!("Received data request: {:?}", req.request_type);
@@ -526,24 +592,18 @@ impl GrpcClient {
                     debug!("Heartbeat acknowledged: {}", ack.timestamp);
                 }
                 Some(metrics_stream_response::Response::ConfigUpdate(new_cfg)) => {
-                    // Hot-apply isn't wired up: the agent holds Config behind an
-                    // Arc<Config> (immutable) shared with collectors and
-                    // command executors. Mutating intervals at runtime would
-                    // require switching to Arc<RwLock<Config>> across the tree
-                    // — a non-trivial refactor we haven't done yet. We log the
-                    // proposed values so server-side operators can see the
-                    // command was received but ignored, and so the change isn't
-                    // silently swallowed.
-                    warn!(
-                        "Received config_update from server (NOT applied — hot reload not implemented): \
-                         metrics_interval_ms={}, heartbeat_interval_ms={}, \
-                         enable_detailed_metrics={}, enabled_collectors={:?}. \
-                         Restart the agent to pick up new configuration.",
+                    info!(
+                        "Received config_update from server: metrics_interval_ms={}, \
+                         heartbeat_interval_ms={}, enable_detailed_metrics={}, enabled_collectors={:?}",
                         new_cfg.metrics_interval_ms,
                         new_cfg.heartbeat_interval_ms,
                         new_cfg.enable_detailed_metrics,
                         new_cfg.enabled_collectors,
                     );
+                    // Persist the new config and trigger an immediate reconnect so
+                    // the layered collector / tickers are rebuilt from fresh config.
+                    self.apply_config_update(&new_cfg).await;
+                    break;
                 }
                 Some(metrics_stream_response::Response::DataRequest(data_req)) => {
                     info!("Received data request: {:?}", data_req.request_type);

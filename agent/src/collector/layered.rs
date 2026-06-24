@@ -47,7 +47,12 @@ fn detect_cache_kb(level: CacheLevel) -> u64 {
                 .output()
                 .ok()
                 .filter(|o| o.status.success())
-                .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+                .and_then(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .trim()
+                        .parse::<u64>()
+                        .ok()
+                })
                 .unwrap_or(0)
         };
         match level {
@@ -744,15 +749,19 @@ impl LayeredCollector {
     ) {
         match request {
             DataRequest::Static => {
-                if let Ok(static_info) = self.collect_static_info() {
+                // Collection runs synchronous subprocess collectors; block_in_place
+                // keeps the async select-loop worker free (multi-threaded runtime).
+                let r = tokio::task::block_in_place(|| self.collect_static_info());
+                if let Ok(static_info) = r {
                     let _ = tx.send(LayeredMetricsMessage::Static(static_info)).await;
                 }
             }
             DataRequest::DiskUsage => {
                 self.disks.refresh(false);
-                let disk_metrics = self
-                    .disk_collector
-                    .collect(&self.disks, &self.config.collector);
+                let disk_metrics = tokio::task::block_in_place(|| {
+                    self.disk_collector
+                        .collect(&self.disks, &self.config.collector)
+                });
                 let disk_usage: Vec<DiskUsage> = disk_metrics
                     .into_iter()
                     .map(|d| DiskUsage {
@@ -778,12 +787,14 @@ impl LayeredCollector {
                 let _ = tx.send(LayeredMetricsMessage::Periodic(periodic)).await;
             }
             DataRequest::NetworkInfo => {
-                if let Ok(static_info) = self.collect_static_info() {
+                let r = tokio::task::block_in_place(|| self.collect_static_info());
+                if let Ok(static_info) = r {
                     let _ = tx.send(LayeredMetricsMessage::Static(static_info)).await;
                 }
             }
             DataRequest::UserSessions => {
-                let sessions = self.session_collector.collect();
+                // session_collector.collect() can shell out to who/query.
+                let sessions = tokio::task::block_in_place(|| self.session_collector.collect());
                 let user_sessions: Vec<_> = sessions
                     .into_iter()
                     .map(|s| crate::proto::UserSession {
@@ -810,12 +821,14 @@ impl LayeredCollector {
             }
             DataRequest::GpuInfo | DataRequest::DiskHealth => {
                 // These return static info
-                if let Ok(static_info) = self.collect_static_info() {
+                let r = tokio::task::block_in_place(|| self.collect_static_info());
+                if let Ok(static_info) = r {
                     let _ = tx.send(LayeredMetricsMessage::Static(static_info)).await;
                 }
             }
             DataRequest::Full => {
-                if let Ok(full_metrics) = self.collect_full_metrics(false) {
+                let r = tokio::task::block_in_place(|| self.collect_full_metrics(false));
+                if let Ok(full_metrics) = r {
                     let _ = tx.send(LayeredMetricsMessage::Full(full_metrics)).await;
                 }
             }

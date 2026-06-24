@@ -61,10 +61,10 @@ fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
 fn verify_ed25519(data: &[u8], public_key_hex: &str, signature_hex: &str) -> Result<(), String> {
     use ring::signature;
 
-    let key_bytes = hex_decode(public_key_hex)
-        .map_err(|e| format!("invalid update public key: {e}"))?;
-    let sig_bytes = hex_decode(signature_hex)
-        .map_err(|e| format!("invalid update signature encoding: {e}"))?;
+    let key_bytes =
+        hex_decode(public_key_hex).map_err(|e| format!("invalid update public key: {e}"))?;
+    let sig_bytes =
+        hex_decode(signature_hex).map_err(|e| format!("invalid update signature encoding: {e}"))?;
 
     let public_key = signature::UnparsedPublicKey::new(&signature::ED25519, key_bytes);
     public_key
@@ -409,7 +409,9 @@ impl UpdateExecutor {
                         "Update rejected: update.require_signature is set but no update.public_key is configured to verify against.".to_string(),
                     );
                 }
-                warn!("[SECURITY] No update.public_key configured: the update binary is NOT cryptographically verified. Configure update.public_key and sign releases to protect against a malicious server pushing arbitrary code.");
+                warn!(
+                    "[SECURITY] No update.public_key configured: the update binary is NOT cryptographically verified. Configure update.public_key and sign releases to protect against a malicious server pushing arbitrary code."
+                );
                 // Best-effort integrity check against a caller-supplied checksum
                 // (detects corruption / non-malicious tampering only).
                 if let Some(expected_checksum) = params.get("checksum") {
@@ -423,7 +425,9 @@ impl UpdateExecutor {
                             info!("Checksum verified successfully");
                         }
                         Err(e) => {
-                            return Self::error_result(format!("Failed to calculate checksum: {e}"));
+                            return Self::error_result(format!(
+                                "Failed to calculate checksum: {e}"
+                            ));
                         }
                     }
                 } else {
@@ -994,10 +998,9 @@ mod tests {
         assert!(verify_ed25519(data, &pubkey_hex, &hex_encode(&bad_sig)).is_err());
 
         // Wrong public key is rejected.
-        let other = Ed25519KeyPair::from_pkcs8(
-            Ed25519KeyPair::generate_pkcs8(&rng).unwrap().as_ref(),
-        )
-        .unwrap();
+        let other =
+            Ed25519KeyPair::from_pkcs8(Ed25519KeyPair::generate_pkcs8(&rng).unwrap().as_ref())
+                .unwrap();
         let other_pub = hex_encode(other.public_key().as_ref());
         assert!(verify_ed25519(data, &other_pub, &sig_hex).is_err());
     }

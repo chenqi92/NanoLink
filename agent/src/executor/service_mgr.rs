@@ -55,7 +55,14 @@ impl ServiceExecutor {
 
         #[cfg(target_os = "linux")]
         if let Ok(out) = Command::new("systemctl")
-            .args(["list-units", "--type=service", "--all", "--no-pager", "--plain", "--no-legend"])
+            .args([
+                "list-units",
+                "--type=service",
+                "--all",
+                "--no-pager",
+                "--plain",
+                "--no-legend",
+            ])
             .output()
         {
             for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -93,7 +100,10 @@ impl ServiceExecutor {
         }
 
         #[cfg(target_os = "windows")]
-        if let Ok(out) = Command::new("sc").args(["query", "type=", "service", "state=", "all"]).output() {
+        if let Ok(out) = Command::new("sc")
+            .args(["query", "type=", "service", "state=", "all"])
+            .output()
+        {
             let text = String::from_utf8_lossy(&out.stdout);
             let mut name = String::new();
             for line in text.lines() {

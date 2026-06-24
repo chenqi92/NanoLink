@@ -26,7 +26,13 @@ impl ShellExecutor {
 
     /// Execute a shell command. cols/rows carry the client terminal size (0 if
     /// unknown) so the spawned process can export COLUMNS/LINES.
-    pub async fn execute(&self, command: &str, super_token: &str, cols: u16, rows: u16) -> CommandResult {
+    pub async fn execute(
+        &self,
+        command: &str,
+        super_token: &str,
+        cols: u16,
+        rows: u16,
+    ) -> CommandResult {
         // Check permissions
         if let Err(e) = self
             .permission_checker
