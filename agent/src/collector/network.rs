@@ -6,7 +6,7 @@ use crate::proto::NetworkMetrics;
 #[allow(unused_imports)]
 use crate::utils::safe_command::{DEFAULT_COMMAND_TIMEOUT, exec_with_timeout};
 use std::process::Command;
-#[cfg(target_os = "linux")]
+#[allow(unused_imports)]
 use std::time::Duration;
 
 /// Network metrics collector
@@ -323,7 +323,10 @@ impl NetworkCollector {
                     false
                 } else {
                     // No status line (e.g. loopback): trust the UP flag.
-                    text.lines().next().map(|l| l.contains("UP")).unwrap_or(true)
+                    text.lines()
+                        .next()
+                        .map(|l| l.contains("UP"))
+                        .unwrap_or(true)
                 }
             }
             _ => true,

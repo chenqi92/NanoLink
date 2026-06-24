@@ -3459,7 +3459,12 @@ pub async fn run_agent(config_path: PathBuf) -> Result<()> {
     // Create connection manager first to get signal sender and status
     let connection_manager = {
         let config_guard = config.read().await;
-        ConnectionManager::new(Arc::new((*config_guard).clone()), ring_buffer.clone())
+        ConnectionManager::new(
+            Arc::new((*config_guard).clone()),
+            config.clone(),
+            config_path.clone(),
+            ring_buffer.clone(),
+        )
     };
     let connection_signal_tx = connection_manager.get_signal_sender();
     let connection_status = connection_manager.get_status();
