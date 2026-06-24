@@ -663,7 +663,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8080:8080 \
   -p 9100:9100 \
-  -p 9200:9200 \
+  -p 39100:39100 \
   -v nanolink-data:/app/data \
   -e NANOLINK_ADMIN_USERNAME=admin \
   -e NANOLINK_ADMIN_PASSWORD=changeme \
@@ -686,7 +686,7 @@ services:
     ports:
       - "8080:8080"   # HTTP API & Dashboard
       - "9100:9100"   # WebSocket for Dashboard real-time
-      - "9200:9200"   # gRPC for Agents
+      - "39100:39100"   # gRPC for Agents
     volumes:
       - nanolink-data:/app/data
     environment:
@@ -721,11 +721,11 @@ Run with: `docker-compose up -d`
 
 | Internal | External (Example) | Protocol | Purpose |
 |----------|-------------------|----------|---------|
-| 8080 | 8080 or 39100 | HTTP | Dashboard & REST API |
-| 9100 | 9100 or 39101 | WebSocket | Dashboard real-time updates |
-| 9200 | 9200 or 39102 | gRPC | Agent connections |
+| 8080 | 8080 or 18080 | HTTP | Dashboard & REST API |
+| 9100 | 9100 or 19100 | WebSocket | Dashboard real-time updates |
+| 39100 | 39100 or 49100 | gRPC | Agent connections |
 
-> **Tip:** For production, map to non-standard ports like `39100:8080`, `39101:9100`, `39102:9200`
+> **Tip:** For production, map to non-standard external ports like `18080:8080`, `19100:9100`, `49100:39100`
 
 Access Dashboard: `http://<server-ip>:8080` (or your mapped port)
 

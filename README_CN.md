@@ -663,7 +663,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8080:8080 \
   -p 9100:9100 \
-  -p 9200:9200 \
+  -p 39100:39100 \
   -v nanolink-data:/app/data \
   -e NANOLINK_ADMIN_USERNAME=admin \
   -e NANOLINK_ADMIN_PASSWORD=changeme \
@@ -686,7 +686,7 @@ services:
     ports:
       - "8080:8080"   # HTTP API 和 Dashboard
       - "9100:9100"   # Dashboard 实时 WebSocket
-      - "9200:9200"   # Agent gRPC 连接
+      - "39100:39100"   # Agent gRPC 连接
     volumes:
       - nanolink-data:/app/data
     environment:
@@ -721,11 +721,11 @@ volumes:
 
 | 容器内部端口 | 外部端口（示例） | 协议 | 用途 |
 |-------------|-----------------|------|------|
-| 8080 | 8080 或 39100 | HTTP | Dashboard 和 REST API |
-| 9100 | 9100 或 39101 | WebSocket | Dashboard 实时更新 |
-| 9200 | 9200 或 39102 | gRPC | Agent 连接 |
+| 8080 | 8080 或 18080 | HTTP | Dashboard 和 REST API |
+| 9100 | 9100 或 19100 | WebSocket | Dashboard 实时更新 |
+| 39100 | 39100 或 49100 | gRPC | Agent 连接 |
 
-> **提示：** 生产环境建议映射到非标准端口，如 `39100:8080`、`39101:9100`、`39102:9200`
+> **提示：** 生产环境建议映射到非标准外部端口，如 `18080:8080`、`19100:9100`、`49100:39100`
 
 访问 Dashboard：`http://<服务器IP>:8080`（或你映射的端口）
 
