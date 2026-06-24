@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
@@ -12,17 +13,19 @@ import (
 
 // DeviceHandler handles device management API requests
 type DeviceHandler struct {
-	deviceService *service.DeviceService
-	logger        *zap.SugaredLogger
-	serverName    string
+	deviceService  *service.DeviceService
+	logger         *zap.SugaredLogger
+	serverName     string
+	pairingLimiter *service.LoginRateLimiter
 }
 
 // NewDeviceHandler creates a new device handler
 func NewDeviceHandler(deviceService *service.DeviceService, logger *zap.SugaredLogger, serverName string) *DeviceHandler {
 	return &DeviceHandler{
-		deviceService: deviceService,
-		logger:        logger,
-		serverName:    serverName,
+		deviceService:  deviceService,
+		logger:         logger,
+		serverName:     serverName,
+		pairingLimiter: service.NewLoginRateLimiter(5, 5*time.Minute), // 5 attempts / 5 min lockout per IP
 	}
 }
 
@@ -280,5 +283,56 @@ func (h *DeviceHandler) AuthenticateDevice(c *gin.Context) {
 			"name":            h.serverName,
 			"permissionLevel": device.PermissionLevel,
 		},
+	})
+}
+
+// RedeemPairingRequest is the body for exchanging a manual pairing code.
+type RedeemPairingRequest struct {
+	PairingCode string `json:"pairingCode" binding:"required"`
+}
+
+// RedeemPairingCode exchanges a one-time 6-digit pairing code for a device
+// token. It mirrors the QR payload fields (token, serverUrl, serverName) so a
+// client that cannot scan the QR can still finish pairing. Brute-force attempts
+// are rate-limited per client IP.
+func (h *DeviceHandler) RedeemPairingCode(c *gin.Context) {
+	clientIP := c.ClientIP()
+
+	// Per-IP brute-force protection: lock out after repeated failures.
+	if h.pairingLimiter != nil {
+		if err := h.pairingLimiter.Check(clientIP); err != nil {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many attempts, try again later"})
+			return
+		}
+	}
+
+	var req RedeemPairingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	result, err := h.deviceService.RedeemPairingCode(req.PairingCode, h.serverName)
+	if err != nil {
+		if h.pairingLimiter != nil {
+			h.pairingLimiter.RecordFailure(clientIP)
+		}
+		if err == service.ErrInvalidDeviceToken {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired pairing code"})
+			return
+		}
+		h.logger.Errorf("Failed to redeem pairing code: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to redeem pairing code"})
+		return
+	}
+
+	if h.pairingLimiter != nil {
+		h.pairingLimiter.RecordSuccess(clientIP)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"token":      result.Token,
+		"serverUrl":  result.ServerURL,
+		"serverName": result.ServerName,
 	})
 }

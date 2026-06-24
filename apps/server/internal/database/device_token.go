@@ -15,7 +15,14 @@ type DeviceToken struct {
 	DeviceOS        string         `gorm:"size:50" json:"deviceOs"`   // iOS/Android/macOS/Windows/Linux
 	PermissionLevel int            `gorm:"default:0" json:"permissionLevel"`
 	IsActive        bool           `gorm:"default:true" json:"isActive"`
-	LastUsedAt      *time.Time     `json:"lastUsedAt"`
+
+	// Pairing code redemption: a short-lived 6-digit code that a client can
+	// exchange for the real device token when QR scanning is not possible.
+	PairingCode        string     `gorm:"index;size:16" json:"-"`
+	PairingCodeExpires *time.Time `json:"-"`
+	PairingRedeemed    bool       `gorm:"default:false" json:"-"`
+
+	LastUsedAt *time.Time `json:"lastUsedAt"`
 	LastIP          string         `gorm:"size:50" json:"lastIp"`
 	CreatedBy       uint           `gorm:"index;not null" json:"createdBy"`
 	CreatedAt       time.Time      `json:"createdAt"`

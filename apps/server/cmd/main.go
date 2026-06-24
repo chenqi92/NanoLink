@@ -162,6 +162,8 @@ func main() {
 		// Device token authentication (public, uses X-Device-Token header)
 		deviceHandler := handler.NewDeviceHandler(deviceService, sugar, "NanoLink")
 		api.POST("/auth/device", deviceHandler.AuthenticateDevice)
+		// Pairing-code redemption (public): exchange a manual 6-digit code for a token
+		api.POST("/auth/pairing", deviceHandler.RedeemPairingCode)
 
 		// Health check (public)
 		if metricsPersistence != nil {
@@ -299,6 +301,9 @@ func main() {
 		configGen := handler.NewConfigGenHandler(cfg, sugar)
 		api.GET("/server-info", configGen.GetServerURLInfo)
 	}
+
+	// Prometheus metrics endpoint (root-level, unauthenticated for scrapers)
+	router.GET("/metrics", gin.WrapH(handler.NewMetricsPromHandler(metricsService)))
 
 	// Serve embedded web UI
 	webDist, err := fs.Sub(server.WebFS, "web/dist")
