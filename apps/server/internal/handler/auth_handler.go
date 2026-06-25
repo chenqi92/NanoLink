@@ -38,14 +38,15 @@ type LoginRequest struct {
 
 // AuthResponse represents an authentication response.
 //
-// The JWT itself is delivered exclusively via the HttpOnly auth cookie set by
-// SetAuthCookie. We deliberately do not echo it in the JSON body: clients that
-// do not need raw token access (i.e. the web UI, which talks to same-origin
-// APIs) should never see it, eliminating accidental localStorage persistence
-// or logging of the bearer secret. SDK/CLI clients that genuinely need a
-// token string should use a separate token-issuing endpoint.
+// The JWT is delivered two ways so both browser and non-browser clients can
+// authenticate: (1) via the HttpOnly auth cookie set by SetAuthCookie, which
+// same-origin web UI requests carry automatically, and (2) echoed in the Token
+// field of the JSON body so native/mobile/SDK/CLI clients (which cannot read an
+// HttpOnly cookie) can capture it and send it as a Bearer header. Web clients
+// that rely on the cookie may simply ignore the body token.
 type AuthResponse struct {
-	User UserResponse `json:"user"`
+	User  UserResponse `json:"user"`
+	Token string       `json:"token"`
 }
 
 // UserResponse represents a user in API responses
@@ -100,6 +101,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			Email:        user.Email,
 			IsSuperAdmin: user.IsSuperAdmin,
 		},
+		Token: token,
 	})
 }
 
@@ -135,6 +137,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			Email:        user.Email,
 			IsSuperAdmin: user.IsSuperAdmin,
 		},
+		Token: token,
 	})
 }
 

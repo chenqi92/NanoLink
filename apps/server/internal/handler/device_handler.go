@@ -29,9 +29,12 @@ func NewDeviceHandler(deviceService *service.DeviceService, logger *zap.SugaredL
 	}
 }
 
-// GenerateTokenRequest represents the request to generate a new device token
+// GenerateTokenRequest represents the request to generate a new device token.
+// PermissionLevel is optional (0-3); when omitted the device defaults to
+// read-only (least privilege).
 type GenerateTokenRequest struct {
-	ServerName string `json:"serverName"`
+	ServerName      string `json:"serverName"`
+	PermissionLevel *int   `json:"permissionLevel"`
 }
 
 // GenerateToken creates a new device token with QR code data
@@ -51,7 +54,22 @@ func (h *DeviceHandler) GenerateToken(c *gin.Context) {
 		req.ServerName = h.serverName
 	}
 
-	result, device, err := h.deviceService.CreateDeviceToken(user.ID, req.ServerName)
+	// Default to least privilege; a granted level above read-only requires the
+	// caller to be a super admin (mirrors UpdateDevice's permission gate).
+	permissionLevel := database.PermissionReadOnly
+	if req.PermissionLevel != nil {
+		if *req.PermissionLevel < database.PermissionReadOnly || *req.PermissionLevel > database.PermissionSystemAdmin {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "permission level must be 0-3"})
+			return
+		}
+		if *req.PermissionLevel > database.PermissionReadOnly && !user.IsSuperAdmin {
+			c.JSON(http.StatusForbidden, gin.H{"error": "only super admin can grant elevated permission level"})
+			return
+		}
+		permissionLevel = *req.PermissionLevel
+	}
+
+	result, device, err := h.deviceService.CreateDeviceToken(user.ID, req.ServerName, permissionLevel)
 	if err != nil {
 		h.logger.Errorf("Failed to generate device token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
@@ -59,9 +77,10 @@ func (h *DeviceHandler) GenerateToken(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"qrData":      result.QRData,
-		"pairingCode": result.PairingCode,
-		"device":      device.ToResponse(),
+		"qrData":          result.QRData,
+		"pairingCode":     result.PairingCode,
+		"permissionLevel": device.PermissionLevel,
+		"device":          device.ToResponse(),
 	})
 }
 

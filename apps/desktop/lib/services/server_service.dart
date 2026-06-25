@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/models.dart';
 import 'shell_session.dart';
+import 'tls_client.dart';
 import 'ws_channel.dart';
 
 /// Connection mode enum
@@ -94,7 +95,20 @@ class DeviceTokenResult {
   /// 6-digit manual pairing code.
   final String pairingCode;
 
-  const DeviceTokenResult({required this.qrData, required this.pairingCode});
+  /// Permission level granted to the paired device (0=read-only .. 3=system).
+  /// Mirrors the server's top-level `permissionLevel` field.
+  final int permissionLevel;
+
+  /// When the QR/pairing offer expires, decoded from the QR payload's `e`
+  /// (Unix-seconds) field; null when the server did not advertise an expiry.
+  final DateTime? expiresAt;
+
+  const DeviceTokenResult({
+    required this.qrData,
+    required this.pairingCode,
+    this.permissionLevel = 0,
+    this.expiresAt,
+  });
 }
 
 /// Parsed historical metrics for one agent, shaped for the history charts.
@@ -113,6 +127,9 @@ class MetricsHistory {
   final List<double> diskWrite; // MB/s
   final List<double> gpuUsage; // %
   final List<double> gpuTemp; // °C (may be empty)
+  final List<double> cpuMax; // % per-bucket peak (DB-aggregated; empty if absent)
+  final List<double> memMax; // % per-bucket peak (DB-aggregated; empty if absent)
+  final List<double> loadAvg; // 1-min load average (DB-aggregated; empty if absent)
 
   const MetricsHistory({
     required this.times,
@@ -124,10 +141,16 @@ class MetricsHistory {
     required this.diskWrite,
     required this.gpuUsage,
     required this.gpuTemp,
+    this.cpuMax = const [],
+    this.memMax = const [],
+    this.loadAvg = const [],
   });
 
   bool get isEmpty => cpu.isEmpty;
   bool get hasGpu => gpuUsage.any((v) => v > 0) && gpuUsage.isNotEmpty;
+
+  /// Whether the server supplied per-bucket CPU/Mem peak bands (DB path only).
+  bool get hasMaxBands => cpuMax.isNotEmpty || memMax.isNotEmpty;
 
   factory MetricsHistory.parse(List<dynamic> raw) {
     final times = <DateTime>[];
@@ -139,7 +162,13 @@ class MetricsHistory {
     final diskWrite = <double>[];
     final gpuUsage = <double>[];
     final gpuTemp = <double>[];
+    final cpuMax = <double>[];
+    final memMax = <double>[];
+    final loadAvg = <double>[];
     var anyGpuTemp = false;
+    var anyCpuMax = false;
+    var anyMemMax = false;
+    var anyLoad = false;
 
     double n(dynamic v) => (v as num?)?.toDouble() ?? 0;
     const mb = 1000000.0;
@@ -150,12 +179,36 @@ class MetricsHistory {
 
       times.add(_parseTime(m['timestamp']));
 
-      cpu.add(n((m['cpu'] as Map?)?['usagePercent']));
+      final cpuMap = (m['cpu'] as Map?) ?? const {};
+      cpu.add(n(cpuMap['usagePercent']));
+      // DB-aggregated path emits per-bucket peak as cpu.maxPercent (omitted when 0).
+      if (cpuMap.containsKey('maxPercent')) {
+        anyCpuMax = true;
+        cpuMax.add(n(cpuMap['maxPercent']));
+      } else {
+        cpuMax.add(0);
+      }
 
       final memMap = (m['memory'] as Map?) ?? const {};
       final total = n(memMap['total']);
       final used = n(memMap['used']);
       mem.add(total > 0 ? (used / total * 100).clamp(0, 100).toDouble() : 0);
+      // memory.maxPercent is already a percentage (DB-aggregated path).
+      if (memMap.containsKey('maxPercent')) {
+        anyMemMax = true;
+        memMax.add(n(memMap['maxPercent']).clamp(0, 100).toDouble());
+      } else {
+        memMax.add(0);
+      }
+
+      // loadAverage is a top-level array per sample on the DB-aggregated path.
+      final loadList = m['loadAverage'] as List? ?? const [];
+      if (loadList.isNotEmpty) {
+        anyLoad = true;
+        loadAvg.add(n(loadList.first));
+      } else {
+        loadAvg.add(0);
+      }
 
       double rx = 0, tx = 0;
       for (final net in (m['networks'] as List? ?? const [])) {
@@ -203,6 +256,9 @@ class MetricsHistory {
       diskWrite: diskWrite,
       gpuUsage: gpuUsage,
       gpuTemp: anyGpuTemp ? gpuTemp : const [],
+      cpuMax: anyCpuMax ? cpuMax : const [],
+      memMax: anyMemMax ? memMax : const [],
+      loadAvg: anyLoad ? loadAvg : const [],
     );
   }
 
@@ -266,6 +322,117 @@ class ServerInfo {
 /// Desktop client version
 const String clientVersion = '0.3.3';
 
+/// Why a login attempt failed, so the UI can show a specific message.
+///
+/// Maps the server's `POST /api/auth/login` status codes (auth_handler.go):
+/// 400 → [badRequest], 401 → [invalidCredentials], 429 → [rateLimited],
+/// 5xx → [serverError]; transport/timeout failures → [network].
+enum LoginError {
+  invalidCredentials, // 401
+  rateLimited,        // 429
+  badRequest,         // 400
+  serverError,        // 5xx
+  network,            // transport/timeout/parse failure
+}
+
+/// Outcome of a login attempt. On success [token] is non-null and [error] null;
+/// on failure [error] is set (and [message] carries the server's reason if any).
+class LoginResult {
+  final String? token;
+  final LoginError? error;
+  final String? message;
+  final int? statusCode;
+
+  const LoginResult.success(this.token)
+      : error = null,
+        message = null,
+        statusCode = 200;
+
+  const LoginResult.failure(this.error, {this.message, this.statusCode})
+      : token = null;
+
+  bool get ok => token != null && error == null;
+}
+
+/// Outcome of an assistant chat call, distinguishing the not-configured (503),
+/// bad-request (400) and upstream-failure (502) cases the server returns.
+enum AssistantChatError {
+  notConfigured,  // 503 — llm disabled / no API key
+  badRequest,     // 400 — invalid / empty / too-long messages
+  upstreamFailed, // 502 — LLM call failed
+  serverError,    // other non-2xx
+  network,        // transport/timeout/parse failure
+}
+
+/// Result of [ServerService.assistantChat]: on success [reply] is non-null;
+/// on failure [error] is set and [message] carries the server's reason.
+class AssistantChatResult {
+  final ChatMessage? reply;
+  final AssistantChatError? error;
+  final String? message;
+  final int? statusCode;
+
+  const AssistantChatResult.success(this.reply)
+      : error = null,
+        message = null,
+        statusCode = 200;
+
+  const AssistantChatResult.failure(this.error, {this.message, this.statusCode})
+      : reply = null;
+
+  bool get ok => reply != null && error == null;
+}
+
+/// Result of dispatching a command via [ServerService.sendCommandReturningId].
+/// On success [commandId] is non-null (poll it with [ServerService.pollCommandResult]);
+/// on failure [error] holds a human-readable message.
+class CommandDispatch {
+  final String? commandId;
+  final String? error;
+
+  const CommandDispatch.success(this.commandId) : error = null;
+  const CommandDispatch.failure(this.error) : commandId = null;
+
+  bool get ok => commandId != null && error == null;
+}
+
+/// Status of a polled command result (`GET /api/agents/:id/command/:commandId/result`).
+enum CommandResultStatus { ready, pending, denied, error }
+
+/// Result of polling a dispatched command's structured output.
+/// - [CommandResultStatus.ready]: [data] holds the decoded JSON result.
+/// - [CommandResultStatus.pending]: agent has not reported yet (HTTP 202).
+/// - [CommandResultStatus.denied]: caller may not read this result (HTTP 403).
+/// - [CommandResultStatus.error]: transport/server failure ([message] set).
+class CommandResult {
+  final CommandResultStatus status;
+  final Map<String, dynamic>? data;
+  final String? message;
+
+  const CommandResult(this.status, {this.data, this.message});
+
+  bool get isReady => status == CommandResultStatus.ready;
+  bool get isPending => status == CommandResultStatus.pending;
+}
+
+/// Result of validating a device token at add-time
+/// (`POST /api/auth/device`, device_handler.go AuthenticateDevice).
+class DeviceAuthResult {
+  final bool ok;
+  final int permissionLevel;
+  final String serverName;
+  final String? error;
+  final int? statusCode;
+
+  const DeviceAuthResult({
+    required this.ok,
+    this.permissionLevel = 0,
+    this.serverName = '',
+    this.error,
+    this.statusCode,
+  });
+}
+
 /// Service for communicating with NanoLink servers using WebSocket + HTTP fallback
 class ServerService {
   final ServerConnection connection;
@@ -308,6 +475,18 @@ class ServerService {
       ? ConnectionMode.websocket
       : (_pollingTimer != null ? ConnectionMode.httpPolling : ConnectionMode.disconnected);
 
+  /// Timestamp of the most recent WebSocket `pong` (heartbeat reply), or null
+  /// when no pong has been received on the current connection.
+  DateTime? get lastPong => _lastPongTime;
+
+  /// True when the WebSocket is connected but the last heartbeat reply is older
+  /// than [threshold] (default 90s ≈ 3 missed 30s pings), indicating a stale /
+  /// half-open socket. False while polling or before the first pong.
+  bool isWsStale({Duration threshold = const Duration(seconds: 90)}) {
+    if (!_wsConnected || _lastPongTime == null) return false;
+    return DateTime.now().difference(_lastPongTime!) > threshold;
+  }
+
   /// Get cached server info (available after WebSocket connection)
   ServerInfo? get serverInfo => _serverInfo;
 
@@ -316,7 +495,8 @@ class ServerService {
       _serverInfo == null || _serverInfo!.isCompatible(clientVersion);
 
   ServerService({required this.connection, http.Client? client})
-      : _client = client ?? http.Client();
+      : _client =
+            client ?? buildHttpClient(ignoreCert: connection.ignoreCert);
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -324,18 +504,26 @@ class ServerService {
           'Authorization': 'Bearer ${connection.authToken}',
       };
 
-  String _buildUrl(String path) {
-    final baseUrl = connection.url.endsWith('/')
-        ? connection.url.substring(0, connection.url.length - 1)
-        : connection.url;
-    return '$baseUrl/api$path';
-  }
-
-  /// `ws(s)://host[:port]` base derived from the configured HTTP url.
-  String _wsBaseUrl() {
+  /// Trailing-slash-trimmed HTTP base. When [ServerConnection.forceTls] is set,
+  /// an insecure `http://` origin is upgraded to `https://` so requests never
+  /// fall back to cleartext.
+  String _httpBaseUrl() {
     var baseUrl = connection.url.endsWith('/')
         ? connection.url.substring(0, connection.url.length - 1)
         : connection.url;
+    if (connection.forceTls && baseUrl.startsWith('http://')) {
+      baseUrl = 'https://${baseUrl.substring(7)}';
+    }
+    return baseUrl;
+  }
+
+  String _buildUrl(String path) => '${_httpBaseUrl()}/api$path';
+
+  /// `ws(s)://host[:port]` base derived from the configured HTTP url. Honors
+  /// [ServerConnection.forceTls] (via [_httpBaseUrl]) so the socket upgrades to
+  /// `wss://` alongside the REST origin.
+  String _wsBaseUrl() {
+    var baseUrl = _httpBaseUrl();
 
     // Convert http(s) to ws(s)
     if (baseUrl.startsWith('https://')) {
@@ -362,7 +550,10 @@ class ServerService {
     final uri = Uri.parse(
         '${_wsBaseUrl()}/ws/shell/${Uri.encodeComponent(agentId)}'
         '?token=${Uri.encodeComponent(token)}');
-    return ShellSession(uri: uri, token: connection.authToken);
+    return ShellSession(
+        uri: uri,
+        token: connection.authToken,
+        ignoreCert: connection.ignoreCert);
   }
 
   /// Login with username and password, returns JWT token on success
@@ -389,6 +580,77 @@ class ServerService {
     }
   }
 
+  /// Login variant that differentiates failures so the UI can show specifics.
+  ///
+  /// Same request as [login] (`POST /api/auth/login`), but returns a
+  /// [LoginResult] mapping the server's status codes (auth_handler.go):
+  /// 401 → invalid credentials, 429 → rate-limited (locked out), 400 → bad
+  /// request, 5xx → server error; transport/timeout failures → network.
+  /// On success the JWT is taken from the JSON body's `token` field (the server
+  /// also sets an HttpOnly cookie, which native clients cannot read).
+  Future<LoginResult> loginDetailed(String username, String password) async {
+    try {
+      final response = await _client.post(
+        Uri.parse(_buildUrl('/auth/login')),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final token = data['token'] as String?;
+        if (token != null && token.isNotEmpty) {
+          return LoginResult.success(token);
+        }
+        return const LoginResult.failure(LoginError.serverError,
+            message: 'login succeeded but no token was returned', statusCode: 200);
+      }
+
+      final reason = _errorMessage(response);
+      switch (response.statusCode) {
+        case 401:
+          return LoginResult.failure(LoginError.invalidCredentials,
+              message: reason, statusCode: 401);
+        case 429:
+          return LoginResult.failure(LoginError.rateLimited,
+              message: reason, statusCode: 429);
+        case 400:
+          return LoginResult.failure(LoginError.badRequest,
+              message: reason, statusCode: 400);
+        default:
+          return LoginResult.failure(LoginError.serverError,
+              message: reason, statusCode: response.statusCode);
+      }
+    } catch (e) {
+      debugPrint('[Auth] Login error: $e');
+      return LoginResult.failure(LoginError.network, message: e.toString());
+    }
+  }
+
+  /// Redeem a 6-digit pairing code for a device token.
+  ///
+  /// Posts to the public `/api/auth/pairing` endpoint; returns the rotated
+  /// device token on success, or null on failure.
+  Future<String?> redeemPairingCode(String code) async {
+    try {
+      final response = await _client.post(
+        Uri.parse(_buildUrl('/auth/pairing')),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'pairingCode': code}),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['token'] as String?;
+      }
+      debugPrint('[Auth] Pairing redeem failed: ${response.statusCode}');
+      return null;
+    } catch (e) {
+      debugPrint('[Auth] Pairing redeem error: $e');
+      return null;
+    }
+  }
+
   /// Test connection to server
   Future<bool> testConnection() async {
     try {
@@ -410,7 +672,7 @@ class ServerService {
       debugPrint('[WS] Connecting to $wsUrl');
 
       _wsChannel = connectAuthedWs(Uri.parse(wsUrl),
-          token: connection.authToken);
+          token: connection.authToken, ignoreCert: connection.ignoreCert);
 
       _wsChannel!.stream.listen(
         _onWsMessage,
@@ -419,6 +681,9 @@ class ServerService {
       );
 
       _wsConnected = true;
+      // Seed the heartbeat clock so staleness is measured from connect time,
+      // not from a stale pong on a previous socket.
+      _lastPongTime = DateTime.now();
       _emitConnectionStatus(true, ConnectionMode.websocket);
 
       // Start ping timer
@@ -698,6 +963,78 @@ class ServerService {
     }
   }
 
+  /// Dispatch a command and return its server-assigned `commandId` so the caller
+  /// can poll the result with [pollCommandResult]. Same route/body as
+  /// [sendCommand] (`POST /api/agents/:id/command`); the server replies 200 with
+  /// `{ "commandId": "...", ... }` on dispatch.
+  Future<CommandDispatch> sendCommandReturningId(
+    String agentId,
+    String type, {
+    String target = '',
+    Map<String, String>? params,
+  }) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/agents/$agentId/command')),
+            headers: _headers,
+            body: jsonEncode({
+              'type': type,
+              'target': target,
+              if (params != null) 'params': params,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final id = data['commandId'] as String?;
+        if (id != null && id.isNotEmpty) return CommandDispatch.success(id);
+        return const CommandDispatch.failure('server returned no commandId');
+      }
+      return CommandDispatch.failure(_errorMessage(response));
+    } catch (e) {
+      return CommandDispatch.failure(e.toString());
+    }
+  }
+
+  /// Poll the structured result of a dispatched command
+  /// (`GET /api/agents/:id/command/:commandId/result`).
+  ///
+  /// The server returns 200 with the decoded result once the agent reports back,
+  /// 202 (`{ "status": "pending" }`) while still in flight, or 403 when the
+  /// caller may not read this command's result. Callers should re-poll on
+  /// [CommandResultStatus.pending] with a short backoff.
+  Future<CommandResult> pollCommandResult(
+      String agentId, String commandId) async {
+    try {
+      final response = await _client
+          .get(
+            Uri.parse(_buildUrl(
+                '/agents/$agentId/command/$commandId/result')),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
+      switch (response.statusCode) {
+        case 200:
+          final decoded = jsonDecode(response.body);
+          return CommandResult(
+            CommandResultStatus.ready,
+            data: decoded is Map<String, dynamic> ? decoded : null,
+          );
+        case 202:
+          return const CommandResult(CommandResultStatus.pending);
+        case 403:
+          return CommandResult(CommandResultStatus.denied,
+              message: _errorMessage(response));
+        default:
+          return CommandResult(CommandResultStatus.error,
+              message: _errorMessage(response));
+      }
+    } catch (e) {
+      return CommandResult(CommandResultStatus.error, message: e.toString());
+    }
+  }
+
   /// Ask an agent to push fresh data on demand
   /// (`POST /api/agents/:id/data-request`). [requestType] ∈
   /// full / static / disk_usage / network_info / user_sessions / gpu_info /
@@ -746,6 +1083,192 @@ class ServerService {
     }
   }
 
+  /// Ask the AI assistant a question grounded in the live fleet snapshot
+  /// (`POST /api/assistant/chat`).
+  ///
+  /// Sends `{ "messages": [ {role, content}, ... ] }` and reads `{ "reply": "..." }`
+  /// on success. Distinguishes the server's failure cases (assistant_handler.go):
+  /// 503 → not configured, 400 → bad request, 502 → upstream LLM failed.
+  Future<AssistantChatResult> assistantChat(List<ChatMessage> messages) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/assistant/chat')),
+            headers: _headers,
+            body: jsonEncode(
+                {'messages': messages.map((m) => m.toJson()).toList()}),
+          )
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final reply = data['reply'] as String? ?? '';
+        return AssistantChatResult.success(
+            ChatMessage(role: 'assistant', content: reply));
+      }
+      final reason = _errorMessage(response);
+      switch (response.statusCode) {
+        case 503:
+          return AssistantChatResult.failure(AssistantChatError.notConfigured,
+              message: reason, statusCode: 503);
+        case 400:
+          return AssistantChatResult.failure(AssistantChatError.badRequest,
+              message: reason, statusCode: 400);
+        case 502:
+          return AssistantChatResult.failure(AssistantChatError.upstreamFailed,
+              message: reason, statusCode: 502);
+        default:
+          return AssistantChatResult.failure(AssistantChatError.serverError,
+              message: reason, statusCode: response.statusCode);
+      }
+    } catch (e) {
+      debugPrint('[Assistant] chat error: $e');
+      return AssistantChatResult.failure(AssistantChatError.network,
+          message: e.toString());
+    }
+  }
+
+  /// Fetch active alert instances (`GET /api/alerts`).
+  ///
+  /// The server returns a JSON array of alertDTO (alert_handler.go). Pass
+  /// [status] to filter (e.g. "firing", "acked") via the `status` query param;
+  /// omit for all. Returns an empty list on failure.
+  Future<List<AlertInstance>> fetchAlerts({String? status}) async {
+    try {
+      final uri = Uri.parse(_buildUrl('/alerts')).replace(
+        queryParameters: {
+          if (status != null && status.isNotEmpty) 'status': status,
+        },
+      );
+      final response =
+          await _client.get(uri, headers: _headers).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is List) {
+          return data
+              .whereType<Map<String, dynamic>>()
+              .map(AlertInstance.fromJson)
+              .toList();
+        }
+      }
+      return const [];
+    } catch (e) {
+      debugPrint('[Alerts] fetch error: $e');
+      return const [];
+    }
+  }
+
+  /// Acknowledge a single alert (`POST /api/alerts/ack/:id`).
+  /// Returns `null` on success, otherwise a human-readable error message.
+  Future<String?> ackAlert(String id) async {
+    try {
+      final response = await _client
+          .post(Uri.parse(_buildUrl('/alerts/ack/$id')), headers: _headers)
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) return null;
+      return _errorMessage(response);
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// Acknowledge all firing alerts (`POST /api/alerts/ack-all`).
+  /// Returns the number acked on success, or `null` on failure.
+  Future<int?> ackAllAlerts() async {
+    try {
+      final response = await _client
+          .post(Uri.parse(_buildUrl('/alerts/ack-all')), headers: _headers)
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['count'] as int? ?? 0;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[Alerts] ack-all error: $e');
+      return null;
+    }
+  }
+
+  /// Fetch the most recent audit log entries (`GET /api/audit/recent`).
+  ///
+  /// The server wraps the records as `{ "logs": [ ...AuditLog ] }`
+  /// (audit.go GetRecentLogs); [limit] is capped server-side (max 500).
+  /// Returns an empty list on failure.
+  Future<List<AuditEntry>> fetchRecentAudit({int limit = 50}) async {
+    try {
+      final uri = Uri.parse(_buildUrl('/audit/recent')).replace(
+        queryParameters: {'limit': '$limit'},
+      );
+      final response =
+          await _client.get(uri, headers: _headers).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final logs = data is Map ? data['logs'] : data;
+        if (logs is List) {
+          return logs
+              .whereType<Map<String, dynamic>>()
+              .map(AuditEntry.fromJson)
+              .toList();
+        }
+      }
+      return const [];
+    } catch (e) {
+      debugPrint('[Audit] recent error: $e');
+      return const [];
+    }
+  }
+
+  /// Validate a device token against the server at add-time
+  /// (`POST /api/auth/device`, device_handler.go AuthenticateDevice).
+  ///
+  /// Sends the token in the `X-Device-Token` header plus
+  /// `{ deviceName, deviceType, deviceOs }` in the body (all required by the
+  /// server's binding). On success returns [DeviceAuthResult.ok] = true with the
+  /// granted `permissionLevel` and server name; on failure maps the status code
+  /// (401 invalid, 403 disabled, 400 bad request) into [DeviceAuthResult.error].
+  Future<DeviceAuthResult> validateDeviceToken(
+    String token, {
+    required String deviceName,
+    required String deviceType,
+    required String deviceOs,
+  }) async {
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/auth/device')),
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Device-Token': token,
+            },
+            body: jsonEncode({
+              'deviceName': deviceName,
+              'deviceType': deviceType,
+              'deviceOs': deviceOs,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final info = (data['serverInfo'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{};
+        return DeviceAuthResult(
+          ok: true,
+          permissionLevel: info['permissionLevel'] as int? ?? 0,
+          serverName: info['name'] as String? ?? '',
+          statusCode: 200,
+        );
+      }
+      return DeviceAuthResult(
+        ok: false,
+        error: _errorMessage(response),
+        statusCode: response.statusCode,
+      );
+    } catch (e) {
+      debugPrint('[Device] validate error: $e');
+      return DeviceAuthResult(ok: false, error: e.toString());
+    }
+  }
+
   /// Generate a device pairing token + QR payload (`POST /api/devices/token`).
   /// Requires an account-authenticated (JWT) connection. Returns `null` on
   /// failure (e.g. device-token-only connections cannot generate codes).
@@ -761,9 +1284,12 @@ class ServerService {
           .timeout(const Duration(seconds: 12));
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final qrData = data['qrData'] as String? ?? '';
         return DeviceTokenResult(
-          qrData: data['qrData'] as String? ?? '',
+          qrData: qrData,
           pairingCode: data['pairingCode'] as String? ?? '',
+          permissionLevel: data['permissionLevel'] as int? ?? 0,
+          expiresAt: _qrExpiry(qrData),
         );
       }
       return null;
@@ -771,6 +1297,23 @@ class ServerService {
       debugPrint('[Pairing] generate error: $e');
       return null;
     }
+  }
+
+  /// Decode the QR payload's `e` (Unix-seconds) expiry from a base64(JSON)
+  /// [qrData] string. Returns null when the payload is unreadable or carries no
+  /// expiry (the field is `omitempty` server-side).
+  static DateTime? _qrExpiry(String qrData) {
+    if (qrData.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(utf8.decode(base64.decode(qrData)));
+      if (decoded is Map) {
+        final e = decoded['e'];
+        if (e is num && e > 0) {
+          return DateTime.fromMillisecondsSinceEpoch(e.toInt() * 1000);
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Extract a readable error from a failed JSON response.

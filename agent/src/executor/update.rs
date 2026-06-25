@@ -672,6 +672,8 @@ del /F "%~f0"
         // Validate destination path
         let dest_str = escape_path(dest)?;
 
+        // Consumed only by the unix curl --max-filesize path below.
+        #[cfg_attr(not(unix), allow(unused_variables))]
         let max_bytes_str = MAX_UPDATE_DOWNLOAD_BYTES.to_string();
 
         #[cfg(unix)]

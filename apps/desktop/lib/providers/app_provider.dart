@@ -21,11 +21,17 @@ class ServerConnectionState {
   final DateTime? lastUpdate;
   final String? error;
 
+  /// True when the server rejected our credentials/token (401/expiry) and the
+  /// connection needs the user to re-authenticate (no usable saved secret to
+  /// silently recover with).
+  final bool needsReauth;
+
   ServerConnectionState({
     required this.connection,
     this.connectionMode = ConnectionMode.disconnected,
     this.lastUpdate,
     this.error,
+    this.needsReauth = false,
   });
 
   bool get isConnected => connection.isConnected;
@@ -37,12 +43,14 @@ class ServerConnectionState {
     ConnectionMode? connectionMode,
     DateTime? lastUpdate,
     String? error,
+    bool? needsReauth,
   }) {
     return ServerConnectionState(
       connection: connection ?? this.connection,
       connectionMode: connectionMode ?? this.connectionMode,
       lastUpdate: lastUpdate ?? this.lastUpdate,
       error: error,
+      needsReauth: needsReauth ?? this.needsReauth,
     );
   }
 }
@@ -65,18 +73,68 @@ class AppProvider extends ChangeNotifier {
   bool _alertsSeeded = false;
 
   List<ServerConnection> _servers = [];
-  Map<String, ConnectionMode> _connectionModes = {};
-  List<Agent> _allAgents = [];
-  Map<String, AgentMetrics> _allMetrics = {};
-  Map<String, ServerSummary> _serverSummaries = {};
+  final Map<String, ConnectionMode> _connectionModes = {};
+  final List<Agent> _allAgents = [];
+  final Map<String, AgentMetrics> _allMetrics = {};
+  final Map<String, ServerSummary> _serverSummaries = {};
   bool _isLoading = true;
   String? _activeServerId;
+
+  // Server-sourced alert/audit feeds, cached per server id. These come from the
+  // server's real alert engine + audit log (distinct from the client-derived
+  // _evaluateAlerts path which only drives local push notifications).
+  final Map<String, List<AlertInstance>> _serverAlerts = {};
+  final Map<String, List<AuditEntry>> _recentActivity = {};
+
+  // Servers whose token/credentials the server rejected (401/expiry) and which
+  // could not be silently recovered. UI should prompt the user to re-auth.
+  final Set<String> _needsReauth = {};
+
+  // Transient (in-memory only, never persisted) account passwords captured at
+  // add/login time, used to silently re-login on token expiry. Cleared on
+  // removeServer/dispose.
+  final Map<String, String> _sessionPasswords = {};
+
+  // De-dupes concurrent re-auth attempts per server.
+  final Set<String> _reauthInFlight = {};
 
   List<ServerConnection> get servers => _servers;
   List<Agent> get allAgents => _allAgents;
   Map<String, AgentMetrics> get allMetrics => _allMetrics;
   Map<String, ServerSummary> get serverSummaries => _serverSummaries;
   bool get isLoading => _isLoading;
+
+  /// Cached server-sourced alerts for [serverId] (or the active server when
+  /// null). Empty until [fetchServerAlerts] has run for that server.
+  List<AlertInstance> serverAlerts([String? serverId]) {
+    final id = serverId ?? activeServerId;
+    if (id == null) return const [];
+    return _serverAlerts[id] ?? const [];
+  }
+
+  /// Cached recent audit entries for [serverId] (or the active server when
+  /// null). Empty until [fetchRecentActivity] has run for that server.
+  List<AuditEntry> recentActivity([String? serverId]) {
+    final id = serverId ?? activeServerId;
+    if (id == null) return const [];
+    return _recentActivity[id] ?? const [];
+  }
+
+  /// Count of unacknowledged server-sourced alerts for [serverId] (active when
+  /// null).
+  int unackedAlertCount([String? serverId]) =>
+      serverAlerts(serverId).where((a) => !a.acked).length;
+
+  /// Whether [serverId] (active when null) needs the user to re-authenticate
+  /// (token/credentials rejected and not silently recoverable).
+  bool needsReauth([String? serverId]) {
+    final id = serverId ?? activeServerId;
+    if (id == null) return false;
+    return _needsReauth.contains(id);
+  }
+
+  /// Whether any connected server currently needs re-authentication.
+  bool get hasReauthNeeded => _needsReauth.isNotEmpty;
 
   /// Currently focused server (defaults to the first one). The new mobile
   /// design exposes a server switcher; screens scope their data to this server.
@@ -182,22 +240,45 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Add a new server connection
+  /// Add a new server connection.
+  ///
+  /// [forceTls] upgrades an `http://` url to `https://` (and `ws://`→`wss://`)
+  /// when building requests; [ignoreCert] accepts self-signed / invalid TLS
+  /// certificates for this connection only (no process-wide override; web
+  /// no-op). Both default to false.
   Future<bool> addServer({
     required String name,
     required String url,
     String? token,
+    bool forceTls = false,
+    bool ignoreCert = false,
   }) async {
     final server = ServerConnection(
       id: _uuid.v4(),
       name: name,
       url: url,
       token: token,
+      forceTls: forceTls,
+      ignoreCert: ignoreCert,
     );
 
-    // Test connection first
+    // Validate the connection. When a device token is supplied (QR / manual
+    // token), authenticate it against /api/auth/device so an invalid or
+    // disabled token fails at add-time. The no-token path falls back to the
+    // public /health check.
     final service = ServerService(connection: server);
-    final connected = await service.testConnection();
+    final bool connected;
+    if (token != null && token.isNotEmpty) {
+      final auth = await service.validateDeviceToken(
+        token,
+        deviceName: name.isNotEmpty ? name : _deviceName,
+        deviceType: _deviceType,
+        deviceOs: _deviceOs,
+      );
+      connected = auth.ok;
+    } else {
+      connected = await service.testConnection();
+    }
 
     if (connected) {
       _servers.add(server.copyWith(isConnected: true, lastConnected: DateTime.now()));
@@ -209,6 +290,54 @@ class AppProvider extends ChangeNotifier {
 
     service.dispose();
     return false;
+  }
+
+  /// A human-readable name for this client device (used when registering a
+  /// device token with the server).
+  String get _deviceName {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'Android device';
+      case TargetPlatform.iOS:
+        return 'iOS device';
+      case TargetPlatform.macOS:
+        return 'macOS device';
+      case TargetPlatform.windows:
+        return 'Windows device';
+      case TargetPlatform.linux:
+        return 'Linux device';
+      default:
+        return 'NanoLink client';
+    }
+  }
+
+  /// Coarse device type for device-token registration ("mobile" | "desktop").
+  String get _deviceType {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+        return 'mobile';
+      default:
+        return 'desktop';
+    }
+  }
+
+  /// OS label for device-token registration.
+  String get _deviceOs {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'Android';
+      case TargetPlatform.iOS:
+        return 'iOS';
+      case TargetPlatform.macOS:
+        return 'macOS';
+      case TargetPlatform.windows:
+        return 'Windows';
+      case TargetPlatform.linux:
+        return 'Linux';
+      default:
+        return 'Unknown';
+    }
   }
 
   /// Add a new server connection using username/password credentials
@@ -235,8 +364,45 @@ class AppProvider extends ChangeNotifier {
         lastConnected: DateTime.now(),
         userToken: token,
       ));
+      // Keep the password in memory (only) so a later token expiry can recover
+      // silently; it is never persisted.
+      _sessionPasswords[server.id] = password;
       await _storageService.saveServers(_servers);
       await _connectToServer(server.copyWith(userToken: token));
+      notifyListeners();
+      return true;
+    }
+
+    service.dispose();
+    return false;
+  }
+
+  /// Add a new server connection using a 6-digit pairing code.
+  ///
+  /// Exchanges the code for a device token via the server's `/api/auth/pairing`
+  /// endpoint, then saves and connects exactly like a token connection.
+  Future<bool> addServerWithPairingCode({
+    required String name,
+    required String url,
+    required String pairingCode,
+  }) async {
+    final server = ServerConnection(
+      id: _uuid.v4(),
+      name: name,
+      url: url,
+    );
+
+    final service = ServerService(connection: server);
+    final token = await service.redeemPairingCode(pairingCode);
+
+    if (token != null) {
+      _servers.add(server.copyWith(
+        isConnected: true,
+        lastConnected: DateTime.now(),
+        token: token,
+      ));
+      await _storageService.saveServers(_servers);
+      await _connectToServer(server.copyWith(token: token));
       notifyListeners();
       return true;
     }
@@ -365,6 +531,72 @@ class AppProvider extends ChangeNotifier {
       ..addAll(current.keys);
   }
 
+  /// Fetch the server's real alert instances for [serverId] (active when null)
+  /// and cache them for screens. Optionally filter by [status] (e.g. "firing").
+  /// Returns the fetched list (also cached + notified).
+  Future<List<AlertInstance>> fetchServerAlerts({
+    String? serverId,
+    String? status,
+  }) async {
+    final id = serverId ?? activeServerId;
+    if (id == null) return const [];
+    final service = _serverServices[id];
+    if (service == null) return _serverAlerts[id] ?? const [];
+
+    final alerts = await service.fetchAlerts(status: status);
+    _serverAlerts[id] = alerts;
+    notifyListeners();
+    return alerts;
+  }
+
+  /// Fetch the most recent audit entries for [serverId] (active when null) and
+  /// cache them for screens. Returns the fetched list (also cached + notified).
+  Future<List<AuditEntry>> fetchRecentActivity({
+    String? serverId,
+    int limit = 50,
+  }) async {
+    final id = serverId ?? activeServerId;
+    if (id == null) return const [];
+    final service = _serverServices[id];
+    if (service == null) return _recentActivity[id] ?? const [];
+
+    final entries = await service.fetchRecentAudit(limit: limit);
+    _recentActivity[id] = entries;
+    notifyListeners();
+    return entries;
+  }
+
+  /// Acknowledge a single server alert. On success refreshes the cached alert
+  /// list for that server. Returns null on success, else an error message.
+  Future<String?> acknowledgeAlert(String alertId, {String? serverId}) async {
+    final id = serverId ?? activeServerId;
+    if (id == null) return 'no active server';
+    final service = _serverServices[id];
+    if (service == null) return 'server not connected';
+
+    final err = await service.ackAlert(alertId);
+    if (err == null) {
+      await fetchServerAlerts(serverId: id);
+    }
+    return err;
+  }
+
+  /// Acknowledge all firing alerts on [serverId] (active when null). On success
+  /// refreshes the cached alert list. Returns the number acked, or null on
+  /// failure.
+  Future<int?> acknowledgeAllAlerts({String? serverId}) async {
+    final id = serverId ?? activeServerId;
+    if (id == null) return null;
+    final service = _serverServices[id];
+    if (service == null) return null;
+
+    final count = await service.ackAllAlerts();
+    if (count != null) {
+      await fetchServerAlerts(serverId: id);
+    }
+    return count;
+  }
+
   void _updateServerConnectionStatus(String serverId, ConnectionStatus status) {
     final index = _servers.indexWhere((s) => s.id == serverId);
     if (index != -1) {
@@ -373,8 +605,126 @@ class AppProvider extends ChangeNotifier {
         lastConnected: status.isConnected ? DateTime.now() : null,
       );
       _connectionModes[serverId] = status.mode;
+
+      // A live connection means our token/credentials are currently accepted.
+      if (status.isConnected && _needsReauth.remove(serverId)) {
+        // needs-reauth cleared
+      }
+
+      // Detect auth-class failures and attempt silent recovery / surface
+      // needs-reauth. Only react to auth-shaped errors to avoid treating
+      // ordinary transient network drops as token expiry.
+      if (!status.isConnected && _looksLikeAuthFailure(status.error)) {
+        _handleAuthFailure(serverId);
+      }
+
       notifyListeners();
     }
+  }
+
+  /// True when [error] looks like an authentication/authorization rejection
+  /// (401/403/expired token) rather than a generic transport failure.
+  bool _looksLikeAuthFailure(String? error) {
+    if (error == null || error.isEmpty) return false;
+    final e = error.toLowerCase();
+    return e.contains('401') ||
+        e.contains('403') ||
+        e.contains('unauthorized') ||
+        e.contains('forbidden') ||
+        e.contains('invalid token') ||
+        e.contains('token expired') ||
+        e.contains('expired token');
+  }
+
+  /// Handle an auth-class connection failure for [serverId]: try to silently
+  /// re-login with an in-memory password (if available) and reconnect; when no
+  /// usable secret exists, mark the server as needing re-authentication.
+  Future<void> _handleAuthFailure(String serverId) async {
+    if (_reauthInFlight.contains(serverId)) return;
+    _reauthInFlight.add(serverId);
+    try {
+      final reconnected = await _attemptReauth(serverId);
+      if (!reconnected) {
+        _needsReauth.add(serverId);
+        notifyListeners();
+      }
+    } finally {
+      _reauthInFlight.remove(serverId);
+    }
+  }
+
+  /// Try to recover a rejected connection by re-logging in with the transient
+  /// in-memory password for that server's account. Returns true if a fresh
+  /// token was obtained and the connection was re-established.
+  ///
+  /// Never persists or reads a plaintext password; only an in-memory session
+  /// password (captured at login time) is used. Token-only / pairing
+  /// connections, or accounts whose password we don't hold this session, return
+  /// false so the UI can prompt for re-auth.
+  Future<bool> _attemptReauth(String serverId) async {
+    final index = _servers.indexWhere((s) => s.id == serverId);
+    if (index == -1) return false;
+    final server = _servers[index];
+    final username = server.username;
+    final password = _sessionPasswords[serverId];
+    if (username == null || username.isEmpty || password == null) {
+      return false;
+    }
+
+    final service = _serverServices[serverId];
+    if (service == null) return false;
+
+    final result = await service.loginDetailed(username, password);
+    if (!result.ok || result.token == null) {
+      // Stored session password no longer valid; drop it so we don't retry.
+      if (result.error == LoginError.invalidCredentials) {
+        _sessionPasswords.remove(serverId);
+      }
+      return false;
+    }
+
+    // Swap in the refreshed JWT and reconnect with a new service instance.
+    final refreshed = server.copyWith(userToken: result.token);
+    _servers[index] = refreshed;
+    await _storageService.saveServers(_servers);
+
+    _serverServices[serverId]?.dispose();
+    _serverServices.remove(serverId);
+    _needsReauth.remove(serverId);
+    await _connectToServer(refreshed);
+    notifyListeners();
+    return true;
+  }
+
+  /// Re-authenticate [serverId] with freshly-entered credentials (UI-driven,
+  /// e.g. from a needs-reauth prompt). Captures the password in memory for this
+  /// session so future token expiries can recover silently. Returns true on
+  /// success.
+  Future<bool> reauthenticate({
+    required String serverId,
+    required String username,
+    required String password,
+  }) async {
+    final index = _servers.indexWhere((s) => s.id == serverId);
+    if (index == -1) return false;
+    final service = _serverServices[serverId] ??
+        ServerService(connection: _servers[index]);
+
+    final result = await service.loginDetailed(username, password);
+    if (!result.ok || result.token == null) return false;
+
+    _sessionPasswords[serverId] = password;
+    final refreshed =
+        _servers[index].copyWith(username: username, userToken: result.token);
+    _servers[index] = refreshed;
+    await _storageService.saveServers(_servers);
+
+    _serverServices[serverId]?.dispose();
+    _serverServices.remove(serverId);
+    _needsReauth.remove(serverId);
+    await _connectToServer(refreshed);
+    notifyListeners();
+    return true;
   }
 
   void _handleAgentOffline(String agentId) {
@@ -397,6 +747,11 @@ class AppProvider extends ChangeNotifier {
     _allAgents.removeWhere((a) => a.serverId == serverId);
     _connectionModes.remove(serverId);
     _serverSummaries.remove(serverId);
+    _serverAlerts.remove(serverId);
+    _recentActivity.remove(serverId);
+    _needsReauth.remove(serverId);
+    _sessionPasswords.remove(serverId);
+    _reauthInFlight.remove(serverId);
     await _storageService.saveServers(_servers);
     notifyListeners();
   }
@@ -441,6 +796,7 @@ class AppProvider extends ChangeNotifier {
     for (final service in _serverServices.values) {
       service.dispose();
     }
+    _sessionPasswords.clear();
     super.dispose();
   }
 }

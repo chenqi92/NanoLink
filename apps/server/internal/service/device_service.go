@@ -81,8 +81,25 @@ func trimPairingCode(code string) string {
 // pairingCodeTTL is how long a generated pairing code remains redeemable.
 const pairingCodeTTL = 15 * time.Minute
 
-// CreateDeviceToken generates a new device token
-func (s *DeviceService) CreateDeviceToken(createdBy uint, serverName string) (*GenerateTokenResult, *database.DeviceToken, error) {
+// qrTokenTTL is how long a generated QR/pairing offer is advertised as valid to
+// the client. It mirrors pairingCodeTTL so the QR and the manual code expire in
+// lockstep.
+const qrTokenTTL = pairingCodeTTL
+
+// normalizePermissionLevel clamps a requested permission level into the valid
+// range, falling back to read-only for out-of-range values.
+func normalizePermissionLevel(level int) int {
+	if level < database.PermissionReadOnly || level > database.PermissionSystemAdmin {
+		return database.PermissionReadOnly
+	}
+	return level
+}
+
+// CreateDeviceToken generates a new device token. permissionLevel is the maximum
+// permission the paired client will be granted; pass database.PermissionReadOnly
+// for the default least-privilege behavior. Out-of-range values are clamped to
+// read-only.
+func (s *DeviceService) CreateDeviceToken(createdBy uint, serverName string, permissionLevel int) (*GenerateTokenResult, *database.DeviceToken, error) {
 	token, err := generateSecureToken()
 	if err != nil {
 		return nil, nil, err
@@ -91,14 +108,15 @@ func (s *DeviceService) CreateDeviceToken(createdBy uint, serverName string) (*G
 	// Generate the manual pairing code before persisting so it can be stored
 	// alongside the token and later redeemed by a client.
 	pairingCode := generatePairingCode()
-	pairingExpires := time.Now().Add(pairingCodeTTL)
+	now := time.Now()
+	pairingExpires := now.Add(pairingCodeTTL)
 
 	deviceToken := &database.DeviceToken{
 		Token:              database.HashToken(token),
 		DeviceName:         "Pending Connection",
 		DeviceType:         "unknown",
 		DeviceOS:           "unknown",
-		PermissionLevel:    database.PermissionReadOnly,
+		PermissionLevel:    normalizePermissionLevel(permissionLevel),
 		IsActive:           true,
 		CreatedBy:          createdBy,
 		PairingCode:        pairingCode,
@@ -110,12 +128,14 @@ func (s *DeviceService) CreateDeviceToken(createdBy uint, serverName string) (*G
 		return nil, nil, err
 	}
 
-	// Generate QR code data
+	// Generate QR code data. ExpiresAt advertises how long the offer is valid so
+	// a client can reject a stale QR before attempting to pair.
 	qrData := QRCodeData{
 		Version:    1,
 		ServerURL:  s.serverURL,
 		Token:      token,
 		ServerName: serverName,
+		ExpiresAt:  now.Add(qrTokenTTL).Unix(),
 	}
 
 	jsonData, err := json.Marshal(qrData)

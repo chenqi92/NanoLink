@@ -9,19 +9,34 @@ import '../widgets/nano/nano_card.dart';
 import '../widgets/nano/nano_primitives.dart';
 import '../widgets/nano/nano_tiles.dart';
 import '../widgets/agent_actions_sheet.dart';
+import '../widgets/server_switch_sheet.dart';
 import 'agent_detail_screen.dart';
 
 /// Node list with search + filters. Each card shows live CPU/MEM/disk meters.
 class AgentsScreen extends StatefulWidget {
-  const AgentsScreen({super.key});
+  /// Optional initial filter ('all' | 'online' | 'offline' | 'warn') used to
+  /// deep-link into a specific node view (e.g. the dashboard offline banner).
+  final String? initialFilter;
+
+  /// Optional initial search query applied to hostname/os.
+  final String? initialQuery;
+
+  const AgentsScreen({super.key, this.initialFilter, this.initialQuery});
 
   @override
   State<AgentsScreen> createState() => _AgentsScreenState();
 }
 
 class _AgentsScreenState extends State<AgentsScreen> {
-  String _query = '';
-  String _filter = 'all';
+  late String _query = widget.initialQuery ?? '';
+  late String _filter = widget.initialFilter ?? 'all';
+  final _searchFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _searchFocus.dispose();
+    super.dispose();
+  }
 
   bool _warn(AppProvider p, Agent a) {
     final m = p.metricsFor(a.id);
@@ -44,7 +59,9 @@ class _AgentsScreenState extends State<AgentsScreen> {
           if (_query.isNotEmpty) {
             final q = _query.toLowerCase();
             if (!a.hostname.toLowerCase().contains(q) &&
-                !a.os.toLowerCase().contains(q)) return false;
+                !a.os.toLowerCase().contains(q)) {
+              return false;
+            }
           }
           return true;
         }).toList();
@@ -59,7 +76,9 @@ class _AgentsScreenState extends State<AgentsScreen> {
               all.where((a) => !a.isOnline).length],
         ];
 
-        return SafeArea(
+        return Stack(
+          children: [
+            SafeArea(
           bottom: false,
           child: Column(
             children: [
@@ -86,6 +105,24 @@ class _AgentsScreenState extends State<AgentsScreen> {
                                 fontWeight: t.displayWeight,
                                 letterSpacing: t.displayTracking,
                                 color: t.fg)),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: 'agents.searchHint'.tr(),
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(Icons.search_rounded, color: t.fg2),
+                          onPressed: () => _searchFocus.requestFocus(),
+                        ),
+                        IconButton(
+                          tooltip: 'agents.filter'.tr(),
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(
+                            _filter == 'all'
+                                ? Icons.filter_list_rounded
+                                : Icons.filter_list_alt,
+                            color: _filter == 'all' ? t.fg2 : t.accent,
+                          ),
+                          onPressed: () => _showFilterSheet(provider, filters),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -102,6 +139,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: TextField(
+                              focusNode: _searchFocus,
                               style: TextStyle(color: t.fg, fontSize: 15),
                               decoration: InputDecoration(
                                 isDense: true,
@@ -161,8 +199,74 @@ class _AgentsScreenState extends State<AgentsScreen> {
               ),
             ],
           ),
+        ),
+            Positioned(
+              right: 16,
+              bottom: 16 + MediaQuery.of(context).padding.bottom,
+              child: FloatingActionButton.extended(
+                heroTag: 'agents-switch-server',
+                backgroundColor: t.accent,
+                foregroundColor: t.isIOS ? Colors.white : t.bg,
+                onPressed: () => showServerSwitchSheet(context),
+                icon: const Icon(Icons.dns_rounded, size: 18),
+                label: Text('agents.switchServer'.tr(),
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
         );
       },
+    );
+  }
+
+  void _showFilterSheet(AppProvider provider, List<List<dynamic>> filters) {
+    final t = context.nano;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: t.card,
+      showDragHandle: true,
+      shape: RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(t.isIOS ? 16 : 28)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text('agents.filter'.tr(),
+                    style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: t.fg)),
+              ),
+              for (final f in filters)
+                ListTile(
+                  onTap: () {
+                    setState(() => _filter = f[0] as String);
+                    Navigator.pop(ctx);
+                  },
+                  title: Text(f[1] as String,
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: t.fg)),
+                  trailing: _filter == f[0]
+                      ? Icon(Icons.check_rounded, color: t.accent, size: 20)
+                      : Text('${f[2]}',
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: t.fg4,
+                              fontFamilyFallback: kMonoFallback)),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -293,6 +397,10 @@ class _AgentCard extends StatelessWidget {
       if (worst == null || d.usagePercent > worst.usagePercent) worst = d;
     }
     String tone(double v) => v > 90 ? 'crit' : v > 75 ? 'warn' : '';
+    final temp = m.cpu.temperature;
+    final cpuSub = temp > 0
+        ? '${m.cpu.coreCount}c · ${temp.toStringAsFixed(0)}°C'
+        : '${m.cpu.coreCount}c';
     return Column(
       children: [
         const SizedBox(height: 4),
@@ -301,7 +409,7 @@ class _AgentCard extends StatelessWidget {
           label: 'CPU',
           pct: cpu,
           value: '${cpu.toStringAsFixed(0)}%',
-          sub: '${m.cpu.coreCount}c',
+          sub: cpuSub,
           tone: tone(cpu).isEmpty ? null : tone(cpu),
         ),
         const SizedBox(height: 6),

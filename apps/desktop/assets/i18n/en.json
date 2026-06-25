@@ -12,7 +12,8 @@
     "retry": "Retry",
     "copy": "Copy",
     "add": "Add",
-    "login": "Sign In"
+    "login": "Sign In",
+    "dismiss": "Dismiss"
   },
   "status": {
     "online": "Online",
@@ -163,7 +164,10 @@
     "noServersYet": "No servers added yet",
     "noOnlineNodes": "No online nodes",
     "add": "Add",
-    "offlineBanner": "{n} nodes offline"
+    "offlineBanner": "{n} nodes offline",
+    "avgMemUsed": "{gib} GiB used",
+    "newNode": "New node",
+    "view": "View"
   },
   "welcome": {
     "subtitle": "Connect to your server to start monitoring",
@@ -192,7 +196,9 @@
     "filterOffline": "Offline",
     "noNodes": "No nodes on this server yet",
     "noMatch": "No matching nodes",
-    "offlineNoData": "Offline · No live data"
+    "offlineNoData": "Offline · No live data",
+    "switchServer": "Switch Server",
+    "filter": "Filter"
   },
   "agentDetail": {
     "tabRealtime": "Realtime",
@@ -222,7 +228,15 @@
     "uptime": "Uptime",
     "motherboard": "Motherboard",
     "systemModel": "System",
-    "bios": "BIOS"
+    "bios": "BIOS",
+    "perCore": "Per-core",
+    "load": "load {values}",
+    "ghz": "{value} GHz",
+    "mtps": "{value} MT/s",
+    "cacheBuffers": "Cache / Buffers",
+    "chassis": "Chassis",
+    "primaryIp": "Primary IP",
+    "powerOf": "{used}W / {limit}W"
   },
   "history": {
     "loadFailed": "Failed to load history",
@@ -256,7 +270,9 @@
     "inputHint": "Enter command…",
     "inputHintWaiting": "Waiting for connection…",
     "lockedTitle": "Insufficient permission",
-    "lockedDesc": "This node is read-only (L0). An admin must raise it to L3 system admin permission to open a remote terminal."
+    "lockedDesc": "This node is read-only (L0). An admin must raise it to L3 system admin permission to open a remote terminal.",
+    "recentSessions": "Recent Sessions",
+    "sessionFailed": "failed"
   },
   "alerts": {
     "title": "Activity & Alerts",
@@ -275,7 +291,14 @@
     "memHigh": "{host} memory high",
     "diskFull": "{host} disk nearly full",
     "diskLow": "{host} low disk space",
-    "diskDetail": "{mount} {value}%"
+    "diskDetail": "{mount} {value}%",
+    "auditRecent": "Audit (recent)",
+    "auditEmpty": "No recent activity",
+    "clearAll": "Clear All",
+    "acknowledge": "Acknowledge",
+    "ackFailed": "Failed to acknowledge: {error}",
+    "clearAllFailed": "Failed to clear alerts",
+    "clearedCount": "Cleared {n} alerts"
   },
   "assistant": {
     "title": "AI Ops Assistant",
@@ -294,7 +317,16 @@
     "loadErrorDesc": "Check the connection to the server; auto-diagnosis needs reachable live metrics.",
     "actHistory": "View history",
     "actShell": "Open terminal",
-    "actProcesses": "List processes"
+    "actProcesses": "List processes",
+    "chatTitle": "Assistant Chat",
+    "askAssistant": "Ask the assistant",
+    "noServer": "No server connected. Add a server first.",
+    "errLabel": "Error",
+    "errNotConfigured": "The AI assistant is not configured on this server. Ask an admin to enable the LLM integration.",
+    "errUpstream": "The assistant's AI backend failed to respond. Please try again.",
+    "errBadRequest": "The request was rejected. Try shortening your message.",
+    "errNetwork": "Network error. Check the connection to the server and try again.",
+    "errServer": "The server returned an error. Please try again later."
   },
   "settings": {
     "appearance": "Appearance",
@@ -326,7 +358,41 @@
     "notifyDisk": "Disk space",
     "sourceCodeLabel": "Source",
     "pairNeedsLogin": "Generating a pairing code requires signing in to a server with an account first",
-    "footer": "NanoLink Mobile · v0.5.0"
+    "footer": "NanoLink Mobile · v0.5.0",
+    "nodeCount": "{n} nodes",
+    "compactMode": "Compact mode",
+    "terminal": "Terminal",
+    "termTheme": "Theme",
+    "termTheme_phosphor": "Phosphor (green)",
+    "termTheme_amber": "Amber",
+    "termTheme_mono": "Mono",
+    "termTheme_solarized": "Solarized",
+    "termFontSize": "Font size",
+    "ptValue": "{n} pt",
+    "termCursor": "Cursor style",
+    "termCursor_block": "Block",
+    "termCursor_bar": "Bar",
+    "termCursor_underline": "Underline",
+    "termBlink": "Cursor blink",
+    "notifyAudit": "Audit log push",
+    "notifyAuditNote": "Foreground only — no server push yet",
+    "security": "Security",
+    "faceId": "Unlock with Face ID",
+    "faceIdNote": "Saved — biometric enforcement coming soon",
+    "autoLock": "Auto-lock",
+    "autoLockOff": "Off",
+    "minutesValue": "{n} min",
+    "clearTokens": "Clear all tokens",
+    "clearTokensConfirm": "This removes every saved server and deletes its tokens and credentials from secure storage. This cannot be undone.",
+    "clearTokensConfirmAction": "Clear all",
+    "clearTokensDone": "All tokens cleared",
+    "docsHelp": "Docs & help",
+    "docsCopied": "Docs link copied",
+    "sendFeedback": "Send feedback",
+    "feedbackCopied": "Feedback address copied",
+    "logout": "Log out",
+    "logoutConfirm": "Log out of all signed-in servers? Their saved credentials will be removed.",
+    "logoutDone": "Logged out"
   },
   "serverDetail": {
     "notFound": "Server not found",
@@ -347,7 +413,16 @@
     "remove": "Remove",
     "modeWebsocket": "WebSocket (Real-time)",
     "modeHttp": "HTTP Polling",
-    "modeDisconnected": "Disconnected"
+    "modeDisconnected": "Disconnected",
+    "reconnect": "Reconnect",
+    "reauthTitle": "Re-authentication required",
+    "reauthBody": "This server's session expired or credentials were rejected. Sign in again to restore the connection.",
+    "reauthSheetTitle": "Sign in again",
+    "reauthSheetBody": "Enter your credentials for {name}.",
+    "reauthLogin": "Sign in",
+    "reauthMissing": "Enter username and password.",
+    "reauthFailed": "Sign-in failed. Check your credentials and try again.",
+    "reauthSuccess": "Reconnected"
   },
   "addServer": {
     "title": "Add Server",
@@ -365,6 +440,15 @@
     "methodAccountDesc": "Username / password · full permissions",
     "methodManual": "Manual Entry",
     "methodManualDesc": "Server URL + device token",
+    "headerPairing": "Pairing Code",
+    "methodPairing": "Pairing Code",
+    "methodPairingDesc": "Server URL + 6-digit pairing code",
+    "pairingNotice": "Enter the server URL and the 6-digit pairing code shown under “Device Pairing” in the web dashboard.",
+    "pairingCode": "Pairing Code",
+    "pairingCodeHint": "000000",
+    "pairingCodeRequired": "Please enter the pairing code",
+    "pairingCodeInvalid": "The pairing code must be 6 digits",
+    "pairingFailed": "Pairing failed. The code may be invalid or expired",
     "qrUnsupported": "QR scanning is not supported on this platform",
     "useManualInstead": "Use manual entry instead",
     "qrHint": "Place the QR code within the frame, generated from “Device Pairing” in the web dashboard",
@@ -382,7 +466,23 @@
     "passwordRequired": "Please enter a password",
     "login": "Sign In",
     "urlRequired": "Please enter the server URL",
-    "urlInvalid": "Invalid URL format (must include http(s)://)"
+    "urlInvalid": "Invalid URL format (must include http(s)://)",
+    "advanced": "Advanced",
+    "deviceName": "Device Name",
+    "deviceNameHint": "e.g. Alice's iPhone",
+    "forceTls": "Force TLS",
+    "ignoreCert": "Ignore certificate errors",
+    "forgotPassword": "Forgot password?",
+    "forgotPasswordHint": "Reset your password from the web dashboard.",
+    "ssoLogin": "SSO login →",
+    "ssoHint": "Single sign-on is configured on the server.",
+    "qrSaving": "Saving and connecting…",
+    "pairingEnterHint": "Generate a pairing code in the web dashboard, then enter the 6 digits below.",
+    "pairingVerifying": "Verifying…",
+    "pairingPaired": "✓ Paired",
+    "pairingInvalid": "Invalid pairing code",
+    "pairingValid60s": "Valid for 60s",
+    "pairingNeedsServer": "Enter the server name and URL first"
   },
   "pairing": {
     "title": "Pair New Device",
@@ -392,7 +492,10 @@
     "securityNote": "The QR code contains an access token. Do not screenshot or share it. You can revoke it anytime under “Devices” after pairing.",
     "regenerate": "Regenerate",
     "errorTitle": "Cannot generate pairing code",
-    "errorDesc": "Generating a pairing code requires a server connection signed in with an account. Make sure the server is signed in with an account and reachable."
+    "errorDesc": "Generating a pairing code requires a server connection signed in with an account. Make sure the server is signed in with an account and reachable.",
+    "expiresIn": "Expires in {time}",
+    "expired": "Code expired",
+    "grants": "Grants"
   },
   "actions": {
     "title": "Actions",
@@ -411,7 +514,11 @@
     "rebootFailed": "Send failed: {error}",
     "rebootConfirmTitle": "Reboot this node's host?",
     "rebootConfirmBody": "A system reboot command will be sent to the agent. The host will disconnect and restart, and metric collection will pause until it recovers.",
-    "rebootConfirm": "Reboot"
+    "rebootConfirm": "Reboot",
+    "requestDataPending": "Requesting latest data…",
+    "rebootPending": "Sending reboot command…",
+    "rebootDone": "Host reboot completed",
+    "commandDenied": "You don't have permission to read this command's result"
   },
   "serverSwitch": {
     "title": "Switch Server",
@@ -422,6 +529,37 @@
     "servers": "{n} servers",
     "aiAssistant": "AI Ops Assistant",
     "settings": "Settings",
-    "footer": "NanoLink Mobile"
+    "footer": "NanoLink Mobile",
+    "sectionServers": "Servers",
+    "sectionOther": "Other",
+    "addServer": "Add Server",
+    "permissions": "Permissions & Roles",
+    "auditLog": "Audit Log",
+    "roleAccount": "Account · full permissions",
+    "roleDevice": "Device token · read-only",
+    "noServer": "No server connected",
+    "signOut": "Sign Out",
+    "signOutTitle": "Sign out?",
+    "signOutBody": "This disconnects and removes the local config for “{name}”."
+  },
+  "time": {
+    "secondsAgo": "{n}s ago",
+    "minutesAgo": "{n}m ago",
+    "hoursAgo": "{n}h ago",
+    "daysAgo": "{n}d ago"
+  },
+  "audit": {
+    "title": "Audit Log",
+    "entriesCount": "{n} entries",
+    "empty": "No audit entries",
+    "emptySub": "Command activity on this server will appear here"
+  },
+  "permissions": {
+    "title": "Permissions & Roles",
+    "intro": "Nodes grouped by their assigned permission tier (L0 read-only → L3 system admin).",
+    "levelGroup": "{n} nodes",
+    "noneAtLevel": "No nodes at this level",
+    "empty": "No nodes connected",
+    "emptySub": "Permission tiers will appear once nodes connect"
   }
 }

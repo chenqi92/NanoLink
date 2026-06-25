@@ -24,6 +24,9 @@ struct SystemInfoStatic {
     bios_version: String,
     system_model: String,
     system_vendor: String,
+    /// Enclosure/chassis type label (best-effort, e.g. "Laptop", "Desktop",
+    /// "Server"). Empty string if it cannot be determined.
+    chassis: String,
 }
 
 /// System info collector
@@ -96,6 +99,12 @@ impl SystemInfoCollector {
         if let Ok(name) = fs::read_to_string(format!("{}/product_name", dmi_path)) {
             info.system_model = name.trim().to_string();
         }
+        // chassis_type is the SMBIOS numeric code (DMTF spec). Map to a label.
+        if let Ok(code) = fs::read_to_string(format!("{}/chassis_type", dmi_path)) {
+            if let Ok(n) = code.trim().parse::<u32>() {
+                info.chassis = chassis_label(n).to_string();
+            }
+        }
 
         info
     }
@@ -146,6 +155,14 @@ impl SystemInfoCollector {
         }
 
         info.system_vendor = "Apple".to_string();
+
+        // Best-effort chassis from the model name (no DMI on macOS).
+        let model_lower = info.system_model.to_lowercase();
+        if model_lower.contains("macbook") {
+            info.chassis = "Laptop".to_string();
+        } else if !info.system_model.is_empty() {
+            info.chassis = "Desktop".to_string();
+        }
 
         info
     }
@@ -202,6 +219,28 @@ impl SystemInfoCollector {
             }
         }
 
+        // Get chassis type (SMBIOS ChassisTypes numeric code).
+        let mut cmd = Command::new("wmic");
+        cmd.args(["systemenclosure", "get", "ChassisTypes", "/format:csv"]);
+
+        if let Some(output) = exec_with_timeout(cmd, SYSTEM_COMMAND_TIMEOUT) {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines().skip(1) {
+                    // CSV: Node,ChassisTypes -> ChassisTypes may look like "{3}".
+                    let parts: Vec<&str> = line.split(',').collect();
+                    if parts.len() >= 2 {
+                        let raw = parts[1].trim().trim_matches(|c| c == '{' || c == '}');
+                        // Multiple values are semicolon-separated; take the first.
+                        let first = raw.split(';').next().unwrap_or("").trim();
+                        if let Ok(n) = first.parse::<u32>() {
+                            info.chassis = chassis_label(n).to_string();
+                        }
+                    }
+                }
+            }
+        }
+
         info
     }
 
@@ -231,7 +270,63 @@ impl SystemInfoCollector {
             bios_version: static_info.bios_version.clone(),
             system_model: static_info.system_model.clone(),
             system_vendor: static_info.system_vendor.clone(),
+            chassis: static_info.chassis.clone(),
+            // Primary outbound IPv4 can change (DHCP, VPN, interface up/down), so
+            // it is resolved on each collect rather than cached as static info.
+            primary_ip: primary_ipv4(),
         }
+    }
+}
+
+/// Map an SMBIOS chassis-type numeric code (DMTF System Management BIOS spec,
+/// "System Enclosure or Chassis" / DMI type 3) to a human-readable label.
+/// Returns "" for unknown/unmapped codes so callers can treat it as unavailable.
+#[allow(dead_code)]
+fn chassis_label(code: u32) -> &'static str {
+    match code {
+        3 | 4 | 6 | 7 => "Desktop",
+        8 | 9 | 10 | 14 | 30 | 31 | 32 => "Laptop",
+        11 => "Hand Held",
+        12 | 13 => "All-in-One",
+        15 | 16 => "Desktop",
+        17 | 23 | 28 => "Server",
+        18..=22 => "Expansion Chassis",
+        24 => "Sealed-Case PC",
+        25 => "Multi-System Chassis",
+        29 => "All-in-One",
+        _ => "",
+    }
+}
+
+/// Resolve the primary outbound IPv4 address (the source address the OS would
+/// use to reach the public internet). Returns "" if it cannot be determined.
+///
+/// Uses the standard "connect a UDP socket to a public address and read the
+/// local address" trick: UDP connect performs no handshake and sends no packets,
+/// it only makes the kernel pick the egress interface, so this is fast, has no
+/// extra dependency, and works on Linux/macOS/Windows alike.
+fn primary_ipv4() -> String {
+    use std::net::UdpSocket;
+
+    // 0.0.0.0:0 lets the OS choose the source port/interface. The remote is a
+    // routable public IPv4 (Google DNS); no traffic is actually sent.
+    let socket = match UdpSocket::bind("0.0.0.0:0") {
+        Ok(s) => s,
+        Err(_) => return String::new(),
+    };
+    if socket.connect("8.8.8.8:80").is_err() {
+        return String::new();
+    }
+    match socket.local_addr() {
+        Ok(addr) => {
+            let ip = addr.ip();
+            if ip.is_unspecified() {
+                String::new()
+            } else {
+                ip.to_string()
+            }
+        }
+        Err(_) => String::new(),
     }
 }
 

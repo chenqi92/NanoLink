@@ -6,6 +6,7 @@ import '../providers/app_provider.dart';
 import '../services/server_service.dart';
 import '../widgets/nano/nano_card.dart';
 import 'agent_detail_screen.dart';
+import 'assistant_chat_screen.dart';
 
 /// AI operations assistant: metric-derived auto-diagnosis findings from
 /// `/assistant/findings`. The backend produces findings (not a conversational
@@ -37,6 +38,12 @@ class _AssistantScreenState extends State<AssistantScreen> {
     });
   }
 
+  void _openChat() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const AssistantChatScreen(),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.nano;
@@ -63,6 +70,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'assistant.chatTitle'.tr(),
+            icon: Icon(Icons.forum_outlined, color: t.accent),
+            onPressed: _openChat,
+          ),
           IconButton(
             icon: Icon(Icons.refresh_rounded, color: t.accent),
             onPressed: _load,
@@ -132,6 +144,30 @@ class _AssistantScreenState extends State<AssistantScreen> {
                 ? 'assistant.allHealthy'.tr()
                 : 'assistant.findingsCount'.tr(namedArgs: {'n': '$actionable'}),
             style: TextStyle(fontSize: 13, color: t.fg2, height: 1.5),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: _openChat,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [t.accent, t.tertiary]),
+                borderRadius: BorderRadius.circular(t.buttonRadius),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.forum_rounded, size: 16, color: t.onAccent),
+                  const SizedBox(width: 8),
+                  Text('assistant.askAssistant'.tr(),
+                      style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: t.onAccent)),
+                ],
+              ),
+            ),
           ),
         ],
       ),

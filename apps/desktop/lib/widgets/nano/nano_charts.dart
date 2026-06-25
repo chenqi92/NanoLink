@@ -80,8 +80,13 @@ class NanoSeries {
   final bool fill;
   final bool dashed;
   final String? label;
+
+  /// Optional per-sample peak values (same length as [data]). When present a
+  /// faint band is shaded between [data] and [band] to visualise the bucket
+  /// max envelope (DB-aggregated cpuMax/memMax).
+  final List<double>? band;
   const NanoSeries(this.data, this.color,
-      {this.fill = false, this.dashed = false, this.label});
+      {this.fill = false, this.dashed = false, this.label, this.band});
 }
 
 class NanoThreshold {
@@ -101,9 +106,15 @@ class NanoLineChart extends StatelessWidget {
   final List<NanoThreshold> thresholds;
   final bool grid;
 
-  /// Exactly three x-axis labels (start / mid / now). Defaults to a 60-minute
-  /// window when omitted.
+  /// Pre-computed x-axis labels (start … now). When [times] is supplied the
+  /// labels are derived from the real sample timestamps and this is ignored.
   final List<String> xLabels;
+
+  /// Real sample timestamps. When non-empty, three evenly-spaced tick labels
+  /// (first / middle / last) are derived from these and rendered instead of
+  /// [xLabels]. The newest tick renders as "now".
+  final List<DateTime> times;
+
   const NanoLineChart({
     super.key,
     required this.series,
@@ -114,11 +125,30 @@ class NanoLineChart extends StatelessWidget {
     this.thresholds = const [],
     this.grid = true,
     this.xLabels = const ['-60m', '-30m', 'now'],
+    this.times = const [],
   });
+
+  /// Derive three tick labels (start / middle / now) from real timestamps.
+  static List<String> labelsFromTimes(List<DateTime> times) {
+    if (times.length < 2) return const ['', '', 'now'];
+    final first = times.first;
+    final last = times.last;
+    final mid = times[times.length ~/ 2];
+    String rel(DateTime t) {
+      final s = last.difference(t).inSeconds;
+      if (s <= 30) return 'now';
+      if (s < 3600) return '-${(s / 60).round()}m';
+      if (s < 86400) return '-${(s / 3600).round()}h';
+      return '-${(s / 86400).round()}d';
+    }
+
+    return [rel(first), rel(mid), rel(last)];
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.nano;
+    final labels = times.length >= 2 ? labelsFromTimes(times) : xLabels;
     return SizedBox(
       height: height,
       width: double.infinity,
@@ -130,7 +160,7 @@ class NanoLineChart extends StatelessWidget {
           unit: unit,
           thresholds: thresholds,
           grid: grid,
-          xLabels: xLabels,
+          xLabels: labels,
           gridColor: t.sep2,
           axisText: t.fg4,
         ),
@@ -223,6 +253,27 @@ class _LinePainter extends CustomPainter {
         _text(canvas, th.label!, Offset(size.width - padR - 2, y - 6), th.color,
             align: TextAlign.end);
       }
+    }
+
+    // max-envelope bands (drawn under the main lines)
+    for (final s in series) {
+      final band = s.band;
+      if (band == null || band.isEmpty || s.data.isEmpty) continue;
+      final n = math.min(band.length, s.data.length);
+      if (n < 2) continue;
+      final top = Path();
+      for (var i = 0; i < n; i++) {
+        final x = xFor(i);
+        final y = yFor(math.max(band[i], s.data[i]));
+        i == 0 ? top.moveTo(x, y) : top.lineTo(x, y);
+      }
+      final area = Path.from(top);
+      for (var i = n - 1; i >= 0; i--) {
+        area.lineTo(xFor(i), yFor(s.data[i]));
+      }
+      area.close();
+      canvas.drawPath(
+          area, Paint()..color = s.color.withValues(alpha: 0.10));
     }
 
     // series

@@ -302,22 +302,35 @@ func (h *Handler) GetMetricsHistory(c *gin.Context) {
 			return
 		}
 
-		// Query aggregated data from DB
-		history, err := h.metricsPersistence.QueryAggregated(agentID, start, end, interval)
+		// Query aggregated data from DB (limit caps the most recent buckets)
+		history, err := h.metricsPersistence.QueryAggregated(agentID, start, end, interval, limit)
 		if err != nil {
 			h.logger.Errorf("Failed to query metrics history: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query history"})
 			return
 		}
 
-		// Convert to frontend-compatible format
+		// Convert to frontend-compatible format. Disk-IO and GPU series carry the
+		// real per-bucket averages now surfaced by the aggregate readers.
 		result := make([]gin.H, 0, len(history))
 		for _, m := range history {
+			cpu := gin.H{"usagePercent": m.CPUPercent}
+			if m.CPUMax > 0 {
+				cpu["maxPercent"] = m.CPUMax
+			}
+			// The aggregate tables persist memory only as a percentage (avg/max),
+			// not as real used/total bytes, so reconstruct a ratio the frontend
+			// reads back as a percentage: used/total*100 == MemPercent. When real
+			// avg bytes become available this should emit them directly.
+			memory := gin.H{"used": uint64(m.MemPercent * 100), "total": 10000}
+			if m.MemMax > 0 {
+				memory["maxPercent"] = m.MemMax
+			}
 			result = append(result, gin.H{
 				"timestamp": m.Timestamp,
 				"agentId":   m.AgentID,
-				"cpu":       gin.H{"usagePercent": m.CPUPercent},
-				"memory":    gin.H{"used": uint64(m.MemPercent * 100), "total": 10000}, // Percentage as ratio
+				"cpu":       cpu,
+				"memory":    memory,
 				"networks": []gin.H{
 					{"interface": "total", "rxBytesPerSec": m.NetRxPS, "txBytesPerSec": m.NetTxPS},
 				},
@@ -643,6 +656,10 @@ func commandRequiredPermission(cmdType pb.CommandType) int {
 		pb.CommandType_CONFIG_WRITE,
 		pb.CommandType_CONFIG_ROLLBACK:
 		return database.PermissionServiceControl
+	case pb.CommandType_AGENT_PROCESS_RESTART,
+		pb.CommandType_SYSTEM_REBOOT:
+		// Host-level lifecycle actions require SYSTEM_ADMIN (L3).
+		return database.PermissionSystemAdmin
 	default:
 		return database.PermissionSystemAdmin
 	}

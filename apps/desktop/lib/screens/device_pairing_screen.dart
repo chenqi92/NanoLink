@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,21 +25,71 @@ class DevicePairingScreen extends StatefulWidget {
 class _DevicePairingScreenState extends State<DevicePairingScreen> {
   Future<DeviceTokenResult?>? _future;
 
+  /// Client-side fallback TTL, used only when the server's response carries no
+  /// real `expiresAt` (mirrors device_service.go `pairingCodeTTL`).
+  static const _ttl = Duration(minutes: 15);
+
+  /// Permission level the freshly-generated device token grants, taken from the
+  /// /devices/token response's `permissionLevel`. Defaults to read-only (the
+  /// server's least-privilege default) until the request resolves.
+  int _grantedLevel = 0;
+
+  Timer? _countdown;
+  int _remaining = 0; // seconds until the current code expires
+
   @override
   void initState() {
     super.initState();
     _generate();
   }
 
+  @override
+  void dispose() {
+    _countdown?.cancel();
+    super.dispose();
+  }
+
   void _generate() {
     final provider = context.read<AppProvider>();
     final svc = provider.serviceForServer(widget.serverId);
     final name = provider.getServerName(widget.serverId);
+    final future =
+        svc == null ? Future<DeviceTokenResult?>.value(null) : svc.generateDeviceToken(serverName: name);
     setState(() {
-      _future = svc == null
-          ? Future.value(null)
-          : svc.generateDeviceToken(serverName: name);
+      _future = future;
+      _grantedLevel = 0;
     });
+    // Start the client-estimated countdown immediately; once the response
+    // resolves, re-seed it from the real expiry / permission level.
+    _startCountdown();
+    future.then((r) {
+      if (!mounted || r == null) return;
+      setState(() => _grantedLevel = r.permissionLevel);
+      if (r.expiresAt != null) _startCountdown(until: r.expiresAt);
+    });
+  }
+
+  /// (Re)start the expiry countdown. When [until] is supplied the remaining
+  /// time is derived from the server's real expiry; otherwise it falls back to
+  /// the client-side [_ttl] estimate.
+  void _startCountdown({DateTime? until}) {
+    _countdown?.cancel();
+    _remaining = until != null
+        ? until.difference(DateTime.now()).inSeconds.clamp(0, _ttl.inSeconds * 4)
+        : _ttl.inSeconds;
+    _countdown = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_remaining > 0) _remaining--;
+      });
+      if (_remaining == 0) _countdown?.cancel();
+    });
+  }
+
+  String _fmtRemaining() {
+    final m = _remaining ~/ 60;
+    final s = (_remaining % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
@@ -129,6 +180,8 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
                     fontFamilyFallback: kMonoFallback)),
           ),
         ),
+        const SizedBox(height: 12),
+        _metaRow(t),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(14),
@@ -164,6 +217,39 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  /// Expiry countdown for the 15-minute code TTL + the permission level the
+  /// paired device will be granted.
+  Widget _metaRow(NanoTokens t) {
+    final expired = _remaining == 0;
+    final low = _remaining > 0 && _remaining < 60;
+    final expColor = expired
+        ? t.crit
+        : low
+            ? t.warn
+            : t.fg2;
+    return Row(
+      children: [
+        Icon(Icons.timer_outlined, size: 16, color: expColor),
+        const SizedBox(width: 6),
+        Text(
+          expired
+              ? 'pairing.expired'.tr()
+              : 'pairing.expiresIn'
+                  .tr(namedArgs: {'time': _fmtRemaining()}),
+          style: TextStyle(
+              fontSize: 13,
+              color: expColor,
+              fontFamilyFallback: kMonoFallback),
+        ),
+        const Spacer(),
+        Text('pairing.grants'.tr(),
+            style: TextStyle(fontSize: 12.5, color: t.fg3)),
+        const SizedBox(width: 8),
+        NanoPermPill(level: _grantedLevel),
       ],
     );
   }

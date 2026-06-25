@@ -12,7 +12,8 @@
     "retry": "重试",
     "copy": "复制",
     "add": "添加",
-    "login": "登录"
+    "login": "登录",
+    "dismiss": "撤销"
   },
   "status": {
     "online": "在线",
@@ -163,7 +164,10 @@
     "noServersYet": "尚未添加服务器",
     "noOnlineNodes": "暂无在线节点",
     "add": "添加",
-    "offlineBanner": "{n} 节点离线"
+    "offlineBanner": "{n} 节点离线",
+    "avgMemUsed": "{gib} GiB 已用",
+    "newNode": "新节点",
+    "view": "查看"
   },
   "welcome": {
     "subtitle": "连接服务器以开始监控",
@@ -192,7 +196,9 @@
     "filterOffline": "离线",
     "noNodes": "该服务器暂无节点",
     "noMatch": "没有匹配的节点",
-    "offlineNoData": "离线 · 无实时数据"
+    "offlineNoData": "离线 · 无实时数据",
+    "switchServer": "切换服务器",
+    "filter": "筛选"
   },
   "agentDetail": {
     "tabRealtime": "实时",
@@ -222,7 +228,15 @@
     "uptime": "运行时长",
     "motherboard": "主板",
     "systemModel": "整机",
-    "bios": "BIOS"
+    "bios": "BIOS",
+    "perCore": "每核心",
+    "load": "负载 {values}",
+    "ghz": "{value} GHz",
+    "mtps": "{value} MT/s",
+    "cacheBuffers": "缓存 / Buffer",
+    "chassis": "整机",
+    "primaryIp": "主 IP",
+    "powerOf": "{used}W / {limit}W"
   },
   "history": {
     "loadFailed": "无法加载历史数据",
@@ -256,7 +270,9 @@
     "inputHint": "输入命令…",
     "inputHintWaiting": "等待连接…",
     "lockedTitle": "权限不足",
-    "lockedDesc": "该节点为只读 (L0)。需管理员提升至 L3 系统管理权限才能打开远程终端。"
+    "lockedDesc": "该节点为只读 (L0)。需管理员提升至 L3 系统管理权限才能打开远程终端。",
+    "recentSessions": "最近会话",
+    "sessionFailed": "失败"
   },
   "alerts": {
     "title": "活动 & 告警",
@@ -275,7 +291,14 @@
     "memHigh": "{host} 内存偏高",
     "diskFull": "{host} 磁盘将满",
     "diskLow": "{host} 磁盘空间不足",
-    "diskDetail": "{mount} {value}%"
+    "diskDetail": "{mount} {value}%",
+    "auditRecent": "审计 (最近)",
+    "auditEmpty": "暂无最近活动",
+    "clearAll": "全部清空",
+    "acknowledge": "已确认",
+    "ackFailed": "确认失败：{error}",
+    "clearAllFailed": "清空告警失败",
+    "clearedCount": "已清空 {n} 条告警"
   },
   "assistant": {
     "title": "AI 运维助手",
@@ -294,7 +317,16 @@
     "loadErrorDesc": "请确认与服务器的连接，自动诊断依赖可访问的实时指标。",
     "actHistory": "查看历史",
     "actShell": "打开终端",
-    "actProcesses": "查看进程"
+    "actProcesses": "查看进程",
+    "chatTitle": "助手对话",
+    "askAssistant": "向助手提问",
+    "noServer": "未连接服务器，请先添加服务器。",
+    "errLabel": "出错",
+    "errNotConfigured": "助手未配置：该服务器尚未启用 LLM 集成，请联系管理员开启。",
+    "errUpstream": "助手的 AI 后端响应失败，请稍后重试。",
+    "errBadRequest": "请求被拒绝，请尝试缩短消息内容。",
+    "errNetwork": "网络错误，请检查与服务器的连接后重试。",
+    "errServer": "服务器返回错误，请稍后重试。"
   },
   "settings": {
     "appearance": "外观",
@@ -326,7 +358,41 @@
     "notifyDisk": "磁盘空间",
     "sourceCodeLabel": "源码",
     "pairNeedsLogin": "生成配对码需要先用账号登录一个服务器",
-    "footer": "NanoLink Mobile · v0.5.0"
+    "footer": "NanoLink Mobile · v0.5.0",
+    "nodeCount": "{n} 节点",
+    "compactMode": "紧凑模式",
+    "terminal": "终端",
+    "termTheme": "主题",
+    "termTheme_phosphor": "Phosphor (绿色)",
+    "termTheme_amber": "Amber (琥珀)",
+    "termTheme_mono": "Mono (单色)",
+    "termTheme_solarized": "Solarized",
+    "termFontSize": "字号",
+    "ptValue": "{n} pt",
+    "termCursor": "光标样式",
+    "termCursor_block": "块状",
+    "termCursor_bar": "竖线",
+    "termCursor_underline": "下划线",
+    "termBlink": "光标闪烁",
+    "notifyAudit": "审计日志推送",
+    "notifyAuditNote": "仅前台生效，暂无服务端推送",
+    "security": "安全",
+    "faceId": "使用 Face ID 解锁",
+    "faceIdNote": "已保存，生物识别强制锁定即将推出",
+    "autoLock": "自动锁定",
+    "autoLockOff": "关闭",
+    "minutesValue": "{n} 分钟",
+    "clearTokens": "清除所有 Token",
+    "clearTokensConfirm": "将移除所有已保存的服务器，并从安全存储中删除其 Token 与凭据，此操作不可撤销。",
+    "clearTokensConfirmAction": "全部清除",
+    "clearTokensDone": "已清除所有 Token",
+    "docsHelp": "文档与帮助",
+    "docsCopied": "已复制文档链接",
+    "sendFeedback": "发送反馈",
+    "feedbackCopied": "已复制反馈地址",
+    "logout": "退出登录",
+    "logoutConfirm": "退出所有已登录的服务器？其已保存的凭据将被移除。",
+    "logoutDone": "已退出登录"
   },
   "serverDetail": {
     "notFound": "服务器不存在",
@@ -347,7 +413,16 @@
     "remove": "移除",
     "modeWebsocket": "WebSocket（实时）",
     "modeHttp": "HTTP 轮询",
-    "modeDisconnected": "已断开"
+    "modeDisconnected": "已断开",
+    "reconnect": "重新连接",
+    "reauthTitle": "需要重新认证",
+    "reauthBody": "该服务器的会话已过期或凭据被拒绝。请重新登录以恢复连接。",
+    "reauthSheetTitle": "重新登录",
+    "reauthSheetBody": "请输入 {name} 的登录凭据。",
+    "reauthLogin": "登录",
+    "reauthMissing": "请输入用户名和密码。",
+    "reauthFailed": "登录失败，请检查凭据后重试。",
+    "reauthSuccess": "已重新连接"
   },
   "addServer": {
     "title": "添加服务器",
@@ -365,6 +440,15 @@
     "methodAccountDesc": "用户名 / 密码 · 完整权限",
     "methodManual": "手动输入",
     "methodManualDesc": "Server URL + 设备令牌",
+    "headerPairing": "配对码",
+    "methodPairing": "配对码",
+    "methodPairingDesc": "服务器地址 + 6 位配对码",
+    "pairingNotice": "输入服务器地址和 Web 后台「设备配对」中显示的 6 位配对码。",
+    "pairingCode": "配对码",
+    "pairingCodeHint": "000000",
+    "pairingCodeRequired": "请输入配对码",
+    "pairingCodeInvalid": "配对码必须为 6 位数字",
+    "pairingFailed": "配对失败，配对码可能无效或已过期",
     "qrUnsupported": "当前平台不支持扫码",
     "useManualInstead": "改用手动输入",
     "qrHint": "将二维码置于取景框内，从 Web 后台「设备配对」生成",
@@ -382,7 +466,23 @@
     "passwordRequired": "请输入密码",
     "login": "登录",
     "urlRequired": "请输入服务器地址",
-    "urlInvalid": "地址格式无效（需含 http(s)://）"
+    "urlInvalid": "地址格式无效（需含 http(s)://）",
+    "advanced": "高级",
+    "deviceName": "设备名称",
+    "deviceNameHint": "例如：Alice 的 iPhone",
+    "forceTls": "强制 TLS",
+    "ignoreCert": "忽略证书错误",
+    "forgotPassword": "忘记密码？",
+    "forgotPasswordHint": "请在 Web 后台重置密码。",
+    "ssoLogin": "SSO 登录 →",
+    "ssoHint": "单点登录需在服务器端配置。",
+    "qrSaving": "正在保存并连接…",
+    "pairingEnterHint": "在 Web 后台生成配对码后，输入下方 6 位。",
+    "pairingVerifying": "正在验证…",
+    "pairingPaired": "✓ 已配对",
+    "pairingInvalid": "无效配对码",
+    "pairingValid60s": "有效 60s",
+    "pairingNeedsServer": "请先填写服务器名称和地址"
   },
   "pairing": {
     "title": "配对新设备",
@@ -392,7 +492,10 @@
     "securityNote": "二维码内含访问令牌，请勿截图外传。完成配对后可在「设备」中随时撤销。",
     "regenerate": "重新生成",
     "errorTitle": "无法生成配对码",
-    "errorDesc": "生成配对码需要使用账号登录的服务器连接。请确认该服务器已用账号登录，且网络可达。"
+    "errorDesc": "生成配对码需要使用账号登录的服务器连接。请确认该服务器已用账号登录，且网络可达。",
+    "expiresIn": "{time} 后过期",
+    "expired": "配对码已过期",
+    "grants": "授予权限"
   },
   "actions": {
     "title": "操作",
@@ -411,7 +514,11 @@
     "rebootFailed": "发送失败：{error}",
     "rebootConfirmTitle": "重启该节点主机？",
     "rebootConfirmBody": "将向 Agent 下发系统重启命令，主机会断开并重新启动，指标采集中断直至恢复。",
-    "rebootConfirm": "重启"
+    "rebootConfirm": "重启",
+    "requestDataPending": "正在请求最新数据…",
+    "rebootPending": "正在发送重启命令…",
+    "rebootDone": "主机已重启",
+    "commandDenied": "无权读取该命令的执行结果"
   },
   "serverSwitch": {
     "title": "切换服务器",
@@ -422,6 +529,37 @@
     "servers": "{n} 服务器",
     "aiAssistant": "AI 运维助手",
     "settings": "设置",
-    "footer": "NanoLink Mobile"
+    "footer": "NanoLink Mobile",
+    "sectionServers": "服务器",
+    "sectionOther": "其他",
+    "addServer": "添加服务器",
+    "permissions": "权限与角色",
+    "auditLog": "审计日志",
+    "roleAccount": "账号 · 完整权限",
+    "roleDevice": "设备令牌 · 只读",
+    "noServer": "未连接服务器",
+    "signOut": "退出登录",
+    "signOutTitle": "退出登录？",
+    "signOutBody": "这将断开连接并删除“{name}”的本地配置。"
+  },
+  "time": {
+    "secondsAgo": "{n} 秒前",
+    "minutesAgo": "{n} 分钟前",
+    "hoursAgo": "{n} 小时前",
+    "daysAgo": "{n} 天前"
+  },
+  "audit": {
+    "title": "审计日志",
+    "entriesCount": "{n} 条记录",
+    "empty": "暂无审计记录",
+    "emptySub": "此服务器上的命令活动将显示在这里"
+  },
+  "permissions": {
+    "title": "权限与角色",
+    "intro": "按分配的权限等级分组的节点（L0 只读 → L3 系统管理）。",
+    "levelGroup": "{n} 个节点",
+    "noneAtLevel": "此等级暂无节点",
+    "empty": "暂无已连接节点",
+    "emptySub": "节点连接后将显示权限等级"
   }
 }

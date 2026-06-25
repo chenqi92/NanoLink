@@ -224,6 +224,13 @@ func main() {
 			protected.GET("/alerts/rules", alertHandler.ListRules)
 			protected.GET("/alerts/channels", alertHandler.ListChannels)
 			protected.POST("/alerts/ack/:id", alertHandler.AckAlert)
+			protected.POST("/alerts/ack-all", alertHandler.AckAll)
+
+			// Audit log (read-only) for authenticated users. Mobile device
+			// sessions need the recent activity feed without super-admin rights;
+			// mutating/management audit queries stay under the super-admin group.
+			auditHandler := handler.NewAuditHandler(auditService, sugar)
+			protected.GET("/audit/recent", auditHandler.GetRecentLogs)
 
 			// AI assistant (metric-derived findings + optional external-LLM chat)
 			llmClient := service.NewLLMClient(service.LLMConfig{
@@ -265,13 +272,13 @@ func main() {
 				admin.DELETE("/permissions/:userId/:agentId", permHandler.RemoveUserPermission)
 				admin.GET("/permissions/:userId", permHandler.GetUserPermissions)
 
-				// Audit log routes (super admin only)
-				auditHandler := handler.NewAuditHandler(auditService, sugar)
+				// Audit log routes (super admin only). The read-only
+				// /audit/recent feed is registered under the plain protected
+				// group above; the detailed/filtered queries stay here.
 				admin.GET("/audit/logs", auditHandler.QueryAuditLogs)
 				admin.GET("/audit/logs/user/:userId", auditHandler.GetUserAuditLogs)
 				admin.GET("/audit/logs/agent/:agentId", auditHandler.GetAgentAuditLogs)
 				admin.GET("/audit/stats", auditHandler.GetAuditStats)
-				admin.GET("/audit/recent", auditHandler.GetRecentLogs)
 
 				// Agent token management (super admin only)
 				agentTokenHandler := handler.NewAgentTokenHandler(agentTokenService, agentService, sugar)
@@ -329,6 +336,20 @@ func main() {
 	// Register protected dashboard and shell WebSocket handlers (after gRPC server is available)
 	dashboardWSHandler := handler.NewDashboardWSHandler(sugar, permService, agentService, metricsService, cfg.Server.AllowedOrigins)
 	shellHandler := handler.NewShellHandler(sugar, grpcServer, cfg.Server.AllowedOrigins)
+
+	// Wire agent lifecycle events to the dashboard hub so register/reconnect and
+	// disconnect events reach connected dashboard clients in real time. The
+	// service package cannot import the handler package, so the hooks are set here.
+	agentService.SetOnAgentUpdate(dashboardWSHandler.BroadcastAgentRegistered)
+	agentService.SetOnAgentOffline(dashboardWSHandler.BroadcastAgentOffline)
+	// Feed the live firing-alert count into the dashboard summary.
+	dashboardWSHandler.SetActiveAlertCountFn(func() int {
+		instances, err := alertService.ListInstances("firing")
+		if err != nil {
+			return 0
+		}
+		return len(instances)
+	})
 	wsProtected := router.Group("/ws")
 	wsProtected.Use(handler.AuthMiddleware(authService))
 	{
@@ -374,7 +395,7 @@ func main() {
 
 	// Connect gRPC command results to shell WebSocket sessions
 	grpcServer.SetCommandResultHandler(func(agentID, commandID, output string, success bool) {
-		shellHandler.SendOutputToSession(agentID, commandID, output)
+		shellHandler.SendOutputToSession(agentID, commandID, output, success)
 	})
 
 	// Set broadcast callback in metrics service for real-time push
