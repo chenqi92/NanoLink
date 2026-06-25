@@ -10,6 +10,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../design/nano_tokens.dart';
 import '../providers/app_provider.dart';
 import '../widgets/nano/nano_card.dart';
+import '../widgets/nano/nano_primitives.dart';
 
 /// How to connect a server: scan a QR (embeds the full token), redeem a 6-digit
 /// pairing code via `/api/auth/pairing`, log in with an account, or enter a
@@ -1020,23 +1021,25 @@ class _AddServerPageState extends State<AddServerPage> {
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: TextStyle(color: t.fg4),
+              // iOS: filled grouped field, no border. Material (.md-input):
+              // outlined surface-1 field with a 1px separator + 2px accent focus.
               filled: true,
-              fillColor: t.card2,
+              fillColor: t.isIOS ? t.card2 : t.bg2,
               isDense: true,
               suffixIcon: suffix,
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(t.fieldRadius),
-                borderSide: BorderSide.none,
+                borderSide: t.isIOS ? BorderSide.none : BorderSide(color: t.sep),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(t.fieldRadius),
-                borderSide: BorderSide.none,
+                borderSide: t.isIOS ? BorderSide.none : BorderSide(color: t.sep),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(t.fieldRadius),
-                borderSide: BorderSide(color: t.accent, width: 1.5),
+                borderSide: BorderSide(color: t.accent, width: 2),
               ),
             ),
           ),
@@ -1065,30 +1068,11 @@ class _AddServerPageState extends State<AddServerPage> {
   }
 
   Widget _primary(NanoTokens t, String label, VoidCallback onPressed) {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        onPressed: _loading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: t.accent,
-          foregroundColor: t.onAccent,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(t.buttonRadius),
-          ),
-        ),
-        child: _loading
-            ? SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2.5, color: t.onAccent),
-              )
-            : Text(label,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-      ),
+    return NanoButton(
+      label,
+      onPressed: onPressed,
+      fullWidth: true,
+      loading: _loading,
     );
   }
 }

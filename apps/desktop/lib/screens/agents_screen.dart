@@ -206,7 +206,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
               child: FloatingActionButton.extended(
                 heroTag: 'agents-switch-server',
                 backgroundColor: t.accent,
-                foregroundColor: t.isIOS ? Colors.white : t.bg,
+                foregroundColor: t.isIOS ? Colors.white : t.onAccent,
                 onPressed: () => showServerSwitchSheet(context),
                 icon: const Icon(Icons.dns_rounded, size: 18),
                 label: Text('agents.switchServer'.tr(),
@@ -285,6 +285,43 @@ class _FilterChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.nano;
+    // Material look: `.md-chip` — radius 8, fg-4 outline, surface-3 selected
+    // fill, leading check icon. iOS keeps the inverted pill.
+    if (!t.isIOS) {
+      return GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? t.card2 : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: selected ? t.card2 : t.fg4),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (selected) ...[
+                Icon(Icons.check_rounded, size: 16, color: t.fg),
+                const SizedBox(width: 6),
+              ],
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: selected ? t.fg : t.fg2)),
+              const SizedBox(width: 5),
+              Text('$count',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: t.fg4,
+                      fontFamilyFallback: kMonoFallback)),
+            ],
+          ),
+        ),
+      );
+    }
     return GestureDetector(
       onTap: onTap,
       child: Container(

@@ -54,6 +54,17 @@ class NanoTheme {
         )
         .copyWith();
 
+    // Per-platform button metrics (iOS .ios-btn 50/14/17 vs Material .md-btn 40/100/14).
+    final isIOS = style == NanoStyle.ios;
+    final btnHeight = isIOS ? 50.0 : 40.0;
+    final btnShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(t.buttonRadius),
+    );
+    final btnTextStyle = TextStyle(
+      fontSize: isIOS ? 17 : 14,
+      fontWeight: isIOS ? FontWeight.w600 : FontWeight.w500,
+    );
+
     return base.copyWith(
       extensions: [t],
       colorScheme: colorScheme,
@@ -73,10 +84,52 @@ class NanoTheme {
         centerTitle: false,
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: t.accent),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: t.accent,
+          foregroundColor: t.onAccent,
+          elevation: 0,
+          minimumSize: Size(0, btnHeight),
+          shape: btnShape,
+          textStyle: btnTextStyle,
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: t.accent,
+          foregroundColor: t.onAccent,
+          elevation: 0,
+          minimumSize: Size(0, btnHeight),
+          shape: btnShape,
+          textStyle: btnTextStyle,
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: t.accent,
+          minimumSize: Size(0, isIOS ? 44 : 40),
+          shape: btnShape,
+          textStyle: btnTextStyle,
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: t.fg,
+          side: BorderSide(color: isIOS ? t.sep : t.fg4),
+          minimumSize: Size(0, btnHeight),
+          shape: btnShape,
+          textStyle: btnTextStyle,
+        ),
+      ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: t.card2,
-        contentTextStyle: TextStyle(color: t.fg),
+        // iOS = rounded card (radius 14); Material = .md-snack (#2C2B30, radius 4).
+        backgroundColor: isIOS ? t.card2 : const Color(0xFF2C2B30),
+        contentTextStyle:
+            TextStyle(color: isIOS ? t.fg : const Color(0xFFE6E1E9)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(isIOS ? 14 : 4),
+        ),
       ),
     );
   }

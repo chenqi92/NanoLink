@@ -500,9 +500,9 @@ class _ServerChips extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     color: s.id == provider.activeServerId
-                        ? t.card
+                        ? (t.isIOS ? t.card : t.card2)
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(100),
+                    borderRadius: BorderRadius.circular(t.isIOS ? 100 : 8),
                     border: Border.all(color: t.sep2),
                   ),
                   child: Row(
@@ -537,7 +537,7 @@ class _ServerChips extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(100),
+                borderRadius: BorderRadius.circular(t.isIOS ? 100 : 8),
                 border: Border.all(color: t.sep, width: 1.5),
               ),
               child: Row(

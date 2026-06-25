@@ -203,19 +203,12 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           ),
         ),
         const SizedBox(height: 20),
-        SizedBox(
-          height: 48,
-          child: OutlinedButton.icon(
-            onPressed: _generate,
-            icon: Icon(Icons.refresh_rounded, size: 18, color: t.accent),
-            label: Text('pairing.regenerate'.tr(), style: TextStyle(color: t.accent)),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: t.sep),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(t.buttonRadius),
-              ),
-            ),
-          ),
+        NanoButton(
+          'pairing.regenerate'.tr(),
+          icon: Icons.refresh_rounded,
+          variant: NanoButtonVariant.outlined,
+          fullWidth: true,
+          onPressed: _generate,
         ),
       ],
     );

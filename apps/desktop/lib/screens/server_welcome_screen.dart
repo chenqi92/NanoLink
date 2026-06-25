@@ -2,6 +2,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import '../design/nano_tokens.dart';
 import '../widgets/nano/nano_card.dart';
+import '../widgets/nano/nano_primitives.dart';
 import 'add_server_page.dart';
 
 /// First-run screen: brand intro + feature highlights + "add server" CTA.
@@ -102,27 +103,13 @@ class ServerWelcomeScreen extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
                   child: Column(
                     children: [
-                      SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                                builder: (_) => const AddServerPage()),
-                          ),
-                          icon: const Icon(Icons.add_rounded, size: 22),
-                          label: Text('welcome.addServer'.tr(),
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w600)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: t.accent,
-                            foregroundColor: t.onAccent,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(t.buttonRadius),
-                            ),
-                          ),
+                      NanoButton(
+                        'welcome.addServer'.tr(),
+                        icon: Icons.add_rounded,
+                        fullWidth: true,
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => const AddServerPage()),
                         ),
                       ),
                       if (t.isIOS)

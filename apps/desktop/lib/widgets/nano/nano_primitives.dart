@@ -242,6 +242,146 @@ class NanoSectionLabel extends StatelessWidget {
   }
 }
 
+/// Button variants mirroring the design's `.ios-btn` / `.md-btn` families.
+enum NanoButtonVariant { primary, secondary, danger, outlined, text }
+
+/// Shared button primitive. Heights/radii/typography follow the active platform
+/// look (iOS `.ios-btn` = 50px / radius 14 / 17pt-w600; Material `.md-btn` =
+/// 40px / radius 100 / 14pt-w500) so CTAs stop hard-coding per-call-site sizes.
+class NanoButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+  final NanoButtonVariant variant;
+  final bool fullWidth;
+  final bool loading;
+  const NanoButton(
+    this.label, {
+    super.key,
+    this.onPressed,
+    this.icon,
+    this.variant = NanoButtonVariant.primary,
+    this.fullWidth = false,
+    this.loading = false,
+  });
+
+  Color _fg(NanoTokens t) {
+    switch (variant) {
+      case NanoButtonVariant.primary:
+        return t.onAccent;
+      case NanoButtonVariant.danger:
+        return t.crit;
+      default:
+        return t.accent;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.nano;
+    final isIOS = t.isIOS;
+    final height = variant == NanoButtonVariant.text
+        ? (isIOS ? 44.0 : 40.0)
+        : (isIOS ? 50.0 : 40.0);
+    final shape =
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(t.buttonRadius));
+    final textStyle = TextStyle(
+      fontSize: isIOS ? 17 : 14,
+      fontWeight: isIOS ? FontWeight.w600 : FontWeight.w500,
+    );
+    final minSize = Size(fullWidth ? double.infinity : 0, height);
+
+    Widget content;
+    if (loading) {
+      content = SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2.4, color: _fg(t)),
+      );
+    } else if (icon != null) {
+      content = Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: isIOS ? 20 : 18),
+          const SizedBox(width: 8),
+          Text(label, style: textStyle),
+        ],
+      );
+    } else {
+      content = Text(label, style: textStyle);
+    }
+
+    final cb = loading ? null : onPressed;
+    Widget btn;
+    switch (variant) {
+      case NanoButtonVariant.primary:
+        btn = FilledButton(
+          onPressed: cb,
+          style: FilledButton.styleFrom(
+            backgroundColor: t.accent,
+            foregroundColor: t.onAccent,
+            minimumSize: minSize,
+            shape: shape,
+            elevation: 0,
+            textStyle: textStyle,
+          ),
+          child: content,
+        );
+      case NanoButtonVariant.secondary:
+        btn = FilledButton(
+          onPressed: cb,
+          style: FilledButton.styleFrom(
+            backgroundColor: t.card2,
+            foregroundColor: t.accent,
+            minimumSize: minSize,
+            shape: shape,
+            elevation: 0,
+            textStyle: textStyle,
+          ),
+          child: content,
+        );
+      case NanoButtonVariant.danger:
+        btn = FilledButton(
+          onPressed: cb,
+          style: FilledButton.styleFrom(
+            backgroundColor: t.crit.withValues(alpha: 0.14),
+            foregroundColor: t.crit,
+            minimumSize: minSize,
+            shape: shape,
+            elevation: 0,
+            textStyle: textStyle,
+          ),
+          child: content,
+        );
+      case NanoButtonVariant.outlined:
+        btn = OutlinedButton(
+          onPressed: cb,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: t.fg,
+            side: BorderSide(color: isIOS ? t.sep : t.fg4),
+            minimumSize: minSize,
+            shape: shape,
+            textStyle: textStyle,
+          ),
+          child: content,
+        );
+      case NanoButtonVariant.text:
+        btn = TextButton(
+          onPressed: cb,
+          style: TextButton.styleFrom(
+            foregroundColor: t.accent,
+            minimumSize: minSize,
+            shape: shape,
+            textStyle: textStyle,
+          ),
+          child: content,
+        );
+    }
+    return fullWidth ? SizedBox(width: double.infinity, child: btn) : btn;
+  }
+}
+
 /// Monospace text helper.
 class NanoMono extends StatelessWidget {
   final String text;
