@@ -11,11 +11,12 @@ type AlertRule struct {
 	Operator    string    `gorm:"size:4;default:'gt'" json:"operator"`
 	Threshold   float64   `gorm:"default:0" json:"threshold"`
 	DurationSec int       `gorm:"default:0" json:"durationSec"`
-	Severity    string    `gorm:"size:10;default:'warn'" json:"severity"`
-	Scope       string    `gorm:"size:120;default:'all'" json:"scope"`
-	Enabled     bool      `gorm:"default:true" json:"enabled"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	Severity    string     `gorm:"size:10;default:'warn'" json:"severity"`
+	Scope       string     `gorm:"size:120;default:'all'" json:"scope"`
+	Enabled     bool       `gorm:"default:true" json:"enabled"`
+	LastFiredAt *time.Time `json:"lastFiredAt,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
 // AlertInstance is a firing/acked/resolved occurrence of a rule on an agent.
@@ -38,11 +39,24 @@ type AlertInstance struct {
 
 // NotifyChannel is a notification destination (slack/email/webhook/...).
 type NotifyChannel struct {
+	ID         uint       `gorm:"primarykey" json:"id"`
+	Kind       string     `gorm:"size:20;not null" json:"kind"`
+	Name       string     `gorm:"size:100;not null" json:"name"`
+	Target     string     `gorm:"size:500" json:"target"`
+	Enabled    bool       `gorm:"default:true" json:"enabled"`
+	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+}
+
+// Silence suppresses alert notifications for a matching agent (by hostname or
+// "all") until the Until timestamp. Active silences skip both instance creation
+// and channel dispatch in the evaluation loop.
+type Silence struct {
 	ID        uint      `gorm:"primarykey" json:"id"`
-	Kind      string    `gorm:"size:20;not null" json:"kind"`
-	Name      string    `gorm:"size:100;not null" json:"name"`
-	Target    string    `gorm:"size:500" json:"target"`
-	Enabled   bool      `gorm:"default:true" json:"enabled"`
+	Matcher   string    `gorm:"size:255;not null" json:"matcher"` // agent hostname, or "all"
+	Reason    string    `gorm:"size:255" json:"reason"`
+	Until     time.Time `gorm:"index" json:"until"`
+	CreatedBy string    `gorm:"size:50" json:"createdBy"`
 	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
 }

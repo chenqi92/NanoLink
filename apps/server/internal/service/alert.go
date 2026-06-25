@@ -195,6 +195,10 @@ func metricLabel(metric string) string {
 }
 
 func (s *AlertService) fire(r database.AlertRule, agentID, host string, val float64, title, desc string) {
+	// Suppress firing for agents covered by an active silence.
+	if s.isSilenced(host) {
+		return
+	}
 	now := time.Now()
 	var inst database.AlertInstance
 	err := s.db.Where("rule_id = ? AND agent_id = ? AND status != ?", r.ID, agentID, "resolved").First(&inst).Error
@@ -206,6 +210,8 @@ func (s *AlertService) fire(r database.AlertRule, agentID, host string, val floa
 		s.db.Save(&inst)
 		return
 	}
+	// Stamp the rule's last-fired time for the rules table.
+	s.db.Model(&database.AlertRule{}).Where("id = ?", r.ID).Update("last_fired_at", now)
 	inst = database.AlertInstance{
 		RuleID:        r.ID,
 		RuleName:      r.Name,
@@ -360,8 +366,61 @@ func (s *AlertService) notify(inst database.AlertInstance) {
 	for _, ch := range channels {
 		if err := s.sendNotification(ch, inst); err != nil {
 			s.logger.Warnw("notification failed", "channel", ch.Name, "kind", ch.Kind, "err", err)
+			continue
 		}
+		now := time.Now()
+		s.db.Model(&database.NotifyChannel{}).Where("id = ?", ch.ID).Update("last_used_at", now)
 	}
+}
+
+// ─── Silences ──────────────────────────────────────────────
+
+// isSilenced reports whether an active silence covers the given agent hostname.
+func (s *AlertService) isSilenced(host string) bool {
+	var count int64
+	s.db.Model(&database.Silence{}).
+		Where("until > ? AND (matcher = ? OR matcher = ?)", time.Now(), "all", host).
+		Count(&count)
+	return count > 0
+}
+
+// ListSilences returns silences that have not yet expired.
+func (s *AlertService) ListSilences() ([]database.Silence, error) {
+	var out []database.Silence
+	err := s.db.Where("until > ?", time.Now()).Order("until asc").Find(&out).Error
+	return out, err
+}
+
+// CreateSilence stores a new silence.
+func (s *AlertService) CreateSilence(sil *database.Silence) error { return s.db.Create(sil).Error }
+
+// DeleteSilence removes a silence by id.
+func (s *AlertService) DeleteSilence(id uint) error {
+	return s.db.Delete(&database.Silence{}, id).Error
+}
+
+// TestChannel sends a synthetic test notification through a single channel.
+func (s *AlertService) TestChannel(id uint) error {
+	var ch database.NotifyChannel
+	if err := s.db.First(&ch, id).Error; err != nil {
+		return err
+	}
+	inst := database.AlertInstance{
+		RuleName:      "test",
+		AgentHostname: "nanolink-server",
+		Level:         "info",
+		Title:         "Test notification",
+		Description:   "This is a test message from NanoLink.",
+		Status:        "firing",
+		FirstSeenAt:   time.Now(),
+		LastSeenAt:    time.Now(),
+	}
+	if err := s.sendNotification(ch, inst); err != nil {
+		return err
+	}
+	now := time.Now()
+	s.db.Model(&database.NotifyChannel{}).Where("id = ?", ch.ID).Update("last_used_at", now)
+	return nil
 }
 
 func (s *AlertService) sendNotification(ch database.NotifyChannel, inst database.AlertInstance) error {

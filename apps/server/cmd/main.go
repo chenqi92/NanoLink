@@ -202,8 +202,12 @@ func main() {
 			protected.GET("/groups", groupHandler.ListGroups)
 			protected.GET("/groups/:id", groupHandler.GetGroup)
 
+			// Editable server settings
+			settingHandler := handler.NewSettingHandler(database.GetDB(), sugar)
+			protected.GET("/settings", settingHandler.GetSettings)
+
 			// Permission check route
-			permHandler := handler.NewPermissionHandler(permService, sugar)
+			permHandler := handler.NewPermissionHandler(permService, auditService, sugar)
 			protected.POST("/permissions/check", permHandler.CheckPermission)
 			protected.GET("/agents/:id/groups", permHandler.GetAgentGroups)
 
@@ -223,6 +227,7 @@ func main() {
 			protected.GET("/alerts", alertHandler.ListAlerts)
 			protected.GET("/alerts/rules", alertHandler.ListRules)
 			protected.GET("/alerts/channels", alertHandler.ListChannels)
+			protected.GET("/alerts/silences", alertHandler.ListSilences)
 			protected.POST("/alerts/ack/:id", alertHandler.AckAlert)
 			protected.POST("/alerts/ack-all", alertHandler.AckAll)
 
@@ -289,6 +294,8 @@ func main() {
 				admin.POST("/agent-tokens/:id/regenerate", agentTokenHandler.RegenerateAgentToken)
 				admin.PUT("/agent-tokens/reorder", agentTokenHandler.ReorderAgentTokens)
 
+				admin.PUT("/settings", settingHandler.UpdateSettings)
+
 				admin.POST("/config/generate", configGen.GenerateConfig)
 				admin.POST("/config/add-server", configGen.GenerateAddServerCommand)
 				admin.POST("/config/remove-server", configGen.GenerateRemoveServerCommand)
@@ -301,6 +308,9 @@ func main() {
 				admin.DELETE("/alerts/rules/:id", alertHandler.DeleteRule)
 				admin.POST("/alerts/channels", alertHandler.CreateChannel)
 				admin.DELETE("/alerts/channels/:id", alertHandler.DeleteChannel)
+				admin.POST("/alerts/channels/:id/test", alertHandler.TestChannel)
+				admin.POST("/alerts/silences", alertHandler.CreateSilence)
+				admin.DELETE("/alerts/silences/:id", alertHandler.DeleteSilence)
 			}
 		}
 

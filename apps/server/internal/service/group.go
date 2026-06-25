@@ -30,16 +30,23 @@ var (
 )
 
 // CreateGroup creates a new group
-func (s *GroupService) CreateGroup(name, description string) (*database.Group, error) {
+func (s *GroupService) CreateGroup(name, description string, perm int, scope string) (*database.Group, error) {
 	// Check if group exists
 	var existing database.Group
 	if err := s.db.Where("name = ?", name).First(&existing).Error; err == nil {
 		return nil, ErrGroupExists
 	}
 
+	if perm < 0 {
+		perm = 0
+	} else if perm > 3 {
+		perm = 3
+	}
 	group := &database.Group{
 		Name:        name,
 		Description: description,
+		Perm:        perm,
+		Scope:       scope,
 	}
 
 	if err := s.db.Create(group).Error; err != nil {
@@ -72,7 +79,7 @@ func (s *GroupService) ListGroups() ([]database.Group, error) {
 }
 
 // UpdateGroup updates a group's information
-func (s *GroupService) UpdateGroup(groupID uint, name, description string) (*database.Group, error) {
+func (s *GroupService) UpdateGroup(groupID uint, name, description string, perm *int, scope *string) (*database.Group, error) {
 	var group database.Group
 	if err := s.db.First(&group, groupID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -92,6 +99,18 @@ func (s *GroupService) UpdateGroup(groupID uint, name, description string) (*dat
 
 	if description != "" {
 		group.Description = description
+	}
+	if perm != nil {
+		p := *perm
+		if p < 0 {
+			p = 0
+		} else if p > 3 {
+			p = 3
+		}
+		group.Perm = p
+	}
+	if scope != nil {
+		group.Scope = *scope
 	}
 
 	if err := s.db.Save(&group).Error; err != nil {

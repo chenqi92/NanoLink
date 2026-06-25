@@ -27,6 +27,8 @@ func NewGroupHandler(groupService *service.GroupService, logger *zap.SugaredLogg
 type CreateGroupRequest struct {
 	Name        string `json:"name" binding:"required,min=1,max=100"`
 	Description string `json:"description" binding:"max=500"`
+	Perm        int    `json:"perm" binding:"omitempty,min=0,max=3"`
+	Scope       string `json:"scope" binding:"max=200"`
 }
 
 // GroupResponse represents a group in API responses
@@ -34,6 +36,8 @@ type GroupResponse struct {
 	ID          uint           `json:"id"`
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
+	Perm        int            `json:"perm"`
+	Scope       string         `json:"scope,omitempty"`
 	UserCount   int            `json:"userCount,omitempty"`
 	Users       []UserResponse `json:"users,omitempty"`
 }
@@ -46,7 +50,7 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	group, err := h.groupService.CreateGroup(req.Name, req.Description)
+	group, err := h.groupService.CreateGroup(req.Name, req.Description, req.Perm, req.Scope)
 	if err != nil {
 		if err == service.ErrGroupExists {
 			c.JSON(http.StatusConflict, gin.H{"error": "group already exists"})
@@ -61,6 +65,8 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 		ID:          group.ID,
 		Name:        group.Name,
 		Description: group.Description,
+		Perm:        group.Perm,
+		Scope:       group.Scope,
 	})
 }
 
@@ -79,6 +85,8 @@ func (h *GroupHandler) ListGroups(c *gin.Context) {
 			ID:          g.ID,
 			Name:        g.Name,
 			Description: g.Description,
+			Perm:        g.Perm,
+			Scope:       g.Scope,
 			UserCount:   len(g.Users),
 		}
 	}
@@ -119,14 +127,18 @@ func (h *GroupHandler) GetGroup(c *gin.Context) {
 		ID:          group.ID,
 		Name:        group.Name,
 		Description: group.Description,
+		Perm:        group.Perm,
+		Scope:       group.Scope,
 		Users:       users,
 	})
 }
 
 // UpdateGroupRequest represents an update group request
 type UpdateGroupRequest struct {
-	Name        string `json:"name" binding:"omitempty,min=1,max=100"`
-	Description string `json:"description" binding:"max=500"`
+	Name        string  `json:"name" binding:"omitempty,min=1,max=100"`
+	Description string  `json:"description" binding:"max=500"`
+	Perm        *int    `json:"perm" binding:"omitempty,min=0,max=3"`
+	Scope       *string `json:"scope"`
 }
 
 // UpdateGroup updates a group
@@ -143,7 +155,7 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 		return
 	}
 
-	group, err := h.groupService.UpdateGroup(uint(groupID), req.Name, req.Description)
+	group, err := h.groupService.UpdateGroup(uint(groupID), req.Name, req.Description, req.Perm, req.Scope)
 	if err != nil {
 		if err == service.ErrGroupNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
@@ -162,6 +174,8 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 		ID:          group.ID,
 		Name:        group.Name,
 		Description: group.Description,
+		Perm:        group.Perm,
+		Scope:       group.Scope,
 	})
 }
 

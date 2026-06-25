@@ -80,6 +80,7 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 	if err := db.AutoMigrate(
 		&User{},
 		&Group{},
+		&Setting{},
 		&AgentGroup{},
 		&UserAgentPermission{},
 		&AuditLog{},
@@ -88,6 +89,7 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		&AlertRule{},
 		&AlertInstance{},
 		&NotifyChannel{},
+		&Silence{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}

@@ -31,12 +31,22 @@ type Group struct {
 	ID          uint           `gorm:"primarykey" json:"id"`
 	Name        string         `gorm:"uniqueIndex;size:100;not null" json:"name"`
 	Description string         `gorm:"size:500" json:"description"`
+	Perm        int            `gorm:"default:0" json:"perm"` // Default permission level for members (0-3)
+	Scope       string         `gorm:"size:200" json:"scope"` // Human-readable access scope
 	CreatedAt   time.Time      `json:"createdAt"`
 	UpdatedAt   time.Time      `json:"updatedAt"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// Relations
 	Users []User `gorm:"many2many:user_groups;" json:"users,omitempty"`
+}
+
+// Setting is a key/value server setting editable from the admin UI
+// (server name, metric retention, agent auto-update policy, webhook URL, ...).
+type Setting struct {
+	Key       string    `gorm:"primarykey;size:100" json:"key"`
+	Value     string    `gorm:"type:text" json:"value"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // AgentGroup represents the association between an agent and a group

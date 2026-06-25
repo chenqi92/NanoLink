@@ -12,16 +12,43 @@ import (
 
 // PermissionHandler handles permission management API requests
 type PermissionHandler struct {
-	permService *service.PermissionService
-	logger      *zap.SugaredLogger
+	permService  *service.PermissionService
+	auditService *service.AuditService
+	logger       *zap.SugaredLogger
 }
 
 // NewPermissionHandler creates a new permission handler
-func NewPermissionHandler(permService *service.PermissionService, logger *zap.SugaredLogger) *PermissionHandler {
+func NewPermissionHandler(permService *service.PermissionService, auditService *service.AuditService, logger *zap.SugaredLogger) *PermissionHandler {
 	return &PermissionHandler{
-		permService: permService,
-		logger:      logger,
+		permService:  permService,
+		auditService: auditService,
+		logger:       logger,
 	}
+}
+
+// auditPermissionChange records a permission grant/revoke in the audit trail so
+// the Permissions "Changes" view has a real history feed to query.
+func (h *PermissionHandler) auditPermissionChange(c *gin.Context, commandType, agentID string, userID uint, level int) {
+	if h.auditService == nil {
+		return
+	}
+	current := GetCurrentUser(c)
+	var actorID uint
+	var actorName string
+	if current != nil {
+		actorID = current.ID
+		actorName = current.Username
+	}
+	_ = h.auditService.LogCommand(service.AuditEntry{
+		UserID:      actorID,
+		Username:    actorName,
+		AgentID:     agentID,
+		CommandType: commandType,
+		Target:      agentID,
+		Params:      map[string]string{"userId": strconv.FormatUint(uint64(userID), 10), "level": strconv.Itoa(level)},
+		Success:     true,
+		IPAddress:   c.ClientIP(),
+	})
 }
 
 // AssignAgentToGroupRequest represents an assign agent to group request
@@ -159,6 +186,8 @@ func (h *PermissionHandler) SetUserPermission(c *gin.Context) {
 		return
 	}
 
+	h.auditPermissionChange(c, "PERMISSION_GRANT", req.AgentID, req.UserID, req.PermissionLevel)
+
 	c.JSON(http.StatusOK, gin.H{
 		"message":         "permission set",
 		"userId":          req.UserID,
@@ -184,6 +213,8 @@ func (h *PermissionHandler) RemoveUserPermission(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove permission"})
 		return
 	}
+
+	h.auditPermissionChange(c, "PERMISSION_REVOKE", agentID, uint(userID), 0)
 
 	c.JSON(http.StatusOK, gin.H{"message": "permission removed"})
 }

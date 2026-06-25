@@ -207,15 +207,90 @@ func (h *AlertHandler) ListChannels(c *gin.Context) {
 	out := make([]gin.H, 0, len(channels))
 	for i := range channels {
 		ch := &channels[i]
+		status := "ok"
+		if !ch.Enabled {
+			status = "warn"
+		}
 		out = append(out, gin.H{
-			"id":      ch.ID,
-			"kind":    ch.Kind,
-			"name":    ch.Name,
-			"target":  maskChannelTarget(ch.Target),
-			"enabled": ch.Enabled,
+			"id":         ch.ID,
+			"kind":       ch.Kind,
+			"name":       ch.Name,
+			"target":     maskChannelTarget(ch.Target),
+			"enabled":    ch.Enabled,
+			"status":     status,
+			"lastUsedAt": ch.LastUsedAt,
 		})
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+// TestChannel sends a synthetic notification through a channel to verify config.
+func (h *AlertHandler) TestChannel(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel id"})
+		return
+	}
+	if err := h.alertService.TestChannel(uint(id)); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "test sent"})
+}
+
+// ListSilences returns active silences.
+func (h *AlertHandler) ListSilences(c *gin.Context) {
+	sils, err := h.alertService.ListSilences()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list silences"})
+		return
+	}
+	c.JSON(http.StatusOK, sils)
+}
+
+type silenceRequest struct {
+	Matcher     string `json:"matcher" binding:"required"`
+	Reason      string `json:"reason"`
+	DurationMin int    `json:"durationMin" binding:"min=1"`
+}
+
+// CreateSilence creates a silence valid for DurationMin minutes.
+func (h *AlertHandler) CreateSilence(c *gin.Context) {
+	var req silenceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var by string
+	if u := GetCurrentUser(c); u != nil {
+		by = u.Username
+	}
+	sil := &database.Silence{
+		Matcher:   req.Matcher,
+		Reason:    req.Reason,
+		Until:     time.Now().Add(time.Duration(req.DurationMin) * time.Minute),
+		CreatedBy: by,
+		CreatedAt: time.Now(),
+	}
+	if err := h.alertService.CreateSilence(sil); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create silence"})
+		return
+	}
+	c.JSON(http.StatusCreated, sil)
+}
+
+// DeleteSilence removes a silence.
+func (h *AlertHandler) DeleteSilence(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid silence id"})
+		return
+	}
+	if err := h.alertService.DeleteSilence(uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete silence"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "silence deleted"})
 }
 
 // maskChannelTarget hides the secret portion of a notification target while

@@ -276,6 +276,13 @@ func (h *ConfigGenHandler) GetServerURLInfo(c *gin.Context) {
 		"httpPort":    h.cfg.Server.HTTPPort,
 		"host":        host,
 		"authEnabled": h.cfg.Auth.Enabled,
+		// Read-only server configuration surfaced in the Settings screen.
+		"serverName":          "NanoLink",
+		"externalUrl":         h.cfg.Server.ExternalURL,
+		"retentionDays":       h.cfg.Metrics.RetentionDays,
+		"hourlyRetentionDays": h.cfg.Metrics.HourlyRetentionDays,
+		"dailyRetentionDays":  h.cfg.Metrics.DailyRetentionDays,
+		"tlsEnabled":          h.cfg.Server.TLSCert != "",
 	})
 }
 
