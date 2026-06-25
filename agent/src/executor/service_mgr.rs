@@ -4,6 +4,81 @@ use tracing::info;
 use crate::proto::{CommandResult, ServiceInfo};
 use crate::security::validation::validate_service_name;
 
+/// Format a duration in seconds as a short uptime string (e.g. "3d4h").
+#[cfg(target_os = "linux")]
+fn fmt_uptime(secs: u64) -> String {
+    let d = secs / 86400;
+    let h = (secs % 86400) / 3600;
+    let m = (secs % 3600) / 60;
+    if d > 0 {
+        format!("{d}d{h}h")
+    } else if h > 0 {
+        format!("{h}h{m}m")
+    } else {
+        format!("{m}m")
+    }
+}
+
+/// Batch-query systemd for per-unit uptime + restart count in one `systemctl
+/// show` call. Uptime is derived from the monotonic active-enter timestamp and
+/// /proc/uptime so no timezone parsing is needed. Returns name -> (uptime, restarts).
+#[cfg(target_os = "linux")]
+fn systemd_runtime(names: &[String]) -> std::collections::HashMap<String, (String, i32)> {
+    let mut out = std::collections::HashMap::new();
+    if names.is_empty() {
+        return out;
+    }
+    let boot_secs: f64 = std::fs::read_to_string("/proc/uptime")
+        .ok()
+        .and_then(|s| s.split_whitespace().next().map(|v| v.to_string()))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+
+    let mut args: Vec<String> = vec![
+        "show".into(),
+        "-p".into(),
+        "Id,NRestarts,ActiveEnterTimestampMonotonic".into(),
+    ];
+    args.extend(names.iter().cloned());
+
+    let uptime_for = |mono: u64| -> String {
+        if mono > 0 && boot_secs > 0.0 {
+            let secs = (boot_secs - (mono as f64 / 1_000_000.0)).max(0.0) as u64;
+            fmt_uptime(secs)
+        } else {
+            String::new()
+        }
+    };
+
+    if let Ok(o) = Command::new("systemctl").args(&args).output() {
+        if o.status.success() {
+            let text = String::from_utf8_lossy(&o.stdout);
+            let mut id = String::new();
+            let mut nr: i32 = 0;
+            let mut mono: u64 = 0;
+            for line in text.lines() {
+                if line.is_empty() {
+                    if !id.is_empty() {
+                        out.insert(std::mem::take(&mut id), (uptime_for(mono), nr));
+                    }
+                    nr = 0;
+                    mono = 0;
+                } else if let Some(v) = line.strip_prefix("Id=") {
+                    id = v.to_string();
+                } else if let Some(v) = line.strip_prefix("NRestarts=") {
+                    nr = v.trim().parse().unwrap_or(0);
+                } else if let Some(v) = line.strip_prefix("ActiveEnterTimestampMonotonic=") {
+                    mono = v.trim().parse().unwrap_or(0);
+                }
+            }
+            if !id.is_empty() {
+                out.insert(id, (uptime_for(mono), nr));
+            }
+        }
+    }
+    out
+}
+
 /// Service management executor
 pub struct ServiceExecutor;
 
@@ -74,8 +149,19 @@ impl ServiceExecutor {
                     name: f[0].to_string(),
                     status: f[2].to_string(),
                     sub_state: f[3].to_string(),
-                    description: f[4..].join(" "),
+                    description: f.get(4..).map(|s| s.join(" ")).unwrap_or_default(),
+                    uptime: String::new(),
+                    restarts: 0,
                 });
+            }
+            // Enrich with uptime + restart count in a single systemctl show call.
+            let names: Vec<String> = services.iter().map(|s| s.name.clone()).collect();
+            let rt = systemd_runtime(&names);
+            for s in services.iter_mut() {
+                if let Some((up, nr)) = rt.get(&s.name) {
+                    s.uptime = up.clone();
+                    s.restarts = *nr;
+                }
             }
         }
 
@@ -95,6 +181,8 @@ impl ServiceExecutor {
                     status: if running { "active" } else { "inactive" }.to_string(),
                     sub_state: if running { "running" } else { "dead" }.to_string(),
                     description: String::new(),
+                    uptime: String::new(),
+                    restarts: 0,
                 });
             }
         }
@@ -117,6 +205,8 @@ impl ServiceExecutor {
                         status: if running { "active" } else { "inactive" }.to_string(),
                         sub_state: if running { "running" } else { "stopped" }.to_string(),
                         description: String::new(),
+                        uptime: String::new(),
+                        restarts: 0,
                     });
                 }
             }

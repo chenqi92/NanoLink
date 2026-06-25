@@ -17,6 +17,55 @@ fn parse_docker_created(s: &str) -> Option<u64> {
         .map(|d| d.timestamp().max(0) as u64)
 }
 
+/// Parse a docker size string like "12.3MiB" / "1.5GB" into bytes.
+fn parse_mem_size(s: &str) -> u64 {
+    let s = s.trim();
+    let pos = s.find(|c: char| c.is_alphabetic()).unwrap_or(s.len());
+    let (num, unit) = s.split_at(pos);
+    let val: f64 = num.trim().parse().unwrap_or(0.0);
+    let mult = match unit.trim().to_lowercase().as_str() {
+        "b" => 1.0,
+        "kb" | "kib" => 1024.0,
+        "mb" | "mib" => 1024.0 * 1024.0,
+        "gb" | "gib" => 1024.0 * 1024.0 * 1024.0,
+        "tb" | "tib" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => 1.0,
+    };
+    (val * mult) as u64
+}
+
+/// Collect live CPU%/memory per container via `docker stats --no-stream`,
+/// keyed by short container ID. Returns (cpu_percent, mem_bytes, mem_limit_bytes).
+fn container_stats() -> std::collections::HashMap<String, (f64, u64, u64)> {
+    let mut out = std::collections::HashMap::new();
+    if let Ok(output) = Command::new("docker")
+        .args([
+            "stats",
+            "--no-stream",
+            "--format",
+            "{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}",
+        ])
+        .output()
+    {
+        if output.status.success() {
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.len() < 3 {
+                    continue;
+                }
+                let id = parts[0].trim().to_string();
+                let cpu: f64 = parts[1].trim().trim_end_matches('%').parse().unwrap_or(0.0);
+                // MemUsage looks like "12.3MiB / 1GiB"
+                let mut mem_it = parts[2].split('/');
+                let used = mem_it.next().map(parse_mem_size).unwrap_or(0);
+                let limit = mem_it.next().map(parse_mem_size).unwrap_or(0);
+                out.insert(id, (cpu, used, limit));
+            }
+        }
+    }
+    out
+}
+
 /// Docker operations executor
 pub struct DockerExecutor;
 
@@ -64,19 +113,23 @@ impl DockerExecutor {
                 "ps",
                 "-a",
                 "--format",
-                "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.State}}\t{{.CreatedAt}}",
+                "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.State}}\t{{.CreatedAt}}\t{{.Ports}}\t{{.Networks}}",
             ])
             .output()
         {
             Ok(output) if output.status.success() => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
+                // Live CPU/MEM per running container (best-effort; empty if docker stats fails).
+                let stats = container_stats();
                 let containers: Vec<ContainerInfo> = stdout
                     .lines()
                     .filter(|line| !line.is_empty())
                     .map(|line| {
                         let parts: Vec<&str> = line.split('\t').collect();
+                        let id = parts.first().unwrap_or(&"").to_string();
+                        let st = stats.get(id.as_str());
                         ContainerInfo {
-                            id: parts.first().unwrap_or(&"").to_string(),
+                            id: id.clone(),
                             name: parts.get(1).unwrap_or(&"").to_string(),
                             image: parts.get(2).unwrap_or(&"").to_string(),
                             status: parts.get(3).unwrap_or(&"").to_string(),
@@ -85,6 +138,11 @@ impl DockerExecutor {
                                 .get(5)
                                 .and_then(|s| parse_docker_created(s))
                                 .unwrap_or(0),
+                            cpu_percent: st.map(|s| s.0).unwrap_or(0.0),
+                            memory_bytes: st.map(|s| s.1).unwrap_or(0),
+                            memory_limit: st.map(|s| s.2).unwrap_or(0),
+                            ports: parts.get(6).unwrap_or(&"").to_string(),
+                            network: parts.get(7).unwrap_or(&"").to_string(),
                         }
                     })
                     .collect();
