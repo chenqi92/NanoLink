@@ -3537,6 +3537,8 @@ type ServiceInfo struct {
 	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`                     // Active state: active, inactive, failed
 	SubState      string                 `protobuf:"bytes,3,opt,name=sub_state,json=subState,proto3" json:"sub_state,omitempty"` // running, dead, exited, ...
 	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Uptime        string                 `protobuf:"bytes,5,opt,name=uptime,proto3" json:"uptime,omitempty"`      // Human-readable active duration (e.g. "3d4h")
+	Restarts      int32                  `protobuf:"varint,6,opt,name=restarts,proto3" json:"restarts,omitempty"` // Restart count (systemd NRestarts)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3597,6 +3599,20 @@ func (x *ServiceInfo) GetDescription() string {
 		return x.Description
 	}
 	return ""
+}
+
+func (x *ServiceInfo) GetUptime() string {
+	if x != nil {
+		return x.Uptime
+	}
+	return ""
+}
+
+func (x *ServiceInfo) GetRestarts() int32 {
+	if x != nil {
+		return x.Restarts
+	}
+	return 0
 }
 
 // FileEntry describes a single directory entry (FILE_LIST)
@@ -4565,6 +4581,11 @@ type ContainerInfo struct {
 	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
 	State         string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"`
 	Created       uint64                 `protobuf:"varint,6,opt,name=created,proto3" json:"created,omitempty"`
+	CpuPercent    float64                `protobuf:"fixed64,7,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`   // Live CPU usage % (docker stats)
+	MemoryBytes   uint64                 `protobuf:"varint,8,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"` // Live memory usage in bytes
+	MemoryLimit   uint64                 `protobuf:"varint,9,opt,name=memory_limit,json=memoryLimit,proto3" json:"memory_limit,omitempty"` // Memory limit in bytes
+	Ports         string                 `protobuf:"bytes,10,opt,name=ports,proto3" json:"ports,omitempty"`                                // Published ports (e.g. "80:80, 443:443")
+	Network       string                 `protobuf:"bytes,11,opt,name=network,proto3" json:"network,omitempty"`                            // Network name(s)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4639,6 +4660,41 @@ func (x *ContainerInfo) GetCreated() uint64 {
 		return x.Created
 	}
 	return 0
+}
+
+func (x *ContainerInfo) GetCpuPercent() float64 {
+	if x != nil {
+		return x.CpuPercent
+	}
+	return 0
+}
+
+func (x *ContainerInfo) GetMemoryBytes() uint64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *ContainerInfo) GetMemoryLimit() uint64 {
+	if x != nil {
+		return x.MemoryLimit
+	}
+	return 0
+}
+
+func (x *ContainerInfo) GetPorts() string {
+	if x != nil {
+		return x.Ports
+	}
+	return ""
+}
+
+func (x *ContainerInfo) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
 }
 
 // ========== Heartbeat ==========
@@ -6298,12 +6354,14 @@ const file_nanolink_proto_rawDesc = "" +
 	"\rconfig_result\x18\r \x01(\v2\x16.nanolink.ConfigResultR\fconfigResult\x12@\n" +
 	"\rhealth_result\x18\x0e \x01(\v2\x1b.nanolink.HealthCheckResultR\fhealthResult\x121\n" +
 	"\bservices\x18\x0f \x03(\v2\x15.nanolink.ServiceInfoR\bservices\x12)\n" +
-	"\x05files\x18\x10 \x03(\v2\x13.nanolink.FileEntryR\x05files\"x\n" +
+	"\x05files\x18\x10 \x03(\v2\x13.nanolink.FileEntryR\x05files\"\xac\x01\n" +
 	"\vServiceInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1b\n" +
 	"\tsub_state\x18\x03 \x01(\tR\bsubState\x12 \n" +
-	"\vdescription\x18\x04 \x01(\tR\vdescription\"f\n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x16\n" +
+	"\x06uptime\x18\x05 \x01(\tR\x06uptime\x12\x1a\n" +
+	"\brestarts\x18\x06 \x01(\x05R\brestarts\"f\n" +
 	"\tFileEntry\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x15\n" +
 	"\x06is_dir\x18\x02 \x01(\bR\x05isDir\x12\x12\n" +
@@ -6404,14 +6462,21 @@ const file_nanolink_proto_rawDesc = "" +
 	"\fmemory_bytes\x18\x05 \x01(\x04R\vmemoryBytes\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x12\x1d\n" +
 	"\n" +
-	"start_time\x18\a \x01(\x04R\tstartTime\"\x91\x01\n" +
+	"start_time\x18\a \x01(\x04R\tstartTime\"\xa8\x02\n" +
 	"\rContainerInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
 	"\x05image\x18\x03 \x01(\tR\x05image\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12\x14\n" +
 	"\x05state\x18\x05 \x01(\tR\x05state\x12\x18\n" +
-	"\acreated\x18\x06 \x01(\x04R\acreated\"P\n" +
+	"\acreated\x18\x06 \x01(\x04R\acreated\x12\x1f\n" +
+	"\vcpu_percent\x18\a \x01(\x01R\n" +
+	"cpuPercent\x12!\n" +
+	"\fmemory_bytes\x18\b \x01(\x04R\vmemoryBytes\x12!\n" +
+	"\fmemory_limit\x18\t \x01(\x04R\vmemoryLimit\x12\x14\n" +
+	"\x05ports\x18\n" +
+	" \x01(\tR\x05ports\x12\x18\n" +
+	"\anetwork\x18\v \x01(\tR\anetwork\"P\n" +
 	"\tHeartbeat\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x04R\ttimestamp\x12%\n" +
 	"\x0euptime_seconds\x18\x02 \x01(\x04R\ruptimeSeconds\",\n" +

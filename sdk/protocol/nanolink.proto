@@ -450,6 +450,8 @@ message ServiceInfo {
   string status = 2;        // Active state: active, inactive, failed
   string sub_state = 3;     // running, dead, exited, ...
   string description = 4;
+  string uptime = 5;        // Human-readable active duration (e.g. "3d4h")
+  int32 restarts = 6;       // Restart count (systemd NRestarts)
 }
 
 // FileEntry describes a single directory entry (FILE_LIST)
@@ -573,6 +575,11 @@ message ContainerInfo {
   string status = 4;
   string state = 5;
   uint64 created = 6;
+  double cpu_percent = 7;   // Live CPU usage % (docker stats)
+  uint64 memory_bytes = 8;  // Live memory usage in bytes
+  uint64 memory_limit = 9;  // Memory limit in bytes
+  string ports = 10;        // Published ports (e.g. "80:80, 443:443")
+  string network = 11;      // Network name(s)
 }
 
 // ========== Heartbeat ==========
