@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Server connection configuration model
 class ServerConnection {
   final String id;
@@ -8,6 +10,8 @@ class ServerConnection {
   final String? username;        // Username for credential auth
   final bool isConnected;
   final DateTime? lastConnected;
+  final bool forceTls;           // Upgrade http->https / ws->wss when building URLs
+  final bool ignoreCert;         // Accept self-signed / invalid TLS certs (this conn only)
 
   ServerConnection({
     required this.id,
@@ -18,6 +22,8 @@ class ServerConnection {
     this.username,
     this.isConnected = false,
     this.lastConnected,
+    this.forceTls = false,
+    this.ignoreCert = false,
   });
 
   /// Get the best available auth token
@@ -35,6 +41,8 @@ class ServerConnection {
     String? username,
     bool? isConnected,
     DateTime? lastConnected,
+    bool? forceTls,
+    bool? ignoreCert,
   }) {
     return ServerConnection(
       id: id ?? this.id,
@@ -45,6 +53,8 @@ class ServerConnection {
       username: username ?? this.username,
       isConnected: isConnected ?? this.isConnected,
       lastConnected: lastConnected ?? this.lastConnected,
+      forceTls: forceTls ?? this.forceTls,
+      ignoreCert: ignoreCert ?? this.ignoreCert,
     );
   }
 
@@ -56,6 +66,8 @@ class ServerConnection {
       'url': url,
       'username': username,
       'lastConnected': lastConnected?.toIso8601String(),
+      'forceTls': forceTls,
+      'ignoreCert': ignoreCert,
     };
     if (includeSecrets) {
       map['token'] = token;
@@ -79,6 +91,8 @@ class ServerConnection {
       lastConnected: json['lastConnected'] != null
           ? DateTime.parse(json['lastConnected'] as String)
           : null,
+      forceTls: json['forceTls'] as bool? ?? false,
+      ignoreCert: json['ignoreCert'] as bool? ?? false,
     );
   }
 }
@@ -137,6 +151,8 @@ class CpuMetrics {
   final List<double> perCoreUsage;
   final String model;
   final double temperature;
+  final List<double> loadAverage; // 1/5/15-minute load averages (up to 3 entries)
+  final double frequencyMhz;      // current core frequency in MHz (GHz = /1000)
 
   CpuMetrics({
     required this.usagePercent,
@@ -144,12 +160,17 @@ class CpuMetrics {
     this.perCoreUsage = const [],
     this.model = '',
     this.temperature = 0,
+    this.loadAverage = const [],
+    this.frequencyMhz = 0,
   });
+
+  /// Current frequency expressed in GHz.
+  double get frequencyGhz => frequencyMhz / 1000;
 
   factory CpuMetrics.fromJson(Map<String, dynamic>? json) {
     if (json == null) return CpuMetrics(usagePercent: 0);
     return CpuMetrics(
-      usagePercent: (json['percent'] as num?)?.toDouble() ?? 
+      usagePercent: (json['percent'] as num?)?.toDouble() ??
                    (json['usagePercent'] as num?)?.toDouble() ?? 0,
       coreCount: json['coreCount'] as int? ?? 0,
       perCoreUsage: (json['perCoreUsage'] as List<dynamic>?)
@@ -157,6 +178,10 @@ class CpuMetrics {
               .toList() ?? [],
       model: json['model'] as String? ?? '',
       temperature: (json['temperature'] as num?)?.toDouble() ?? 0,
+      loadAverage: (json['loadAverage'] as List<dynamic>?)
+              ?.map((e) => (e as num).toDouble())
+              .toList() ?? [],
+      frequencyMhz: (json['frequencyMhz'] as num?)?.toDouble() ?? 0,
     );
   }
 }
@@ -168,6 +193,10 @@ class MemoryMetrics {
   final int available;
   final int swapTotal;
   final int swapUsed;
+  final int cached;          // bytes, matches total/used scale
+  final int buffers;         // bytes, matches total/used scale
+  final String memoryType;   // e.g. "DDR4"
+  final num memorySpeedMhz;  // module speed in MHz/MT/s
 
   MemoryMetrics({
     required this.total,
@@ -175,6 +204,10 @@ class MemoryMetrics {
     this.available = 0,
     this.swapTotal = 0,
     this.swapUsed = 0,
+    this.cached = 0,
+    this.buffers = 0,
+    this.memoryType = '',
+    this.memorySpeedMhz = 0,
   });
 
   double get usagePercent => total > 0 ? (used / total) * 100 : 0;
@@ -187,6 +220,10 @@ class MemoryMetrics {
       available: json['available'] as int? ?? 0,
       swapTotal: json['swapTotal'] as int? ?? 0,
       swapUsed: json['swapUsed'] as int? ?? 0,
+      cached: json['cached'] as int? ?? 0,
+      buffers: json['buffers'] as int? ?? 0,
+      memoryType: json['memoryType'] as String? ?? '',
+      memorySpeedMhz: (json['memorySpeedMhz'] as num?) ?? 0,
     );
   }
 }
@@ -201,6 +238,9 @@ class DiskMetrics {
   final int available;
   final double readBytesPerSec;
   final double writeBytesPerSec;
+  final String diskType;      // e.g. "SSD", "HDD", "NVMe"
+  final num temperature;      // °C
+  final String healthStatus;  // e.g. "healthy"
 
   DiskMetrics({
     required this.mountPoint,
@@ -211,6 +251,9 @@ class DiskMetrics {
     this.available = 0,
     this.readBytesPerSec = 0,
     this.writeBytesPerSec = 0,
+    this.diskType = '',
+    this.temperature = 0,
+    this.healthStatus = '',
   });
 
   double get usagePercent => total > 0 ? (used / total) * 100 : 0;
@@ -225,6 +268,9 @@ class DiskMetrics {
       available: json['available'] as int? ?? 0,
       readBytesPerSec: (json['readBytesPerSec'] as num?)?.toDouble() ?? 0,
       writeBytesPerSec: (json['writeBytesPerSec'] as num?)?.toDouble() ?? 0,
+      diskType: json['diskType'] as String? ?? '',
+      temperature: (json['temperature'] as num?) ?? 0,
+      healthStatus: json['healthStatus'] as String? ?? '',
     );
   }
 }
@@ -281,6 +327,8 @@ class GpuMetrics {
   final int powerWatts;
   final int fanSpeedPercent;
   final String driverVersion;
+  final String pcieGeneration;  // e.g. "PCIe 4.0 x16"
+  final num powerLimitWatts;    // configured power cap in W
 
   GpuMetrics({
     required this.index,
@@ -293,6 +341,8 @@ class GpuMetrics {
     this.powerWatts = 0,
     this.fanSpeedPercent = 0,
     this.driverVersion = '',
+    this.pcieGeneration = '',
+    this.powerLimitWatts = 0,
   });
 
   double get memoryPercent => memoryTotal > 0 ? (memoryUsed / memoryTotal) * 100 : 0;
@@ -309,6 +359,8 @@ class GpuMetrics {
       powerWatts: json['powerWatts'] as int? ?? 0,
       fanSpeedPercent: json['fanSpeedPercent'] as int? ?? 0,
       driverVersion: json['driverVersion'] as String? ?? '',
+      pcieGeneration: json['pcieGeneration'] as String? ?? '',
+      powerLimitWatts: (json['powerLimitWatts'] as num?) ?? 0,
     );
   }
 }
@@ -392,6 +444,8 @@ class SystemInfo {
   final String biosVersion;
   final String systemModel;
   final String systemVendor;
+  final String chassis;     // e.g. "Laptop", "Desktop", "Server"
+  final String primaryIp;   // primary outbound IP address
 
   SystemInfo({
     this.osName = '',
@@ -405,6 +459,8 @@ class SystemInfo {
     this.biosVersion = '',
     this.systemModel = '',
     this.systemVendor = '',
+    this.chassis = '',
+    this.primaryIp = '',
   });
 
   factory SystemInfo.fromJson(Map<String, dynamic>? json) {
@@ -421,6 +477,8 @@ class SystemInfo {
       biosVersion: json['biosVersion'] as String? ?? '',
       systemModel: json['systemModel'] as String? ?? '',
       systemVendor: json['systemVendor'] as String? ?? '',
+      chassis: json['chassis'] as String? ?? '',
+      primaryIp: json['primaryIp'] as String? ?? '',
     );
   }
 }
@@ -529,6 +587,161 @@ class AgentMetrics {
       userSessions: userSessions,
       systemInfo: systemInfo,
       timestamp: DateTime.now(),
+    );
+  }
+}
+
+/// Alert instance from GET /api/alerts (server alertDTO).
+///
+/// JSON shape (apps/server/internal/handler/alert_handler.go alertDTO):
+///   { id, level, title, desc, agent, rule, since, ack, ackBy, value }
+/// - level: "crit" | "warn" | "info"
+/// - since: server emits a humanized duration string (e.g. "5m", "2h", "3d");
+///   numeric epoch-ms / ISO strings are also tolerated defensively.
+/// - ackBy is omitempty (absent when not acked).
+class AlertInstance {
+  final String id;
+  final String level;       // crit | warn | info
+  final String title;
+  final String description;  // server key: "desc"
+  final String agent;        // agent hostname
+  final String rule;
+  final String since;        // humanized "since" string from server
+  final bool acked;          // server key: "ack"
+  final String ackedBy;      // server key: "ackBy" (omitempty)
+  final double value;
+
+  AlertInstance({
+    this.id = '',
+    this.level = 'info',
+    this.title = '',
+    this.description = '',
+    this.agent = '',
+    this.rule = '',
+    this.since = '',
+    this.acked = false,
+    this.ackedBy = '',
+    this.value = 0,
+  });
+
+  factory AlertInstance.fromJson(Map<String, dynamic> json) {
+    return AlertInstance(
+      id: json['id']?.toString() ?? '',
+      level: json['level'] as String? ?? 'info',
+      title: json['title'] as String? ?? '',
+      description: json['desc'] as String? ?? json['description'] as String? ?? '',
+      agent: json['agent'] as String? ?? json['agentId'] as String? ?? '',
+      rule: json['rule'] as String? ?? '',
+      since: json['since']?.toString() ?? '',
+      acked: json['ack'] as bool? ?? json['acked'] as bool? ?? false,
+      ackedBy: json['ackBy'] as String? ?? json['ackedBy'] as String? ?? '',
+      value: (json['value'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
+/// Audit log entry from GET /api/audit/recent.
+///
+/// The endpoint returns { "logs": [ ...database.AuditLog ] }; each record
+/// (apps/server/internal/database/models.go AuditLog) carries:
+///   { id, timestamp, userId, username, agentId, agentHostname, commandType,
+///     commandId, target, params, success, error, durationMs, ipAddress }
+/// - params is a JSON-encoded string ("{}" / "" when absent); [params] keeps the
+///   raw string and [paramsMap] exposes the decoded String->String map.
+/// - timestamp is an RFC3339 string; epoch-ms numbers are tolerated defensively.
+class AuditEntry {
+  final String id;
+  final String type;       // server key: "commandType"
+  final String user;       // server key: "username"
+  final String agentId;
+  final String agentHostname;
+  final String target;
+  final String params;     // raw JSON string from server
+  final bool ok;           // server key: "success"
+  final String error;
+  final int durationMs;
+  final DateTime at;       // server key: "timestamp"
+
+  AuditEntry({
+    this.id = '',
+    this.type = '',
+    this.user = '',
+    this.agentId = '',
+    this.agentHostname = '',
+    this.target = '',
+    this.params = '',
+    this.ok = false,
+    this.error = '',
+    this.durationMs = 0,
+    required this.at,
+  });
+
+  /// Decode the raw [params] JSON string into a map; empty on failure.
+  Map<String, dynamic> get paramsMap {
+    if (params.isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(params);
+      return decoded is Map<String, dynamic> ? decoded : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  factory AuditEntry.fromJson(Map<String, dynamic> json) {
+    return AuditEntry(
+      id: json['id']?.toString() ?? '',
+      type: json['commandType'] as String? ?? json['type'] as String? ?? '',
+      user: json['username'] as String? ?? json['user'] as String? ?? '',
+      agentId: json['agentId'] as String? ?? '',
+      agentHostname: json['agentHostname'] as String? ?? '',
+      target: json['target'] as String? ?? '',
+      params: json['params'] is String
+          ? json['params'] as String
+          : (json['params'] != null ? jsonEncode(json['params']) : ''),
+      ok: json['success'] as bool? ?? json['ok'] as bool? ?? false,
+      error: json['error'] as String? ?? '',
+      durationMs: json['durationMs'] as int? ?? 0,
+      at: _parseAt(json['timestamp'] ?? json['at']),
+    );
+  }
+
+  static DateTime _parseAt(dynamic raw) {
+    if (raw is num) {
+      return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
+    }
+    if (raw is String && raw.isNotEmpty) {
+      return DateTime.tryParse(raw) ?? DateTime.now();
+    }
+    return DateTime.now();
+  }
+}
+
+/// Single turn in an AI assistant conversation.
+///
+/// Matches the POST /api/assistant/chat contract
+/// (apps/server/internal/handler/assistant_handler.go +
+///  apps/server/internal/service/llm.go ChatMessage):
+///   request:  { "messages": [ { "role", "content" }, ... ] }
+///   response: { "reply": "..." }
+/// - role: "user" | "assistant"
+class ChatMessage {
+  final String role;     // user | assistant
+  final String content;
+
+  ChatMessage({
+    required this.role,
+    required this.content,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'role': role,
+        'content': content,
+      };
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      role: json['role'] as String? ?? 'assistant',
+      content: json['content'] as String? ?? json['text'] as String? ?? '',
     );
   }
 }

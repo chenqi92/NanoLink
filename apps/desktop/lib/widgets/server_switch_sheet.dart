@@ -37,29 +37,44 @@ Future<void> showServerSwitchSheet(BuildContext context) {
                   shrinkWrap: true,
                   children: [
                     for (final s in provider.servers)
-                      NanoListRow(
-                        onTap: () {
-                          provider.setActiveServer(s.id);
-                          Navigator.pop(ctx);
-                        },
-                        leading: NanoIconBox(Icons.dns_rounded),
-                        trailing: s.id == provider.activeServerId
-                            ? Icon(Icons.check_rounded, color: t.accent, size: 20)
-                            : NanoStatusDot(
-                                color: s.isConnected ? t.ok : t.crit,
-                                pulse: s.isConnected),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(s.name,
-                                style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w500,
-                                    color: t.fg)),
-                            NanoMono(s.url, size: 12, color: t.fg4),
-                          ],
-                        ),
-                      ),
+                      () {
+                        final active = s.id == provider.activeServerId;
+                        return NanoListRow(
+                          onTap: () {
+                            provider.setActiveServer(s.id);
+                            Navigator.pop(ctx);
+                          },
+                          leading: NanoIconBox(
+                            Icons.dns_rounded,
+                            bg: active
+                                ? t.accent.withValues(alpha: 0.16)
+                                : t.card2,
+                            fg: active ? t.accent : t.fg3,
+                          ),
+                          // Active row shows a check; non-active rows keep a
+                          // live connection status dot (design adds the dot for
+                          // at-a-glance reachability).
+                          trailing: active
+                              ? Icon(Icons.check_rounded,
+                                  color: t.accent, size: 20)
+                              : NanoStatusDot(
+                                  color: s.isConnected ? t.ok : t.crit,
+                                  pulse: s.isConnected),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(s.name,
+                                  style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: active
+                                          ? FontWeight.w600
+                                          : FontWeight.w500,
+                                      color: active ? t.accent : t.fg)),
+                              NanoMono(s.url, size: 12, color: t.fg4),
+                            ],
+                          ),
+                        );
+                      }(),
                   ],
                 ),
               ),

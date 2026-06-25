@@ -25,6 +25,7 @@ class ShellLine {
 class ShellSession {
   final Uri uri;
   final String? token;
+  final bool ignoreCert;
 
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _sub;
@@ -35,7 +36,7 @@ class ShellSession {
   final StreamController<ShellStatus> _statusCtl =
       StreamController<ShellStatus>.broadcast();
 
-  ShellSession({required this.uri, this.token});
+  ShellSession({required this.uri, this.token, this.ignoreCert = false});
 
   Stream<ShellLine> get lines => _lines.stream;
   Stream<ShellStatus> get statusStream => _statusCtl.stream;
@@ -52,7 +53,9 @@ class ShellSession {
     final WebSocketChannel ch;
     try {
       ch = connectAuthedWs(uri,
-          token: token, pingInterval: const Duration(seconds: 30));
+          token: token,
+          pingInterval: const Duration(seconds: 30),
+          ignoreCert: ignoreCert);
     } catch (e) {
       _emit(ShellLine(ShellLineKind.error, '连接失败：$e'));
       _setStatus(ShellStatus.error);
@@ -100,7 +103,15 @@ class ShellSession {
       final data = (msg['data'] as String?) ?? '';
       switch (type) {
         case 'output':
-          if (data.isNotEmpty) _emit(ShellLine(ShellLineKind.output, data));
+          // The backend annotates each output frame with the command's exit
+          // status; a non-zero exit (success == false) renders as an error line.
+          final success = msg['success'] as bool?;
+          if (data.isNotEmpty) {
+            _emit(ShellLine(
+              success == false ? ShellLineKind.error : ShellLineKind.output,
+              data,
+            ));
+          }
         case 'error':
           _emit(ShellLine(ShellLineKind.error, data));
         default:

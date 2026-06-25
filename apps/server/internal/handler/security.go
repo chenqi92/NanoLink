@@ -16,18 +16,27 @@ func ExtractRequestToken(c *gin.Context) (string, bool) {
 	return ExtractTokenFromHTTPRequest(c.Request)
 }
 
-// ExtractTokenFromHTTPRequest returns the bearer token from the Authorization header or auth cookie.
+// ExtractTokenFromHTTPRequest returns the bearer token from (in order) the
+// Authorization header, the auth cookie, or a "token" URL query parameter.
+//
+// The query-param fallback exists for WebSocket endpoints (/ws/dashboard,
+// /ws/shell/:id): browsers cannot attach custom headers to a WebSocket
+// handshake, and token-only web clients have no auth cookie, so the token must
+// ride along in the URL. Header/cookie are preferred and checked first.
 func ExtractTokenFromHTTPRequest(r *http.Request) (string, bool) {
 	if token, ok := extractBearerToken(r.Header.Get("Authorization")); ok {
 		return token, true
 	}
 
-	cookie, err := r.Cookie(AuthCookieName)
-	if err != nil || cookie.Value == "" {
-		return "", false
+	if cookie, err := r.Cookie(AuthCookieName); err == nil && cookie.Value != "" {
+		return cookie.Value, true
 	}
 
-	return cookie.Value, true
+	if token := r.URL.Query().Get("token"); token != "" {
+		return token, true
+	}
+
+	return "", false
 }
 
 // SetAuthCookie stores the current session token in a secure HttpOnly cookie.

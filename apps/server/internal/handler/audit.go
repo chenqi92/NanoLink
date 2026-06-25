@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -204,7 +205,18 @@ func (h *AuditHandler) GetRecentLogs(c *gin.Context) {
 		}
 	}
 
-	logs, err := h.auditService.GetRecentLogs(limit)
+	// Scope results to the caller. Super-admins see the whole fleet's trail;
+	// every other user only sees audit entries for agents they can access plus
+	// their own actions, so this read-only feed cannot leak other users'
+	// activity on agents they have no access to.
+	user := GetCurrentUser(c)
+	var logs []database.AuditLog
+	var err error
+	if user != nil && !user.IsSuperAdmin {
+		logs, err = h.auditService.GetRecentLogsForUser(limit, user.ID)
+	} else {
+		logs, err = h.auditService.GetRecentLogs(limit)
+	}
 	if err != nil {
 		h.logger.Errorf("Failed to get recent audit logs: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get recent audit logs"})

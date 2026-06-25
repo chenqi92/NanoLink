@@ -202,6 +202,9 @@ impl MessageHandler {
             // System operations
             CommandType::SystemReboot => self.execute_system_reboot().await,
 
+            // Soft restart of the agent's OWN process (host stays up).
+            CommandType::AgentProcessRestart => self.execute_agent_process_restart().await,
+
             // Shell command
             CommandType::ShellExecute => {
                 let cols = command
@@ -342,5 +345,136 @@ impl MessageHandler {
                 },
             }
         }
+    }
+
+    /// Gracefully restart the agent's OWN process WITHOUT rebooting the host.
+    ///
+    /// Behavior (platform-aware, best-effort):
+    ///   1. We return a successful `CommandResult` immediately so the server (and
+    ///      the issuing UI session) receives confirmation before this process
+    ///      goes away — the gRPC stream that carries the result lives in the same
+    ///      process we are about to kill.
+    ///   2. A detached background task waits a short grace period (so the result
+    ///      flushes over the wire), then performs the actual restart.
+    ///
+    /// Restart strategy (chosen by `is_supervised()`):
+    ///   - If the agent runs under a service supervisor (systemd `Restart=`,
+    ///     Windows SCM failure-action, launchd `KeepAlive`), a clean
+    ///     `process::exit(0)` is enough: the supervisor respawns us. This is the
+    ///     normal production path and does NOT touch the host. We deliberately do
+    ///     NOT also spawn a fallback here, so a supervisor never briefly runs two
+    ///     agents.
+    ///   - As a fallback for standalone / foreground runs (no supervisor), we
+    ///     first spawn a fresh, detached copy of the current binary with the same
+    ///     CLI arguments, then exit. The child keeps running after the parent dies.
+    ///
+    /// This intentionally avoids `systemctl restart` / SCM stop+start of the host
+    /// service (which `restart_agent_service()` in main.rs does for the
+    /// interactive CLI path): that would kill us before the result is flushed and
+    /// is heavier than a self re-exec. The host is never rebooted.
+    async fn execute_agent_process_restart(&self) -> CommandResult {
+        info!("[AUDIT] AgentProcessRestart requested - scheduling soft self-restart");
+
+        // Schedule the restart slightly in the future so the success result below
+        // is sent back to the server before this process exits.
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+            Self::soft_restart_process();
+        });
+
+        CommandResult {
+            command_id: String::new(),
+            success: true,
+            output: "Agent process restart scheduled (host not affected).".to_string(),
+            error: String::new(),
+            ..Default::default()
+        }
+    }
+
+    /// Best-effort detection of whether this process runs under a service
+    /// supervisor that will respawn it after a clean exit. Conservative and
+    /// platform-guarded: a false negative only re-introduces the (already
+    /// server-deduped) transient double-spawn, while a false positive could
+    /// leave a manually-run agent down — so we only return `true` on signals
+    /// that are specific to a supervisor.
+    ///
+    ///   - Linux: systemd sets `INVOCATION_ID` for every unit it starts and
+    ///     `NOTIFY_SOCKET` for `Type=notify` units. Either implies a unit that
+    ///     a `Restart=` policy can respawn.
+    ///   - macOS: launchd exposes `XPC_SERVICE_NAME` for jobs it launches; the
+    ///     literal `0` value means "not under launchd", so we exclude it.
+    ///   - Windows: detecting SCM ownership cheaply is not reliable from inside
+    ///     the process, so we conservatively assume NOT supervised and keep the
+    ///     spawn-then-exit fallback.
+    fn is_supervised() -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            return std::env::var_os("INVOCATION_ID").is_some()
+                || std::env::var_os("NOTIFY_SOCKET").is_some();
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            return match std::env::var("XPC_SERVICE_NAME") {
+                Ok(name) => !name.is_empty() && name != "0",
+                Err(_) => false,
+            };
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            false
+        }
+    }
+
+    /// Perform the actual soft restart.
+    ///
+    /// If a service supervisor is detected, exit cleanly ONLY and let the
+    /// supervisor respawn us — spawning a fallback here would briefly run two
+    /// agents (supervisor's instance + our detached child). Otherwise (interactive
+    /// / foreground / no supervisor) spawn a detached copy of ourselves first so a
+    /// manually-run agent still comes back, then exit. Does not return.
+    fn soft_restart_process() -> ! {
+        if Self::is_supervised() {
+            info!(
+                "Soft restart: service supervisor detected; exiting cleanly and letting the supervisor respawn (no fallback spawn)"
+            );
+            std::process::exit(0);
+        }
+
+        // No supervisor detected: launch a detached fresh instance so
+        // standalone/foreground runs still come back up. Failure here is
+        // non-fatal.
+        info!(
+            "Soft restart: no service supervisor detected; spawning a detached replacement before exit"
+        );
+        match std::env::current_exe() {
+            Ok(exe) => {
+                let args: Vec<String> = std::env::args().skip(1).collect();
+                let mut cmd = std::process::Command::new(exe);
+                cmd.args(&args);
+
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    // DETACHED_PROCESS (0x00000008): the child does not share the
+                    // parent's console and survives parent exit.
+                    cmd.creation_flags(0x0000_0008);
+                }
+
+                match cmd.spawn() {
+                    Ok(_) => info!("Spawned detached agent instance for soft restart"),
+                    Err(e) => warn!(
+                        "Failed to spawn detached agent instance ({e}); relying on service supervisor to respawn"
+                    ),
+                }
+            }
+            Err(e) => warn!(
+                "Failed to resolve current_exe for soft restart ({e}); relying on service supervisor to respawn"
+            ),
+        }
+
+        info!("Exiting current agent process for soft restart");
+        std::process::exit(0);
     }
 }

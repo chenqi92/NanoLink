@@ -24,6 +24,33 @@ type DashboardWSHandler struct {
 	clientsMu sync.RWMutex
 	broadcast chan *BroadcastMessage
 	upgrader  websocket.Upgrader
+
+	// activeAlertCountFn returns the number of unresolved alert instances. It is
+	// optional; when nil the summary reports 0 alerts. Wired in main.go because
+	// the alert service is not available to this package at construction time.
+	// Guarded by alertFnMu (a dedicated mutex, NOT clientsMu) because it is read
+	// from sendSummary while the broadcast loop already holds clientsMu.RLock().
+	activeAlertCountFn func() int
+	alertFnMu          sync.RWMutex
+}
+
+// SetActiveAlertCountFn sets the provider used to populate Summary.totalAlerts.
+// Guarded by alertFnMu so the broadcast loop's reads in activeAlertCount never
+// race the wiring done from main.go.
+func (h *DashboardWSHandler) SetActiveAlertCountFn(fn func() int) {
+	h.alertFnMu.Lock()
+	h.activeAlertCountFn = fn
+	h.alertFnMu.Unlock()
+}
+
+func (h *DashboardWSHandler) activeAlertCount() int {
+	h.alertFnMu.RLock()
+	fn := h.activeAlertCountFn
+	h.alertFnMu.RUnlock()
+	if fn == nil {
+		return 0
+	}
+	return fn()
 }
 
 type dashboardClient struct {
@@ -199,7 +226,7 @@ func (h *DashboardWSHandler) sendSummary(client *dashboardClient) {
 	h.sendToClient(client, &DashboardMessage{
 		Type:      MsgTypeSummary,
 		Timestamp: time.Now().UnixMilli(),
-		Data:      buildSummary(metrics, len(agents)),
+		Data:      buildSummary(metrics, len(agents), h.activeAlertCount()),
 	})
 }
 
@@ -323,6 +350,16 @@ func (h *DashboardWSHandler) BroadcastAgentUpdate(agentID string, agent interfac
 	}
 }
 
+// BroadcastAgentRegistered broadcasts an agent_update event for a connected
+// agent, rendering it in the same shape as the agents list. Wired in main.go to
+// AgentService.SetOnAgentUpdate so register/reconnect events reach dashboards live.
+func (h *DashboardWSHandler) BroadcastAgentRegistered(agent *service.Agent) {
+	if agent == nil {
+		return
+	}
+	h.BroadcastAgentUpdate(agent.ID, agentToMap(agent))
+}
+
 // BroadcastMetrics broadcasts metrics to connected clients that can access the agent.
 func (h *DashboardWSHandler) BroadcastMetrics(agentID string, metrics interface{}) {
 	h.broadcast <- &BroadcastMessage{
@@ -388,18 +425,27 @@ func (h *DashboardWSHandler) filterAgentsForClient(client *dashboardClient, agen
 			continue
 		}
 
-		result = append(result, gin.H{
-			"id":              agent.ID,
-			"hostname":        agent.Hostname,
-			"os":              agent.OS,
-			"arch":            agent.Arch,
-			"version":         agent.Version,
-			"permissionLevel": agent.PermissionLevel,
-			"connectedAt":     agent.ConnectedAt,
-			"lastHeartbeat":   agent.LastHeartbeat,
-		})
+		result = append(result, agentToMap(agent))
 	}
 	return result
+}
+
+// agentToMap renders a single agent in the same shape as the agents list so
+// agent_update events and the initial agents snapshot stay consistent. The
+// mutable fields are read via Snapshot under agent.mu so concurrent
+// UpdateAgent/UpdateHeartbeat writes are not observed mid-update.
+func agentToMap(agent *service.Agent) gin.H {
+	s := agent.Snapshot()
+	return gin.H{
+		"id":              s.ID,
+		"hostname":        s.Hostname,
+		"os":              s.OS,
+		"arch":            s.Arch,
+		"version":         s.Version,
+		"permissionLevel": s.PermissionLevel,
+		"connectedAt":     s.ConnectedAt,
+		"lastHeartbeat":   s.LastHeartbeat,
+	}
 }
 
 func (h *DashboardWSHandler) filterMetricsForClient(client *dashboardClient, metrics map[string]*service.MetricsData) map[string]*service.MetricsData {
@@ -412,7 +458,7 @@ func (h *DashboardWSHandler) filterMetricsForClient(client *dashboardClient, met
 	return filtered
 }
 
-func buildSummary(metrics map[string]*service.MetricsData, connectedAgents int) map[string]interface{} {
+func buildSummary(metrics map[string]*service.MetricsData, connectedAgents, totalAlerts int) map[string]interface{} {
 	totalCPU := 0.0
 	totalMem := uint64(0)
 	usedMem := uint64(0)
@@ -452,6 +498,7 @@ func buildSummary(metrics map[string]*service.MetricsData, connectedAgents int) 
 		"totalDisk":       totalDisk,
 		"usedDisk":        usedDisk,
 		"diskPercent":     diskPercent,
+		"totalAlerts":     totalAlerts,
 	}
 }
 

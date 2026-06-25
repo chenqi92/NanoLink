@@ -65,6 +65,11 @@ type shellMessage struct {
 	Data string `json:"data,omitempty"`
 	Cols int    `json:"cols,omitempty"`
 	Rows int    `json:"rows,omitempty"`
+	// Success reports whether the command that produced this output frame exited
+	// successfully. It is only meaningful on "output" frames and lets the client
+	// style failed commands distinctly. Pointer so it is omitted (not sent as
+	// false) for input echoes and non-command frames.
+	Success *bool `json:"success,omitempty"`
 }
 
 // NewShellHandler creates a new shell handler.
@@ -203,8 +208,9 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 	}
 }
 
-func (h *ShellHandler) sendOutput(session *shellSession, data string) {
-	msg := shellMessage{Type: "output", Data: data}
+func (h *ShellHandler) sendOutput(session *shellSession, data string, success bool) {
+	ok := success
+	msg := shellMessage{Type: "output", Data: data, Success: &ok}
 	if jsonData, err := json.Marshal(msg); err == nil {
 		session.writeMu.Lock()
 		_ = session.conn.WriteMessage(websocket.TextMessage, jsonData)
@@ -224,7 +230,11 @@ func (h *ShellHandler) sendError(session *shellSession, errMsg string) {
 // SendOutputToSession delivers command output to the session that issued the
 // command identified by commandID. Output for commands the server did not route
 // through a shell session (e.g. data-request results) is silently dropped.
-func (h *ShellHandler) SendOutputToSession(agentID, commandID, output string) {
+//
+// success carries the command's exit disposition so the client can style failed
+// commands distinctly; the agent annotates the output text itself with the
+// numeric exit status (the proto CommandResult has no dedicated exit-code field).
+func (h *ShellHandler) SendOutputToSession(agentID, commandID, output string, success bool) {
 	h.mu.Lock()
 	route, ok := h.cmdRoutes[commandID]
 	if ok {
@@ -236,7 +246,7 @@ func (h *ShellHandler) SendOutputToSession(agentID, commandID, output string) {
 		return
 	}
 
-	h.sendOutput(route.session, output)
+	h.sendOutput(route.session, output, success)
 }
 
 // registerRoute records the session that issued commandID and opportunistically

@@ -21,34 +21,46 @@ type MetricsHistory struct {
 	NetTxPS     uint64    `json:"netTxPS"`     // bytes per second
 	GPUPercent  float64   `json:"gpuPercent"`
 	LoadAvg1    float64   `json:"loadAvg1"`
+
+	// Query-only fields populated by the coarse aggregate readers
+	// (queryHourlyAggregated / queryDailyAggregated). They are not persisted
+	// to the raw partitioned tables (gorm:"-"); on raw rows they stay zero.
+	CPUMax float64 `gorm:"-" json:"cpuMax,omitempty"`
+	MemMax float64 `gorm:"-" json:"memMax,omitempty"`
 }
 
 // MetricsHourly stores aggregated hourly metrics
 type MetricsHourly struct {
-	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	AgentID    string    `gorm:"type:varchar(64);index:idx_hourly_agent_hour;not null" json:"agentId"`
-	Hour       time.Time `gorm:"index:idx_hourly_agent_hour;not null" json:"hour"` // Truncated to hour
-	CPUAvg     float64   `json:"cpuAvg"`
-	CPUMax     float64   `json:"cpuMax"`
-	MemAvg     float64   `json:"memAvg"`
-	MemMax     float64   `json:"memMax"`
-	NetRxTotal uint64    `json:"netRxTotal"` // Total bytes in the hour
-	NetTxTotal uint64    `json:"netTxTotal"` // Total bytes in the hour
-	DataPoints int       `json:"dataPoints"` // Number of data points aggregated
+	ID           uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	AgentID      string    `gorm:"type:varchar(64);index:idx_hourly_agent_hour;not null" json:"agentId"`
+	Hour         time.Time `gorm:"index:idx_hourly_agent_hour;not null" json:"hour"` // Truncated to hour
+	CPUAvg       float64   `json:"cpuAvg"`
+	CPUMax       float64   `json:"cpuMax"`
+	MemAvg       float64   `json:"memAvg"`
+	MemMax       float64   `json:"memMax"`
+	DiskReadAvg  uint64    `json:"diskReadAvg"`  // Avg disk read bytes per second over the hour
+	DiskWriteAvg uint64    `json:"diskWriteAvg"` // Avg disk write bytes per second over the hour
+	GPUAvg       float64   `json:"gpuAvg"`       // Avg GPU usage percent over the hour
+	NetRxTotal   uint64    `json:"netRxTotal"`   // Total bytes in the hour
+	NetTxTotal   uint64    `json:"netTxTotal"`   // Total bytes in the hour
+	DataPoints   int       `json:"dataPoints"`   // Number of data points aggregated
 }
 
 // MetricsDaily stores aggregated daily metrics
 type MetricsDaily struct {
-	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	AgentID    string    `gorm:"type:varchar(64);index:idx_daily_agent_day;not null" json:"agentId"`
-	Day        time.Time `gorm:"index:idx_daily_agent_day;not null" json:"day"` // Truncated to day
-	CPUAvg     float64   `json:"cpuAvg"`
-	CPUMax     float64   `json:"cpuMax"`
-	MemAvg     float64   `json:"memAvg"`
-	MemMax     float64   `json:"memMax"`
-	NetRxTotal uint64    `json:"netRxTotal"` // Total bytes in the day
-	NetTxTotal uint64    `json:"netTxTotal"` // Total bytes in the day
-	DataPoints int       `json:"dataPoints"` // Number of data points aggregated
+	ID           uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	AgentID      string    `gorm:"type:varchar(64);index:idx_daily_agent_day;not null" json:"agentId"`
+	Day          time.Time `gorm:"index:idx_daily_agent_day;not null" json:"day"` // Truncated to day
+	CPUAvg       float64   `json:"cpuAvg"`
+	CPUMax       float64   `json:"cpuMax"`
+	MemAvg       float64   `json:"memAvg"`
+	MemMax       float64   `json:"memMax"`
+	DiskReadAvg  uint64    `json:"diskReadAvg"`  // Avg disk read bytes per second over the day
+	DiskWriteAvg uint64    `json:"diskWriteAvg"` // Avg disk write bytes per second over the day
+	GPUAvg       float64   `json:"gpuAvg"`       // Avg GPU usage percent over the day
+	NetRxTotal   uint64    `json:"netRxTotal"`   // Total bytes in the day
+	NetTxTotal   uint64    `json:"netTxTotal"`   // Total bytes in the day
+	DataPoints   int       `json:"dataPoints"`   // Number of data points aggregated
 }
 
 // GetMetricsTableName returns the monthly partitioned table name

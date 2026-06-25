@@ -98,11 +98,12 @@ func (h *AlertHandler) AckAll(c *gin.Context) {
 	if u := GetCurrentUser(c); u != nil {
 		username = u.Username
 	}
-	if err := h.alertService.AckAll(username); err != nil {
+	count, err := h.alertService.AckAll(username)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to ack all"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "acked"})
+	c.JSON(http.StatusOK, gin.H{"status": "acked", "count": count})
 }
 
 // GET /alerts/rules

@@ -28,6 +28,14 @@ const _termInput = Color(0xFFE5E5E5);
 const _termSys = Color(0x7386EFAC);
 const _termErr = Color(0xFFF87171);
 
+// Console glyph metrics for the fixed 12.5px / 1.5-line monospace text. Used to
+// translate the rendered viewport into a (cols, rows) grid for session.resize.
+const double _termFontSize = 12.5;
+const double _termLineHeight = 1.5;
+const double _termCharWidth = _termFontSize * 0.6; // ~0.6em advance for mono
+const double _termHPad = 14; // _console() horizontal padding (each side)
+const double _termVPad = 12; // _console() vertical padding (each side)
+
 class _NanoTerminalViewState extends State<NanoTerminalView> {
   ShellSession? _session;
   final List<ShellLine> _lines = [];
@@ -39,6 +47,10 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
 
   final List<String> _history = [];
   int _historyIndex = -1; // -1 = editing fresh line
+
+  // Last grid reported to the agent, so we only resize on an actual change.
+  int _cols = 0;
+  int _rows = 0;
 
   @override
   void initState() {
@@ -78,9 +90,31 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
                   namedArgs: {'level': '${widget.agent.permissionLevel}'})));
         }
       });
+      // Once connected, advertise the current viewport so the agent can export
+      // COLUMNS/LINES for width-aware commands.
+      if (s == ShellStatus.connected && _cols > 0 && _rows > 0) {
+        session.resize(_cols, _rows);
+      }
       _scrollToBottom();
     });
     session.connect();
+  }
+
+  /// Translate the console viewport [size] into a character grid and, when it
+  /// differs from the last reported grid, tell the agent via [ShellSession.resize].
+  void _reportSize(Size size) {
+    final cols =
+        ((size.width - _termHPad * 2) / _termCharWidth).floor().clamp(1, 1000);
+    final rows = ((size.height - _termVPad * 2) /
+            (_termFontSize * _termLineHeight))
+        .floor()
+        .clamp(1, 1000);
+    if (cols == _cols && rows == _rows) return;
+    _cols = cols;
+    _rows = rows;
+    if (_status == ShellStatus.connected) {
+      _session?.resize(cols, rows);
+    }
   }
 
   @override
@@ -189,9 +223,14 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
         _setLine('');
       case 'tab':
         _insert('\t');
-      case '^C':
+      case 'ctrl':
+        // Line-oriented shell: interrupt = send the real Ctrl-C (ETX) byte
+        // and abort the current input. Keeps the design's `ctrl` label.
         _session?.sendInput('');
         _setLine('');
+      case 'alt':
+        // No raw modifier in a line shell; repurpose as a Home/End jump.
+        _toggleHomeEnd();
       case '↑':
         _historyPrev();
       case '↓':
@@ -203,6 +242,14 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
       default:
         _insert(key);
     }
+  }
+
+  // Jump the cursor between line start and end (soft-keyboard Home/End).
+  void _toggleHomeEnd() {
+    final len = _input.text.length;
+    final pos = _input.selection.isValid ? _input.selection.baseOffset : len;
+    _input.selection = TextSelection.collapsed(offset: pos == 0 ? len : 0);
+    _focus.requestFocus();
   }
 
   @override
@@ -227,7 +274,18 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
               clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
-                  Expanded(child: _console()),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Report the live console grid to the agent whenever the
+                        // layout changes (rotation, keyboard, split-view, …).
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _reportSize(constraints.biggest);
+                        });
+                        return _console();
+                      },
+                    ),
+                  ),
                   _inputRow(t),
                   _keyRow(),
                 ],
@@ -407,7 +465,7 @@ class _NanoTerminalViewState extends State<NanoTerminalView> {
   }
 
   Widget _keyRow() {
-    const keys = ['esc', 'tab', '^C', '↑', '↓', '←', '→', '/', '|', '-', '~'];
+    const keys = ['esc', 'tab', 'ctrl', 'alt', '↑', '↓', '←', '→', '/', '|', '-', '~'];
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
       decoration: const BoxDecoration(

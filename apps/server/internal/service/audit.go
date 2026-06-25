@@ -165,7 +165,7 @@ func (s *AuditService) GetAgentAuditLogs(agentID string, limit, offset int) (*Au
 	})
 }
 
-// GetRecentLogs gets the most recent audit logs
+// GetRecentLogs gets the most recent audit logs (unscoped, super-admin view)
 func (s *AuditService) GetRecentLogs(limit int) ([]database.AuditLog, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
@@ -176,6 +176,73 @@ func (s *AuditService) GetRecentLogs(limit int) ([]database.AuditLog, error) {
 		return nil, err
 	}
 	return logs, nil
+}
+
+// GetRecentLogsForUser gets the most recent audit logs visible to a non-superadmin
+// caller. Results are restricted to entries for agents the user can access
+// (via group assignments or direct permissions) plus the user's own actions.
+// This mirrors PermissionService.GetVisibleAgents so the audit feed cannot leak
+// other users' activity on agents the caller has no access to.
+func (s *AuditService) GetRecentLogsForUser(limit int, userID uint) ([]database.AuditLog, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+
+	accessibleAgentIDs, err := s.accessibleAgentIDs(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	db := s.db.Model(&database.AuditLog{})
+	if len(accessibleAgentIDs) > 0 {
+		db = db.Where("agent_id IN ? OR user_id = ?", accessibleAgentIDs, userID)
+	} else {
+		// No accessible agents: only the caller's own actions are visible.
+		db = db.Where("user_id = ?", userID)
+	}
+
+	var logs []database.AuditLog
+	if err := db.Order("timestamp DESC").Limit(limit).Find(&logs).Error; err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
+// accessibleAgentIDs returns the set of agent IDs a non-superadmin user can see,
+// derived from their group assignments and direct agent permissions. This
+// duplicates the resolution in PermissionService.GetVisibleAgents because the
+// audit service is wired without a PermissionService dependency.
+func (s *AuditService) accessibleAgentIDs(userID uint) ([]string, error) {
+	var user database.User
+	if err := s.db.Preload("Groups").First(&user, userID).Error; err != nil {
+		return nil, err
+	}
+
+	agentMap := make(map[string]bool)
+
+	// Agents from the user's groups.
+	for _, group := range user.Groups {
+		var agentGroups []database.AgentGroup
+		if err := s.db.Where("group_id = ?", group.ID).Find(&agentGroups).Error; err == nil {
+			for _, ag := range agentGroups {
+				agentMap[ag.AgentID] = true
+			}
+		}
+	}
+
+	// Agents from direct permissions.
+	var directPerms []database.UserAgentPermission
+	if err := s.db.Where("user_id = ?", userID).Find(&directPerms).Error; err == nil {
+		for _, perm := range directPerms {
+			agentMap[perm.AgentID] = true
+		}
+	}
+
+	agents := make([]string, 0, len(agentMap))
+	for agentID := range agentMap {
+		agents = append(agents, agentID)
+	}
+	return agents, nil
 }
 
 // GetAuditStats returns statistics about audit logs

@@ -321,6 +321,8 @@ message SystemInfo {
   string bios_version = 9;       // BIOS version
   string system_model = 10;      // System model (for branded PCs/servers)
   string system_vendor = 11;     // System vendor
+  string chassis = 12;           // Chassis type (e.g., "Laptop", "Desktop", "Server")
+  string primary_ip = 13;        // Primary outbound IP address
 }
 
 message UserSession {
@@ -391,6 +393,7 @@ enum CommandType {
   AGENT_DOWNLOAD_UPDATE = 61; // Download update package
   AGENT_APPLY_UPDATE = 62;    // Apply update and restart agent
   AGENT_GET_VERSION = 63;     // Get current agent version info
+  AGENT_PROCESS_RESTART = 64; // Gracefully restart the agent process only (host stays up); requires SYSTEM_ADMIN/L3
 
   // ========== DevOps Extension Commands ==========
   // Log Query Commands (Level 0/1+ with sanitization)

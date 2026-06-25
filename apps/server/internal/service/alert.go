@@ -256,11 +256,14 @@ func (s *AlertService) AckInstance(id uint, username string) error {
 		Updates(map[string]interface{}{"status": "acked", "ack_by": username, "acked_at": &now}).Error
 }
 
-func (s *AlertService) AckAll(username string) error {
+// AckAll acknowledges every currently firing alert and returns how many
+// instances transitioned to "acked".
+func (s *AlertService) AckAll(username string) (int64, error) {
 	now := time.Now()
-	return s.db.Model(&database.AlertInstance{}).
+	res := s.db.Model(&database.AlertInstance{}).
 		Where("status = ?", "firing").
-		Updates(map[string]interface{}{"status": "acked", "ack_by": username, "acked_at": &now}).Error
+		Updates(map[string]interface{}{"status": "acked", "ack_by": username, "acked_at": &now})
+	return res.RowsAffected, res.Error
 }
 
 // ─── Rules ─────────────────────────────────────────────────

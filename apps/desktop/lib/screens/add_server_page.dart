@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:easy_localization/easy_localization.dart';
@@ -10,10 +11,10 @@ import '../design/nano_tokens.dart';
 import '../providers/app_provider.dart';
 import '../widgets/nano/nano_card.dart';
 
-/// How to connect a server. The 6-digit pairing code is intentionally omitted:
-/// the backend issues codes but has no redemption endpoint, so only QR (which
-/// embeds the full token), account login and manual entry actually work.
-enum ConnectionMethod { qrCode, account, manual }
+/// How to connect a server: scan a QR (embeds the full token), redeem a 6-digit
+/// pairing code via `/api/auth/pairing`, log in with an account, or enter a
+/// server URL and device token manually.
+enum ConnectionMethod { qrCode, account, pairing, manual }
 
 /// Full-screen "add server" flow styled with the NanoLink design tokens.
 class AddServerPage extends StatefulWidget {
@@ -32,6 +33,7 @@ class _AddServerPageState extends State<AddServerPage> {
   final _token = TextEditingController();
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _deviceName = TextEditingController();
 
   MobileScannerController? _scanner;
   bool _hasScanned = false;
@@ -39,6 +41,25 @@ class _AddServerPageState extends State<AddServerPage> {
   bool _loading = false;
   bool _obscure = true;
   String? _error;
+
+  // QR recognized identity, shown briefly before navigating away.
+  String? _qrServerName;
+  String? _qrServerUrl;
+
+  // Manual "Advanced" section (force TLS / ignore cert errors). Forwarded into
+  // ServerConnection via AppProvider.addServer, which scopes them to that
+  // connection's ServerService (no process-wide HttpOverrides).
+  bool _advancedOpen = false;
+  bool _forceTls = true;
+  bool _ignoreCert = false;
+
+  // ── Pairing numpad state ────────────────────────────────────────────────
+  // The 6-digit code is entered via an on-screen numpad into [_pairingDigits],
+  // auto-submitted at length 6. [_pairingState] drives the inline status row.
+  String _pairingDigits = '';
+  _PairingState _pairingState = _PairingState.input;
+  Timer? _countdownTimer;
+  int _pairingSeconds = 60;
 
   bool get _qrSupported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
@@ -49,6 +70,8 @@ class _AddServerPageState extends State<AddServerPage> {
     _token.dispose();
     _username.dispose();
     _password.dispose();
+    _deviceName.dispose();
+    _countdownTimer?.cancel();
     _scanner?.dispose();
     super.dispose();
   }
@@ -59,6 +82,8 @@ class _AddServerPageState extends State<AddServerPage> {
       _method = m;
       _error = null;
       _hasScanned = false;
+      _qrServerName = null;
+      _qrServerUrl = null;
     });
     if (m == ConnectionMethod.qrCode && _qrSupported) {
       _scanner = MobileScannerController(
@@ -66,9 +91,16 @@ class _AddServerPageState extends State<AddServerPage> {
         facing: CameraFacing.back,
       );
     }
+    if (m == ConnectionMethod.pairing) {
+      _resetPairing();
+      _startCountdown();
+    } else {
+      _countdownTimer?.cancel();
+    }
   }
 
   void _back() {
+    _countdownTimer?.cancel();
     if (_method != null) {
       _scanner?.dispose();
       _scanner = null;
@@ -76,10 +108,51 @@ class _AddServerPageState extends State<AddServerPage> {
         _method = null;
         _error = null;
         _hasScanned = false;
+        _qrServerName = null;
+        _qrServerUrl = null;
       });
     } else {
       Navigator.pop(context);
     }
+  }
+
+  // ── Pairing numpad logic ────────────────────────────────────────────────
+  void _resetPairing() {
+    _pairingDigits = '';
+    _pairingState = _PairingState.input;
+    _error = null;
+  }
+
+  void _startCountdown() {
+    _countdownTimer?.cancel();
+    _pairingSeconds = 60;
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_pairingSeconds > 0) _pairingSeconds--;
+      });
+      if (_pairingSeconds == 0) _countdownTimer?.cancel();
+    });
+  }
+
+  void _onNumpadTap(String key) {
+    if (_pairingState == _PairingState.verifying ||
+        _pairingState == _PairingState.success) {
+      return;
+    }
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (key == 'del') {
+        if (_pairingDigits.isNotEmpty) {
+          _pairingDigits =
+              _pairingDigits.substring(0, _pairingDigits.length - 1);
+        }
+      } else if (_pairingDigits.length < 6) {
+        _pairingDigits += key;
+        _pairingState = _PairingState.input;
+      }
+    });
+    if (_pairingDigits.length == 6) _verifyPairing();
   }
 
   Future<void> _processQr(String raw) async {
@@ -107,15 +180,25 @@ class _AddServerPageState extends State<AddServerPage> {
         throw const FormatException('invalid');
       }
       await _scanner?.stop();
+      // Surface the recognized identity before we hand off / navigate.
+      setState(() {
+        _qrServerName = name;
+        _qrServerUrl = serverUrl;
+      });
       final ok = await provider.addServer(name: name, url: serverUrl, token: token);
       if (!mounted) return;
       if (ok) {
         HapticFeedback.heavyImpact();
+        // Let the "✓ name · url" identity row register before navigating.
+        await Future<void>.delayed(const Duration(milliseconds: 650));
+        if (!mounted) return;
         Navigator.pop(context, true);
       } else {
         setState(() {
           _loading = false;
           _hasScanned = false;
+          _qrServerName = null;
+          _qrServerUrl = null;
           _error = 'addServer.connectionFailed'.tr();
         });
         _scanner?.start();
@@ -125,6 +208,8 @@ class _AddServerPageState extends State<AddServerPage> {
       setState(() {
         _loading = false;
         _hasScanned = false;
+        _qrServerName = null;
+        _qrServerUrl = null;
         _error = 'addServer.qrInvalid'.tr();
       });
       _scanner?.start();
@@ -137,10 +222,19 @@ class _AddServerPageState extends State<AddServerPage> {
       _loading = true;
       _error = null;
     });
+    // Optional device name overrides the server name we register the token
+    // under; falls back to the server name when left blank.
+    final deviceName = _deviceName.text.trim();
+    final registerName =
+        deviceName.isNotEmpty ? deviceName : _name.text.trim();
+    // The force-TLS / ignore-cert advanced flags are forwarded into the
+    // connection; ServerService scopes them to its own HTTP client (web no-op).
     final ok = await context.read<AppProvider>().addServer(
-          name: _name.text.trim(),
+          name: registerName,
           url: _url.text.trim(),
           token: _token.text.trim().isEmpty ? null : _token.text.trim(),
+          forceTls: _forceTls,
+          ignoreCert: _ignoreCert,
         );
     if (!mounted) return;
     if (ok) {
@@ -178,6 +272,47 @@ class _AddServerPageState extends State<AddServerPage> {
     }
   }
 
+  /// Redeem the 6-digit numpad code. Requires a valid server URL + name first;
+  /// drives the inline verifying/invalid/success states.
+  Future<void> _verifyPairing() async {
+    final url = _url.text.trim();
+    final name = _name.text.trim();
+    // Both fields are required to redeem; surface a field error if missing.
+    if (name.isEmpty || _urlValidator(url) != null) {
+      _formKey.currentState?.validate();
+      setState(() {
+        _pairingState = _PairingState.invalid;
+        _error = 'addServer.pairingNeedsServer'.tr();
+      });
+      return;
+    }
+    setState(() {
+      _pairingState = _PairingState.verifying;
+      _error = null;
+    });
+    HapticFeedback.selectionClick();
+    final ok = await context.read<AppProvider>().addServerWithPairingCode(
+          name: name,
+          url: url,
+          pairingCode: _pairingDigits,
+        );
+    if (!mounted) return;
+    if (ok) {
+      _countdownTimer?.cancel();
+      setState(() => _pairingState = _PairingState.success);
+      HapticFeedback.heavyImpact();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } else {
+      HapticFeedback.heavyImpact();
+      setState(() {
+        _pairingState = _PairingState.invalid;
+        _error = 'addServer.pairingFailed'.tr();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.nano;
@@ -193,6 +328,7 @@ class _AddServerPageState extends State<AddServerPage> {
                   : switch (_method!) {
                       ConnectionMethod.qrCode => _qrScanner(t),
                       ConnectionMethod.account => _accountForm(t),
+                      ConnectionMethod.pairing => _pairingForm(t),
                       ConnectionMethod.manual => _manualForm(t),
                     },
             ),
@@ -208,6 +344,7 @@ class _AddServerPageState extends State<AddServerPage> {
         : switch (_method!) {
             ConnectionMethod.qrCode => 'addServer.headerScanQr'.tr(),
             ConnectionMethod.account => 'addServer.headerAccount'.tr(),
+            ConnectionMethod.pairing => 'addServer.headerPairing'.tr(),
             ConnectionMethod.manual => 'addServer.headerManual'.tr(),
           };
     return Padding(
@@ -254,6 +391,12 @@ class _AddServerPageState extends State<AddServerPage> {
         Icons.shield_outlined,
         'addServer.methodAccount'.tr(),
         'addServer.methodAccountDesc'.tr()
+      ],
+      [
+        ConnectionMethod.pairing,
+        Icons.pin_rounded,
+        'addServer.methodPairing'.tr(),
+        'addServer.methodPairingDesc'.tr()
       ],
       [
         ConnectionMethod.manual,
@@ -375,23 +518,66 @@ class _AddServerPageState extends State<AddServerPage> {
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
           child: Column(
             children: [
-              if (_error != null) ...[
+              if (_qrServerName != null) ...[
+                _qrIdentityRow(t, _qrServerName!, _qrServerUrl ?? ''),
+                const SizedBox(height: 14),
+              ] else if (_error != null) ...[
                 _errorBanner(t, _error!),
                 const SizedBox(height: 14),
               ],
-              Text('addServer.qrHint'.tr(),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13.5, color: t.fg3)),
-              const SizedBox(height: 10),
-              TextButton(
-                onPressed: () => _select(ConnectionMethod.manual),
-                child: Text('addServer.useManualInstead'.tr(),
-                    style: TextStyle(color: t.accent)),
-              ),
+              if (_qrServerName == null) ...[
+                Text('addServer.qrHint'.tr(),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13.5, color: t.fg3)),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: () => _select(ConnectionMethod.manual),
+                  child: Text('addServer.useManualInstead'.tr(),
+                      style: TextStyle(color: t.accent)),
+                ),
+              ],
             ],
           ),
         ),
       ],
+    );
+  }
+
+  /// "✓ name · url" recognized-identity row shown right after a QR decode,
+  /// while the connection is being saved (android-app.jsx MDAddQR success row).
+  Widget _qrIdentityRow(NanoTokens t, String name, String url) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: t.ok.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.check_circle_rounded, color: t.ok, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  url.isEmpty ? name : '$name · $url',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: t.ok,
+                      fontFamilyFallback: kMonoFallback),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text('addServer.qrSaving'.tr(),
+              style: TextStyle(fontSize: 12.5, color: t.fg3)),
+        ],
+      ),
     );
   }
 
@@ -419,12 +605,90 @@ class _AddServerPageState extends State<AddServerPage> {
               label: 'addServer.deviceTokenOptional'.tr(),
               hint: 'addServer.deviceTokenHint'.tr(),
               obscure: true),
+          _advancedSection(t),
           if (_error != null) ...[
             const SizedBox(height: 4),
             _errorBanner(t, _error!),
           ],
           const SizedBox(height: 24),
           _primary(t, 'addServer.connect'.tr(), _submitManual),
+        ],
+      ),
+    );
+  }
+
+  /// Expandable "Advanced" section: force-TLS / ignore-cert switches + optional
+  /// device name (ios-app.jsx IOSAddManual L506-514, android-app.jsx MDAddManual
+  /// L401-405). Flags are forwarded into the connection and scoped to its own
+  /// ServerService HTTP client (no process-wide override).
+  Widget _advancedSection(NanoTokens t) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() => _advancedOpen = !_advancedOpen);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Row(
+              children: [
+                Text('addServer.advanced'.tr(),
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: t.accent)),
+                const Spacer(),
+                Icon(
+                    _advancedOpen
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    color: t.accent,
+                    size: 20),
+              ],
+            ),
+          ),
+        ),
+        if (_advancedOpen) ...[
+          const SizedBox(height: 4),
+          _field(t,
+              controller: _deviceName,
+              label: 'addServer.deviceName'.tr(),
+              hint: 'addServer.deviceNameHint'.tr()),
+          _switchRow(t, 'addServer.forceTls'.tr(), _forceTls,
+              (v) => setState(() => _forceTls = v)),
+          const SizedBox(height: 8),
+          _switchRow(t, 'addServer.ignoreCert'.tr(), _ignoreCert,
+              (v) => setState(() => _ignoreCert = v)),
+        ],
+      ],
+    );
+  }
+
+  Widget _switchRow(
+      NanoTokens t, String label, bool value, ValueChanged<bool> onChanged) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 4, 8, 4),
+      decoration: BoxDecoration(
+        color: t.card2,
+        borderRadius: BorderRadius.circular(t.fieldRadius),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label,
+                style: TextStyle(fontSize: 14.5, color: t.fg)),
+          ),
+          Switch.adaptive(
+            value: value,
+            activeTrackColor: t.accent,
+            onChanged: (v) {
+              HapticFeedback.selectionClick();
+              onChanged(v);
+            },
+          ),
         ],
       ),
     );
@@ -493,7 +757,226 @@ class _AddServerPageState extends State<AddServerPage> {
           ],
           const SizedBox(height: 24),
           _primary(t, 'addServer.login'.tr(), _submitAccount),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                GestureDetector(
+                  onTap: () => _showInfoSnack('addServer.forgotPasswordHint'.tr()),
+                  child: Text('addServer.forgotPassword'.tr(),
+                      style: TextStyle(color: t.accent, fontSize: 13.5)),
+                ),
+                GestureDetector(
+                  onTap: () => _showInfoSnack('addServer.ssoHint'.tr()),
+                  child: Text('addServer.ssoLogin'.tr(),
+                      style: TextStyle(color: t.accent, fontSize: 13.5)),
+                ),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  void _showInfoSnack(String message) {
+    HapticFeedback.selectionClick();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Widget _pairingForm(NanoTokens t) {
+    final codeColor = switch (_pairingState) {
+      _PairingState.invalid => t.crit,
+      _PairingState.success => t.ok,
+      _ => t.fg,
+    };
+    final digits = _pairingDigits.padRight(6, '·').split('');
+    return Form(
+      key: _formKey,
+      child: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+              children: [
+                _field(t,
+                    controller: _name,
+                    label: 'addServer.serverName'.tr(),
+                    hint: 'addServer.serverNameHint'.tr(),
+                    validator: (v) => v == null || v.trim().isEmpty
+                        ? 'addServer.nameRequired'.tr()
+                        : null),
+                _field(t,
+                    controller: _url,
+                    label: 'addServer.serverUrl'.tr(),
+                    hint: 'http://192.168.1.100:39100',
+                    keyboardType: TextInputType.url,
+                    validator: _urlValidator),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 18),
+                  child: Text('addServer.pairingEnterHint'.tr(),
+                      style:
+                          TextStyle(fontSize: 13.5, color: t.fg3, height: 1.5)),
+                ),
+                // 6 digit boxes split 3 · 3.
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var i = 0; i < 3; i++)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: _digitBox(t, digits[i],
+                            active: _pairingDigits.length == i, color: codeColor),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Text('·',
+                          style: TextStyle(color: t.fg4, fontSize: 26)),
+                    ),
+                    for (var i = 3; i < 6; i++)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: _digitBox(t, digits[i],
+                            active: _pairingDigits.length == i, color: codeColor),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _pairingStatusRow(t),
+              ],
+            ),
+          ),
+          // Fixed on-screen numpad (android-app.jsx MDNumPad).
+          _numPad(t),
+        ],
+      ),
+    );
+  }
+
+  /// Inline status row beneath the digit boxes: countdown while inputting,
+  /// "verifying…", "invalid", or "✓ paired" (android-app.jsx L323-328).
+  Widget _pairingStatusRow(NanoTokens t) {
+    switch (_pairingState) {
+      case _PairingState.verifying:
+        return Center(
+          child: Text('addServer.pairingVerifying'.tr(),
+              style: TextStyle(fontSize: 13, color: t.accent)),
+        );
+      case _PairingState.success:
+        return Center(
+          child: Text('addServer.pairingPaired'.tr(),
+              style: TextStyle(
+                  fontSize: 13, color: t.ok, fontWeight: FontWeight.w600)),
+        );
+      case _PairingState.invalid:
+        return Center(
+          child: Text(_error ?? 'addServer.pairingInvalid'.tr(),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: t.crit)),
+        );
+      case _PairingState.input:
+        final m = _pairingSeconds ~/ 60;
+        final s = (_pairingSeconds % 60).toString().padLeft(2, '0');
+        final low = _pairingSeconds < 10;
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('$m:$s',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: low ? t.crit : t.fg3,
+                    fontFamilyFallback: kMonoFallback)),
+            Text(' · ', style: TextStyle(fontSize: 13, color: t.fg4)),
+            Text('addServer.pairingValid60s'.tr(),
+                style: TextStyle(fontSize: 13, color: t.fg3)),
+          ],
+        );
+    }
+  }
+
+  Widget _digitBox(NanoTokens t, String d,
+      {required bool active, required Color color}) {
+    final empty = d == '·';
+    return Container(
+      width: 44,
+      height: 56,
+      decoration: BoxDecoration(
+        color: t.card2,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: active ? t.accent : t.sep,
+          width: active ? 2 : 1,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        d,
+        style: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.w500,
+          color: empty ? t.fg5 : color,
+          fontFamilyFallback: kMonoFallback,
+        ),
+      ),
+    );
+  }
+
+  Widget _numPad(NanoTokens t) {
+    const rows = [
+      ['1', '2', '3'],
+      ['4', '5', '6'],
+      ['7', '8', '9'],
+      ['', '0', 'del'],
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final row in rows)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  for (final k in row)
+                    Expanded(
+                      child: k.isEmpty
+                          ? const SizedBox(height: 60)
+                          : Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 5),
+                              child: _numKey(t, k),
+                            ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _numKey(NanoTokens t, String k) {
+    return Material(
+      color: t.card3,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => _onNumpadTap(k),
+        child: SizedBox(
+          height: 60,
+          child: Center(
+            child: k == 'del'
+                ? Icon(Icons.backspace_outlined, size: 20, color: t.fg)
+                : Text(k,
+                    style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w500,
+                        color: t.fg)),
+          ),
+        ),
       ),
     );
   }
@@ -656,3 +1139,6 @@ class _ScanFramePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ScanFramePainter old) => old.color != color;
 }
+
+/// Inline state of the pairing-code numpad entry.
+enum _PairingState { input, verifying, success, invalid }

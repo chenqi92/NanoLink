@@ -597,11 +597,23 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 	case *pb.MetricsStreamRequest_CommandResult:
 		s.logger.Infof("Command result from %s: %s (success=%v)",
 			agent.Hostname, req.CommandResult.CommandId, req.CommandResult.Success)
-		// Forward command result to shell session handler
+		// Forward command result to shell session handler.
+		//
+		// A command can both emit stdout AND fail with a non-zero exit status
+		// (e.g. `grep` with no match prints nothing but exits 1; a build prints
+		// progress then fails). Previously a failure replaced stdout with the
+		// error text, discarding any real output. Now we surface stdout and
+		// append the error/exit text (which the agent annotates with the numeric
+		// exit status, since the proto CommandResult has no dedicated exit-code
+		// field) so the terminal shows both. The success flag is forwarded
+		// separately so the UI can style failures distinctly.
 		if s.commandResultHandler != nil {
 			output := req.CommandResult.Output
-			if !req.CommandResult.Success && req.CommandResult.Error != "" {
-				output = req.CommandResult.Error
+			if req.CommandResult.Error != "" {
+				if output != "" {
+					output += "\n"
+				}
+				output += req.CommandResult.Error
 			}
 			s.commandResultHandler(agent.AgentID, req.CommandResult.CommandId, output, req.CommandResult.Success)
 		}

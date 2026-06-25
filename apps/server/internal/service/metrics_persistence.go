@@ -14,9 +14,9 @@ import (
 
 // MetricsPersistence handles metrics data persistence to database
 type MetricsPersistence struct {
-	db                *gorm.DB
-	cfg               config.MetricsConfig
-	logger            *zap.SugaredLogger
+	db                     *gorm.DB
+	cfg                    config.MetricsConfig
+	logger                 *zap.SugaredLogger
 	tableMu                sync.Mutex
 	maintenanceMu          sync.Mutex
 	currentTable           string
@@ -184,7 +184,11 @@ func (mp *MetricsPersistence) QueryHistory(agentID string, start, end time.Time,
 // rescanning raw partitions: 1h buckets are served from MetricsHourly and
 // 1d/multi-day buckets from MetricsDaily. Fine buckets (<=15m) still scan and
 // bucket the raw data.
-func (mp *MetricsPersistence) QueryAggregated(agentID string, start, end time.Time, interval string) ([]database.MetricsHistory, error) {
+//
+// limit caps the number of returned buckets: when limit > 0 only the most
+// recent limit buckets are kept (results are time-ascending, so the tail is
+// the newest). limit <= 0 returns all buckets in the range.
+func (mp *MetricsPersistence) QueryAggregated(agentID string, start, end time.Time, interval string, limit int) ([]database.MetricsHistory, error) {
 	// Determine bucket duration
 	var bucketDuration time.Duration
 	switch interval {
@@ -216,9 +220,11 @@ func (mp *MetricsPersistence) QueryAggregated(agentID string, start, end time.Ti
 	// Coarse buckets: serve from aggregate tables to avoid rescanning raw data.
 	switch {
 	case bucketDuration >= 24*time.Hour:
-		return mp.queryDailyAggregated(agentID, start, end)
+		rows, err := mp.queryDailyAggregated(agentID, start, end)
+		return trimToLimit(rows, limit), err
 	case bucketDuration >= time.Hour:
-		return mp.queryHourlyAggregated(agentID, start, end)
+		rows, err := mp.queryHourlyAggregated(agentID, start, end)
+		return trimToLimit(rows, limit), err
 	}
 
 	// Fine buckets (<=15m): scan and bucket the raw data.
@@ -229,13 +235,23 @@ func (mp *MetricsPersistence) QueryAggregated(agentID string, start, end time.Ti
 	if len(raw) == 0 {
 		return raw, nil
 	}
-	return mp.aggregateData(raw, bucketDuration), nil
+	return trimToLimit(mp.aggregateData(raw, bucketDuration), limit), nil
+}
+
+// trimToLimit keeps at most the most recent limit entries of a time-ascending
+// slice. limit <= 0 leaves the slice unchanged.
+func trimToLimit(rows []database.MetricsHistory, limit int) []database.MetricsHistory {
+	if limit > 0 && len(rows) > limit {
+		return rows[len(rows)-limit:]
+	}
+	return rows
 }
 
 // queryHourlyAggregated reads pre-computed hourly rows for the range and maps
-// them into the MetricsHistory shape. The DTO has no Max/Total fields, so only
-// the *Avg values (and per-hour net totals) are surfaced; Max values are
-// dropped (see report notes).
+// them into the MetricsHistory shape. Avg disk-IO and GPU series are surfaced
+// alongside CPU/Mem/Net; the per-hour CPU/Mem maxima ride on the query-only
+// CPUMax/MemMax fields. NetRx/TxTotal are per-hour totals carried in the *PS
+// fields (the DTO has no dedicated total field).
 func (mp *MetricsPersistence) queryHourlyAggregated(agentID string, start, end time.Time) ([]database.MetricsHistory, error) {
 	var rows []database.MetricsHourly
 	if err := mp.db.
@@ -248,19 +264,26 @@ func (mp *MetricsPersistence) queryHourlyAggregated(agentID string, start, end t
 	results := make([]database.MetricsHistory, 0, len(rows))
 	for _, r := range rows {
 		results = append(results, database.MetricsHistory{
-			AgentID:    r.AgentID,
-			Timestamp:  r.Hour,
-			CPUPercent: r.CPUAvg,
-			MemPercent: r.MemAvg,
-			NetRxPS:    r.NetRxTotal,
-			NetTxPS:    r.NetTxTotal,
+			AgentID:     r.AgentID,
+			Timestamp:   r.Hour,
+			CPUPercent:  r.CPUAvg,
+			MemPercent:  r.MemAvg,
+			DiskReadPS:  r.DiskReadAvg,
+			DiskWritePS: r.DiskWriteAvg,
+			NetRxPS:     r.NetRxTotal,
+			NetTxPS:     r.NetTxTotal,
+			GPUPercent:  r.GPUAvg,
+			CPUMax:      r.CPUMax,
+			MemMax:      r.MemMax,
 		})
 	}
 	return results, nil
 }
 
 // queryDailyAggregated reads pre-computed daily rows for the range and maps
-// them into the MetricsHistory shape (Avg values only; see report notes).
+// them into the MetricsHistory shape. Avg disk-IO and GPU series plus the
+// per-day CPU/Mem maxima (query-only CPUMax/MemMax fields) are surfaced
+// alongside CPU/Mem/Net.
 func (mp *MetricsPersistence) queryDailyAggregated(agentID string, start, end time.Time) ([]database.MetricsHistory, error) {
 	var rows []database.MetricsDaily
 	if err := mp.db.
@@ -273,12 +296,17 @@ func (mp *MetricsPersistence) queryDailyAggregated(agentID string, start, end ti
 	results := make([]database.MetricsHistory, 0, len(rows))
 	for _, r := range rows {
 		results = append(results, database.MetricsHistory{
-			AgentID:    r.AgentID,
-			Timestamp:  r.Day,
-			CPUPercent: r.CPUAvg,
-			MemPercent: r.MemAvg,
-			NetRxPS:    r.NetRxTotal,
-			NetTxPS:    r.NetTxTotal,
+			AgentID:     r.AgentID,
+			Timestamp:   r.Day,
+			CPUPercent:  r.CPUAvg,
+			MemPercent:  r.MemAvg,
+			DiskReadPS:  r.DiskReadAvg,
+			DiskWritePS: r.DiskWriteAvg,
+			NetRxPS:     r.NetRxTotal,
+			NetTxPS:     r.NetTxTotal,
+			GPUPercent:  r.GPUAvg,
+			CPUMax:      r.CPUMax,
+			MemMax:      r.MemMax,
 		})
 	}
 	return results, nil
@@ -399,12 +427,15 @@ func (mp *MetricsPersistence) runHourlyAggregation() {
 		// Calculate aggregates
 		var cpuSum, memSum, gpuSum float64
 		var cpuMax, memMax float64
+		var diskReadSum, diskWriteSum uint64
 		var netRxTotal, netTxTotal uint64
 
 		for _, m := range raw {
 			cpuSum += m.CPUPercent
 			memSum += m.MemPercent
 			gpuSum += m.GPUPercent
+			diskReadSum += m.DiskReadPS
+			diskWriteSum += m.DiskWritePS
 			netRxTotal += m.NetRxPS
 			netTxTotal += m.NetTxPS
 
@@ -418,15 +449,18 @@ func (mp *MetricsPersistence) runHourlyAggregation() {
 
 		count := len(raw)
 		hourly := database.MetricsHourly{
-			AgentID:    agentID,
-			Hour:       hour,
-			CPUAvg:     cpuSum / float64(count),
-			CPUMax:     cpuMax,
-			MemAvg:     memSum / float64(count),
-			MemMax:     memMax,
-			NetRxTotal: netRxTotal,
-			NetTxTotal: netTxTotal,
-			DataPoints: count,
+			AgentID:      agentID,
+			Hour:         hour,
+			CPUAvg:       cpuSum / float64(count),
+			CPUMax:       cpuMax,
+			MemAvg:       memSum / float64(count),
+			MemMax:       memMax,
+			DiskReadAvg:  diskReadSum / uint64(count),
+			DiskWriteAvg: diskWriteSum / uint64(count),
+			GPUAvg:       gpuSum / float64(count),
+			NetRxTotal:   netRxTotal,
+			NetTxTotal:   netTxTotal,
+			DataPoints:   count,
 		}
 
 		if err := mp.db.Create(&hourly).Error; err != nil {
@@ -460,14 +494,17 @@ func (mp *MetricsPersistence) runDailyAggregation() {
 
 	// Group hourly rows per agent.
 	type dailyAcc struct {
-		cpuAvgSum  float64
-		memAvgSum  float64
-		cpuMax     float64
-		memMax     float64
-		netRxTotal uint64
-		netTxTotal uint64
-		dataPoints int
-		buckets    int
+		cpuAvgSum       float64
+		memAvgSum       float64
+		gpuAvgSum       float64
+		cpuMax          float64
+		memMax          float64
+		diskReadAvgSum  uint64
+		diskWriteAvgSum uint64
+		netRxTotal      uint64
+		netTxTotal      uint64
+		dataPoints      int
+		buckets         int
 	}
 	accs := make(map[string]*dailyAcc)
 	for _, h := range hourly {
@@ -478,12 +515,15 @@ func (mp *MetricsPersistence) runDailyAggregation() {
 		}
 		acc.cpuAvgSum += h.CPUAvg
 		acc.memAvgSum += h.MemAvg
+		acc.gpuAvgSum += h.GPUAvg
 		if h.CPUMax > acc.cpuMax {
 			acc.cpuMax = h.CPUMax
 		}
 		if h.MemMax > acc.memMax {
 			acc.memMax = h.MemMax
 		}
+		acc.diskReadAvgSum += h.DiskReadAvg
+		acc.diskWriteAvgSum += h.DiskWriteAvg
 		acc.netRxTotal += h.NetRxTotal
 		acc.netTxTotal += h.NetTxTotal
 		acc.dataPoints += h.DataPoints
@@ -504,12 +544,15 @@ func (mp *MetricsPersistence) runDailyAggregation() {
 		for _, m := range raw {
 			acc.cpuAvgSum += m.CPUPercent
 			acc.memAvgSum += m.MemPercent
+			acc.gpuAvgSum += m.GPUPercent
 			if m.CPUPercent > acc.cpuMax {
 				acc.cpuMax = m.CPUPercent
 			}
 			if m.MemPercent > acc.memMax {
 				acc.memMax = m.MemPercent
 			}
+			acc.diskReadAvgSum += m.DiskReadPS
+			acc.diskWriteAvgSum += m.DiskWritePS
 			acc.netRxTotal += m.NetRxPS
 			acc.netTxTotal += m.NetTxPS
 			acc.buckets++
@@ -534,15 +577,18 @@ func (mp *MetricsPersistence) runDailyAggregation() {
 		}
 
 		daily := database.MetricsDaily{
-			AgentID:    agentID,
-			Day:        day,
-			CPUAvg:     acc.cpuAvgSum / float64(acc.buckets),
-			CPUMax:     acc.cpuMax,
-			MemAvg:     acc.memAvgSum / float64(acc.buckets),
-			MemMax:     acc.memMax,
-			NetRxTotal: acc.netRxTotal,
-			NetTxTotal: acc.netTxTotal,
-			DataPoints: acc.dataPoints,
+			AgentID:      agentID,
+			Day:          day,
+			CPUAvg:       acc.cpuAvgSum / float64(acc.buckets),
+			CPUMax:       acc.cpuMax,
+			MemAvg:       acc.memAvgSum / float64(acc.buckets),
+			MemMax:       acc.memMax,
+			DiskReadAvg:  acc.diskReadAvgSum / uint64(acc.buckets),
+			DiskWriteAvg: acc.diskWriteAvgSum / uint64(acc.buckets),
+			GPUAvg:       acc.gpuAvgSum / float64(acc.buckets),
+			NetRxTotal:   acc.netRxTotal,
+			NetTxTotal:   acc.netTxTotal,
+			DataPoints:   acc.dataPoints,
 		}
 
 		// Use OnConflict as a second line of defense when a unique index on
