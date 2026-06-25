@@ -251,10 +251,21 @@ export interface ServerInfo {
   wsUrl?: string
   grpcPort?: number
   wsPort?: number
+  serverName?: string
+  externalUrl?: string
+  retentionDays?: number
+  hourlyRetentionDays?: number
+  dailyRetentionDays?: number
+  tlsEnabled?: boolean
 }
 export const serverApi = {
   info: () => api.get<ServerInfo>("/server-info"),
   health: () => api.get<{ status: string; agentCount: number }>("/health"),
+}
+
+export const settingsApi = {
+  get: () => api.get<Record<string, string>>("/settings"),
+  update: (data: Record<string, string>) => api.put<Record<string, string>>("/settings", data),
 }
 
 // Agent install config generation
@@ -324,6 +335,7 @@ export interface AlertRuleModel {
   severity: string
   scope: string
   enabled: boolean
+  lastFiredAt?: string | null
 }
 export interface NotifyChannelModel {
   id: number
@@ -331,6 +343,16 @@ export interface NotifyChannelModel {
   name: string
   target: string
   enabled: boolean
+  status?: string
+  lastUsedAt?: string | null
+}
+export interface SilenceModel {
+  id: number
+  matcher: string
+  reason?: string
+  until: string
+  createdBy?: string
+  createdAt?: string
 }
 export const alertsApi = {
   list: (status?: string) => api.get<AlertInstanceDTO[]>(`/alerts${status ? `?status=${status}` : ""}`),
@@ -342,6 +364,10 @@ export const alertsApi = {
   channels: () => api.get<NotifyChannelModel[]>("/alerts/channels"),
   createChannel: (data: { kind: string; name: string; target?: string }) => api.post("/alerts/channels", data),
   deleteChannel: (id: number) => api.delete(`/alerts/channels/${id}`),
+  testChannel: (id: number) => api.post(`/alerts/channels/${id}/test`),
+  silences: () => api.get<SilenceModel[]>("/alerts/silences"),
+  createSilence: (data: { matcher: string; reason?: string; durationMin: number }) => api.post("/alerts/silences", data),
+  deleteSilence: (id: number) => api.delete(`/alerts/silences/${id}`),
 }
 
 // AI assistant findings (metric-derived) + optional external-LLM chat
@@ -400,6 +426,11 @@ export interface AgentContainer {
   status: string
   state: string
   created: string
+  cpuPercent?: number
+  memoryBytes?: number
+  memoryLimit?: number
+  ports?: string
+  network?: string
 }
 export interface AgentPackage {
   name: string
@@ -438,6 +469,8 @@ export interface AgentServiceInfo {
   status: string
   subState?: string
   description?: string
+  uptime?: string
+  restarts?: number
 }
 export interface AgentFileEntry {
   name: string
@@ -570,6 +603,8 @@ export interface Group {
   id: number
   name: string
   description?: string
+  perm?: number
+  scope?: string
   userCount?: number
 }
 
@@ -580,8 +615,8 @@ export interface GroupDetail extends Group {
 export const groupsApi = {
   list: () => api.get<Group[]>("/groups"),
   get: (id: number) => api.get<GroupDetail>(`/groups/${id}`),
-  create: (data: { name: string; description?: string }) => api.post<Group>("/groups", data),
-  update: (id: number, data: { name?: string; description?: string }) => api.put(`/groups/${id}`, data),
+  create: (data: { name: string; description?: string; perm?: number; scope?: string }) => api.post<Group>("/groups", data),
+  update: (id: number, data: { name?: string; description?: string; perm?: number; scope?: string }) => api.put(`/groups/${id}`, data),
   delete: (id: number) => api.delete(`/groups/${id}`),
   addUser: (id: number, userId: number) => api.post(`/groups/${id}/users`, { userId }),
   removeUser: (id: number, userId: number) => api.delete(`/groups/${id}/users/${userId}`),

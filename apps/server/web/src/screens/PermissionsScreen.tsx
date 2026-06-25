@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
-import { usersApi, permissionsApi, type UserDetail, type UserPermission } from "@/lib/api"
+import { usersApi, permissionsApi, groupsApi, auditApi, type UserDetail, type UserPermission, type Group, type GroupDetail, type AuditLog } from "@/lib/api"
 import { useData } from "@/contexts/DataContext"
-import { PageHeader } from "@/components/shell/primitives"
+import { PageHeader, Perm } from "@/components/shell/primitives"
 import { agentStatus } from "@/lib/format"
 
-type Mode = "matrix" | "byUser"
+type Mode = "matrix" | "byUser" | "byGroup" | "changes"
 
 export function PermissionsScreen() {
   const { t } = useTranslation()
@@ -16,6 +16,33 @@ export function PermissionsScreen() {
   const [permMap, setPermMap] = useState<Record<number, Record<string, number>>>({})
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<number | null>(null)
+  const [groups, setGroups] = useState<Group[]>([])
+  const [selectedGroup, setSelectedGroup] = useState<number | null>(null)
+  const [groupDetail, setGroupDetail] = useState<GroupDetail | null>(null)
+  const [changes, setChanges] = useState<AuditLog[]>([])
+
+  useEffect(() => {
+    if (mode !== "changes") return
+    Promise.all([
+      auditApi.logs({ commandType: "PERMISSION_GRANT", limit: 50 }).then((r) => r.data ?? []).catch(() => []),
+      auditApi.logs({ commandType: "PERMISSION_REVOKE", limit: 50 }).then((r) => r.data ?? []).catch(() => []),
+    ]).then(([g, r]) => {
+      const merged = [...g, ...r].sort((a, b) => {
+        const ta = typeof a.timestamp === "string" ? Date.parse(a.timestamp) : Number(a.timestamp)
+        const tb = typeof b.timestamp === "string" ? Date.parse(b.timestamp) : Number(b.timestamp)
+        return tb - ta
+      })
+      setChanges(merged)
+    })
+  }, [mode])
+
+  useEffect(() => { groupsApi.list().then(setGroups).catch(() => {}) }, [])
+  useEffect(() => {
+    if (selectedGroup == null) { setGroupDetail(null); return }
+    let alive = true
+    groupsApi.get(selectedGroup).then((d) => { if (alive) setGroupDetail(d) }).catch(() => { if (alive) setGroupDetail(null) })
+    return () => { alive = false }
+  }, [selectedGroup])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -58,15 +85,90 @@ export function PermissionsScreen() {
         title={t("nav.permissions")}
         subtitle={t("acc.permsSubtitle")}
         actions={
-          <div className="row gap-1">
-            <button className="btn btn-sm" onClick={() => setMode("matrix")} style={mode === "matrix" ? { background: "var(--accent)", color: "var(--accent-fg)", borderColor: "var(--accent)" } : {}}>{t("acc.matrix")}</button>
-            <button className="btn btn-sm" onClick={() => setMode("byUser")} style={mode === "byUser" ? { background: "var(--accent)", color: "var(--accent-fg)", borderColor: "var(--accent)" } : {}}>{t("acc.byUser")}</button>
+          <div className="row gap-2" style={{ alignItems: "center" }}>
+            <div className="row gap-1">
+              <button className="btn btn-sm" onClick={() => setMode("matrix")} style={mode === "matrix" ? { background: "var(--accent)", color: "var(--accent-fg)", borderColor: "var(--accent)" } : {}}>{t("acc.matrix")}</button>
+              <button className="btn btn-sm" onClick={() => setMode("byUser")} style={mode === "byUser" ? { background: "var(--accent)", color: "var(--accent-fg)", borderColor: "var(--accent)" } : {}}>{t("acc.byUser")}</button>
+              <button className="btn btn-sm" onClick={() => setMode("byGroup")} style={mode === "byGroup" ? { background: "var(--accent)", color: "var(--accent-fg)", borderColor: "var(--accent)" } : {}}>{t("acc.byGroup")}</button>
+              <button className="btn btn-sm" onClick={() => setMode("changes")} style={mode === "changes" ? { background: "var(--accent)", color: "var(--accent-fg)", borderColor: "var(--accent)" } : {}}>{t("acc.changes")}</button>
+            </div>
+            <button className="btn btn-sm btn-primary" onClick={() => { setMode("byUser"); if (selectedUser == null && users[0]) setSelectedUser(users[0].id) }}>{I.plus({ size: 13 })}<span>{t("acc.grant")}</span></button>
           </div>
         }
       />
       <div style={{ padding: "0 24px 24px", overflow: "auto", flex: 1 }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{t("common.loading")}</div>
+        ) : mode === "changes" ? (
+          <div className="card" style={{ overflow: "auto" }}>
+            <table className="tbl" style={{ minWidth: 640 }}>
+              <thead><tr><th>{t("plat.time")}</th><th>{t("acc.user")}</th><th>{t("plat.command")}</th><th>{t("dev.agent")}</th><th>{t("admin.permissions")}</th></tr></thead>
+              <tbody>
+                {changes.length === 0 ? (
+                  <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--fg-4)", padding: 24 }}>{t("common.noData")}</td></tr>
+                ) : (
+                  changes.map((c) => {
+                    let lvl: number | null = null
+                    try { const p = c.params ? JSON.parse(c.params) : {}; lvl = p.level != null ? Number(p.level) : null } catch { /* ignore */ }
+                    const revoke = c.commandType === "PERMISSION_REVOKE"
+                    return (
+                      <tr key={c.id}>
+                        <td className="mono dim" style={{ fontSize: 11 }}>{new Date(typeof c.timestamp === "string" ? c.timestamp : Number(c.timestamp)).toLocaleString()}</td>
+                        <td className="mono" style={{ fontSize: 11.5 }}>{c.username || "—"}</td>
+                        <td><span className={`badge ${revoke ? "crit" : "ok"}`}>{revoke ? t("acc.revoked") : t("acc.granted")}</span></td>
+                        <td className="mono dim" style={{ fontSize: 11 }}>{c.agentHostname || c.agentId || "—"}</td>
+                        <td>{revoke || lvl == null ? <span className="dim">—</span> : <Perm level={lvl} />}</td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : mode === "byGroup" ? (
+          <div className="row gap-4" style={{ alignItems: "flex-start" }}>
+            <div className="card" style={{ width: 240, flexShrink: 0, overflow: "hidden" }}>
+              {groups.length === 0 ? (
+                <div className="muted" style={{ padding: 16, fontSize: 12 }}>{t("acc.noGroups")}</div>
+              ) : (
+                <div className="col">
+                  {groups.map((g) => (
+                    <button key={g.id} onClick={() => setSelectedGroup(g.id)} className="row gap-2" style={{ padding: "10px 12px", border: "none", background: selectedGroup === g.id ? "var(--panel-2)" : "transparent", cursor: "pointer", textAlign: "left", borderBottom: "1px solid var(--border)", color: "var(--fg-2)", fontFamily: "inherit", justifyContent: "space-between" }}>
+                      <span className="row gap-2" style={{ alignItems: "center", minWidth: 0 }}>{I.group({ size: 12 })}<span className="truncate" style={{ fontSize: 12, fontWeight: selectedGroup === g.id ? 500 : 400 }}>{g.name}</span></span>
+                      {g.userCount != null && <span className="mono num dim" style={{ fontSize: 11 }}>{g.userCount}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex-1">
+              {selectedGroup == null ? (
+                <div className="card" style={{ padding: "40px 24px", textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{t("acc.selectGroup")}</div>
+              ) : (
+                <div className="card" style={{ padding: 16 }}>
+                  <div className="row gap-2" style={{ alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 500 }}>{groupDetail?.name ?? "—"}</span>
+                    {groupDetail?.perm != null && <Perm level={groupDetail.perm} />}
+                    {groupDetail?.scope && <span className="badge mono">{groupDetail.scope}</span>}
+                    {groupDetail?.description && <span className="muted" style={{ fontSize: 11.5 }}>{groupDetail.description}</span>}
+                  </div>
+                  <div className="upper" style={{ color: "var(--fg-4)", marginBottom: 8 }}>{t("acc.members")}</div>
+                  <div className="col" style={{ gap: 6 }}>
+                    {(groupDetail?.users ?? []).length === 0 ? (
+                      <div className="muted" style={{ fontSize: 12 }}>{t("common.noData")}</div>
+                    ) : (
+                      (groupDetail?.users ?? []).map((u) => (
+                        <div key={u.id} className="row" style={{ alignItems: "center", justifyContent: "space-between", padding: "8px 10px", background: "var(--panel-2)", borderRadius: 4 }}>
+                          <span className="row gap-2" style={{ alignItems: "center" }}><span className="mono" style={{ fontSize: 12, fontWeight: 500 }}>{u.username}</span>{u.isSuperAdmin && <span className="badge" style={{ color: "var(--crit)", borderColor: "rgba(239,68,68,.3)" }}>{I.shield({ size: 10 })}</span>}</span>
+                          <button className="btn btn-sm btn-ghost" onClick={() => { setMode("byUser"); setSelectedUser(u.id) }}>{t("acc.byUser")}</button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         ) : mode === "matrix" ? (
           <div className="card" style={{ overflow: "auto" }}>
             <table className="tbl" style={{ minWidth: 200 + agents.length * 70 }}>

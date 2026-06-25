@@ -6,7 +6,7 @@ import { useData } from "@/contexts/DataContext"
 import { useRouter } from "@/store/router"
 import { PageHeader, EmptyState, Status, Perm } from "@/components/shell/primitives"
 import { VirtualAgentGrid } from "@/components/monitor/VirtualAgentGrid"
-import { agentStatus, osFamily, toneFor } from "@/lib/format"
+import { agentStatus, osFamily, toneFor, formatRate } from "@/lib/format"
 
 type Filter = "all" | "online" | "warn" | "offline"
 
@@ -125,20 +125,25 @@ export function AgentsScreen() {
                   <th>{t("nav.agents")}</th>
                   <th>OS</th>
                   <th>{t("status.online")}</th>
-                  <th>CPU</th>
-                  <th>MEM</th>
+                  <th style={{ width: 130 }}>CPU</th>
+                  <th style={{ width: 130 }}>MEM</th>
+                  <th>{t("mon.netInterfaces")}</th>
+                  <th>IP</th>
                   <th>{t("agent.version")}</th>
                   <th>{t("admin.permissions")}</th>
+                  <th style={{ width: 28 }} />
                 </tr>
               </thead>
               <tbody>
-                {padTop > 0 && <tr style={{ height: padTop }}><td colSpan={7} style={{ padding: 0, border: "none" }} /></tr>}
+                {padTop > 0 && <tr style={{ height: padTop }}><td colSpan={10} style={{ padding: 0, border: "none" }} /></tr>}
                 {listRows.map((vr) => {
                   const a = filtered[vr.index]
                   if (!a) return null
                   const m = metrics[a.id]
                   const cpu = m?.cpu?.usagePercent ?? 0
                   const mem = m?.memory?.total ? (m.memory.used / m.memory.total) * 100 : 0
+                  const net = (m?.networks ?? []).find((n) => !n.interface.startsWith("lo") && ((n.ipAddresses?.length ?? 0) > 0 || n.rxBytesPerSec || n.txBytesPerSec))
+                  const ip = net?.ipAddresses?.[0]
                   return (
                     <tr key={a.id} style={{ cursor: "pointer" }} onClick={() => openAgent(a.id)}>
                       <td>
@@ -149,14 +154,27 @@ export function AgentsScreen() {
                       </td>
                       <td className="muted">{a.os} · {a.arch}</td>
                       <td><Status status={agentStatus(a.lastHeartbeat)} /></td>
-                      <td className="mono num" style={{ color: toneFor(cpu) ? `var(--${toneFor(cpu)})` : "var(--fg-2)" }}>{Math.round(cpu)}%</td>
-                      <td className="mono num" style={{ color: toneFor(mem) ? `var(--${toneFor(mem)})` : "var(--fg-2)" }}>{Math.round(mem)}%</td>
+                      <td>
+                        <span className="row gap-2" style={{ alignItems: "center" }}>
+                          <div className="meter" style={{ flex: 1, height: 4 }}><div className={`meter-fill ${toneFor(cpu)}`} style={{ width: `${Math.min(100, cpu)}%` }} /></div>
+                          <span className="mono num" style={{ fontSize: 11, minWidth: 34, textAlign: "right", color: toneFor(cpu) ? `var(--${toneFor(cpu)})` : "var(--fg-2)" }}>{Math.round(cpu)}%</span>
+                        </span>
+                      </td>
+                      <td>
+                        <span className="row gap-2" style={{ alignItems: "center" }}>
+                          <div className="meter" style={{ flex: 1, height: 4 }}><div className={`meter-fill ${toneFor(mem)}`} style={{ width: `${Math.min(100, mem)}%` }} /></div>
+                          <span className="mono num" style={{ fontSize: 11, minWidth: 34, textAlign: "right", color: toneFor(mem) ? `var(--${toneFor(mem)})` : "var(--fg-2)" }}>{Math.round(mem)}%</span>
+                        </span>
+                      </td>
+                      <td className="mono num dim" style={{ fontSize: 10.5, whiteSpace: "nowrap" }}>{net ? `↓${formatRate(net.rxBytesPerSec)} ↑${formatRate(net.txBytesPerSec)}` : "—"}</td>
+                      <td className="mono dim" style={{ fontSize: 11 }}>{ip || "—"}</td>
                       <td className="mono dim">{a.version ? `v${a.version}` : "—"}</td>
                       <td><Perm level={a.permission} /></td>
+                      <td style={{ textAlign: "right", color: "var(--fg-4)" }}>{I.chev({ size: 13 })}</td>
                     </tr>
                   )
                 })}
-                {padBottom > 0 && <tr style={{ height: padBottom }}><td colSpan={7} style={{ padding: 0, border: "none" }} /></tr>}
+                {padBottom > 0 && <tr style={{ height: padBottom }}><td colSpan={10} style={{ padding: 0, border: "none" }} /></tr>}
               </tbody>
             </table>
           </div>

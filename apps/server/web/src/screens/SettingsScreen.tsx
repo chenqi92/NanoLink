@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
-import { serverApi, authApi, type ServerInfo } from "@/lib/api"
+import { serverApi, authApi, settingsApi, type ServerInfo } from "@/lib/api"
 import { useAuth } from "@/contexts/AuthContext"
 import { useSettings, type Tweaks } from "@/store/settings"
 import { PageHeader, FormBlock, KVRow } from "@/components/shell/primitives"
@@ -40,8 +40,23 @@ export function SettingsScreen() {
   const [info, setInfo] = useState<ServerInfo | null>(null)
   const [pwd, setPwd] = useState("")
   const [pwdStatus, setPwdStatus] = useState<"idle" | "busy" | "done" | "error">("idle")
+  const [cfg, setCfg] = useState<Record<string, string>>({})
+  const [cfgStatus, setCfgStatus] = useState<"idle" | "busy" | "done" | "error">("idle")
 
   useEffect(() => { serverApi.info().then(setInfo).catch(() => {}) }, [])
+  useEffect(() => { settingsApi.get().then(setCfg).catch(() => {}) }, [])
+
+  const setCfgVal = (k: string, v: string) => { setCfg((c) => ({ ...c, [k]: v })); setCfgStatus("idle") }
+  async function saveSettings() {
+    setCfgStatus("busy")
+    try {
+      const next = await settingsApi.update(cfg)
+      setCfg(next)
+      setCfgStatus("done")
+    } catch {
+      setCfgStatus("error")
+    }
+  }
 
   async function updatePassword() {
     if (pwd.length < 8) return
@@ -89,9 +104,40 @@ export function SettingsScreen() {
 
         <div className="col" style={{ gap: 16 }}>
           <Section title={t("plat.server")} icon={I.dashboard({ size: 13 })}>
+            <KVRow label={t("plat.serverName")} value={info?.serverName || "NanoLink"} />
             <KVRow label={t("plat.version")} value={info?.version ? `v${info.version}` : "—"} />
             {info?.serverUrl && <KVRow label="URL" value={info.serverUrl} />}
             {info?.grpcPort && <KVRow label="gRPC" value={String(info.grpcPort)} />}
+            {(info?.retentionDays != null || info?.dailyRetentionDays != null) && (
+              <FormBlock label={t("plat.metricRetention")}>
+                <div className="row gap-2" style={{ flexWrap: "wrap" }}>
+                  <span className="badge mono">{t("plat.rawData")} {info?.retentionDays ?? "—"}{t("plat.days")}</span>
+                  <span className="badge mono">{t("plat.hourlyData")} {info?.hourlyRetentionDays ?? "—"}{t("plat.days")}</span>
+                  <span className="badge mono">{t("plat.dailyData")} {info?.dailyRetentionDays ?? "—"}{t("plat.days")}</span>
+                </div>
+              </FormBlock>
+            )}
+            {info?.tlsEnabled != null && (
+              <KVRow label={t("plat.tls")} value={<span className={`badge ${info.tlsEnabled ? "ok" : "warn"}`}>{info.tlsEnabled ? t("plat.tlsOn") : t("plat.tlsOff")}</span>} />
+            )}
+            <div className="hint">{t("plat.configReadOnly")}</div>
+          </Section>
+
+          <Section title={t("plat.serverSettings")} icon={I.settings({ size: 13 })}>
+            <FormBlock label={t("plat.serverName")}>
+              <input className="input" value={cfg.serverName ?? ""} onChange={(e) => setCfgVal("serverName", e.target.value)} placeholder="NanoLink" />
+            </FormBlock>
+            <FormBlock label={t("plat.agentAutoUpdate")}>
+              <Segmented value={(cfg.agentAutoUpdate as "enabled" | "manual") || "manual"} onChange={(v) => setCfgVal("agentAutoUpdate", v)} options={[{ v: "enabled", label: t("plat.autoUpdateOn") }, { v: "manual", label: t("plat.autoUpdateManual") }]} />
+            </FormBlock>
+            <FormBlock label={t("plat.webhookAlerts")}>
+              <input className="input" value={cfg.webhookUrl ?? ""} onChange={(e) => setCfgVal("webhookUrl", e.target.value)} placeholder="https://hooks.example.com/…" />
+            </FormBlock>
+            <div className="row gap-2" style={{ alignItems: "center" }}>
+              <button className="btn btn-sm btn-primary" onClick={saveSettings} disabled={cfgStatus === "busy"}>{cfgStatus === "busy" && <span className="dot pulse ok" />}{t("common.save")}</button>
+              {cfgStatus === "done" && <span className="badge ok">{t("plat.settingsSaved")}</span>}
+              {cfgStatus === "error" && <span className="badge crit">{t("common.error")}</span>}
+            </div>
           </Section>
 
           <Section title={t("plat.account")} icon={I.user({ size: 13 })}>

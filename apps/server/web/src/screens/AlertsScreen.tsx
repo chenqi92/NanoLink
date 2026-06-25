@@ -4,12 +4,26 @@ import { I } from "@/lib/icons"
 import { useRouter } from "@/store/router"
 import { PageHeader, FormBlock } from "@/components/shell/primitives"
 import { Modal, ConfirmDialog } from "@/components/shell/Dialog"
-import { alertsApi, type AlertInstanceDTO, type AlertRuleModel, type NotifyChannelModel } from "@/lib/api"
+import { alertsApi, type AlertInstanceDTO, type AlertRuleModel, type NotifyChannelModel, type SilenceModel } from "@/lib/api"
 
-type Tab = "active" | "rules" | "channels"
+type Tab = "active" | "rules" | "channels" | "silences"
 
 function errMsg(e: unknown): string {
   return (e as { error?: string })?.error || "Request failed"
+}
+
+const OP_SYMBOL: Record<string, string> = { gt: ">", lt: "<", ge: "≥", le: "≤", eq: "=" }
+
+/** Build a human expression for a rule, e.g. "cpu > 90% for 5m". */
+function ruleExpression(r: AlertRuleModel): string {
+  if (r.metric === "offline") return "offline"
+  const op = OP_SYMBOL[r.operator] ?? r.operator
+  const base = `${r.metric} ${op} ${r.threshold}%`
+  if (r.durationSec && r.durationSec > 0) {
+    const m = Math.round(r.durationSec / 60)
+    return m >= 1 ? `${base} for ${m}m` : `${base} for ${r.durationSec}s`
+  }
+  return base
 }
 
 function MiniStat({ label, value, color }: { label: string; value: number; color: string }) {
@@ -53,24 +67,29 @@ export function AlertsScreen() {
   const [alerts, setAlerts] = useState<AlertInstanceDTO[]>([])
   const [rules, setRules] = useState<AlertRuleModel[]>([])
   const [channels, setChannels] = useState<NotifyChannelModel[]>([])
+  const [silences, setSilences] = useState<SilenceModel[]>([])
   const [loading, setLoading] = useState(true)
   const [newRule, setNewRule] = useState(false)
   const [newChannel, setNewChannel] = useState(false)
+  const [newSilence, setNewSilence] = useState(false)
   const [delRule, setDelRule] = useState<AlertRuleModel | null>(null)
+  const [testing, setTesting] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setErr(null)
     try {
-      const [a, r, c] = await Promise.all([
+      const [a, r, c, s] = await Promise.all([
         alertsApi.list(),
         alertsApi.rules().catch((e) => { setErr(errMsg(e)); return [] as AlertRuleModel[] }),
         alertsApi.channels().catch((e) => { setErr(errMsg(e)); return [] as NotifyChannelModel[] }),
+        alertsApi.silences().catch(() => [] as SilenceModel[]),
       ])
       setAlerts(a)
       setRules(r)
       setChannels(c)
+      setSilences(s)
     } catch (e) {
       setErr(errMsg(e))
     } finally {
@@ -113,10 +132,24 @@ export function AlertsScreen() {
     }
   }
 
+  async function testChannel(id: number) {
+    setTesting(id)
+    setErr(null)
+    try {
+      await alertsApi.testChannel(id)
+      load()
+    } catch (e) {
+      setErr(errMsg(e))
+    } finally {
+      setTesting(null)
+    }
+  }
+
   const tabs: { k: Tab; label: string; n: number }[] = [
     { k: "active", label: t("plat.active"), n: alerts.length },
     { k: "rules", label: t("plat.rules"), n: rules.length },
     { k: "channels", label: t("plat.channels"), n: channels.length },
+    { k: "silences", label: t("plat.silences"), n: silences.length },
   ]
 
   return (
@@ -130,6 +163,7 @@ export function AlertsScreen() {
             {tab === "active" && <button className="btn btn-sm" onClick={ackAll} disabled={unack === 0}>{I.check({ size: 13 })}<span>{t("plat.ackAll")}</span></button>}
             {tab === "rules" && <button className="btn btn-sm btn-primary" onClick={() => setNewRule(true)}>{I.plus({ size: 13 })}<span>{t("plat.newRule")}</span></button>}
             {tab === "channels" && <button className="btn btn-sm btn-primary" onClick={() => setNewChannel(true)}>{I.plus({ size: 13 })}<span>{t("plat.addChannel")}</span></button>}
+            {tab === "silences" && <button className="btn btn-sm btn-primary" onClick={() => setNewSilence(true)}>{I.plus({ size: 13 })}<span>{t("plat.newSilence")}</span></button>}
           </>
         }
       />
@@ -168,15 +202,15 @@ export function AlertsScreen() {
         ) : tab === "rules" ? (
           <div className="card" style={{ overflow: "auto" }}>
             <table className="tbl" style={{ minWidth: 760 }}>
-              <thead><tr><th>{t("plat.rule")}</th><th>{t("plat.metric")}</th><th>{t("plat.threshold")}</th><th>{t("plat.severity")}</th><th>{t("dev.scope")}</th><th style={{ textAlign: "right" }}>{t("plat.enabled")}</th><th></th></tr></thead>
+              <thead><tr><th>{t("plat.rule")}</th><th>{t("plat.expression")}</th><th>{t("plat.severity")}</th><th>{t("dev.scope")}</th><th>{t("plat.lastFired")}</th><th style={{ textAlign: "right" }}>{t("plat.enabled")}</th><th></th></tr></thead>
               <tbody>
                 {rules.map((r) => (
                   <tr key={r.id}>
                     <td style={{ fontWeight: 500 }}>{r.name}</td>
-                    <td><span className="badge mono">{r.metric}</span></td>
-                    <td className="mono num">{r.metric === "offline" ? "—" : `${r.operator} ${r.threshold}%`}</td>
+                    <td><code className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>{ruleExpression(r)}</code></td>
                     <td><span className={`badge ${r.severity === "crit" ? "crit" : r.severity === "warn" ? "warn" : "info"}`}>{r.severity}</span></td>
                     <td className="mono dim" style={{ fontSize: 11 }}>{r.scope}</td>
+                    <td className="mono dim" style={{ fontSize: 11 }}>{r.lastFiredAt ? new Date(r.lastFiredAt).toLocaleString() : "—"}</td>
                     <td style={{ textAlign: "right" }}>
                       <button className="btn btn-sm" onClick={() => toggleRule(r)} style={r.enabled ? { background: "var(--accent)", color: "var(--accent-fg)", borderColor: "var(--accent)" } : {}}>{r.enabled ? t("plat.enabled") : t("plat.disabled")}</button>
                     </td>
@@ -186,7 +220,7 @@ export function AlertsScreen() {
               </tbody>
             </table>
           </div>
-        ) : (
+        ) : tab === "channels" ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
             {channels.map((c) => (
               <div key={c.id} className="card" style={{ padding: 14 }}>
@@ -194,21 +228,54 @@ export function AlertsScreen() {
                   <div className="row gap-2" style={{ alignItems: "center", minWidth: 0 }}>
                     <div style={{ width: 30, height: 30, borderRadius: 6, background: "var(--panel-2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-3)", fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>{c.kind.slice(0, 2)}</div>
                     <div className="col" style={{ gap: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 500 }}>{c.name}</span>
+                      <div className="row gap-2" style={{ alignItems: "center" }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 500 }}>{c.name}</span>
+                        <span className={`badge ${c.status === "ok" ? "ok" : c.status === "warn" ? "warn" : ""}`} style={{ fontSize: 9.5 }}>{c.enabled ? t("plat.channelEnabled") : t("plat.channelDisabled")}</span>
+                      </div>
                       <span className="mono dim truncate" style={{ fontSize: 10.5 }}>{c.target}</span>
+                      {c.lastUsedAt && <span className="dim" style={{ fontSize: 10 }}>{t("plat.lastUsed")} {new Date(c.lastUsedAt).toLocaleString()}</span>}
                     </div>
                   </div>
-                  <button className="btn btn-sm btn-ghost btn-icon" onClick={async () => { try { await alertsApi.deleteChannel(c.id) } catch (e) { setErr(errMsg(e)) } load() }}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 12 })}</span></button>
+                  <div className="row gap-1">
+                    <button className="btn btn-sm btn-ghost" disabled={testing === c.id} onClick={() => testChannel(c.id)}>{testing === c.id ? <span className="dot pulse ok" /> : I.bolt({ size: 12 })}<span>{t("plat.test")}</span></button>
+                    <button className="btn btn-sm btn-ghost btn-icon" onClick={async () => { try { await alertsApi.deleteChannel(c.id) } catch (e) { setErr(errMsg(e)) } load() }}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 12 })}</span></button>
+                  </div>
                 </div>
               </div>
             ))}
             {channels.length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>{t("common.noData")}</div>}
+          </div>
+        ) : (
+          <div className="col gap-2">
+            {silences.length === 0 ? (
+              <div className="card" style={{ padding: "40px 24px", textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>
+                <div style={{ marginBottom: 10 }}>{I.shield({ size: 28 })}</div>
+                {t("plat.noSilences")}
+              </div>
+            ) : (
+              silences.map((s) => (
+                <div key={s.id} className="card" style={{ padding: 14 }}>
+                  <div className="row gap-3" style={{ alignItems: "center", justifyContent: "space-between" }}>
+                    <div className="col" style={{ gap: 3, minWidth: 0 }}>
+                      <div className="row gap-2" style={{ alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{ color: "var(--fg-3)" }}>{I.shield({ size: 13 })}</span>
+                        <span className="mono" style={{ fontWeight: 500 }}>{s.matcher}</span>
+                        {s.reason && <span className="muted" style={{ fontSize: 11.5 }}>{s.reason}</span>}
+                      </div>
+                      <span className="dim" style={{ fontSize: 11 }}>{t("plat.until")} {new Date(s.until).toLocaleString()}{s.createdBy ? ` · ${s.createdBy}` : ""}</span>
+                    </div>
+                    <button className="btn btn-sm btn-ghost btn-icon" onClick={async () => { try { await alertsApi.deleteSilence(s.id) } catch (e) { setErr(errMsg(e)) } load() }}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 12 })}</span></button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
 
       {newRule && <RuleModal onClose={() => setNewRule(false)} onDone={() => { setNewRule(false); load() }} />}
       {newChannel && <ChannelModal onClose={() => setNewChannel(false)} onDone={() => { setNewChannel(false); load() }} />}
+      {newSilence && <SilenceModal onClose={() => setNewSilence(false)} onDone={() => { setNewSilence(false); load() }} />}
       {delRule && <ConfirmDialog title={t("common.delete")} danger message={t("plat.deleteRuleConfirm", { name: delRule.name })} confirmLabel={t("common.delete")} onClose={() => setDelRule(null)} onConfirm={async () => { try { await alertsApi.deleteRule(delRule.id) } catch (e) { setErr(errMsg(e)) } setDelRule(null); load() }} />}
     </div>
   )
@@ -273,6 +340,30 @@ function ChannelModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
         </FormBlock>
         <FormBlock label={t("plat.name")}><input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus /></FormBlock>
         <FormBlock label={t("plat.target")}><input className="input" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="webhook url / email / ..." /></FormBlock>
+      </div>
+    </Modal>
+  )
+}
+
+function SilenceModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { t } = useTranslation()
+  const [matcher, setMatcher] = useState("all")
+  const [reason, setReason] = useState("")
+  const [durationMin, setDurationMin] = useState(60)
+  const [busy, setBusy] = useState(false)
+  async function submit() {
+    setBusy(true)
+    try {
+      await alertsApi.createSilence({ matcher: matcher.trim() || "all", reason, durationMin })
+      onDone()
+    } finally { setBusy(false) }
+  }
+  return (
+    <Modal title={t("plat.newSilence")} onClose={onClose} footer={<><button className="btn btn-sm" onClick={onClose}>{t("common.cancel")}</button><button className="btn btn-sm btn-primary" onClick={submit} disabled={busy || durationMin < 1}>{busy && <span className="dot pulse ok" />}{t("common.create")}</button></>}>
+      <div className="col gap-4">
+        <FormBlock label={t("plat.matcher")}><input className="input" value={matcher} onChange={(e) => setMatcher(e.target.value)} placeholder="all / hostname" autoFocus /></FormBlock>
+        <FormBlock label={t("plat.reason")}><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="maintenance window" /></FormBlock>
+        <FormBlock label={`${t("plat.duration")} (min)`}><input className="input" type="number" min={1} value={durationMin} onChange={(e) => setDurationMin(Number(e.target.value))} /></FormBlock>
       </div>
     </Modal>
   )

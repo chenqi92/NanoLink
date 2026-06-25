@@ -140,9 +140,9 @@ export function AgentDetailScreen() {
           (m ? <RealtimeTab m={m} history={hist} /> : <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{status === "online" ? t("common.loading") : t("mon.offlineNoHistory")}</div>)}
         {tab === "history" && <HistoryTab agentId={a.id} />}
         {tab === "terminal" && <TerminalTab agentId={a.id} permission={a.permission} />}
-        {tab === "processes" && <ProcessesTab agentId={a.id} />}
-        {tab === "services" && <ServicesTab agentId={a.id} />}
-        {tab === "docker" && <DockerTab agentId={a.id} />}
+        {tab === "processes" && <ProcessesTab agentId={a.id} permission={a.permission} />}
+        {tab === "services" && <ServicesTab agentId={a.id} permission={a.permission} />}
+        {tab === "docker" && <DockerTab agentId={a.id} permission={a.permission} />}
         {tab === "files" && <FilesTab agentId={a.id} />}
         {tab === "logs" && <AgentLogsTab agentId={a.id} permission={a.permission} />}
       </div>

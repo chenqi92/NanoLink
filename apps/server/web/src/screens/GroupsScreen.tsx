@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import { groupsApi, usersApi, type Group, type UserDetail } from "@/lib/api"
-import { PageHeader, KVRow, FormBlock, EmptyState } from "@/components/shell/primitives"
+import { PageHeader, KVRow, FormBlock, EmptyState, Perm } from "@/components/shell/primitives"
 import { Modal, ConfirmDialog } from "@/components/shell/Dialog"
 
 function Avatar({ name, size = 18 }: { name: string; size?: number }) {
@@ -52,15 +52,17 @@ export function GroupsScreen() {
                 <div key={g.id} className="card" style={{ padding: 16 }}>
                   <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div className="col" style={{ gap: 4, minWidth: 0 }}>
-                      <div className="row gap-2" style={{ alignItems: "center" }}>
+                      <div className="row gap-2" style={{ alignItems: "center", flexWrap: "wrap" }}>
                         {I.group({ size: 14 })}
                         <span className="mono" style={{ fontWeight: 500, fontSize: 14 }}>{g.name}</span>
+                        {g.perm != null && <Perm level={g.perm} />}
                       </div>
                       {g.description && <div className="muted" style={{ fontSize: 11.5 }}>{g.description}</div>}
                     </div>
                   </div>
                   <div className="hr" />
                   <KVRow label={t("acc.members")} value={count} />
+                  {g.scope && <KVRow label={t("dev.scope")} value={<span className="mono">{g.scope}</span>} />}
                   <div className="hr" />
                   <div className="col" style={{ gap: 6 }}>
                     <div className="upper" style={{ color: "var(--fg-4)" }}>{t("acc.memberPreview")}</div>
@@ -99,12 +101,14 @@ function GroupEditor({ group, onClose, onDone }: { group?: Group; onClose: () =>
   const { t } = useTranslation()
   const [name, setName] = useState(group?.name ?? "")
   const [desc, setDesc] = useState(group?.description ?? "")
+  const [perm, setPerm] = useState(group?.perm ?? 0)
+  const [scope, setScope] = useState(group?.scope ?? "")
   const [busy, setBusy] = useState(false)
   async function submit() {
     setBusy(true)
     try {
-      if (group) await groupsApi.update(group.id, { name, description: desc })
-      else await groupsApi.create({ name, description: desc })
+      if (group) await groupsApi.update(group.id, { name, description: desc, perm, scope })
+      else await groupsApi.create({ name, description: desc, perm, scope })
       onDone()
     } finally { setBusy(false) }
   }
@@ -113,6 +117,10 @@ function GroupEditor({ group, onClose, onDone }: { group?: Group; onClose: () =>
       <div className="col gap-4">
         <FormBlock label={t("acc.groupName")}><input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus /></FormBlock>
         <FormBlock label={t("acc.description")}><input className="input" value={desc} onChange={(e) => setDesc(e.target.value)} /></FormBlock>
+        <div className="row gap-2">
+          <FormBlock label={t("admin.permissions")}><select className="select" value={perm} onChange={(e) => setPerm(Number(e.target.value))}>{[0, 1, 2, 3].map((l) => <option key={l} value={l}>L{l} · {t(`permission.l${l}`)}</option>)}</select></FormBlock>
+          <FormBlock label={t("dev.scope")}><input className="input" value={scope} onChange={(e) => setScope(e.target.value)} placeholder="All prod agents" /></FormBlock>
+        </div>
       </div>
     </Modal>
   )

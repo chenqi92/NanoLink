@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import { PageHeader, Perm } from "@/components/shell/primitives"
 import { AgentPicker } from "@/components/monitor/AgentPicker"
-import { Modal } from "@/components/shell/Dialog"
+import { Modal, ConfirmDialog } from "@/components/shell/Dialog"
 import { useAgentCommand, runAgentCommand } from "@/hooks/useAgentCommand"
 import { formatBytes } from "@/lib/format"
 import type { AgentConfigResult } from "@/lib/api"
@@ -43,14 +43,41 @@ function useStoredList(key: string, defaults: string[]) {
   return [items, save] as const
 }
 
+function Flash({ flash, onClose }: { flash: { kind: "ok" | "crit"; text: string } | null; onClose: () => void }) {
+  if (!flash) return null
+  return <div className={`badge ${flash.kind}`} style={{ height: "auto", padding: "6px 10px", cursor: "pointer" }} onClick={onClose} role="status">{flash.text}</div>
+}
+
 function PackagesPanel({ agentId }: { agentId: string }) {
   const { t } = useTranslation()
   const { data, loading, error, reload } = useAgentCommand(agentId, "PACKAGE_LIST", { enabled: !!agentId })
+  const [busy, setBusy] = useState<string | null>(null)
+  const [flash, setFlash] = useState<{ kind: "ok" | "crit"; text: string } | null>(null)
   const pkgs = data?.packages ?? []
   const updates = pkgs.filter((p) => p.updateAvailable)
+
+  const act = useCallback(async (key: string, type: string, target?: string, after?: boolean) => {
+    setBusy(key)
+    setFlash(null)
+    try {
+      await runAgentCommand(agentId, type, { target })
+      setFlash({ kind: "ok", text: t("dev.cmdSent") })
+      if (after) reload()
+    } catch (e) {
+      setFlash({ kind: "crit", text: `${t("dev.cmdFailed")}: ${e instanceof Error ? e.message : String(e)}` })
+    } finally {
+      setBusy(null)
+    }
+  }, [agentId, reload, t])
+
   return (
     <div className="col gap-4">
-      <div className="row" style={{ justifyContent: "flex-end" }}><button className="btn btn-sm btn-ghost" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button></div>
+      <div className="row gap-2" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+        <Flash flash={flash} onClose={() => setFlash(null)} />
+        <button className="btn btn-sm" disabled={!!busy} onClick={() => act("check", "PACKAGE_CHECK_UPDATES", undefined, true)}>{busy === "check" ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}<span>{t("dev.checkNow")}</span></button>
+        <button className="btn btn-sm btn-primary" disabled={!!busy || updates.length === 0} onClick={() => act("all", "SYSTEM_UPDATE", undefined, true)}>{busy === "all" ? <span className="dot pulse ok" /> : I.arrowUp({ size: 13 })}<span>{t("dev.updateAll")}</span></button>
+        <button className="btn btn-sm btn-ghost" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button>
+      </div>
       <State loading={loading && !data} error={error} empty={!!data && pkgs.length === 0} />
       {data && pkgs.length > 0 && (
         <>
@@ -59,8 +86,8 @@ function PackagesPanel({ agentId }: { agentId: string }) {
             <MiniStat label={t("dev.installed")} value={pkgs.length} color="var(--fg-3)" />
           </div>
           <div className="card" style={{ overflow: "auto" }}>
-            <table className="tbl" style={{ minWidth: 680 }}>
-              <thead><tr><th>{t("dev.packages")}</th><th>{t("dev.current")}</th><th>{t("dev.latest")}</th><th>{t("dev.type")}</th><th>{t("dev.size")}</th></tr></thead>
+            <table className="tbl" style={{ minWidth: 720 }}>
+              <thead><tr><th>{t("dev.packages")}</th><th>{t("dev.current")}</th><th>{t("dev.latest")}</th><th>{t("dev.type")}</th><th>{t("dev.size")}</th><th style={{ textAlign: "right" }}>{t("dev.actions")}</th></tr></thead>
               <tbody>
                 {pkgs.slice(0, 400).map((p) => (
                   <tr key={p.name}>
@@ -69,6 +96,11 @@ function PackagesPanel({ agentId }: { agentId: string }) {
                     <td className="mono" style={{ fontSize: 11, color: p.updateAvailable ? "var(--fg)" : "var(--fg-4)" }}>{p.newVersion || "—"}</td>
                     <td>{p.updateAvailable ? <span className="badge warn">{t("dev.regular")}</span> : <span className="badge">{t("dev.upToDate")}</span>}</td>
                     <td className="mono num dim" style={{ fontSize: 11 }}>{p.installedSize ? formatBytes(p.installedSize) : "—"}</td>
+                    <td style={{ textAlign: "right" }}>
+                      {p.updateAvailable && (
+                        <button className="btn btn-sm btn-ghost" disabled={!!busy} onClick={() => act(`pkg-${p.name}`, "PACKAGE_UPDATE", p.name)}>{busy === `pkg-${p.name}` ? <span className="dot pulse ok" /> : I.arrowUp({ size: 11 })}<span style={{ fontSize: 11 }}>{t("dev.update")}</span></button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -83,10 +115,31 @@ function PackagesPanel({ agentId }: { agentId: string }) {
 function ScriptsPanel({ agentId }: { agentId: string }) {
   const { t } = useTranslation()
   const { data, loading, error, reload } = useAgentCommand(agentId, "SCRIPT_LIST", { enabled: !!agentId })
+  const [busy, setBusy] = useState<string | null>(null)
+  const [flash, setFlash] = useState<{ kind: "ok" | "crit"; text: string } | null>(null)
+  const [confirm, setConfirm] = useState<string | null>(null)
   const scripts = data?.scripts ?? []
+
+  async function runScript(name: string) {
+    setConfirm(null)
+    setBusy(name)
+    setFlash(null)
+    try {
+      const res = await runAgentCommand(agentId, "SCRIPT_EXECUTE", { target: name })
+      setFlash({ kind: "ok", text: res.output ? `${name}: ${res.output.slice(0, 200)}` : t("dev.cmdSent") })
+    } catch (e) {
+      setFlash({ kind: "crit", text: `${t("dev.cmdFailed")}: ${e instanceof Error ? e.message : String(e)}` })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <div className="col gap-3">
-      <div className="row" style={{ justifyContent: "flex-end" }}><button className="btn btn-sm btn-ghost" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button></div>
+      <div className="row gap-2" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+        <Flash flash={flash} onClose={() => setFlash(null)} />
+        <button className="btn btn-sm btn-ghost" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button>
+      </div>
       <State loading={loading && !data} error={error} empty={!!data && scripts.length === 0} />
       {data && scripts.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
@@ -98,14 +151,29 @@ function ScriptsPanel({ agentId }: { agentId: string }) {
                 {s.requiredPermission != null && <Perm level={s.requiredPermission} />}
               </div>
               {s.description && <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{s.description}</div>}
+              {(s.fileSize != null || s.lastModified) && (
+                <div className="row gap-3 dim mono" style={{ fontSize: 10.5, marginBottom: 6 }}>
+                  {s.fileSize != null && <span>{t("dev.size")} {formatBytes(s.fileSize)}</span>}
+                  {s.lastModified && <span>{t("dev.lastRun")} {new Date(s.lastModified).toLocaleDateString()}</span>}
+                </div>
+              )}
               <div className="hr" />
               <div className="row" style={{ justifyContent: "space-between", fontSize: 11 }}>
                 {s.signatureVerified ? <span className="badge ok" style={{ fontSize: 9.5 }}>{I.check({ size: 10 })} signed</span> : <span />}
-                <button className="btn btn-sm btn-ghost">{I.bolt({ size: 12 })}<span>{t("dev.run")}</span></button>
+                <button className="btn btn-sm btn-ghost" disabled={busy === s.name} onClick={() => setConfirm(s.name)}>{busy === s.name ? <span className="dot pulse ok" /> : I.bolt({ size: 12 })}<span>{t("dev.run")}</span></button>
               </div>
             </div>
           ))}
         </div>
+      )}
+      {confirm && (
+        <ConfirmDialog
+          title={t("dev.runScript")}
+          message={<span className="mono">{confirm}</span>}
+          confirmLabel={t("dev.run")}
+          onConfirm={() => runScript(confirm)}
+          onClose={() => setConfirm(null)}
+        />
       )}
     </div>
   )
@@ -198,12 +266,36 @@ function ConfigsPanel({ agentId }: { agentId: string }) {
   const validateAll = useCallback(() => { paths.forEach((p) => validate(p)) }, [paths, validate])
   useEffect(() => { if (agentId) validateAll() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [agentId])
 
+  const [backupsFor, setBackupsFor] = useState<{ path: string; result: AgentConfigResult } | null>(null)
+  const [flash, setFlash] = useState<{ kind: "ok" | "crit"; text: string } | null>(null)
+
   async function view(path: string) {
     try {
       const res = await runAgentCommand(agentId, "CONFIG_READ", { params: { path } })
       setViewing({ path, result: res.configResult ?? { path, content: res.output } })
     } catch (e) {
       setViewing({ path, result: { path, content: `Error: ${e instanceof Error ? e.message : "failed"}` } })
+    }
+  }
+
+  async function openBackups(path: string) {
+    setFlash(null)
+    try {
+      const res = await runAgentCommand(agentId, "CONFIG_LIST_BACKUPS", { params: { path } })
+      setBackupsFor({ path, result: res.configResult ?? { path, backups: [] } })
+    } catch (e) {
+      setFlash({ kind: "crit", text: `${t("dev.cmdFailed")}: ${e instanceof Error ? e.message : String(e)}` })
+    }
+  }
+
+  async function rollback(path: string, backupPath: string) {
+    setBackupsFor(null)
+    try {
+      await runAgentCommand(agentId, "CONFIG_ROLLBACK", { params: { path, backup: backupPath } })
+      setFlash({ kind: "ok", text: t("dev.cmdSent") })
+      validate(path)
+    } catch (e) {
+      setFlash({ kind: "crit", text: `${t("dev.cmdFailed")}: ${e instanceof Error ? e.message : String(e)}` })
     }
   }
 
@@ -216,6 +308,7 @@ function ConfigsPanel({ agentId }: { agentId: string }) {
         </div>
         <button className="btn btn-sm" onClick={() => { if (input.trim()) { setPaths([...paths, input.trim()]); setInput("") } }}>{I.plus({ size: 13 })}<span>{t("dev.addPath")}</span></button>
         <button className="btn btn-sm btn-primary" onClick={validateAll}>{I.refresh({ size: 13 })}<span>{t("dev.runAll")}</span></button>
+        <Flash flash={flash} onClose={() => setFlash(null)} />
       </div>
       {paths.length === 0 ? (
         <State loading={false} error={null} empty msg={t("dev.noConfigs")} />
@@ -235,6 +328,7 @@ function ConfigsPanel({ agentId }: { agentId: string }) {
                     <td style={{ textAlign: "right" }}>
                       <div className="row gap-1" style={{ justifyContent: "flex-end" }}>
                         <button className="btn btn-sm btn-ghost" onClick={() => view(p)}>{I.search({ size: 11 })}<span>{t("dev.view")}</span></button>
+                        <button className="btn btn-sm btn-ghost" onClick={() => openBackups(p)}>{I.history({ size: 11 })}<span>{t("dev.backups")}</span></button>
                         <button className="btn btn-sm btn-ghost" onClick={() => validate(p)}>{I.refresh({ size: 11 })}</button>
                         <button className="btn btn-sm btn-ghost btn-icon" onClick={() => setPaths(paths.filter((x) => x !== p))}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 11 })}</span></button>
                       </div>
@@ -249,6 +343,27 @@ function ConfigsPanel({ agentId }: { agentId: string }) {
       {viewing && (
         <Modal title={viewing.path} onClose={() => setViewing(null)} width={680} footer={<button className="btn btn-sm" onClick={() => setViewing(null)}>{t("common.cancel")}</button>}>
           <div className="code" style={{ maxHeight: "60vh", whiteSpace: "pre-wrap", overflow: "auto" }}>{viewing.result.content || t("common.noData")}</div>
+        </Modal>
+      )}
+      {backupsFor && (
+        <Modal title={`${t("dev.backups")} · ${backupsFor.path}`} onClose={() => setBackupsFor(null)} width={560} footer={<button className="btn btn-sm" onClick={() => setBackupsFor(null)}>{t("common.cancel")}</button>}>
+          {(backupsFor.result.backups ?? []).length === 0 ? (
+            <div className="muted" style={{ fontSize: 12.5, padding: 8 }}>{t("dev.noBackups")}</div>
+          ) : (
+            <table className="tbl">
+              <thead><tr><th>{t("dev.path")}</th><th>{t("dev.modified")}</th><th style={{ textAlign: "right" }}>{t("dev.size")}</th><th style={{ textAlign: "right" }} /></tr></thead>
+              <tbody>
+                {(backupsFor.result.backups ?? []).map((b) => (
+                  <tr key={b.path}>
+                    <td className="mono truncate" style={{ maxWidth: 240, fontSize: 11.5 }}>{b.path}</td>
+                    <td className="mono dim" style={{ fontSize: 11 }}>{b.createdAt ? new Date(b.createdAt).toLocaleString() : "—"}</td>
+                    <td className="mono num dim" style={{ textAlign: "right", fontSize: 11 }}>{b.size != null ? formatBytes(b.size) : "—"}</td>
+                    <td style={{ textAlign: "right" }}><button className="btn btn-sm btn-ghost" onClick={() => rollback(backupsFor.path, b.path)}>{I.back({ size: 11 })}<span>{t("dev.rollback")}</span></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </Modal>
       )}
     </div>

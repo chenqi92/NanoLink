@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
+import { useRouter } from "@/store/router"
 import { PageHeader, SectionPanel } from "@/components/shell/primitives"
-import { assistantApi, type FindingDTO, type ChatMessage } from "@/lib/api"
+import { assistantApi, auditApi, type FindingDTO, type ChatMessage, type AuditLog } from "@/lib/api"
 
 type Finding = FindingDTO
+
+const kindIcon = (kind: Finding["kind"], size = 13) =>
+  kind === "ok" ? I.check({ size }) : kind === "info" ? I.info({ size }) : kind === "warn" ? I.warn({ size }) : I.bolt({ size })
 
 const TOOLS = [
   { name: "list_agents", desc: "List all agents and status" },
@@ -21,24 +25,21 @@ const kindColor: Record<Finding["kind"], string> = { anomaly: "var(--crit)", war
 
 export function AssistantScreen() {
   const { t } = useTranslation()
+  const { navigate } = useRouter()
   const [findings, setFindings] = useState<Finding[]>([])
   const [loading, setLoading] = useState(true)
+  const [recent, setRecent] = useState<AuditLog[]>([])
+
+  const refresh = useCallback(() => {
+    assistantApi.findings().then(setFindings).catch(() => {}).finally(() => setLoading(false))
+    auditApi.recent(6).then(setRecent).catch(() => {})
+  }, [])
 
   useEffect(() => {
-    let alive = true
-    const fetchFindings = () =>
-      assistantApi
-        .findings()
-        .then((f) => alive && setFindings(f))
-        .catch(() => {})
-        .finally(() => alive && setLoading(false))
-    fetchFindings()
-    const id = setInterval(fetchFindings, 30000)
-    return () => {
-      alive = false
-      clearInterval(id)
-    }
-  }, [])
+    refresh()
+    const id = setInterval(refresh, 30000)
+    return () => clearInterval(id)
+  }, [refresh])
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
@@ -65,7 +66,16 @@ export function AssistantScreen() {
 
   return (
     <div className="col" style={{ flex: 1, overflow: "hidden" }}>
-      <PageHeader title={t("nav.assistant")} subtitle={t("plat.assistantSubtitle")} />
+      <PageHeader
+        title={t("nav.assistant")}
+        subtitle={t("plat.assistantSubtitle")}
+        actions={
+          <>
+            <button className="btn btn-sm btn-ghost btn-icon" onClick={refresh} title={t("acc.refresh")}>{I.refresh({ size: 13 })}</button>
+            <button className="btn btn-sm btn-primary" onClick={refresh}>{I.sparkle({ size: 13 })}<span>{t("plat.runScan")}</span></button>
+          </>
+        }
+      />
       <div style={{ padding: "0 24px 24px", overflow: "auto", flex: 1 }}>
         <div className="row gap-2" style={{ padding: "8px 12px", marginBottom: 16, borderRadius: 6, background: "rgba(96,165,250,.06)", border: "1px solid rgba(96,165,250,.25)", fontSize: 11.5, color: "var(--fg-3)" }}>
           <span style={{ color: "var(--info)" }}>{I.info({ size: 13 })}</span>
@@ -80,7 +90,7 @@ export function AssistantScreen() {
                 {findings.map((f, i) => (
                   <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 12, background: "var(--panel-2)" }}>
                     <div className="row gap-2" style={{ alignItems: "flex-start" }}>
-                      <div style={{ width: 26, height: 26, borderRadius: 6, background: `color-mix(in srgb, ${kindColor[f.kind]} 12%, transparent)`, color: kindColor[f.kind], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{I.bolt({ size: 13 })}</div>
+                      <div style={{ width: 26, height: 26, borderRadius: 6, background: `color-mix(in srgb, ${kindColor[f.kind]} 12%, transparent)`, color: kindColor[f.kind], display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{kindIcon(f.kind)}</div>
                       <div className="col flex-1" style={{ gap: 5, minWidth: 0 }}>
                         <span style={{ fontSize: 12, fontWeight: 500 }}>{f.title}</span>
                         <span className="muted" style={{ fontSize: 11.5 }}>{f.detail}</span>
@@ -143,9 +153,34 @@ export function AssistantScreen() {
                       <span className="mono" style={{ fontSize: 11.5 }}>{tool.name}</span>
                       <span className="dim" style={{ fontSize: 10.5 }}>{tool.desc}</span>
                     </div>
-                    {tool.danger && <span className="badge crit" style={{ fontSize: 9.5 }}>danger</span>}
+                    {tool.danger && <span className="badge warn" style={{ fontSize: 9.5 }}>{t("plat.needConfirm")}</span>}
                   </div>
                 ))}
+              </div>
+            </SectionPanel>
+
+            <SectionPanel
+              title={t("plat.recentCalls")}
+              icon={I.audit({ size: 13 })}
+              count={recent.length}
+              bodyStyle={{ padding: 0 }}
+              actions={<button className="btn btn-sm btn-ghost" onClick={() => navigate("audit")}>{t("plat.allAudit")}</button>}
+            >
+              <div className="col">
+                {recent.length === 0 ? (
+                  <div className="muted" style={{ padding: "12px 14px", fontSize: 12 }}>{t("common.noData")}</div>
+                ) : (
+                  recent.map((r) => (
+                    <div key={r.id} className="row gap-2" style={{ padding: "9px 14px", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
+                      <span className={`dot ${r.success ? "ok" : "crit"}`} />
+                      <div className="col flex-1" style={{ gap: 1, minWidth: 0 }}>
+                        <span className="mono truncate" style={{ fontSize: 11.5 }}>{r.commandType}</span>
+                        <span className="dim truncate" style={{ fontSize: 10.5 }}>{r.agentHostname || r.agentId}</span>
+                      </div>
+                      <span className="mono dim" style={{ fontSize: 10.5, flexShrink: 0 }}>{new Date(typeof r.timestamp === "string" ? r.timestamp : Number(r.timestamp)).toLocaleTimeString()}</span>
+                    </div>
+                  ))
+                )}
               </div>
             </SectionPanel>
           </div>

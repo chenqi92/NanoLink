@@ -42,6 +42,7 @@ export function TokensScreen() {
   const [editing, setEditing] = useState<AgentToken | null>(null)
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<AgentToken | null>(null)
+  const [resetting, setResetting] = useState<AgentToken | null>(null)
   const [reveal, setReveal] = useState<{ token: string; name: string } | null>(null)
 
   const load = useCallback(async () => {
@@ -142,7 +143,7 @@ export function TokensScreen() {
                     <td className="mono dim" style={{ fontSize: 11 }}>{tok.version ? `v${tok.version}` : "—"}</td>
                     <td style={{ textAlign: "right" }}>
                       <div className="row gap-1" style={{ justifyContent: "flex-end" }}>
-                        <button className="btn btn-sm btn-ghost" onClick={async () => { const r = await agentTokensApi.regenerate(tok.id); setReveal({ token: r.token, name: tok.name || tok.tokenHint }) }}>
+                        <button className="btn btn-sm btn-ghost" onClick={() => setResetting(tok)}>
                           {I.refresh({ size: 12 })} <span>{t("acc.reset")}</span>
                         </button>
                         <button className="btn btn-sm btn-ghost btn-icon" onClick={() => setEditing(tok)}>{I.edit({ size: 12 })}</button>
@@ -177,11 +178,34 @@ export function TokensScreen() {
           onConfirm={async () => { await agentTokensApi.delete(deleting.id); setDeleting(null); load() }}
         />
       )}
+      {resetting && (
+        <ConfirmDialog
+          title={<span className="row gap-2" style={{ alignItems: "center" }}>{I.refresh({ size: 14 })}<span>{t("acc.reset")} · {resetting.name || resetting.hostname || resetting.tokenHint}</span></span>}
+          danger
+          message={
+            <div className="col gap-3">
+              <span>{t("acc.regenWarn")}</span>
+              <div className="code" style={{ fontSize: 11 }}>{`Agent:  ${resetting.name || resetting.hostname || "—"}\nStatus: ${resetting.isOnline ? "online" : "offline"}\nToken:  ${resetting.tokenHint}`}</div>
+            </div>
+          }
+          confirmLabel={t("acc.reset")}
+          onClose={() => setResetting(null)}
+          onConfirm={async () => {
+            const r = await agentTokensApi.regenerate(resetting.id)
+            setReveal({ token: r.token, name: resetting.name || resetting.tokenHint })
+            setResetting(null)
+          }}
+        />
+      )}
       {reveal && (
         <Modal title={t("acc.newToken")} subtitle={t("acc.tokenOnce")} onClose={() => setReveal(null)} footer={<button className="btn btn-sm btn-primary" onClick={() => setReveal(null)}>{I.check({ size: 13 })}<span>{t("wizard.copied")}</span></button>}>
           <div className="col gap-3">
             <div className="code" style={{ wordBreak: "break-all", whiteSpace: "pre-wrap" }}>{reveal.token}</div>
             <button className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(reveal.token)}>{I.copy({ size: 13 })}<span>{t("acc.copyToken")}</span></button>
+            <div className="row gap-2" style={{ alignItems: "flex-start", color: "var(--fg-4)", fontSize: 11 }}>
+              <span style={{ color: "var(--info)", flexShrink: 0 }}>{I.info({ size: 12 })}</span>
+              <span className="mono">nano-agent token update {reveal.token.slice(0, 8)}…</span>
+            </div>
           </div>
         </Modal>
       )}
