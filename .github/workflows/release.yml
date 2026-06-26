@@ -166,21 +166,21 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: dashboard/package-lock.json
+          cache-dependency-path: apps/server/web/package-lock.json
 
       - name: Install dependencies
-        working-directory: dashboard
+        working-directory: apps/server/web
         run: npm ci
 
       - name: Build
-        working-directory: dashboard
+        working-directory: apps/server/web
         run: npm run build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: dashboard
-          path: dashboard/dist/
+          path: apps/server/web/dist/
 
   release:
     name: Create Release

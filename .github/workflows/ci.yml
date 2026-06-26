@@ -406,15 +406,15 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        working-directory: dashboard
+        working-directory: apps/server/web
         run: npm install
 
       - name: Lint
-        working-directory: dashboard
+        working-directory: apps/server/web
         run: npm run lint || true
 
       - name: Build
-        working-directory: dashboard
+        working-directory: apps/server/web
         run: npm run build
 
   # Apps 测试汇总
