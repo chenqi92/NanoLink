@@ -35,7 +35,7 @@ export function AuditScreen() {
     setLoading(true)
     try {
       const [l, s] = await Promise.all([
-        auditApi.logs({ limit: 200 }).then((r) => r.data ?? []),
+        auditApi.logs({ limit: 200 }).then((r) => r.logs ?? []),
         auditApi.stats().catch(() => null),
       ])
       setLogs(l)

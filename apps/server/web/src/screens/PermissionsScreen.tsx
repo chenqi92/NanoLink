@@ -24,8 +24,8 @@ export function PermissionsScreen() {
   useEffect(() => {
     if (mode !== "changes") return
     Promise.all([
-      auditApi.logs({ commandType: "PERMISSION_GRANT", limit: 50 }).then((r) => r.data ?? []).catch(() => []),
-      auditApi.logs({ commandType: "PERMISSION_REVOKE", limit: 50 }).then((r) => r.data ?? []).catch(() => []),
+      auditApi.logs({ commandType: "PERMISSION_GRANT", limit: 50 }).then((r) => r.logs ?? []).catch(() => []),
+      auditApi.logs({ commandType: "PERMISSION_REVOKE", limit: 50 }).then((r) => r.logs ?? []).catch(() => []),
     ]).then(([g, r]) => {
       const merged = [...g, ...r].sort((a, b) => {
         const ta = typeof a.timestamp === "string" ? Date.parse(a.timestamp) : Number(a.timestamp)

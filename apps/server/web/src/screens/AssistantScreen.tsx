@@ -32,7 +32,7 @@ export function AssistantScreen() {
 
   const refresh = useCallback(() => {
     assistantApi.findings().then(setFindings).catch(() => {}).finally(() => setLoading(false))
-    auditApi.recent(6).then(setRecent).catch(() => {})
+    auditApi.recent(6).then((r) => setRecent(r.logs ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {

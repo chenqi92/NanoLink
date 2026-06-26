@@ -202,9 +202,9 @@ func main() {
 			protected.GET("/groups", groupHandler.ListGroups)
 			protected.GET("/groups/:id", groupHandler.GetGroup)
 
-			// Editable server settings
+			// Editable server settings (read + write are super-admin only; routes
+			// registered under the admin group below, since values include secrets).
 			settingHandler := handler.NewSettingHandler(database.GetDB(), sugar)
-			protected.GET("/settings", settingHandler.GetSettings)
 
 			// Permission check route
 			permHandler := handler.NewPermissionHandler(permService, auditService, sugar)
@@ -294,6 +294,7 @@ func main() {
 				admin.POST("/agent-tokens/:id/regenerate", agentTokenHandler.RegenerateAgentToken)
 				admin.PUT("/agent-tokens/reorder", agentTokenHandler.ReorderAgentTokens)
 
+				admin.GET("/settings", settingHandler.GetSettings)
 				admin.PUT("/settings", settingHandler.UpdateSettings)
 
 				admin.POST("/config/generate", configGen.GenerateConfig)

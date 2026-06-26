@@ -403,7 +403,7 @@ export function FilesTab({ agentId }: { agentId: string }) {
       </div>
       <div className="card col flex-1" style={{ overflow: "hidden" }}>
         {selected ? (
-          <FileViewer agentId={agentId} path={selected} />
+          <FileViewer key={selected} agentId={agentId} path={selected} />
         ) : (
           <div className="col" style={{ flex: 1, alignItems: "center", justifyContent: "center", color: "var(--fg-4)" }}>
             {I.audit({ size: 32 })}

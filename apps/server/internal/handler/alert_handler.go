@@ -232,7 +232,10 @@ func (h *AlertHandler) TestChannel(c *gin.Context) {
 		return
 	}
 	if err := h.alertService.TestChannel(uint(id)); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		// Don't echo err.Error(): transport errors embed the full channel URL,
+		// whose path/query can carry the webhook secret (masked elsewhere).
+		h.logger.Warnw("test channel failed", "channelId", id, "error", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "test notification failed"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "test sent"})

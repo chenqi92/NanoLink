@@ -396,10 +396,10 @@ export const auditApi = {
     if (q.success != null) p.set("success", String(q.success))
     p.set("limit", String(q.limit ?? 100))
     if (q.offset) p.set("offset", String(q.offset))
-    return api.get<{ data: AuditLog[]; total: number }>(`/audit/logs?${p.toString()}`)
+    return api.get<{ logs: AuditLog[]; total: number }>(`/audit/logs?${p.toString()}`)
   },
   stats: () => api.get<AuditStats>("/audit/stats"),
-  recent: (limit = 50) => api.get<AuditLog[]>(`/audit/recent?limit=${limit}`),
+  recent: (limit = 50) => api.get<{ logs: AuditLog[] }>(`/audit/recent?limit=${limit}`),
 }
 
 export const agentsApi = {

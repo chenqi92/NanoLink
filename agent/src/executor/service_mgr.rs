@@ -28,11 +28,21 @@ fn systemd_runtime(names: &[String]) -> std::collections::HashMap<String, (Strin
     if names.is_empty() {
         return out;
     }
-    let boot_secs: f64 = std::fs::read_to_string("/proc/uptime")
-        .ok()
-        .and_then(|s| s.split_whitespace().next().map(|v| v.to_string()))
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.0);
+    // systemd's *TimestampMonotonic values use CLOCK_MONOTONIC; read the same clock
+    // for "now" rather than /proc/uptime (CLOCK_BOOTTIME, which counts suspend time
+    // and would inflate uptimes after a suspend/resume).
+    let now_mono_secs: f64 = {
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // SAFETY: clock_gettime only writes into the provided timespec.
+        if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) } == 0 {
+            ts.tv_sec as f64 + ts.tv_nsec as f64 / 1_000_000_000.0
+        } else {
+            0.0
+        }
+    };
 
     let mut args: Vec<String> = vec![
         "show".into(),
@@ -42,8 +52,8 @@ fn systemd_runtime(names: &[String]) -> std::collections::HashMap<String, (Strin
     args.extend(names.iter().cloned());
 
     let uptime_for = |mono: u64| -> String {
-        if mono > 0 && boot_secs > 0.0 {
-            let secs = (boot_secs - (mono as f64 / 1_000_000.0)).max(0.0) as u64;
+        if mono > 0 && now_mono_secs > 0.0 {
+            let secs = (now_mono_secs - (mono as f64 / 1_000_000.0)).max(0.0) as u64;
             fmt_uptime(secs)
         } else {
             String::new()
