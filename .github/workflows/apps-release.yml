@@ -21,7 +21,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/nanolink-server
-  FLUTTER_VERSION: "3.27.4"
+  FLUTTER_VERSION: "3.44.4"
 
 permissions:
   contents: read
@@ -190,7 +190,7 @@ jobs:
             VERSION=$(cat ../../VERSION | tr -d '[:space:]')
           fi
           mkdir -p release
-          hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/desktop.app -ov -format UDZO "release/NanoLink-macOS-Intel-$VERSION.dmg"
+          hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/NanoLink.app -ov -format UDZO "release/NanoLink-macOS-Intel-$VERSION.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -235,7 +235,7 @@ jobs:
             VERSION=$(cat ../../VERSION | tr -d '[:space:]')
           fi
           mkdir -p release
-          hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/desktop.app -ov -format UDZO "release/NanoLink-macOS-AppleSilicon-$VERSION.dmg"
+          hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/NanoLink.app -ov -format UDZO "release/NanoLink-macOS-AppleSilicon-$VERSION.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -255,7 +255,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libsecret-1-dev libjsoncpp-dev
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2

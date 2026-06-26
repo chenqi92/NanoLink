@@ -188,8 +188,18 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           echo "🚀 Publishing to Maven Central with Central Publishing Plugin..."
-          mvn deploy -Pgpg -DskipTests \
-            -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}"
+          # 同版本已存在时（重新打 tag）视为成功，其它错误仍然失败
+          set +e
+          OUT=$(mvn deploy -Pgpg -DskipTests -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}" 2>&1)
+          CODE=$?
+          echo "$OUT"
+          if [ $CODE -ne 0 ]; then
+            if echo "$OUT" | grep -qi "already exists"; then
+              echo "ℹ️ Version already published to Maven Central, skipping."
+              exit 0
+            fi
+            exit $CODE
+          fi
 
       - name: Publish to GitHub Packages
         working-directory: sdk/java
@@ -197,9 +207,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🚀 Publishing to GitHub Packages..."
-          mvn deploy -DskipTests \
+          set +e
+          OUT=$(mvn deploy -DskipTests \
             -Dmaven.deploy.skip=false \
-            -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/${{ github.repository }}
+            -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/${{ github.repository }} 2>&1)
+          CODE=$?
+          echo "$OUT"
+          if [ $CODE -ne 0 ]; then
+            if echo "$OUT" | grep -qiE "already exists|409 Conflict|status code 409"; then
+              echo "ℹ️ Version already published to GitHub Packages, skipping."
+              exit 0
+            fi
+            exit $CODE
+          fi
 
   # Build Go SDK
   build-go-sdk:
@@ -333,6 +353,8 @@ jobs:
           packages-dir: dist/
           password: ${{ secrets.PYPI_API_TOKEN }}
           # 使用 API Token 替代 Trusted Publishing，因为可重用工作流不支持 Trusted Publishing
+          # skip-existing: 同版本已发布时跳过而非报错（重新打 tag 时幂等）
+          skip-existing: true
 
   # Generate Protocol Buffers for all languages
   build-proto:
