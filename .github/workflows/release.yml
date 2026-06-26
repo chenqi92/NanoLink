@@ -120,7 +120,9 @@ jobs:
 
       - name: Install cargo-zigbuild (Linux)
         if: matrix.cross == true
-        run: cargo install cargo-zigbuild
+        # Pin + --locked: use cargo-zigbuild's own lockfile so a newer transitive
+        # dep (e.g. cargo-platform 0.3.3, MSRV 1.91) can't break install on Rust 1.88.
+        run: cargo install cargo-zigbuild --version 0.23.0 --locked
 
       # Build with zigbuild for musl targets (static linking)
       - name: Build Agent (Linux musl)
