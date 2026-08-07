@@ -32,7 +32,7 @@ tokio-stream = "0.1"
 async-stream = "0.3"
 
 # System metrics
-sysinfo = "0.34"
+sysinfo = "0.38"
 
 # Configuration
 serde = { version = "1.0", features = ["derive"] }
