@@ -231,5 +231,5 @@ TokenValidator = Callable[[str], ValidationResult]
 
 
 def default_token_validator(token: str) -> ValidationResult:
-    """Default token validator that accepts all tokens with read-only permission"""
-    return ValidationResult(valid=True, permission_level=0)
+    """Fail closed until the embedding application provides a token policy."""
+    return ValidationResult(valid=False, error_message="no token validator configured")

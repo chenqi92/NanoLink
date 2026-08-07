@@ -2,7 +2,6 @@
 # Rust / Agent
 # =========================
 agent/target/
-agent/Cargo.lock
 **/*.rs.bk
 *.pdb
 

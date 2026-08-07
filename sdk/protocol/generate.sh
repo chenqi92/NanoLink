@@ -34,8 +34,8 @@ else
     echo "  - Windows: choco install protoc"
     echo ""
     echo "Also install Go plugins:"
-    echo "  go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"
-    echo "  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest"
+    echo "  go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11"
+    echo "  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.0"
 fi
 
 # Java generation (if protoc-gen-grpc-java is available)

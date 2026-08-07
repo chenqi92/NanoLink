@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"log"
 	"os"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/viper"
 )
@@ -27,14 +29,16 @@ type Config struct {
 
 // ServerConfig holds server configuration
 type ServerConfig struct {
-	HTTPPort       int      `mapstructure:"http_port"`
-	WSPort         int      `mapstructure:"ws_port"`
-	GRPCPort       int      `mapstructure:"grpc_port"`
-	Mode           string   `mapstructure:"mode"`
-	TLSCert        string   `mapstructure:"tls_cert"`
-	TLSKey         string   `mapstructure:"tls_key"`
-	AllowedOrigins []string `mapstructure:"allowed_origins"` // CORS whitelist for WebSocket connections
-	ExternalURL    string   `mapstructure:"external_url"`    // External URL for device pairing QR codes (e.g., https://myserver.com:8080)
+	HTTPPort            int      `mapstructure:"http_port"`
+	WSPort              int      `mapstructure:"ws_port"`
+	GRPCPort            int      `mapstructure:"grpc_port"`
+	Mode                string   `mapstructure:"mode"`
+	TLSCert             string   `mapstructure:"tls_cert"`
+	TLSKey              string   `mapstructure:"tls_key"`
+	AllowedOrigins      []string `mapstructure:"allowed_origins"` // CORS whitelist for WebSocket connections
+	ExternalURL         string   `mapstructure:"external_url"`    // External URL for device pairing QR codes (e.g., https://myserver.com:8080)
+	TrustedProxies      []string `mapstructure:"trusted_proxies"` // Exact proxy IPs/CIDRs allowed to supply forwarding headers
+	MaxRequestBodyBytes int64    `mapstructure:"max_request_body_bytes"`
 }
 
 // AuthConfig holds authentication configuration
@@ -69,12 +73,14 @@ type StorageConfig struct {
 
 // MetricsConfig holds metrics configuration
 type MetricsConfig struct {
-	RetentionDays       int  `mapstructure:"retention_days"`        // Raw data retention (default 7 days)
-	HourlyRetentionDays int  `mapstructure:"hourly_retention_days"` // Hourly data retention (default 30 days)
-	DailyRetentionDays  int  `mapstructure:"daily_retention_days"`  // Daily data retention (default 365 days)
-	MaxAgents           int  `mapstructure:"max_agents"`
-	PersistToDB         bool `mapstructure:"persist_to_db"`      // Enable DB persistence (default true)
-	MaxMemoryHistory    int  `mapstructure:"max_memory_history"` // Max entries in memory per agent (default 600)
+	RetentionDays       int    `mapstructure:"retention_days"`        // Raw data retention (default 7 days)
+	HourlyRetentionDays int    `mapstructure:"hourly_retention_days"` // Hourly data retention (default 30 days)
+	DailyRetentionDays  int    `mapstructure:"daily_retention_days"`  // Daily data retention (default 365 days)
+	MaxAgents           int    `mapstructure:"max_agents"`
+	PersistToDB         bool   `mapstructure:"persist_to_db"`      // Enable DB persistence (default true)
+	MaxMemoryHistory    int    `mapstructure:"max_memory_history"` // Max entries in memory per agent (default 600)
+	PrometheusEnabled   bool   `mapstructure:"prometheus_enabled"`
+	PrometheusToken     string `mapstructure:"prometheus_token"`
 }
 
 // DatabaseConfig holds database configuration
@@ -116,9 +122,11 @@ type SuperAdminConfig struct {
 
 // MCPConfig holds MCP (Model Context Protocol) configuration
 type MCPConfig struct {
-	Enabled   bool   `mapstructure:"enabled"`   // Enable MCP server
-	Transport string `mapstructure:"transport"` // "stdio" or "sse"
-	SSEPort   int    `mapstructure:"sse_port"`  // Port for SSE transport
+	Enabled        bool   `mapstructure:"enabled"`          // Enable MCP server
+	Transport      string `mapstructure:"transport"`        // "stdio" or "sse"
+	SSEPort        int    `mapstructure:"sse_port"`         // Port for SSE transport
+	SSEBindAddress string `mapstructure:"sse_bind_address"` // Loopback by default
+	SSEAuthToken   string `mapstructure:"sse_auth_token"`   // Bearer token required by SSE transport
 }
 
 // LLMConfig holds the external LLM settings backing the AI assistant chat.
@@ -137,10 +145,11 @@ type LLMConfig struct {
 func Default() *Config {
 	return &Config{
 		Server: ServerConfig{
-			HTTPPort: 8080,
-			WSPort:   9100,
-			GRPCPort: 39100,
-			Mode:     "release",
+			HTTPPort:            8080,
+			WSPort:              9100,
+			GRPCPort:            39100,
+			Mode:                "release",
+			MaxRequestBodyBytes: 1024 * 1024,
 		},
 		Auth: AuthConfig{
 			Enabled: false,
@@ -173,9 +182,10 @@ func Default() *Config {
 		},
 		SuperAdmin: SuperAdminConfig{},
 		MCP: MCPConfig{
-			Enabled:   false,
-			Transport: "stdio",
-			SSEPort:   8081,
+			Enabled:        false,
+			Transport:      "stdio",
+			SSEPort:        8081,
+			SSEBindAddress: "127.0.0.1",
 		},
 		LLM: LLMConfig{
 			Enabled:   false,
@@ -196,6 +206,7 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("server.ws_port", 9100)
 	viper.SetDefault("server.grpc_port", 39100)
 	viper.SetDefault("server.mode", "release")
+	viper.SetDefault("server.max_request_body_bytes", 1024*1024)
 	viper.SetDefault("auth.enabled", false)
 	viper.SetDefault("storage.type", "memory")
 	viper.SetDefault("storage.path", "./data/nanolink.db")
@@ -205,6 +216,8 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("metrics.max_agents", 100)
 	viper.SetDefault("metrics.persist_to_db", true)
 	viper.SetDefault("metrics.max_memory_history", 600)
+	viper.SetDefault("metrics.prometheus_enabled", false)
+	viper.SetDefault("mcp.sse_bind_address", "127.0.0.1")
 
 	// Environment variable support
 	viper.SetEnvPrefix("NANOLINK")
@@ -223,7 +236,13 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("superadmin.username", "NANOLINK_ADMIN_USERNAME")
 	_ = viper.BindEnv("superadmin.password", "NANOLINK_ADMIN_PASSWORD")
 	_ = viper.BindEnv("server.external_url", "NANOLINK_EXTERNAL_URL")
+	_ = viper.BindEnv("server.trusted_proxies", "NANOLINK_TRUSTED_PROXIES")
+	_ = viper.BindEnv("server.max_request_body_bytes", "NANOLINK_MAX_REQUEST_BODY_BYTES")
 	_ = viper.BindEnv("auth.allow_public_registration", "NANOLINK_ALLOW_PUBLIC_REGISTRATION")
+	_ = viper.BindEnv("metrics.prometheus_enabled", "NANOLINK_PROMETHEUS_ENABLED")
+	_ = viper.BindEnv("metrics.prometheus_token", "NANOLINK_PROMETHEUS_TOKEN")
+	_ = viper.BindEnv("mcp.sse_bind_address", "NANOLINK_MCP_SSE_BIND_ADDRESS")
+	_ = viper.BindEnv("mcp.sse_auth_token", "NANOLINK_MCP_SSE_AUTH_TOKEN")
 
 	// Try to read config file (optional - environment variables take precedence)
 	configErr := viper.ReadInConfig()
@@ -250,6 +269,14 @@ func Load(path string) (*Config, error) {
 	if externalURL := os.Getenv("NANOLINK_EXTERNAL_URL"); externalURL != "" {
 		cfg.Server.ExternalURL = externalURL
 	}
+	if proxies := os.Getenv("NANOLINK_TRUSTED_PROXIES"); proxies != "" {
+		cfg.Server.TrustedProxies = splitAndTrim(proxies)
+	}
+	if raw := os.Getenv("NANOLINK_MAX_REQUEST_BODY_BYTES"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			cfg.Server.MaxRequestBodyBytes = n
+		}
+	}
 	if v := os.Getenv("NANOLINK_ALLOW_PUBLIC_REGISTRATION"); v != "" {
 		switch strings.ToLower(strings.TrimSpace(v)) {
 		case "1", "true", "yes", "on":
@@ -271,7 +298,7 @@ func Load(path string) (*Config, error) {
 // gets the convenience of auto-generation.
 func (c *Config) ValidateAndSecure() {
 	if c.JWT.Secret == "" {
-		if c.Server.Mode == "release" {
+		if isReleaseMode(c.Server.Mode) {
 			log.Fatalf("[FATAL] JWT secret is not configured. Set NANOLINK_JWT_SECRET or jwt.secret in config (server.mode=release requires an explicit secret to keep sessions valid across restarts and replicas).")
 		}
 		secret := make([]byte, 32)
@@ -280,6 +307,33 @@ func (c *Config) ValidateAndSecure() {
 		}
 		c.JWT.Secret = hex.EncodeToString(secret)
 		log.Printf("[SECURITY WARNING] JWT secret auto-generated for development (server.mode=%q). Set NANOLINK_JWT_SECRET before deploying to production.", c.Server.Mode)
+	}
+
+	if c.Server.MaxRequestBodyBytes <= 0 {
+		c.Server.MaxRequestBodyBytes = 1024 * 1024
+	}
+
+	if (c.Server.TLSCert == "") != (c.Server.TLSKey == "") {
+		log.Fatalf("[FATAL] server.tls_cert and server.tls_key must be configured together")
+	}
+
+	if (c.SuperAdmin.Username == "") != (c.SuperAdmin.Password == "") {
+		log.Fatalf("[FATAL] NANOLINK_ADMIN_USERNAME and NANOLINK_ADMIN_PASSWORD must be configured together")
+	}
+	if c.SuperAdmin.Password != "" && !isStrongBootstrapPassword(c.SuperAdmin.Password) {
+		log.Fatalf("[FATAL] bootstrap admin password must be at least 8 characters and contain both letters and numbers; placeholder passwords are rejected")
+	}
+
+	if isReleaseMode(c.Server.Mode) {
+		if isWeakSecret(c.JWT.Secret) {
+			log.Fatalf("[FATAL] JWT secret must be at least 32 bytes and must not be a known placeholder in release mode")
+		}
+		if c.Metrics.PrometheusEnabled && isWeakSecret(c.Metrics.PrometheusToken) {
+			log.Fatalf("[FATAL] Prometheus is enabled in release mode but NANOLINK_PROMETHEUS_TOKEN is missing or weaker than 32 bytes")
+		}
+		if c.MCP.Enabled && strings.EqualFold(c.MCP.Transport, "sse") && isWeakSecret(c.MCP.SSEAuthToken) {
+			log.Fatalf("[FATAL] MCP SSE is enabled in release mode but NANOLINK_MCP_SSE_AUTH_TOKEN is missing or weaker than 32 bytes")
+		}
 	}
 
 	// Warn if auth is disabled
@@ -299,6 +353,53 @@ func (c *Config) ValidateAndSecure() {
 			break
 		}
 	}
+}
+
+func splitAndTrim(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func isReleaseMode(mode string) bool {
+	return strings.EqualFold(strings.TrimSpace(mode), "release")
+}
+
+func isWeakSecret(secret string) bool {
+	secret = strings.TrimSpace(secret)
+	if len([]byte(secret)) < 32 {
+		return true
+	}
+	lower := strings.ToLower(secret)
+	for _, placeholder := range []string{
+		"your-secret-key-change-me",
+		"change-me",
+		"changeme",
+		"default-secret",
+		"nanolink-secret",
+	} {
+		if lower == placeholder || strings.Contains(lower, placeholder) {
+			return true
+		}
+	}
+	return false
+}
+
+func isStrongBootstrapPassword(password string) bool {
+	if len([]byte(password)) < 8 || strings.EqualFold(strings.TrimSpace(password), "changeme") {
+		return false
+	}
+	var letter, number bool
+	for _, r := range password {
+		letter = letter || unicode.IsLetter(r)
+		number = number || unicode.IsDigit(r)
+	}
+	return letter && number
 }
 
 // ValidateToken validates a token and returns permission level

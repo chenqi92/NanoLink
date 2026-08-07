@@ -52,6 +52,38 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
         this.requireAuthentication = requireAuthentication;
     }
 
+    private TokenValidator.ValidationResult validateBearerAuthorization(String authorization) {
+        if (authorization == null || authorization.isBlank()) {
+            return TokenValidator.ValidationResult.failure("Bearer token required");
+        }
+        String[] parts = authorization.trim().split("\\s+", 2);
+        if (parts.length != 2 || !"Bearer".equalsIgnoreCase(parts[0]) || parts[1].isBlank()) {
+            return TokenValidator.ValidationResult.failure("Invalid authorization metadata");
+        }
+        try {
+            return tokenValidator.validate(parts[1]);
+        } catch (RuntimeException ex) {
+            log.warn("Token validator failed", ex);
+            return TokenValidator.ValidationResult.failure("Token validation failed");
+        }
+    }
+
+    private static StreamObserver<MetricsStreamRequest> closedRequestObserver() {
+        return new StreamObserver<>() {
+            @Override
+            public void onNext(MetricsStreamRequest ignored) {
+            }
+
+            @Override
+            public void onError(Throwable ignored) {
+            }
+
+            @Override
+            public void onCompleted() {
+            }
+        };
+    }
+
     @Override
     public void authenticate(AuthRequest request, StreamObserver<AuthResponse> responseObserver) {
         // Sanitize agent-controlled fields before logging to prevent log injection
@@ -112,6 +144,20 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
         log.debug("New metrics stream connection");
 
+        String authorization = NanoLinkServer.currentAuthorizationHeader();
+        TokenValidator.ValidationResult streamAuth = validateBearerAuthorization(authorization);
+        boolean credentialProvided = authorization != null && !authorization.isBlank();
+        if ((credentialProvided && !streamAuth.isValid())
+                || (requireAuthentication && !streamAuth.isValid())) {
+            responseObserver.onError(io.grpc.Status.UNAUTHENTICATED
+                    .withDescription(credentialProvided ? "Invalid bearer token" : "Bearer token required")
+                    .asRuntimeException());
+            return closedRequestObserver();
+        }
+        final int streamPermission = streamAuth.isValid()
+                ? streamAuth.getPermissionLevel()
+                : TokenValidator.PermissionLevel.READ_ONLY;
+
         // Send initial response immediately to trigger HTTP/2 headers
         // This allows tonic/rust clients to complete the stream_metrics() call
         responseObserver.onNext(MetricsStreamResponse.newBuilder()
@@ -133,16 +179,6 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
 
                         // Register agent on first metrics if not already
                         if (agent == null) {
-                            // P0-3: 强制认证模式检查
-                            if (requireAuthentication) {
-                                log.warn("SECURITY: Rejecting unauthenticated metrics stream (requireAuthentication=true)");
-                                responseObserver.onError(
-                                        io.grpc.Status.UNAUTHENTICATED
-                                                .withDescription("Authentication required: use Authenticate RPC before streaming metrics")
-                                                .asRuntimeException());
-                                return;
-                            }
-
                             String hostname = SanitizeUtils.sanitizeHostname(protoMetrics.getHostname());
 
                             // Check if agent with same hostname already exists.
@@ -174,12 +210,15 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                                     protoMetrics.hasSystemInfo() ? protoMetrics.getSystemInfo().getOsName() : "",
                                     protoMetrics.hasCpu() ? protoMetrics.getCpu().getArchitecture() : "",
                                     "0.2.0",
-                                    TokenValidator.PermissionLevel.READ_ONLY // Default to READ_ONLY for unauthenticated
-                                                                             // streams
+                                    streamPermission
                             );
-                            log.warn(
-                                    "Agent {} registered via stream without authentication - using READ_ONLY permission",
-                                    hostname);
+                            if (streamAuth.isValid()) {
+                                log.info("Agent {} registered via authenticated metrics stream with permission {}",
+                                        hostname, streamPermission);
+                            } else {
+                                log.warn("Agent {} registered via anonymous metrics stream with READ_ONLY permission",
+                                        hostname);
+                            }
                             server.registerAgent(agent);
                             streamAgents.put(responseObserver, agent);
                             wireCommandSender(agent, responseObserver);
@@ -255,12 +294,15 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
                                         protoStatic.getSystemInfo().getOsName(),
                                         protoStatic.hasCpu() ? protoStatic.getCpu().getArchitecture() : "",
                                         protoStatic.getAgentVersion().isEmpty() ? "unknown" : protoStatic.getAgentVersion(),
-                                        TokenValidator.PermissionLevel.READ_ONLY // Default to READ_ONLY for
-                                                                                 // unauthenticated streams
+                                        streamPermission
                                 );
-                                log.warn(
-                                        "Agent {} registered via static info without authentication - using READ_ONLY permission",
-                                        hostname);
+                                if (streamAuth.isValid()) {
+                                    log.info("Agent {} registered via authenticated static-info stream with permission {}",
+                                            hostname, streamPermission);
+                                } else {
+                                    log.warn("Agent {} registered via anonymous static-info stream with READ_ONLY permission",
+                                            hostname);
+                                }
                                 server.registerAgent(agent);
                                 streamAgents.put(responseObserver, agent);
                                 wireCommandSender(agent, responseObserver);

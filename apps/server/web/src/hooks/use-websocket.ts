@@ -43,6 +43,7 @@ export function useWebSocket({
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const connectRef = useRef<() => void>(() => {})
   
   // Store callbacks in refs to avoid dependency changes
   const onAgentsRef = useRef(onAgents)
@@ -180,11 +181,15 @@ export function useWebSocket({
       // Attempt to reconnect if not intentionally closed
       if (enabled && event.code !== 1000) {
         reconnectTimeoutRef.current = setTimeout(() => {
-          connect()
+          connectRef.current()
         }, reconnectInterval)
       }
     }
   }, [enabled, reconnectInterval]) // Only depend on enabled and reconnectInterval
+
+  useEffect(() => {
+    connectRef.current = connect
+  }, [connect])
 
   // Connect when auth state changes
   useEffect(() => {
@@ -197,7 +202,7 @@ export function useWebSocket({
     return () => {
       disconnect()
     }
-  }, [enabled]) // Only depend on enabled, not connect/disconnect
+  }, [enabled, connect, disconnect])
 
   return {
     status,

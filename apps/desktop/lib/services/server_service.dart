@@ -127,9 +127,12 @@ class MetricsHistory {
   final List<double> diskWrite; // MB/s
   final List<double> gpuUsage; // %
   final List<double> gpuTemp; // °C (may be empty)
-  final List<double> cpuMax; // % per-bucket peak (DB-aggregated; empty if absent)
-  final List<double> memMax; // % per-bucket peak (DB-aggregated; empty if absent)
-  final List<double> loadAvg; // 1-min load average (DB-aggregated; empty if absent)
+  final List<double>
+      cpuMax; // % per-bucket peak (DB-aggregated; empty if absent)
+  final List<double>
+      memMax; // % per-bucket peak (DB-aggregated; empty if absent)
+  final List<double>
+      loadAvg; // 1-min load average (DB-aggregated; empty if absent)
 
   const MetricsHistory({
     required this.times,
@@ -329,10 +332,10 @@ const String clientVersion = '0.3.3';
 /// 5xx → [serverError]; transport/timeout failures → [network].
 enum LoginError {
   invalidCredentials, // 401
-  rateLimited,        // 429
-  badRequest,         // 400
-  serverError,        // 5xx
-  network,            // transport/timeout/parse failure
+  rateLimited, // 429
+  badRequest, // 400
+  serverError, // 5xx
+  network, // transport/timeout/parse failure
 }
 
 /// Outcome of a login attempt. On success [token] is non-null and [error] null;
@@ -357,11 +360,11 @@ class LoginResult {
 /// Outcome of an assistant chat call, distinguishing the not-configured (503),
 /// bad-request (400) and upstream-failure (502) cases the server returns.
 enum AssistantChatError {
-  notConfigured,  // 503 — llm disabled / no API key
-  badRequest,     // 400 — invalid / empty / too-long messages
+  notConfigured, // 503 — llm disabled / no API key
+  badRequest, // 400 — invalid / empty / too-long messages
   upstreamFailed, // 502 — LLM call failed
-  serverError,    // other non-2xx
-  network,        // transport/timeout/parse failure
+  serverError, // other non-2xx
+  network, // transport/timeout/parse failure
 }
 
 /// Result of [ServerService.assistantChat]: on success [reply] is non-null;
@@ -462,7 +465,8 @@ class ServerService {
       StreamController<ServerInfo>.broadcast();
 
   Stream<List<Agent>> get agentsStream => _agentsController.stream;
-  Stream<Map<String, AgentMetrics>> get metricsStream => _metricsController.stream;
+  Stream<Map<String, AgentMetrics>> get metricsStream =>
+      _metricsController.stream;
   Stream<ConnectionStatus> get connectionStream => _connectionController.stream;
   Stream<ServerSummary> get summaryStream => _summaryController.stream;
   Stream<String> get agentOfflineStream => _agentOfflineController.stream;
@@ -473,7 +477,9 @@ class ServerService {
   bool get isWebSocketConnected => _wsConnected;
   ConnectionMode get connectionMode => _wsConnected
       ? ConnectionMode.websocket
-      : (_pollingTimer != null ? ConnectionMode.httpPolling : ConnectionMode.disconnected);
+      : (_pollingTimer != null
+          ? ConnectionMode.httpPolling
+          : ConnectionMode.disconnected);
 
   /// Timestamp of the most recent WebSocket `pong` (heartbeat reply), or null
   /// when no pong has been received on the current connection.
@@ -495,8 +501,7 @@ class ServerService {
       _serverInfo == null || _serverInfo!.isCompatible(clientVersion);
 
   ServerService({required this.connection, http.Client? client})
-      : _client =
-            client ?? buildHttpClient(ignoreCert: connection.ignoreCert);
+      : _client = client ?? buildHttpClient(ignoreCert: connection.ignoreCert);
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -535,21 +540,18 @@ class ServerService {
   }
 
   String _buildWsUrl() {
-    final token = connection.authToken ?? '';
-    return '${_wsBaseUrl()}/ws/dashboard?token=${Uri.encodeComponent(token)}';
+    return '${_wsBaseUrl()}/ws/dashboard';
   }
 
   /// Open a remote shell session for [agentId] (`/ws/shell/:id`).
   ///
   /// The returned session is not connected yet — wire up its [ShellSession.lines]
   /// / [ShellSession.statusStream] listeners first, then call
-  /// [ShellSession.connect]. Auth uses the Authorization header on native (the
-  /// query token is kept only for web/cookie fallback).
+  /// [ShellSession.connect]. Auth uses the Authorization header on native and
+  /// the same-origin HttpOnly cookie in a browser.
   ShellSession openShell(String agentId) {
-    final token = connection.authToken ?? '';
-    final uri = Uri.parse(
-        '${_wsBaseUrl()}/ws/shell/${Uri.encodeComponent(agentId)}'
-        '?token=${Uri.encodeComponent(token)}');
+    final uri =
+        Uri.parse('${_wsBaseUrl()}/ws/shell/${Uri.encodeComponent(agentId)}');
     return ShellSession(
         uri: uri,
         token: connection.authToken,
@@ -559,14 +561,19 @@ class ServerService {
   /// Login with username and password, returns JWT token on success
   Future<String?> login(String username, String password) async {
     try {
-      final response = await _client.post(
-        Uri.parse(_buildUrl('/auth/login')),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'username': username,
-          'password': password,
-        }),
-      ).timeout(const Duration(seconds: 10));
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/auth/login')),
+            headers: {
+              'Content-Type': 'application/json',
+              'X-NanoLink-Client': 'native',
+            },
+            body: jsonEncode({
+              'username': username,
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -590,11 +597,16 @@ class ServerService {
   /// also sets an HttpOnly cookie, which native clients cannot read).
   Future<LoginResult> loginDetailed(String username, String password) async {
     try {
-      final response = await _client.post(
-        Uri.parse(_buildUrl('/auth/login')),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': username, 'password': password}),
-      ).timeout(const Duration(seconds: 10));
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/auth/login')),
+            headers: {
+              'Content-Type': 'application/json',
+              'X-NanoLink-Client': 'native',
+            },
+            body: jsonEncode({'username': username, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -603,7 +615,8 @@ class ServerService {
           return LoginResult.success(token);
         }
         return const LoginResult.failure(LoginError.serverError,
-            message: 'login succeeded but no token was returned', statusCode: 200);
+            message: 'login succeeded but no token was returned',
+            statusCode: 200);
       }
 
       final reason = _errorMessage(response);
@@ -633,11 +646,13 @@ class ServerService {
   /// device token on success, or null on failure.
   Future<String?> redeemPairingCode(String code) async {
     try {
-      final response = await _client.post(
-        Uri.parse(_buildUrl('/auth/pairing')),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'pairingCode': code}),
-      ).timeout(const Duration(seconds: 10));
+      final response = await _client
+          .post(
+            Uri.parse(_buildUrl('/auth/pairing')),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'pairingCode': code}),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -701,7 +716,8 @@ class ServerService {
     }
   }
 
-  void _emitConnectionStatus(bool connected, ConnectionMode mode, [String? error]) {
+  void _emitConnectionStatus(bool connected, ConnectionMode mode,
+      [String? error]) {
     _connectionController.add(ConnectionStatus(
       isConnected: connected,
       mode: mode,
@@ -735,7 +751,8 @@ class ServerService {
         case 'agents':
           if (payload is List) {
             _cachedAgents = payload
-                .map((j) => Agent.fromJson(j as Map<String, dynamic>, connection.id))
+                .map((j) =>
+                    Agent.fromJson(j as Map<String, dynamic>, connection.id))
                 .toList();
             _agentsController.add(_cachedAgents);
           }
@@ -744,7 +761,8 @@ class ServerService {
           // Handle single agent update
           if (payload is Map<String, dynamic>) {
             final updatedAgent = Agent.fromJson(payload, connection.id);
-            final index = _cachedAgents.indexWhere((a) => a.id == updatedAgent.id);
+            final index =
+                _cachedAgents.indexWhere((a) => a.id == updatedAgent.id);
             if (index >= 0) {
               _cachedAgents[index] = updatedAgent;
             } else {
@@ -757,15 +775,18 @@ class ServerService {
         case 'metrics':
           if (payload is Map) {
             // Check if single agent update or full update
-            if (payload.containsKey('agentId') && payload.containsKey('metrics')) {
+            if (payload.containsKey('agentId') &&
+                payload.containsKey('metrics')) {
               final agentId = payload['agentId'] as String;
               final metricsData = payload['metrics'] as Map<String, dynamic>;
-              _cachedMetrics[agentId] = AgentMetrics.fromJson(metricsData, agentId);
+              _cachedMetrics[agentId] =
+                  AgentMetrics.fromJson(metricsData, agentId);
             } else {
               // Full metrics update
               payload.forEach((key, value) {
                 if (value != null && value is Map<String, dynamic>) {
-                  _cachedMetrics[key as String] = AgentMetrics.fromJson(value, key);
+                  _cachedMetrics[key as String] =
+                      AgentMetrics.fromJson(value, key);
                 }
               });
             }
@@ -797,7 +818,8 @@ class ServerService {
           if (payload is Map<String, dynamic>) {
             final summary = ServerSummary.fromJson(payload);
             _summaryController.add(summary);
-            debugPrint('[WS] Summary updated: ${summary.connectedAgents} agents');
+            debugPrint(
+                '[WS] Summary updated: ${summary.connectedAgents} agents');
           }
 
         case 'pong':
@@ -856,7 +878,8 @@ class ServerService {
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
         return data
-            .map((json) => Agent.fromJson(json as Map<String, dynamic>, connection.id))
+            .map((json) =>
+                Agent.fromJson(json as Map<String, dynamic>, connection.id))
             .toList();
       }
       return [];
@@ -916,14 +939,22 @@ class ServerService {
           'limit': '$limit',
         },
       );
-      final response =
-          await _client.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
+      final response = await _client
+          .get(uri, headers: _headers)
+          .timeout(const Duration(seconds: 12));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data is List) return MetricsHistory.parse(data);
         return const MetricsHistory(
-          times: [], cpu: [], mem: [], netRx: [], netTx: [],
-          diskRead: [], diskWrite: [], gpuUsage: [], gpuTemp: [],
+          times: [],
+          cpu: [],
+          mem: [],
+          netRx: [],
+          netTx: [],
+          diskRead: [],
+          diskWrite: [],
+          gpuUsage: [],
+          gpuTemp: [],
         );
       }
       return null;
@@ -1009,8 +1040,7 @@ class ServerService {
     try {
       final response = await _client
           .get(
-            Uri.parse(_buildUrl(
-                '/agents/$agentId/command/$commandId/result')),
+            Uri.parse(_buildUrl('/agents/$agentId/command/$commandId/result')),
             headers: _headers,
           )
           .timeout(const Duration(seconds: 10));
@@ -1139,8 +1169,9 @@ class ServerService {
           if (status != null && status.isNotEmpty) 'status': status,
         },
       );
-      final response =
-          await _client.get(uri, headers: _headers).timeout(const Duration(seconds: 10));
+      final response = await _client
+          .get(uri, headers: _headers)
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data is List) {
@@ -1199,8 +1230,9 @@ class ServerService {
       final uri = Uri.parse(_buildUrl('/audit/recent')).replace(
         queryParameters: {'limit': '$limit'},
       );
-      final response =
-          await _client.get(uri, headers: _headers).timeout(const Duration(seconds: 10));
+      final response = await _client
+          .get(uri, headers: _headers)
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final logs = data is Map ? data['logs'] : data;
@@ -1278,8 +1310,8 @@ class ServerService {
           .post(
             Uri.parse(_buildUrl('/devices/token')),
             headers: _headers,
-            body: jsonEncode(
-                {if (serverName != null) 'serverName': serverName}),
+            body:
+                jsonEncode({if (serverName != null) 'serverName': serverName}),
           )
           .timeout(const Duration(seconds: 12));
       if (response.statusCode == 200 || response.statusCode == 201) {

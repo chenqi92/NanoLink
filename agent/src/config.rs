@@ -123,7 +123,7 @@ pub struct UpdateConfig {
     /// when no public_key is configured (with a key, signatures are always
     /// required); set this to fail closed instead of falling back to a
     /// checksum-only, unverified update.
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub require_signature: bool,
 }
 
@@ -139,7 +139,7 @@ impl Default for UpdateConfig {
             source: UpdateSource::default(),
             custom_url: None,
             public_key: None,
-            require_signature: false,
+            require_signature: true,
         }
     }
 }

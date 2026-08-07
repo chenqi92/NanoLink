@@ -19,11 +19,24 @@ pip install -e .
 
 ```python
 import asyncio
+import os
+import secrets
 from nanolink import NanoLinkServer, ServerConfig, Metrics, AgentConnection
+from nanolink.connection import ValidationResult
 
 async def main():
-    # Create server
-    server = NanoLinkServer(ServerConfig(port=9100))
+    expected_token = os.environ["NANOLINK_AGENT_TOKEN"]
+
+    def validate_token(token: str) -> ValidationResult:
+        if secrets.compare_digest(expected_token, token):
+            return ValidationResult(valid=True, permission_level=0)
+        return ValidationResult(valid=False, error_message="Invalid token")
+
+    # Authentication is required by default.
+    server = NanoLinkServer(ServerConfig(
+        grpc_port=39100,
+        token_validator=validate_token,
+    ))
 
     # Handle agent connections
     @server.on_agent_connect
@@ -72,7 +85,7 @@ def my_token_validator(token: str) -> ValidationResult:
         return ValidationResult(valid=False, error_message="Invalid token")
 
 config = ServerConfig(
-    port=9100,
+    grpc_port=39100,
     token_validator=my_token_validator,
 )
 server = NanoLinkServer(config)

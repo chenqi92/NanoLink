@@ -6,7 +6,6 @@ This demo shows how to integrate NanoLink SDK with Python and FastAPI to create 
 
 - Receives real-time metrics from NanoLink agents
 - REST API for querying agents and metrics
-- Built-in NanoLink WebSocket server
 - Alert logging for high resource usage
 - Command execution on remote agents
 - OpenAPI documentation (Swagger UI)
@@ -28,6 +27,8 @@ pip install -r requirements.txt
 ### 2. Run the demo
 
 ```bash
+export NANOLINK_AGENT_TOKEN="$(openssl rand -hex 32)"
+export NANOLINK_API_TOKEN="$(openssl rand -hex 32)"
 python main.py
 # or
 uvicorn main:app --reload
@@ -37,7 +38,9 @@ uvicorn main:app --reload
 
 - **REST API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
-- **NanoLink Server**: ws://localhost:9100/ws
+- **NanoLink gRPC**: localhost:39100
+
+All `/api/` requests require `Authorization: Bearer $NANOLINK_API_TOKEN`.
 
 ## API Endpoints
 
@@ -45,20 +48,20 @@ uvicorn main:app --reload
 
 ```bash
 # List all connected agents
-curl http://localhost:8000/api/agents
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8000/api/agents
 
 # Get metrics for specific agent
-curl http://localhost:8000/api/agents/{agentId}/metrics
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8000/api/agents/{agentId}/metrics
 ```
 
 ### Metrics
 
 ```bash
 # Get all latest metrics
-curl http://localhost:8000/api/metrics
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8000/api/metrics
 
 # Get cluster summary
-curl http://localhost:8000/api/summary
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8000/api/summary
 ```
 
 ### Commands
@@ -66,16 +69,19 @@ curl http://localhost:8000/api/summary
 ```bash
 # Restart a service
 curl -X POST http://localhost:8000/api/commands/agents/{hostname}/service/restart \
+  -H "Authorization: Bearer $NANOLINK_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"service_name": "nginx"}'
 
 # Kill a process
 curl -X POST http://localhost:8000/api/commands/agents/{hostname}/process/kill \
+  -H "Authorization: Bearer $NANOLINK_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"pid": 1234}'
 
 # Restart Docker container
 curl -X POST http://localhost:8000/api/commands/agents/{hostname}/docker/restart \
+  -H "Authorization: Bearer $NANOLINK_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"container_name": "my-app"}'
 ```
@@ -83,7 +89,7 @@ curl -X POST http://localhost:8000/api/commands/agents/{hostname}/docker/restart
 ### Health Check
 
 ```bash
-curl http://localhost:8000/api/health
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8000/api/health
 ```
 
 ## Project Structure
@@ -97,15 +103,15 @@ python-fastapi/
 
 ## How It Works
 
-1. **NanoLink Server** starts on port 9100 in lifespan context
+1. **NanoLink Server** starts a token-protected gRPC listener on port 39100
 2. **MetricsService** stores agent info and processes metrics
 3. **FastAPI** exposes REST endpoints on port 8000
-4. Agents connect via WebSocket and send metrics
+4. Agents connect via gRPC and send metrics
 5. Metrics are stored in memory and queryable via API
 
 ## Production Considerations
 
-1. **Authentication**: Add proper token validation
+1. **Authentication**: Required for both agents and REST API
 2. **TLS**: Enable TLS for secure connections
 3. **Persistence**: Store metrics in a time-series database
 4. **Scaling**: Use Redis for shared state

@@ -32,10 +32,12 @@ type Config struct {
 	TokenValidator TokenValidator
 
 	// Security options
-	// RequireAuthentication if true, rejects unauthenticated agent connections
-	// When false (default), agents can connect via metrics stream without explicit auth
-	// but will have ReadOnly permission level
+	// RequireAuthentication is retained for source compatibility. NewServer sets
+	// it to true unless AllowUnauthenticatedMetrics is explicitly enabled.
 	RequireAuthentication bool
+	// AllowUnauthenticatedMetrics is an explicit, insecure compatibility opt-out.
+	// Leave false (the default) to require a valid bearer token on metrics streams.
+	AllowUnauthenticatedMetrics bool
 
 	// Heartbeat timeout settings
 	// HeartbeatTimeout is the duration after which an agent is considered dead (default: 90s)
@@ -58,9 +60,10 @@ type ValidationResult struct {
 // Token validator function type
 type TokenValidator func(token string) ValidationResult
 
-// Default token validator (accepts all)
+// DefaultTokenValidator fails closed when an application has not configured an
+// authentication policy.
 func DefaultTokenValidator(token string) ValidationResult {
-	return ValidationResult{Valid: true, PermissionLevel: 0}
+	return ValidationResult{Valid: false, ErrorMessage: "no token validator configured"}
 }
 
 // Permission levels
@@ -94,9 +97,10 @@ func NewServer(config Config) *Server {
 	}
 	if config.TokenValidator == nil {
 		config.TokenValidator = DefaultTokenValidator
-		if !config.RequireAuthentication {
-			log.Printf("WARNING: no TokenValidator configured and RequireAuthentication=false — every agent is accepted (READ_ONLY) and anonymous metrics streams can register. Provide a TokenValidator and/or set RequireAuthentication=true before production use.")
-		}
+	}
+	config.RequireAuthentication = !config.AllowUnauthenticatedMetrics
+	if config.AllowUnauthenticatedMetrics {
+		log.Printf("WARNING: AllowUnauthenticatedMetrics is enabled — anonymous agents are accepted with READ_ONLY permission")
 	}
 	if config.HeartbeatTimeout == 0 {
 		config.HeartbeatTimeout = DefaultHeartbeatTimeout

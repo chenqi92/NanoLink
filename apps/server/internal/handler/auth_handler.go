@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 	"github.com/gin-gonic/gin"
@@ -38,15 +39,26 @@ type LoginRequest struct {
 
 // AuthResponse represents an authentication response.
 //
-// The JWT is delivered two ways so both browser and non-browser clients can
-// authenticate: (1) via the HttpOnly auth cookie set by SetAuthCookie, which
-// same-origin web UI requests carry automatically, and (2) echoed in the Token
-// field of the JSON body so native/mobile/SDK/CLI clients (which cannot read an
-// HttpOnly cookie) can capture it and send it as a Bearer header. Web clients
-// that rely on the cookie may simply ignore the body token.
+// Browser clients receive the JWT only in an HttpOnly cookie. Native clients
+// explicitly opt into a body token with X-NanoLink-Client: native and must not
+// send a browser Origin header. Origin is a forbidden browser-controlled header,
+// so injected JavaScript cannot suppress it to extract a reusable bearer token.
 type AuthResponse struct {
 	User  UserResponse `json:"user"`
-	Token string       `json:"token"`
+	Token string       `json:"token,omitempty"`
+}
+
+const NativeClientHeader = "X-NanoLink-Client"
+
+func responseToken(c *gin.Context, token string) string {
+	if strings.TrimSpace(c.GetHeader("Origin")) != "" {
+		return ""
+	}
+	clientKind := strings.TrimSpace(c.GetHeader(NativeClientHeader))
+	if strings.EqualFold(clientKind, "native") || strings.EqualFold(clientKind, "cli") || strings.EqualFold(clientKind, "sdk") {
+		return token
+	}
+	return ""
 }
 
 // UserResponse represents a user in API responses
@@ -93,6 +105,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	SetAuthCookie(c, token, h.authService.TokenTTL())
+	c.Header("Cache-Control", "no-store")
 
 	c.JSON(http.StatusCreated, AuthResponse{
 		User: UserResponse{
@@ -101,7 +114,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			Email:        user.Email,
 			IsSuperAdmin: user.IsSuperAdmin,
 		},
-		Token: token,
+		Token: responseToken(c, token),
 	})
 }
 
@@ -129,6 +142,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	SetAuthCookie(c, token, h.authService.TokenTTL())
+	c.Header("Cache-Control", "no-store")
 
 	c.JSON(http.StatusOK, AuthResponse{
 		User: UserResponse{
@@ -137,7 +151,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			Email:        user.Email,
 			IsSuperAdmin: user.IsSuperAdmin,
 		},
-		Token: token,
+		Token: responseToken(c, token),
 	})
 }
 

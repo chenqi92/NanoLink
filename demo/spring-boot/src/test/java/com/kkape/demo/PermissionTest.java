@@ -13,8 +13,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * Permission Levels:
  * - 0 (READ_ONLY): Can view metrics, process list, service status, docker list, file tail
  * - 1 (BASIC_WRITE): Level 0 + file download, file truncate, docker logs
- * - 2 (SERVICE_CONTROL): Level 1 + process kill, service start/stop/restart, docker start/stop/restart, file upload
- * - 3 (SYSTEM_ADMIN): Level 2 + system reboot, shell execute
+ * - 2 (SERVICE_CONTROL): Level 1 + process kill, service start/stop/restart, docker start/stop/restart
+ * - 3 (SYSTEM_ADMIN): Level 2 + file upload, system reboot, shell execute
  */
 public class PermissionTest {
 
@@ -45,7 +45,6 @@ public class PermissionTest {
         assertEquals(TokenValidator.PermissionLevel.SERVICE_CONTROL, Command.Type.DOCKER_START.getRequiredPermission());
         assertEquals(TokenValidator.PermissionLevel.SERVICE_CONTROL, Command.Type.DOCKER_STOP.getRequiredPermission());
         assertEquals(TokenValidator.PermissionLevel.SERVICE_CONTROL, Command.Type.DOCKER_RESTART.getRequiredPermission());
-        assertEquals(TokenValidator.PermissionLevel.SERVICE_CONTROL, Command.Type.FILE_UPLOAD.getRequiredPermission());
     }
 
     @Test
@@ -53,6 +52,7 @@ public class PermissionTest {
     void testLevel3Commands() {
         assertEquals(TokenValidator.PermissionLevel.SYSTEM_ADMIN, Command.Type.SYSTEM_REBOOT.getRequiredPermission());
         assertEquals(TokenValidator.PermissionLevel.SYSTEM_ADMIN, Command.Type.SHELL_EXECUTE.getRequiredPermission());
+        assertEquals(TokenValidator.PermissionLevel.SYSTEM_ADMIN, Command.Type.FILE_UPLOAD.getRequiredPermission());
     }
 
     @Test
@@ -109,7 +109,7 @@ public class PermissionTest {
         assertTrue(Command.Type.SERVICE_START.getRequiredPermission() <= userPermission);
         assertTrue(Command.Type.SERVICE_STOP.getRequiredPermission() <= userPermission);
         assertTrue(Command.Type.DOCKER_START.getRequiredPermission() <= userPermission);
-        assertTrue(Command.Type.FILE_UPLOAD.getRequiredPermission() <= userPermission);
+        assertFalse(Command.Type.FILE_UPLOAD.getRequiredPermission() <= userPermission);
 
         // Level 3 - Should be denied
         assertFalse(Command.Type.SYSTEM_REBOOT.getRequiredPermission() <= userPermission);

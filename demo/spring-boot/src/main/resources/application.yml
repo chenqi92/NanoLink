@@ -5,17 +5,18 @@ spring:
 
 # Server Configuration
 server:
+  address: ${NANOLINK_HTTP_BIND_ADDRESS:127.0.0.1}
   port: 8080
 
 # NanoLink Configuration
 nanolink:
+  api:
+    token: ${NANOLINK_API_TOKEN}
   server:
     # gRPC port for agent connections
     grpc-port: 39100
-    # WebSocket port for dashboard
-    ws-port: 9101
-    # Token for authentication (leave empty for dev mode)
-    token: ""
+    # Required: use the same high-entropy token configured on the agent.
+    token: ${NANOLINK_AGENT_TOKEN}
 
 # Logging Configuration
 logging:
@@ -31,7 +32,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info
   endpoint:
     health:
-      show-details: always
+      show-details: never

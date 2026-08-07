@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -289,16 +292,29 @@ func (s *MetricsService) GetPeriodicData(agentID string) *nanolink.PeriodicData 
 }
 
 func main() {
+	agentToken := requireSecretEnv("NANOLINK_AGENT_TOKEN")
+	apiToken := requireSecretEnv("NANOLINK_API_TOKEN")
+	tlsCert := strings.TrimSpace(os.Getenv("NANOLINK_TLS_CERT"))
+	tlsKey := strings.TrimSpace(os.Getenv("NANOLINK_TLS_KEY"))
+	if (tlsCert == "") != (tlsKey == "") {
+		log.Fatal("NANOLINK_TLS_CERT and NANOLINK_TLS_KEY must be configured together")
+	}
+
 	// Initialize metrics service
 	metricsService := NewMetricsService()
 
 	// Initialize NanoLink server
-	// WsPort: for dashboard WebSocket connections (default: 9100)
 	// GrpcPort: for agent gRPC connections (default: 39100)
 	server := nanolink.NewServer(nanolink.Config{
-		WsPort:   9100,
 		GrpcPort: 39100,
-		// StaticFilesPath: "/path/to/dashboard", // Optional: serve dashboard static files
+		TLSCert:  tlsCert,
+		TLSKey:   tlsKey,
+		TokenValidator: func(token string) nanolink.ValidationResult {
+			if constantTimeTokenEqual(agentToken, token) {
+				return nanolink.ValidationResult{Valid: true, PermissionLevel: nanolink.PermissionSystemAdmin}
+			}
+			return nanolink.ValidationResult{Valid: false, ErrorMessage: "invalid token"}
+		},
 	})
 
 	// Set callbacks
@@ -330,7 +346,7 @@ func main() {
 
 	// Start NanoLink server in background
 	go func() {
-		log.Printf("NanoLink Server starting - WebSocket port 9100, gRPC port 39100")
+		log.Printf("NanoLink Server starting - gRPC port 39100")
 		if err := server.Start(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start NanoLink server: %v", err)
 		}
@@ -339,20 +355,9 @@ func main() {
 	// Initialize Gin router
 	router := gin.Default()
 
-	// CORS middleware
-	router.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type")
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-		c.Next()
-	})
-
 	// API routes
 	api := router.Group("/api")
+	api.Use(requireBearerToken(apiToken))
 	{
 		// Agent endpoints
 		api.GET("/agents", func(c *gin.Context) {
@@ -476,8 +481,47 @@ func main() {
 	}
 
 	// Start HTTP server
-	log.Printf("REST API server starting on http://localhost:8080")
-	if err := router.Run(":8080"); err != nil {
+	bindAddress := strings.TrimSpace(os.Getenv("NANOLINK_HTTP_BIND_ADDRESS"))
+	if bindAddress == "" {
+		bindAddress = "127.0.0.1"
+	}
+	httpServer := &http.Server{
+		Addr:              bindAddress + ":8080",
+		Handler:           http.MaxBytesHandler(router, 1<<20),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20,
+	}
+	log.Printf("REST API server starting on http://%s", httpServer.Addr)
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to start HTTP server: %v", err)
+	}
+}
+
+func requireSecretEnv(name string) string {
+	value := strings.TrimSpace(os.Getenv(name))
+	if len([]byte(value)) < 32 {
+		log.Fatalf("%s must be configured with at least 32 bytes", name)
+	}
+	return value
+}
+
+func constantTimeTokenEqual(expected, actual string) bool {
+	return len(actual) == len(expected) &&
+		subtle.ConstantTimeCompare([]byte(expected), []byte(actual)) == 1
+}
+
+func requireBearerToken(expected string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		parts := strings.SplitN(strings.TrimSpace(c.GetHeader("Authorization")), " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") ||
+			!constantTimeTokenEqual(expected, parts[1]) {
+			c.Header("WWW-Authenticate", `Bearer realm="nanolink-demo"`)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		c.Next()
 	}
 }

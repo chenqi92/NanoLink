@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"crypto/subtle"
+	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -11,18 +15,117 @@ import (
 
 const AuthCookieName = "nanolink_session"
 
+const defaultSecurityCSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+
+// NewForwardedHeadersMiddleware removes proxy-supplied identity/scheme headers
+// unless the direct peer belongs to the configured trusted proxy set. This
+// protects code outside Gin's ClientIP implementation (cookie and origin
+// handling in particular) from spoofed X-Forwarded-* headers.
+func NewForwardedHeadersMiddleware(trustedProxies []string) (gin.HandlerFunc, error) {
+	prefixes := make([]netip.Prefix, 0, len(trustedProxies))
+	for _, raw := range trustedProxies {
+		entry := strings.TrimSpace(raw)
+		if entry == "" {
+			continue
+		}
+		if strings.Contains(entry, "/") {
+			prefix, err := netip.ParsePrefix(entry)
+			if err != nil {
+				return nil, fmt.Errorf("invalid trusted proxy %q: %w", entry, err)
+			}
+			prefixes = append(prefixes, prefix.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(entry)
+		if err != nil {
+			return nil, fmt.Errorf("invalid trusted proxy %q: %w", entry, err)
+		}
+		addr = addr.Unmap()
+		prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+
+	return func(c *gin.Context) {
+		peerHost, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+		if err != nil {
+			peerHost = c.Request.RemoteAddr
+		}
+		peer, parseErr := netip.ParseAddr(strings.Trim(peerHost, "[]"))
+		trusted := false
+		if parseErr == nil {
+			peer = peer.Unmap()
+			for _, prefix := range prefixes {
+				if prefix.Contains(peer) {
+					trusted = true
+					break
+				}
+			}
+		}
+		if !trusted {
+			for _, header := range []string{
+				"Forwarded",
+				"X-Forwarded-For",
+				"X-Forwarded-Host",
+				"X-Forwarded-Proto",
+				"X-Forwarded-Ssl",
+				"X-Real-Ip",
+			} {
+				c.Request.Header.Del(header)
+			}
+		}
+		c.Next()
+	}, nil
+}
+
+// LimitRequestBody places a hard cap on API request bodies before a handler
+// attempts JSON decoding. WebSocket handshakes and bodyless requests are
+// unaffected.
+func LimitRequestBody(maxBytes int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if maxBytes > 0 && c.Request.Body != nil {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+		}
+		c.Next()
+	}
+}
+
+// SecurityHeaders adds browser hardening headers to API and dashboard responses.
+func SecurityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Content-Security-Policy", defaultSecurityCSP)
+		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		c.Header("Referrer-Policy", "no-referrer")
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		if isSecureRequest(c.Request) {
+			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		c.Next()
+	}
+}
+
+// RequireBearerToken protects machine-consumed endpoints such as Prometheus
+// without accepting browser cookies or query-string credentials.
+func RequireBearerToken(expected string) gin.HandlerFunc {
+	expectedBytes := []byte(expected)
+	return func(c *gin.Context) {
+		actual, ok := extractBearerToken(c.GetHeader("Authorization"))
+		if !ok || len(actual) != len(expectedBytes) || subtle.ConstantTimeCompare([]byte(actual), expectedBytes) != 1 {
+			c.Header("WWW-Authenticate", `Bearer realm="nanolink"`)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		c.Next()
+	}
+}
+
 // ExtractRequestToken returns the bearer token from the Authorization header or auth cookie.
 func ExtractRequestToken(c *gin.Context) (string, bool) {
 	return ExtractTokenFromHTTPRequest(c.Request)
 }
 
-// ExtractTokenFromHTTPRequest returns the bearer token from (in order) the
-// Authorization header, the auth cookie, or a "token" URL query parameter.
-//
-// The query-param fallback exists for WebSocket endpoints (/ws/dashboard,
-// /ws/shell/:id): browsers cannot attach custom headers to a WebSocket
-// handshake, and token-only web clients have no auth cookie, so the token must
-// ride along in the URL. Header/cookie are preferred and checked first.
+// ExtractTokenFromHTTPRequest returns the bearer token from the Authorization
+// header or the HttpOnly auth cookie. Query-string credentials are deliberately
+// rejected because URLs are routinely captured in access logs and telemetry.
 func ExtractTokenFromHTTPRequest(r *http.Request) (string, bool) {
 	if token, ok := extractBearerToken(r.Header.Get("Authorization")); ok {
 		return token, true
@@ -30,10 +133,6 @@ func ExtractTokenFromHTTPRequest(r *http.Request) (string, bool) {
 
 	if cookie, err := r.Cookie(AuthCookieName); err == nil && cookie.Value != "" {
 		return cookie.Value, true
-	}
-
-	if token := r.URL.Query().Get("token"); token != "" {
-		return token, true
 	}
 
 	return "", false
@@ -47,7 +146,7 @@ func SetAuthCookie(c *gin.Context, token string, ttl time.Duration) {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   isSecureRequest(c.Request),
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(ttl.Seconds()),
 	})
 }
@@ -60,7 +159,7 @@ func ClearAuthCookie(c *gin.Context) {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   isSecureRequest(c.Request),
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})

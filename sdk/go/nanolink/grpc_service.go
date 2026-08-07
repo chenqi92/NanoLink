@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/chenqi92/NanoLink/sdk/go/nanolink/proto"
 )
@@ -161,9 +165,49 @@ func (s *NanoLinkServicer) Authenticate(ctx context.Context, req *pb.AuthRequest
 	}, nil
 }
 
+// authenticateStream validates the bearer credential attached to the gRPC
+// stream metadata. The agent already sends this metadata on StreamMetrics;
+// validating it here closes the gap where the unary Authenticate call and the
+// subsequent stream were otherwise unrelated connections.
+func (s *NanoLinkServicer) authenticateStream(ctx context.Context) (ValidationResult, bool, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ValidationResult{}, false, nil
+	}
+	values := md.Get("authorization")
+	if len(values) == 0 {
+		return ValidationResult{}, false, nil
+	}
+	parts := strings.SplitN(strings.TrimSpace(values[0]), " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") || parts[1] == "" {
+		return ValidationResult{}, false, fmt.Errorf("invalid authorization metadata")
+	}
+	result := s.tokenValidator(parts[1])
+	if !result.Valid {
+		message := result.ErrorMessage
+		if message == "" {
+			message = "invalid token"
+		}
+		return result, false, fmt.Errorf("%s", message)
+	}
+	return result, true, nil
+}
+
 // StreamMetrics handles bidirectional metrics streaming
 func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) error {
 	log.Printf("New metrics stream connection")
+
+	authResult, authenticated, authErr := s.authenticateStream(stream.Context())
+	if authErr != nil {
+		return status.Error(codes.Unauthenticated, authErr.Error())
+	}
+	if s.server.config.RequireAuthentication && !authenticated {
+		return status.Error(codes.Unauthenticated, "bearer token required")
+	}
+	streamPermission := PermissionReadOnly
+	if authenticated {
+		streamPermission = authResult.PermissionLevel
+	}
 
 	var agent *AgentConnection
 	var agentID string
@@ -205,12 +249,6 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 
 			// Register agent from first metrics
 			if agent == nil {
-				// P0-3: 强制认证模式检查
-				if s.server.config.RequireAuthentication {
-					log.Printf("SECURITY: Rejecting unauthenticated metrics stream (RequireAuthentication=true)")
-					return fmt.Errorf("authentication required: use Authenticate RPC before streaming metrics")
-				}
-
 				hostname := SanitizeHostname(protoMetrics.Hostname)
 
 				// Check for existing agent with same hostname
@@ -241,9 +279,13 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 					arch = protoMetrics.Cpu.Architecture
 				}
 
-				agent = NewAgentConnectionFromGRPC(hostname, osName, arch, "0.2.0", PermissionReadOnly)
+				agent = NewAgentConnectionFromGRPC(hostname, osName, arch, "0.2.0", streamPermission)
 				agentID = agent.AgentID
-				log.Printf("WARNING: Agent %s registered via stream without authentication - using READ_ONLY permission", hostname)
+				if authenticated {
+					log.Printf("Agent %s registered via authenticated metrics stream with permission %d", hostname, streamPermission)
+				} else {
+					log.Printf("WARNING: Agent %s registered via anonymous metrics stream with READ_ONLY permission", hostname)
+				}
 				s.server.registerAgent(agent)
 				s.registerAgentStream(agent, stream)
 				log.Printf("Agent registered from metrics: %s (%s)", hostname, agentID)
@@ -315,10 +357,14 @@ func (s *NanoLinkServicer) StreamMetrics(stream pb.NanoLinkService_StreamMetrics
 						protoStatic.SystemInfo.OsName,
 						arch,
 						getVersionOrDefault(protoStatic.AgentVersion),
-						PermissionReadOnly,
+						streamPermission,
 					)
 					agentID = agent.AgentID
-					log.Printf("WARNING: Agent %s registered via static info without authentication - using READ_ONLY permission", hostname)
+					if authenticated {
+						log.Printf("Agent %s registered via authenticated static-info stream with permission %d", hostname, streamPermission)
+					} else {
+						log.Printf("WARNING: Agent %s registered via anonymous static-info stream with READ_ONLY permission", hostname)
+					}
 					s.server.registerAgent(agent)
 					s.registerAgentStream(agent, stream)
 					log.Printf("Agent registered from static info: %s (%s)", hostname, agentID)

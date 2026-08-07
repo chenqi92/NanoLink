@@ -255,6 +255,14 @@ func (s *AlertService) ListInstances(status string) ([]database.AlertInstance, e
 	return out, nil
 }
 
+func (s *AlertService) GetInstance(id uint) (*database.AlertInstance, error) {
+	var instance database.AlertInstance
+	if err := s.db.First(&instance, id).Error; err != nil {
+		return nil, err
+	}
+	return &instance, nil
+}
+
 func (s *AlertService) AckInstance(id uint, username string) error {
 	now := time.Now()
 	return s.db.Model(&database.AlertInstance{}).
@@ -268,6 +276,19 @@ func (s *AlertService) AckAll(username string) (int64, error) {
 	now := time.Now()
 	res := s.db.Model(&database.AlertInstance{}).
 		Where("status = ?", "firing").
+		Updates(map[string]interface{}{"status": "acked", "ack_by": username, "acked_at": &now})
+	return res.RowsAffected, res.Error
+}
+
+// AckAllForAgents acknowledges firing alerts only for the explicitly visible
+// agents. An empty list is a no-op and never broadens into an unfiltered query.
+func (s *AlertService) AckAllForAgents(username string, agentIDs []string) (int64, error) {
+	if len(agentIDs) == 0 {
+		return 0, nil
+	}
+	now := time.Now()
+	res := s.db.Model(&database.AlertInstance{}).
+		Where("status = ? AND agent_id IN ?", "firing", agentIDs).
 		Updates(map[string]interface{}{"status": "acked", "ack_by": username, "acked_at": &now})
 	return res.RowsAffected, res.Error
 }

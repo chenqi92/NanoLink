@@ -41,7 +41,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         on_realtime_metrics: Optional[Callable[[RealtimeMetrics], None]] = None,
         on_static_info: Optional[Callable[[StaticInfo], None]] = None,
         on_periodic_data: Optional[Callable[[PeriodicData], None]] = None,
-        require_authentication: bool = False,  # P0-3: 可选强制认证
+        require_authentication: bool = True,
     ):
         self.token_validator = token_validator
         self.on_agent_connect = on_agent_connect
@@ -176,6 +176,31 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
         """Handle bidirectional metrics stream"""
         logger.debug("New metrics stream connection")
 
+        metadata = dict(context.invocation_metadata())
+        authorization = metadata.get("authorization", "")
+        stream_auth = ValidationResult(valid=False, error_message="Bearer token required")
+        if authorization:
+            scheme, separator, token = authorization.strip().partition(" ")
+            if separator and scheme.lower() == "bearer" and token:
+                stream_auth = self.token_validator(token)
+            else:
+                context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid authorization metadata")
+                return
+            if not stream_auth.valid:
+                context.abort(
+                    grpc.StatusCode.UNAUTHENTICATED,
+                    stream_auth.error_message or "Invalid token",
+                )
+                return
+        elif self.require_authentication:
+            context.abort(grpc.StatusCode.UNAUTHENTICATED, "Bearer token required")
+            return
+        stream_permission = (
+            stream_auth.permission_level
+            if stream_auth.valid
+            else PermissionLevel.READ_ONLY
+        )
+
         agent: Optional[AgentConnection] = None
         agent_id: Optional[str] = None
 
@@ -195,13 +220,6 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 
                         # Register agent from first metrics
                         if agent is None:
-                            # P0-3: 强制认证模式检查
-                            if self.require_authentication:
-                                logger.warning("SECURITY: Rejecting unauthenticated metrics stream (require_authentication=True)")
-                                context.abort(grpc.StatusCode.UNAUTHENTICATED, 
-                                            "Authentication required: use Authenticate RPC before streaming metrics")
-                                return
-
                             hostname = sanitize_hostname(proto_metrics.hostname)
 
                             # Check for existing agent. Security: an unauthenticated
@@ -238,11 +256,20 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                                 os=os_name,
                                 arch=arch,
                                 version="0.2.0",
-                                permission_level=PermissionLevel.READ_ONLY,  # Default to READ_ONLY for unauthenticated
+                                permission_level=stream_permission,
                                 connected_at=datetime.now(),
                                 last_heartbeat=datetime.now(),
                             )
-                            logger.warning(f"Agent {hostname} registered via stream without authentication - using READ_ONLY permission")
+                            if stream_auth.valid:
+                                logger.info(
+                                    f"Agent {hostname} registered via authenticated metrics "
+                                    f"stream with permission {stream_permission}"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Agent {hostname} registered via anonymous metrics "
+                                    "stream with READ_ONLY permission"
+                                )
                             self._register_agent(agent, context)
 
                         # Convert and handle metrics
@@ -307,7 +334,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
                                     os=os_name,
                                     arch=arch,
                                     version=proto_static.agent_version or "unknown",
-                                    permission_level=PermissionLevel.READ_ONLY,  # Default to READ_ONLY for unauthenticated
+                                    permission_level=stream_permission,
                                     connected_at=datetime.now(),
                                     last_heartbeat=datetime.now(),
                                 )
@@ -883,6 +910,7 @@ class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
 def create_grpc_server(
     servicer: NanoLinkServicer,
     port: int = 39100,
+    host: str = "0.0.0.0",
     max_workers: int = 10,
     tls_cert_path: Optional[str] = None,
     tls_key_path: Optional[str] = None,
@@ -905,7 +933,7 @@ def create_grpc_server(
         ]
     )
     nanolink_pb2_grpc.add_NanoLinkServiceServicer_to_server(servicer, server)
-    addr = f'[::]:{port}'
+    addr = f'[{host}]:{port}' if ':' in host and not host.startswith('[') else f'{host}:{port}'
     if tls_cert_path or tls_key_path:
         if not (tls_cert_path and tls_key_path):
             raise ValueError("both tls_cert_path and tls_key_path must be set to enable TLS")

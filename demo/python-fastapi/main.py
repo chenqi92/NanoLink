@@ -7,12 +7,14 @@ monitoring server that receives metrics from agents.
 
 import asyncio
 import logging
+import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Import NanoLink SDK (use local path for development)
@@ -21,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "sdk" / "python"))
 
 from nanolink import NanoLinkServer, ServerConfig
-from nanolink.connection import AgentConnection
+from nanolink.connection import AgentConnection, ValidationResult
 from nanolink.command import Command
 from nanolink.metrics import Metrics, RealtimeMetrics, StaticInfo, PeriodicData
 
@@ -312,6 +314,13 @@ metrics_service = MetricsService()
 nanolink_server: Optional[NanoLinkServer] = None
 
 
+def require_secret_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if len(value.encode("utf-8")) < 32:
+        raise RuntimeError(f"{name} must be configured with at least 32 bytes")
+    return value
+
+
 # === FastAPI App ===
 
 @asynccontextmanager
@@ -320,9 +329,21 @@ async def lifespan(app: FastAPI):
     global nanolink_server
 
     # Initialize NanoLink server
-    # ws_port: for dashboard WebSocket connections (default: 9100)
-    # grpc_port: for agent gRPC connections (default: 39100)
-    config = ServerConfig(ws_port=9100, grpc_port=39100)
+    agent_token = require_secret_env("NANOLINK_AGENT_TOKEN")
+    require_secret_env("NANOLINK_API_TOKEN")
+
+    def validate_agent_token(token: str) -> ValidationResult:
+        if secrets.compare_digest(agent_token, token):
+            return ValidationResult(valid=True, permission_level=3)
+        return ValidationResult(valid=False, error_message="Invalid token")
+
+    config = ServerConfig(
+        grpc_port=39100,
+        host=os.environ.get("NANOLINK_GRPC_BIND_ADDRESS", "127.0.0.1"),
+        tls_cert_path=os.environ.get("NANOLINK_TLS_CERT") or None,
+        tls_key_path=os.environ.get("NANOLINK_TLS_KEY") or None,
+        token_validator=validate_agent_token,
+    )
     nanolink_server = NanoLinkServer(config)
 
     @nanolink_server.on_agent_connect
@@ -352,7 +373,7 @@ async def lifespan(app: FastAPI):
         metrics_service.process_periodic(periodic)
 
     # Start NanoLink server in background
-    logger.info("Starting NanoLink Server - WebSocket port 9100, gRPC port 39100")
+    logger.info("Starting NanoLink Server - gRPC port 39100")
     await nanolink_server.start()
 
     yield
@@ -369,14 +390,24 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.middleware("http")
+async def authenticate_api(request: Request, call_next):
+    if request.url.path.startswith("/api/"):
+        expected = os.environ.get("NANOLINK_API_TOKEN", "").strip()
+        authorization = request.headers.get("authorization", "")
+        scheme, separator, token = authorization.partition(" ")
+        if (
+            len(expected.encode("utf-8")) < 32
+            or not separator
+            or scheme.lower() != "bearer"
+            or not secrets.compare_digest(expected, token)
+        ):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Unauthorized"},
+                headers={"WWW-Authenticate": 'Bearer realm="nanolink-demo"'},
+            )
+    return await call_next(request)
 
 
 # === API Routes ===
@@ -492,4 +523,9 @@ async def restart_container(hostname: str, request: DockerRequest):
 if __name__ == "__main__":
     import uvicorn
     logger.info("Starting REST API server on http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app,
+        host=os.environ.get("NANOLINK_HTTP_BIND_ADDRESS", "127.0.0.1"),
+        port=8000,
+        timeout_keep_alive=30,
+    )

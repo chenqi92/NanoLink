@@ -15,7 +15,7 @@ jobs:
     steps:
       # Release workflows - keep 5
       - name: Cleanup SDK Release
-        uses: Mattraks/delete-workflow-runs@v2
+        uses: Mattraks/delete-workflow-runs@0cf693bc9909e5e867ee8f27b813224ba862939c # v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
@@ -24,7 +24,7 @@ jobs:
           delete_workflow_pattern: sdk-release.yml
 
       - name: Cleanup Release Agent
-        uses: Mattraks/delete-workflow-runs@v2
+        uses: Mattraks/delete-workflow-runs@0cf693bc9909e5e867ee8f27b813224ba862939c # v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
@@ -33,7 +33,7 @@ jobs:
           delete_workflow_pattern: release.yml
 
       - name: Cleanup Apps Release
-        uses: Mattraks/delete-workflow-runs@v2
+        uses: Mattraks/delete-workflow-runs@0cf693bc9909e5e867ee8f27b813224ba862939c # v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
@@ -43,7 +43,7 @@ jobs:
 
       # Other workflows - keep fewer
       - name: Cleanup Test
-        uses: Mattraks/delete-workflow-runs@v2
+        uses: Mattraks/delete-workflow-runs@0cf693bc9909e5e867ee8f27b813224ba862939c # v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
@@ -52,7 +52,7 @@ jobs:
           delete_workflow_pattern: test.yml
 
       - name: Cleanup Auto Tag
-        uses: Mattraks/delete-workflow-runs@v2
+        uses: Mattraks/delete-workflow-runs@0cf693bc9909e5e867ee8f27b813224ba862939c # v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
@@ -61,7 +61,7 @@ jobs:
           delete_workflow_pattern: auto-tag.yml
 
       - name: Cleanup self
-        uses: Mattraks/delete-workflow-runs@v2
+        uses: Mattraks/delete-workflow-runs@0cf693bc9909e5e867ee8f27b813224ba862939c # v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}

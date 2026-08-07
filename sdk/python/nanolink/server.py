@@ -53,6 +53,7 @@ class ServerConfig:
         tls_cert_path: Path to TLS certificate (for gRPC TLS)
         tls_key_path: Path to TLS key (for gRPC TLS)
         token_validator: Token validation function
+        require_authentication: Require a valid bearer token on metrics streams
         heartbeat_timeout: Duration after which an agent is considered dead (default: 90s)
         heartbeat_check_interval: Interval for checking heartbeat timeouts (default: 30s)
     """
@@ -61,6 +62,7 @@ class ServerConfig:
     tls_cert_path: Optional[str] = None
     tls_key_path: Optional[str] = None
     token_validator: TokenValidator = default_token_validator
+    require_authentication: bool = True
     heartbeat_timeout: timedelta = DEFAULT_HEARTBEAT_TIMEOUT
     heartbeat_check_interval: timedelta = DEFAULT_HEARTBEAT_CHECK_INTERVAL
 
@@ -89,12 +91,6 @@ class NanoLinkServer:
 
     def __init__(self, config: Optional[ServerConfig] = None):
         self.config = config or ServerConfig()
-        if self.config.token_validator is default_token_validator:
-            logger.warning(
-                "no token_validator configured — every agent is accepted (READ_ONLY) and "
-                "anonymous metrics streams can register. Provide a token_validator before "
-                "production use."
-            )
         self._agents: Dict[str, AgentConnection] = {}
         self._grpc_server = None
         self._grpc_servicer = None
@@ -280,12 +276,14 @@ class NanoLinkServer:
             on_realtime_metrics=sync_on_realtime,
             on_static_info=sync_on_static,
             on_periodic_data=sync_on_periodic,
+            require_authentication=self.config.require_authentication,
         )
 
         # Create and start the gRPC server
         self._grpc_server = create_grpc_server(
             self._grpc_servicer,
             port=self.config.grpc_port,
+            host=self.config.host,
             tls_cert_path=self.config.tls_cert_path,
             tls_key_path=self.config.tls_key_path,
         )

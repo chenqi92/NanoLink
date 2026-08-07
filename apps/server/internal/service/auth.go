@@ -259,6 +259,10 @@ func ValidatePasswordStrength(password string) error {
 
 // InitSuperAdmin creates or updates the super admin account
 func (s *AuthService) InitSuperAdmin(username, password string) error {
+	if err := ValidatePasswordStrength(password); err != nil {
+		return fmt.Errorf("invalid bootstrap admin password: %w", err)
+	}
+
 	var user database.User
 	err := s.db.Where("username = ?", username).First(&user).Error
 
@@ -283,14 +287,26 @@ func (s *AuthService) InitSuperAdmin(username, password string) error {
 		return fmt.Errorf("database error: %w", err)
 	}
 
-	// Update existing super admin password if needed
-	if !user.IsSuperAdmin {
-		user.IsSuperAdmin = true
-		user.PasswordHash = string(hash)
-		if updateErr := s.db.Save(&user).Error; updateErr != nil {
+	passwordChanged := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil
+	if passwordChanged || !user.IsSuperAdmin {
+		updates := map[string]interface{}{
+			"is_super_admin": true,
+			"password_hash":  string(hash),
+		}
+		// A configured bootstrap password is the source of truth while it remains
+		// present. Rotating the environment variable therefore rotates the stored
+		// password and revokes every existing JWT for that account.
+		if passwordChanged {
+			updates["token_version"] = gorm.Expr("token_version + ?", 1)
+		}
+		if updateErr := s.db.Model(&database.User{}).Where("id = ?", user.ID).Updates(updates).Error; updateErr != nil {
 			return fmt.Errorf("failed to update super admin: %w", updateErr)
 		}
-		s.logger.Infof("User '%s' promoted to super admin", username)
+		if passwordChanged {
+			s.logger.Infof("Super admin '%s' password synchronized from bootstrap configuration; existing sessions revoked", username)
+		} else {
+			s.logger.Infof("User '%s' promoted to super admin", username)
+		}
 	}
 
 	return nil

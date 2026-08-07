@@ -1,4 +1,3 @@
-import type { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import type { Metrics, CpuMetrics, MemoryMetrics, GpuMetrics, NpuMetrics } from "@/lib/api"

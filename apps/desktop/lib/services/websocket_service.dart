@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/models.dart';
+import 'ws_channel.dart';
 
 /// WebSocket service for real-time dashboard updates
 class WebSocketService {
@@ -36,11 +37,11 @@ class WebSocketService {
     _intentionalDisconnect = false;
 
     try {
-      final uri = Uri.parse('$wsUrl?token=${Uri.encodeComponent(token ?? '')}');
+      final uri = Uri.parse(wsUrl);
       debugPrint('[WS] Connecting to $wsUrl');
-      
-      _channel = WebSocketChannel.connect(uri);
-      
+
+      _channel = connectAuthedWs(uri, token: token);
+
       _channel!.stream.listen(
         _onMessage,
         onError: _onError,
@@ -81,9 +82,10 @@ class WebSocketService {
         case 'metrics':
           if (onMetrics != null && payload is Map) {
             final metricsMap = <String, AgentMetrics>{};
-            
+
             // Check if single agent update or full update
-            if (payload.containsKey('agentId') && payload.containsKey('metrics')) {
+            if (payload.containsKey('agentId') &&
+                payload.containsKey('metrics')) {
               final agentId = payload['agentId'] as String;
               final metricsData = payload['metrics'] as Map<String, dynamic>;
               metricsMap[agentId] = AgentMetrics.fromJson(metricsData, agentId);
@@ -94,7 +96,7 @@ class WebSocketService {
                 }
               });
             }
-            
+
             onMetrics!(metricsMap);
           }
 

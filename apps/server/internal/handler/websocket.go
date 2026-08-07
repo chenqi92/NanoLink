@@ -61,7 +61,8 @@ func NewWebSocketHandler(as *service.AgentService, ats *service.AgentTokenServic
 
 // ServeHTTP implements http.Handler
 func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Get token from Header first (preferred), then fallback to query
+	// Agent credentials must be sent in the Authorization header. Query-string
+	// tokens are rejected because WebSocket URLs are commonly logged by proxies.
 	token := ""
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
@@ -72,14 +73,6 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			token = authHeader
 		}
 	}
-	// Fallback to query parameter (less secure, for backward compatibility)
-	if token == "" {
-		token = r.URL.Query().Get("token")
-		if token != "" {
-			h.logger.Warn("Token passed via URL query - use Authorization header for better security")
-		}
-	}
-
 	permission, valid := h.validateAgentToken(token, service.AgentInfo{})
 	if !valid {
 		h.logger.Warnf("Invalid token from %s", r.RemoteAddr)

@@ -6,7 +6,6 @@ This demo shows how to integrate NanoLink SDK with Go and Gin framework to creat
 
 - Receives real-time metrics from NanoLink agents
 - REST API for querying agents and metrics
-- Built-in NanoLink dashboard
 - Alert logging for high resource usage
 - Command execution on remote agents
 
@@ -21,14 +20,15 @@ This demo shows how to integrate NanoLink SDK with Go and Gin framework to creat
 
 ```bash
 cd demo/go-gin
-go mod tidy
+export NANOLINK_AGENT_TOKEN="$(openssl rand -hex 32)"
+export NANOLINK_API_TOKEN="$(openssl rand -hex 32)"
 go run main.go
 ```
 
 ### 2. Access the services
 
 - **REST API**: http://localhost:8080
-- **NanoLink Dashboard**: http://localhost:9100
+- **Agent gRPC**: localhost:39100
 
 ## Configuration
 
@@ -36,8 +36,10 @@ Configuration is done via environment variables or modify the code directly:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| PORT | 8080 | HTTP API port |
-| NANOLINK_PORT | 9100 | NanoLink WebSocket port |
+| `NANOLINK_AGENT_TOKEN` | Required | Agent gRPC bearer token, 32+ bytes |
+| `NANOLINK_API_TOKEN` | Required | REST API bearer token, 32+ bytes |
+| `NANOLINK_HTTP_BIND_ADDRESS` | `127.0.0.1` | REST bind address |
+| `NANOLINK_TLS_CERT` / `NANOLINK_TLS_KEY` | Empty | Optional gRPC TLS pair |
 
 ## API Endpoints
 
@@ -45,20 +47,20 @@ Configuration is done via environment variables or modify the code directly:
 
 ```bash
 # List all connected agents
-curl http://localhost:8080/api/agents
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8080/api/agents
 
 # Get metrics for specific agent
-curl http://localhost:8080/api/agents/{agentId}/metrics
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8080/api/agents/{agentId}/metrics
 ```
 
 ### Metrics
 
 ```bash
 # Get all latest metrics
-curl http://localhost:8080/api/metrics
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8080/api/metrics
 
 # Get cluster summary
-curl http://localhost:8080/api/summary
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8080/api/summary
 ```
 
 ### Commands
@@ -66,16 +68,19 @@ curl http://localhost:8080/api/summary
 ```bash
 # Restart a service
 curl -X POST http://localhost:8080/api/commands/agents/{hostname}/service/restart \
+  -H "Authorization: Bearer $NANOLINK_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serviceName": "nginx"}'
 
 # Kill a process
 curl -X POST http://localhost:8080/api/commands/agents/{hostname}/process/kill \
+  -H "Authorization: Bearer $NANOLINK_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"pid": 1234}'
 
 # Restart Docker container
 curl -X POST http://localhost:8080/api/commands/agents/{hostname}/docker/restart \
+  -H "Authorization: Bearer $NANOLINK_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"containerName": "my-app"}'
 ```
@@ -83,7 +88,7 @@ curl -X POST http://localhost:8080/api/commands/agents/{hostname}/docker/restart
 ### Health Check
 
 ```bash
-curl http://localhost:8080/api/health
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8080/api/health
 ```
 
 ## Project Structure
@@ -97,7 +102,7 @@ go-gin/
 
 ## How It Works
 
-1. **NanoLink Server** starts on port 9100 and accepts agent connections
+1. **NanoLink Server** starts a token-protected gRPC listener on port 39100
 2. **MetricsService** stores agent info and processes incoming metrics
 3. **Gin Router** exposes REST API endpoints on port 8080
 4. When agents connect, their info is registered in the service
@@ -106,7 +111,7 @@ go-gin/
 
 ## Production Considerations
 
-1. **Authentication**: Add proper token validation
+1. **Authentication**: Required for both agents and REST API
 2. **TLS**: Enable TLS for secure connections
 3. **Persistence**: Store metrics in a time-series database
 4. **Scaling**: Use Redis for shared state across instances

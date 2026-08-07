@@ -658,42 +658,45 @@ Dashboard 提供分步向导帮助你轻松部署代理。点击仪表盘上的 
 **快速启动 (docker run):**
 
 ```bash
+: "${NANOLINK_ADMIN_PASSWORD:?请先设置强管理员密码}"
+: "${NANOLINK_JWT_SECRET:?请先设置至少 32 字节的随机 JWT 密钥}"
+
 docker run -d \
   --name nanolink-server \
   --restart unless-stopped \
-  -p 8080:8080 \
-  -p 9100:9100 \
-  -p 39100:39100 \
+  -p 127.0.0.1:8080:8080 \
+  -p 127.0.0.1:9100:9100 \
+  -p 127.0.0.1:39100:39100 \
   -v nanolink-data:/app/data \
   -e NANOLINK_ADMIN_USERNAME=admin \
-  -e NANOLINK_ADMIN_PASSWORD=changeme \
-  -e NANOLINK_JWT_SECRET=your-secret-key \
+  -e NANOLINK_ADMIN_PASSWORD \
+  -e NANOLINK_JWT_SECRET \
   ghcr.io/chenqi92/nanolink-server:latest
 ```
+
+可以使用 `openssl rand -hex 32` 生成 JWT 密钥。只有在前方配置了 TLS 终止和访问控制的反向代理时，才应把端口绑定到非回环地址。
 
 **使用 docker-compose（推荐）:**
 
 创建 `docker-compose.yml`：
 
 ```yaml
-version: '3.8'
-
 services:
   nanolink-server:
     image: ghcr.io/chenqi92/nanolink-server:latest
     container_name: nanolink-server
     restart: unless-stopped
     ports:
-      - "8080:8080"   # HTTP API 和 Dashboard
-      - "9100:9100"   # Dashboard 实时 WebSocket
-      - "39100:39100"   # Agent gRPC 连接
+      - "${NANOLINK_BIND_ADDRESS:-127.0.0.1}:8080:8080"   # HTTP API 和 Dashboard
+      - "${NANOLINK_BIND_ADDRESS:-127.0.0.1}:9100:9100"   # Dashboard 实时 WebSocket
+      - "${NANOLINK_BIND_ADDRESS:-127.0.0.1}:39100:39100" # Agent gRPC 连接
     volumes:
       - nanolink-data:/app/data
     environment:
       - TZ=Asia/Shanghai
       - NANOLINK_ADMIN_USERNAME=admin
-      - NANOLINK_ADMIN_PASSWORD=changeme  # ⚠️ 生产环境请修改！
-      - NANOLINK_JWT_SECRET=your-secret-key-change-me  # ⚠️ 生产环境请修改！
+      - NANOLINK_ADMIN_PASSWORD=${NANOLINK_ADMIN_PASSWORD:?请设置强管理员密码}
+      - NANOLINK_JWT_SECRET=${NANOLINK_JWT_SECRET:?请设置至少 32 字节的随机密钥}
       - NANOLINK_DATABASE_PATH=/app/data/nanolink.db
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/health"]
@@ -713,7 +716,7 @@ volumes:
 |------|------|--------|
 | `NANOLINK_ADMIN_USERNAME` | 超级管理员用户名 | `admin` |
 | `NANOLINK_ADMIN_PASSWORD` | 超级管理员密码 | （必填） |
-| `NANOLINK_JWT_SECRET` | JWT 签名密钥 | （自动生成，不推荐） |
+| `NANOLINK_JWT_SECRET` | JWT 签名密钥（至少 32 字节） | （必填） |
 | `NANOLINK_DATABASE_PATH` | SQLite 数据库路径 | `/app/data/nanolink.db` |
 | `NANOLINK_AUTH_ENABLED` | 启用认证 | `true` |
 

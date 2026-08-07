@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react"
-import { useTranslation } from "react-i18next"
 import { Settings, X, Check, Monitor } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { terminalThemes, getThemeById, type TerminalTheme } from "./TerminalThemes"
+import { terminalThemes, getThemeById } from "./TerminalThemes"
 
 export interface TerminalSettings {
   themeId: string
@@ -42,7 +41,6 @@ export function TerminalSettingsDialog({
   settings,
   onSettingsChange,
 }: TerminalSettingsDialogProps) {
-  const { t } = useTranslation()
   const [localSettings, setLocalSettings] = useState(settings)
 
   useEffect(() => {

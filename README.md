@@ -658,64 +658,47 @@ The wizard automatically:
 **Quick Start (docker run):**
 
 ```bash
+export NANOLINK_ADMIN_PASSWORD='replace-with-a-strong-password1'
+export NANOLINK_JWT_SECRET="$(openssl rand -hex 32)"
+
 docker run -d \
   --name nanolink-server \
   --restart unless-stopped \
-  -p 8080:8080 \
-  -p 9100:9100 \
-  -p 39100:39100 \
+  -p 127.0.0.1:8080:8080 \
+  -p 127.0.0.1:9100:9100 \
+  -p 127.0.0.1:39100:39100 \
   -v nanolink-data:/app/data \
   -e NANOLINK_ADMIN_USERNAME=admin \
-  -e NANOLINK_ADMIN_PASSWORD=changeme \
-  -e NANOLINK_JWT_SECRET=your-secret-key \
+  -e NANOLINK_ADMIN_PASSWORD \
+  -e NANOLINK_JWT_SECRET \
   ghcr.io/chenqi92/nanolink-server:latest
 ```
 
 **Using docker-compose (Recommended):**
 
-Create a `docker-compose.yml`:
+Use the checked-in `apps/docker/docker-compose.yml` and provide an uncommitted
+`.env` file. Compose refuses to start if these required values are missing:
 
-```yaml
-version: '3.8'
-
-services:
-  nanolink-server:
-    image: ghcr.io/chenqi92/nanolink-server:latest
-    container_name: nanolink-server
-    restart: unless-stopped
-    ports:
-      - "8080:8080"   # HTTP API & Dashboard
-      - "9100:9100"   # WebSocket for Dashboard real-time
-      - "39100:39100"   # gRPC for Agents
-    volumes:
-      - nanolink-data:/app/data
-    environment:
-      - TZ=Asia/Shanghai
-      - NANOLINK_ADMIN_USERNAME=admin
-      - NANOLINK_ADMIN_PASSWORD=changeme  # ⚠️ Change in production!
-      - NANOLINK_JWT_SECRET=your-secret-key-change-me  # ⚠️ Change in production!
-      - NANOLINK_DATABASE_PATH=/app/data/nanolink.db
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-volumes:
-  nanolink-data:
+```dotenv
+NANOLINK_ADMIN_USERNAME=admin
+NANOLINK_ADMIN_PASSWORD=replace-with-a-strong-password1
+NANOLINK_JWT_SECRET=replace-with-at-least-32-random-bytes
 ```
 
-Run with: `docker-compose up -d`
+Run with: `docker compose -f apps/docker/docker-compose.yml up -d`
 
 **Environment Variables:**
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `NANOLINK_ADMIN_USERNAME` | Super admin username | `admin` |
-| `NANOLINK_ADMIN_PASSWORD` | Super admin password | (required) |
-| `NANOLINK_JWT_SECRET` | JWT signing secret | (auto-generated, not recommended) |
+| `NANOLINK_ADMIN_USERNAME` | Bootstrap super admin username | Required with password |
+| `NANOLINK_ADMIN_PASSWORD` | Bootstrap password; rotating it revokes existing admin sessions | Required, 8+ chars with letters and numbers |
+| `NANOLINK_JWT_SECRET` | JWT signing secret | Required in release mode, 32+ random bytes |
 | `NANOLINK_DATABASE_PATH` | SQLite database path | `/app/data/nanolink.db` |
-| `NANOLINK_AUTH_ENABLED` | Enable authentication | `true` |
+| `NANOLINK_TRUSTED_PROXIES` | Comma-separated proxy IPs/CIDRs allowed to supply forwarded headers | Empty |
+| `NANOLINK_MAX_REQUEST_BODY_BYTES` | Maximum API request body | `1048576` |
+| `NANOLINK_PROMETHEUS_ENABLED` | Enable protected `/metrics` endpoint | `false` |
+| `NANOLINK_PROMETHEUS_TOKEN` | Bearer token for Prometheus | Required when enabled in release mode |
 
 **Port Mapping:**
 
@@ -725,7 +708,8 @@ Run with: `docker-compose up -d`
 | 9100 | 9100 or 19100 | WebSocket | Dashboard real-time updates |
 | 39100 | 39100 or 49100 | gRPC | Agent connections |
 
-> **Tip:** For production, map to non-standard external ports like `18080:8080`, `19100:9100`, `49100:39100`
+> **Production:** Keep ports bound to loopback unless a firewall or TLS reverse
+> proxy protects them. Changing port numbers is not a security boundary.
 
 Access Dashboard: `http://<server-ip>:8080` (or your mapped port)
 
@@ -966,8 +950,13 @@ NanoLink supports the **Model Context Protocol (MCP)** for AI-driven operations.
 mcp:
   enabled: true
   transport: stdio  # or "sse"
+  sse_bind_address: 127.0.0.1
   sse_port: 8081
 ```
+
+SSE transport also requires `NANOLINK_MCP_SSE_AUTH_TOKEN` with at least 32
+random bytes in release mode. Clients must send it as an `Authorization: Bearer`
+header; URL query tokens are not accepted.
 
 ### Available MCP Tools
 

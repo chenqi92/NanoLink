@@ -1,7 +1,10 @@
 package nanolink
 
 import (
+	"context"
 	"testing"
+
+	"google.golang.org/grpc/metadata"
 )
 
 func TestNewServer(t *testing.T) {
@@ -13,6 +16,23 @@ func TestNewServer(t *testing.T) {
 
 	if server.config.GrpcPort != DefaultGrpcPort {
 		t.Errorf("Expected default gRPC port %d, got %d", DefaultGrpcPort, server.config.GrpcPort)
+	}
+}
+
+func TestStreamBearerMetadataIsValidated(t *testing.T) {
+	server := NewServer(Config{TokenValidator: func(token string) ValidationResult {
+		return ValidationResult{Valid: token == "valid", PermissionLevel: PermissionSystemAdmin}
+	}})
+	servicer := NewNanoLinkServicer(server)
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer valid"))
+	result, authenticated, err := servicer.authenticateStream(ctx)
+	if err != nil || !authenticated || result.PermissionLevel != PermissionSystemAdmin {
+		t.Fatalf("valid stream credential rejected: authenticated=%v result=%+v err=%v", authenticated, result, err)
+	}
+
+	badCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer invalid"))
+	if _, _, err := servicer.authenticateStream(badCtx); err == nil {
+		t.Fatal("invalid stream credential was accepted")
 	}
 }
 
@@ -30,12 +50,22 @@ func TestNewServerWithCustomConfig(t *testing.T) {
 func TestDefaultTokenValidator(t *testing.T) {
 	result := DefaultTokenValidator("any-token")
 
-	if !result.Valid {
-		t.Error("Expected default validator to accept all tokens")
+	if result.Valid {
+		t.Error("Expected default validator to reject tokens")
 	}
+}
 
-	if result.PermissionLevel != 0 {
-		t.Errorf("Expected permission level 0, got %d", result.PermissionLevel)
+func TestNewServerRequiresAuthenticationByDefault(t *testing.T) {
+	server := NewServer(Config{})
+	if !server.config.RequireAuthentication {
+		t.Fatal("expected authentication to be required by default")
+	}
+}
+
+func TestUnauthenticatedMetricsRequireExplicitOptOut(t *testing.T) {
+	server := NewServer(Config{AllowUnauthenticatedMetrics: true})
+	if server.config.RequireAuthentication {
+		t.Fatal("expected explicit compatibility opt-out to allow anonymous metrics")
 	}
 }
 

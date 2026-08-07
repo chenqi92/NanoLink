@@ -19,8 +19,18 @@ servers:
     port: 39100          # gRPC port (default: 39100)
     token: your_token_here
     permission: 0        # 0=READ_ONLY, 1=BASIC_WRITE, 2=SERVICE_CONTROL, 3=SYSTEM_ADMIN
-    tls_enabled: false   # Enable TLS (grpcs://)
+    tls_enabled: true    # Production default: encrypted gRPC (grpcs://)
     tls_verify: true     # Verify TLS certificates
+
+# Agent self-update is fail-closed: applying a binary requires an Ed25519
+# signature verified by a pinned release key. Leave auto-apply disabled unless
+# your release pipeline publishes detached signatures.
+update:
+  auto_check: false
+  auto_download: false
+  auto_apply: false
+  require_signature: true
+  # public_key: "<32-byte Ed25519 public key, hex or base64>"
 
 # Metrics collection settings
 collector:

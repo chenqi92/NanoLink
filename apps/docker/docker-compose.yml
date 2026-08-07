@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   nanolink-server:
     build:
@@ -8,21 +6,23 @@ services:
     image: ghcr.io/chenqi92/nanolink-server:latest
     container_name: nanolink-server
     restart: unless-stopped
+    # Loopback-only by default. Set NANOLINK_BIND_ADDRESS=0.0.0.0 only when a
+    # firewall or TLS reverse proxy protects these ports.
     ports:
-      - "8080:8080"   # HTTP API & Dashboard
-      - "9100:9100"   # WebSocket for agents
-      - "39100:39100"   # gRPC for agents
+      - "${NANOLINK_BIND_ADDRESS:-127.0.0.1}:8080:8080"   # HTTP API & Dashboard
+      - "${NANOLINK_BIND_ADDRESS:-127.0.0.1}:9100:9100"   # WebSocket for legacy agents
+      - "${NANOLINK_BIND_ADDRESS:-127.0.0.1}:39100:39100" # gRPC for agents
     volumes:
       - nanolink-data:/app/data
       - ./config.yaml:/app/config.yaml:ro
     environment:
       - TZ=Asia/Shanghai
       - NANOLINK_SERVER_MODE=release
-      # Superadmin credentials (REQUIRED for first deployment)
-      - NANOLINK_ADMIN_USERNAME=admin
-      - NANOLINK_ADMIN_PASSWORD=changeme  # Change this in production!
-      # JWT configuration
-      - NANOLINK_JWT_SECRET=your-secret-key-change-me  # Change this in production!
+      # Required secrets: Compose refuses to start until the operator supplies
+      # non-placeholder values (for example via a local, uncommitted .env file).
+      - "NANOLINK_ADMIN_USERNAME=${NANOLINK_ADMIN_USERNAME:?Set NANOLINK_ADMIN_USERNAME}"
+      - "NANOLINK_ADMIN_PASSWORD=${NANOLINK_ADMIN_PASSWORD:?Set a strong NANOLINK_ADMIN_PASSWORD}"
+      - "NANOLINK_JWT_SECRET=${NANOLINK_JWT_SECRET:?Set a random 32-byte-or-longer NANOLINK_JWT_SECRET}"
       - NANOLINK_JWT_EXPIRE_HOUR=24
       # Database configuration (SQLite by default)
       - NANOLINK_DATABASE_TYPE=sqlite

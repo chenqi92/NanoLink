@@ -1,0 +1,48 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+
+  - package-ecosystem: npm
+    directory: /apps/server/web
+    schedule: { interval: weekly }
+    groups:
+      web-minor-patches:
+        update-types: [minor, patch]
+
+  - package-ecosystem: gomod
+    directory: /apps/server
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: /sdk/go
+    schedule: { interval: weekly }
+  - package-ecosystem: gomod
+    directory: /demo/go-gin
+    schedule: { interval: weekly }
+
+  - package-ecosystem: cargo
+    directory: /agent
+    schedule: { interval: weekly }
+
+  - package-ecosystem: maven
+    directory: /sdk/java
+    schedule: { interval: weekly }
+  - package-ecosystem: maven
+    directory: /demo/spring-boot
+    schedule: { interval: weekly }
+
+  - package-ecosystem: pip
+    directory: /sdk/python
+    schedule: { interval: weekly }
+  - package-ecosystem: pip
+    directory: /demo/python-fastapi
+    schedule: { interval: weekly }
+
+  - package-ecosystem: pub
+    directory: /apps/desktop
+    schedule: { interval: weekly }
+
+  - package-ecosystem: docker
+    directory: /apps/docker
+    schedule: { interval: weekly }

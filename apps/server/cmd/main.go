@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -145,11 +146,21 @@ func main() {
 	}
 
 	router := gin.New()
+	if err := router.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
+		sugar.Fatalf("Invalid server.trusted_proxies configuration: %v", err)
+	}
+	forwardedHeaders, err := handler.NewForwardedHeadersMiddleware(cfg.Server.TrustedProxies)
+	if err != nil {
+		sugar.Fatalf("Invalid server.trusted_proxies configuration: %v", err)
+	}
 	router.Use(gin.Recovery())
+	router.Use(forwardedHeaders)
+	router.Use(handler.SecurityHeaders())
 	router.Use(corsMiddleware(cfg.Server.AllowedOrigins))
 
 	// API routes
 	api := router.Group("/api")
+	api.Use(handler.LimitRequestBody(cfg.Server.MaxRequestBodyBytes))
 	// h is declared at outer scope so it can be wired with grpcServer/auditService
 	// after the gRPC server is constructed below
 	h := handler.NewHandlerWithPermissions(agentService, metricsService, permService, sugar)
@@ -222,12 +233,10 @@ func main() {
 			// Configuration generator routes are registered under the super-admin group below.
 			configGen := handler.NewConfigGenHandler(cfg, sugar, agentTokenService)
 
-			// Alerts (read + ack for authenticated users)
-			alertHandler := handler.NewAlertHandler(alertService, sugar)
+			// Alerts are filtered to the current user's visible agents. Rule,
+			// channel and silence configuration is super-admin-only below.
+			alertHandler := handler.NewAlertHandler(alertService, permService, sugar)
 			protected.GET("/alerts", alertHandler.ListAlerts)
-			protected.GET("/alerts/rules", alertHandler.ListRules)
-			protected.GET("/alerts/channels", alertHandler.ListChannels)
-			protected.GET("/alerts/silences", alertHandler.ListSilences)
 			protected.POST("/alerts/ack/:id", alertHandler.AckAlert)
 			protected.POST("/alerts/ack-all", alertHandler.AckAll)
 
@@ -246,7 +255,7 @@ func main() {
 				APIKey:    cfg.LLM.APIKey,
 				MaxTokens: cfg.LLM.MaxTokens,
 			})
-			assistantHandler := handler.NewAssistantHandler(metricsService, agentService, database.GetDB(), llmClient, sugar)
+			assistantHandler := handler.NewAssistantHandler(metricsService, agentService, database.GetDB(), permService, llmClient, sugar)
 			protected.GET("/assistant/findings", assistantHandler.Findings)
 			protected.POST("/assistant/chat", assistantHandler.Chat)
 
@@ -304,6 +313,9 @@ func main() {
 				admin.POST("/config/generate-token", configGen.GenerateToken)
 
 				// Alert rule & channel management (super admin only)
+				admin.GET("/alerts/rules", alertHandler.ListRules)
+				admin.GET("/alerts/channels", alertHandler.ListChannels)
+				admin.GET("/alerts/silences", alertHandler.ListSilences)
 				admin.POST("/alerts/rules", alertHandler.CreateRule)
 				admin.PUT("/alerts/rules/:id", alertHandler.UpdateRule)
 				admin.DELETE("/alerts/rules/:id", alertHandler.DeleteRule)
@@ -320,8 +332,13 @@ func main() {
 		api.GET("/server-info", configGen.GetServerURLInfo)
 	}
 
-	// Prometheus metrics endpoint (root-level, unauthenticated for scrapers)
-	router.GET("/metrics", gin.WrapH(handler.NewMetricsPromHandler(metricsService)))
+	// Prometheus is disabled by default. When enabled it requires a dedicated
+	// bearer token; browser sessions and query-string credentials are rejected.
+	if cfg.Metrics.PrometheusEnabled {
+		prometheus := router.Group("/metrics")
+		prometheus.Use(handler.RequireBearerToken(cfg.Metrics.PrometheusToken))
+		prometheus.GET("", gin.WrapH(handler.NewMetricsPromHandler(metricsService)))
+	}
 
 	// Serve embedded web UI
 	webDist, err := fs.Sub(server.WebFS, "web/dist")
@@ -416,28 +433,48 @@ func main() {
 
 	// Start HTTP server after all routes are registered.
 	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.HTTPPort),
-		Handler: router,
+		Addr:              fmt.Sprintf(":%d", cfg.Server.HTTPPort),
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      90 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	go func() {
-		sugar.Infof("HTTP server starting on port %d", cfg.Server.HTTPPort)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			sugar.Fatalf("HTTP server error: %v", err)
+		sugar.Infof("HTTP server starting on port %d (TLS=%v)", cfg.Server.HTTPPort, cfg.Server.TLSCert != "")
+		var serveErr error
+		if cfg.Server.TLSCert != "" {
+			serveErr = httpServer.ListenAndServeTLS(cfg.Server.TLSCert, cfg.Server.TLSKey)
+		} else {
+			serveErr = httpServer.ListenAndServe()
+		}
+		if serveErr != nil && serveErr != http.ErrServerClosed {
+			sugar.Fatalf("HTTP server error: %v", serveErr)
 		}
 	}()
 
 	// Start WebSocket server after handlers are fully initialized.
 	wsHandler := handler.NewWebSocketHandler(agentService, agentTokenService, metricsService, cfg, sugar)
 	wsServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.WSPort),
-		Handler: wsHandler,
+		Addr:              fmt.Sprintf(":%d", cfg.Server.WSPort),
+		Handler:           wsHandler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	go func() {
-		sugar.Infof("WebSocket server starting on port %d", cfg.Server.WSPort)
-		if err := wsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			sugar.Fatalf("WebSocket server error: %v", err)
+		sugar.Infof("WebSocket server starting on port %d (TLS=%v)", cfg.Server.WSPort, cfg.Server.TLSCert != "")
+		var serveErr error
+		if cfg.Server.TLSCert != "" {
+			serveErr = wsServer.ListenAndServeTLS(cfg.Server.TLSCert, cfg.Server.TLSKey)
+		} else {
+			serveErr = wsServer.ListenAndServe()
+		}
+		if serveErr != nil && serveErr != http.ErrServerClosed {
+			sugar.Fatalf("WebSocket server error: %v", serveErr)
 		}
 	}()
 
@@ -455,8 +492,8 @@ func main() {
 		var transport mcp.Transport
 		switch cfg.MCP.Transport {
 		case "sse":
-			addr := fmt.Sprintf(":%d", cfg.MCP.SSEPort)
-			sseTransport := mcp.NewSSETransport(addr, sugar)
+			addr := net.JoinHostPort(cfg.MCP.SSEBindAddress, fmt.Sprintf("%d", cfg.MCP.SSEPort))
+			sseTransport := mcp.NewSSETransport(addr, cfg.MCP.SSEAuthToken, sugar)
 			transport = sseTransport
 			go func() {
 				if err := sseTransport.Serve(); err != nil && err != http.ErrServerClosed {
@@ -484,14 +521,18 @@ func main() {
 	}
 
 	sugar.Infof("NanoLink Server started successfully")
-	sugar.Infof("  Dashboard: http://localhost:%d/dashboard", cfg.Server.HTTPPort)
-	sugar.Infof("  API: http://localhost:%d/api", cfg.Server.HTTPPort)
-	sugar.Infof("  Dashboard WS: ws://localhost:%d/ws/dashboard", cfg.Server.HTTPPort)
-	sugar.Infof("  Agent WS: ws://localhost:%d", cfg.Server.WSPort)
-	sugar.Infof("  gRPC: grpc://localhost:%d", cfg.Server.GRPCPort)
+	httpScheme, wsScheme, grpcScheme := "http", "ws", "grpc"
+	if cfg.Server.TLSCert != "" {
+		httpScheme, wsScheme, grpcScheme = "https", "wss", "grpcs"
+	}
+	sugar.Infof("  Dashboard: %s://localhost:%d/dashboard", httpScheme, cfg.Server.HTTPPort)
+	sugar.Infof("  API: %s://localhost:%d/api", httpScheme, cfg.Server.HTTPPort)
+	sugar.Infof("  Dashboard WS: %s://localhost:%d/ws/dashboard", wsScheme, cfg.Server.HTTPPort)
+	sugar.Infof("  Agent WS: %s://localhost:%d", wsScheme, cfg.Server.WSPort)
+	sugar.Infof("  gRPC: %s://localhost:%d", grpcScheme, cfg.Server.GRPCPort)
 	if cfg.MCP.Enabled {
 		if cfg.MCP.Transport == "sse" {
-			sugar.Infof("  MCP (SSE): http://localhost:%d/mcp", cfg.MCP.SSEPort)
+			sugar.Infof("  MCP (SSE): http://%s:%d/sse", cfg.MCP.SSEBindAddress, cfg.MCP.SSEPort)
 		} else {
 			sugar.Infof("  MCP: stdio (use with Claude Desktop or other MCP clients)")
 		}

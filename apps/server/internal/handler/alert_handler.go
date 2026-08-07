@@ -15,11 +15,31 @@ import (
 
 type AlertHandler struct {
 	alertService *service.AlertService
+	permService  *service.PermissionService
 	logger       *zap.SugaredLogger
 }
 
-func NewAlertHandler(alertService *service.AlertService, logger *zap.SugaredLogger) *AlertHandler {
-	return &AlertHandler{alertService: alertService, logger: logger}
+func NewAlertHandler(alertService *service.AlertService, permService *service.PermissionService, logger *zap.SugaredLogger) *AlertHandler {
+	return &AlertHandler{alertService: alertService, permService: permService, logger: logger}
+}
+
+func (h *AlertHandler) visibleAgents(c *gin.Context) (map[string]struct{}, []string, bool, error) {
+	user := GetCurrentUser(c)
+	if user == nil {
+		return nil, nil, false, service.ErrPermissionDenied
+	}
+	if user.IsSuperAdmin {
+		return nil, nil, true, nil
+	}
+	ids, err := h.permService.GetVisibleAgents(user.ID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	set := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		set[id] = struct{}{}
+	}
+	return set, ids, false, nil
 }
 
 type alertDTO struct {
@@ -51,14 +71,24 @@ func humanizeSince(d time.Duration) string {
 
 // GET /alerts?status=
 func (h *AlertHandler) ListAlerts(c *gin.Context) {
+	visible, _, all, err := h.visibleAgents(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve agent permissions"})
+		return
+	}
 	instances, err := h.alertService.ListInstances(c.Query("status"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list alerts"})
 		return
 	}
-	out := make([]alertDTO, len(instances))
-	for i, a := range instances {
-		out[i] = alertDTO{
+	out := make([]alertDTO, 0, len(instances))
+	for _, a := range instances {
+		if !all {
+			if _, ok := visible[a.AgentID]; !ok {
+				continue
+			}
+		}
+		out = append(out, alertDTO{
 			ID:    strconv.FormatUint(uint64(a.ID), 10),
 			Level: a.Level,
 			Title: a.Title,
@@ -69,7 +99,7 @@ func (h *AlertHandler) ListAlerts(c *gin.Context) {
 			Ack:   a.Status == "acked",
 			AckBy: a.AckBy,
 			Value: a.Value,
-		}
+		})
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -81,10 +111,29 @@ func (h *AlertHandler) AckAlert(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	username := ""
-	if u := GetCurrentUser(c); u != nil {
-		username = u.Username
+	instance, err := h.alertService.GetInstance(uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "alert not found"})
+		return
 	}
+	user := GetCurrentUser(c)
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if !user.IsSuperAdmin {
+		allowed, permissionErr := h.permService.CanUserAccessAgent(user.ID, instance.AgentID)
+		if permissionErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "permission check failed"})
+			return
+		}
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
+			return
+		}
+	}
+	username := ""
+	username = user.Username
 	if err := h.alertService.AckInstance(uint(id), username); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to ack"})
 		return
@@ -94,11 +143,23 @@ func (h *AlertHandler) AckAlert(c *gin.Context) {
 
 // POST /alerts/ack-all
 func (h *AlertHandler) AckAll(c *gin.Context) {
-	username := ""
-	if u := GetCurrentUser(c); u != nil {
-		username = u.Username
+	user := GetCurrentUser(c)
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
 	}
-	count, err := h.alertService.AckAll(username)
+	_, visibleIDs, all, permissionErr := h.visibleAgents(c)
+	if permissionErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve agent permissions"})
+		return
+	}
+	var count int64
+	var err error
+	if all {
+		count, err = h.alertService.AckAll(user.Username)
+	} else {
+		count, err = h.alertService.AckAllForAgents(user.Username, visibleIDs)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to ack all"})
 		return

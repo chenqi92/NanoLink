@@ -1,5 +1,5 @@
 # Build stage - Web UI
-FROM node:20-alpine AS web-builder
+FROM node:24-alpine3.24 AS web-builder
 
 WORKDIR /app/web
 COPY apps/server/web/package*.json ./
@@ -9,10 +9,9 @@ COPY apps/server/web/ ./
 RUN npm run build
 
 # Build stage - Go server
-FROM golang:1.25-alpine AS go-builder
+FROM golang:1.26.5-alpine3.24 AS go-builder
 
-# Allow the Go toolchain pinned in go.mod (>=1.26) to be fetched automatically
-ENV GOTOOLCHAIN=auto
+ENV GOTOOLCHAIN=local
 
 RUN apk add --no-cache gcc musl-dev protoc
 
@@ -35,11 +34,10 @@ RUN mkdir -p internal/proto && \
   --go-grpc_out=./internal/proto --go-grpc_opt=paths=source_relative \
   ./sdk/protocol/nanolink.proto
 
-RUN go mod tidy
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o nanolink-server ./cmd
+RUN CGO_ENABLED=1 GOOS=linux go build -mod=readonly -ldflags="-s -w" -o nanolink-server ./cmd
 
 # Final stage
-FROM alpine:3.19
+FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates tzdata
 

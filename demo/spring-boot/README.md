@@ -6,7 +6,6 @@ This demo shows how to integrate NanoLink SDK with Spring Boot to create a monit
 
 - Receives real-time metrics from NanoLink agents
 - REST API for querying agents and metrics
-- Built-in NanoLink dashboard
 - Alert logging for high resource usage
 - Command execution on remote agents
 
@@ -29,13 +28,14 @@ mvn clean install
 
 ```bash
 cd ../../demo/spring-boot
+export NANOLINK_AGENT_TOKEN="$(openssl rand -hex 32)"
+export NANOLINK_API_TOKEN="$(openssl rand -hex 32)"
 mvn spring-boot:run
 ```
 
 ### 3. Access the services
 
 - **REST API**: http://localhost:8080
-- **NanoLink Dashboard**: http://localhost:9100
 - **Actuator**: http://localhost:8080/actuator
 
 ## Configuration
@@ -44,12 +44,15 @@ Edit `src/main/resources/application.yml`:
 
 ```yaml
 nanolink:
+  api:
+    token: ${NANOLINK_API_TOKEN}
   server:
-    port: 9100           # Agent connection port
-    dashboard:
-      enabled: true      # Enable built-in dashboard
-    token: "your-token"  # Authentication token (empty = accept all)
+    grpc-port: 39100
+    token: ${NANOLINK_AGENT_TOKEN}
 ```
+
+Both tokens are required and must be at least 32 bytes. Every `/api/` request
+must send `Authorization: Bearer $NANOLINK_API_TOKEN`.
 
 ## API Endpoints
 
@@ -57,20 +60,20 @@ nanolink:
 
 ```bash
 # List all connected agents
-curl http://localhost:8080/api/agents
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8080/api/agents
 
 # Get metrics for specific agent
-curl http://localhost:8080/api/agents/{agentId}/metrics
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8080/api/agents/{agentId}/metrics
 ```
 
 ### Metrics
 
 ```bash
 # Get all latest metrics
-curl http://localhost:8080/api/metrics
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8080/api/metrics
 
 # Get cluster summary
-curl http://localhost:8080/api/summary
+curl -H "Authorization: Bearer $NANOLINK_API_TOKEN" http://localhost:8080/api/summary
 ```
 
 ### Commands
@@ -78,16 +81,19 @@ curl http://localhost:8080/api/summary
 ```bash
 # Restart a service
 curl -X POST http://localhost:8080/api/commands/agents/{hostname}/service/restart \
+  -H "Authorization: Bearer $NANOLINK_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"serviceName": "nginx"}'
 
 # Kill a process
 curl -X POST http://localhost:8080/api/commands/agents/{hostname}/process/kill \
+  -H "Authorization: Bearer $NANOLINK_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"pid": 1234}'
 
 # Restart Docker container
 curl -X POST http://localhost:8080/api/commands/agents/{hostname}/docker/restart \
+  -H "Authorization: Bearer $NANOLINK_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"containerName": "my-app"}'
 ```
@@ -165,7 +171,7 @@ public class MetricsRecord {
 
 ## Production Considerations
 
-1. **Authentication**: Configure a proper token in production
+1. **Authentication**: Keep both required tokens high entropy and separate
 2. **TLS**: Enable TLS for secure agent connections
 3. **Persistence**: Store metrics in a time-series database
 4. **Scaling**: Use Redis for shared state across instances
@@ -175,7 +181,7 @@ public class MetricsRecord {
 
 ### Agent can't connect
 
-1. Check if NanoLink server is running on port 9100
+1. Check if NanoLink gRPC server is running on port 39100
 2. Verify the agent's server URL configuration
 3. Check firewall rules
 

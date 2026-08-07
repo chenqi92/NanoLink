@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
-import { useRouter, type Page } from "@/store/router"
+import { useRouter } from "@/store/router"
 import { useSettings } from "@/store/settings"
 import { useData } from "@/contexts/DataContext"
 import { isOnline } from "@/lib/format"

@@ -2,6 +2,13 @@ package com.kkape.sdk;
 
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
+import io.grpc.Context;
+import io.grpc.Contexts;
+import io.grpc.Metadata;
+import io.grpc.ServerCall;
+import io.grpc.ServerCallHandler;
+import io.grpc.ServerInterceptor;
+import io.grpc.ServerInterceptors;
 import com.kkape.sdk.grpc.NanoLinkServiceImpl;
 import com.kkape.sdk.model.Metrics;
 import com.kkape.sdk.model.PeriodicData;
@@ -34,6 +41,9 @@ import java.util.function.Consumer;
 @SuppressWarnings("unused") // Public API methods may not be used internally
 public class NanoLinkServer {
     private static final Logger log = LoggerFactory.getLogger(NanoLinkServer.class);
+    private static final Context.Key<String> AUTHORIZATION_CONTEXT = Context.key("nanolink-authorization");
+    private static final Metadata.Key<String> AUTHORIZATION_METADATA =
+            Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
 
     /** Default heartbeat timeout (90 seconds) */
     public static final Duration DEFAULT_HEARTBEAT_TIMEOUT = Duration.ofSeconds(90);
@@ -71,6 +81,11 @@ public class NanoLinkServer {
         return new Builder();
     }
 
+    /** Returns the authorization metadata captured for the current gRPC call. */
+    public static String currentAuthorizationHeader() {
+        return AUTHORIZATION_CONTEXT.get();
+    }
+
     /**
      * Start the gRPC server
      */
@@ -84,14 +99,21 @@ public class NanoLinkServer {
             });
         }
 
-        if (config.getTokenValidator() == NanoLinkConfig.DEFAULT_TOKEN_VALIDATOR) {
-            log.warn("No TokenValidator configured — every agent is accepted (READ_ONLY) and "
-                    + "anonymous metrics streams can register. Set a TokenValidator before production use.");
-        }
-
-        grpcServicer = new NanoLinkServiceImpl(this, config.getTokenValidator());
+        grpcServicer = new NanoLinkServiceImpl(
+                this, config.getTokenValidator(), config.isRequireAuthentication());
+        ServerInterceptor authorizationCapture = new ServerInterceptor() {
+            @Override
+            public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
+                    ServerCall<ReqT, RespT> call,
+                    Metadata headers,
+                    ServerCallHandler<ReqT, RespT> next) {
+                Context context = Context.current().withValue(
+                        AUTHORIZATION_CONTEXT, headers.get(AUTHORIZATION_METADATA));
+                return Contexts.interceptCall(context, call, headers, next);
+            }
+        };
         ServerBuilder<?> serverBuilder = ServerBuilder.forPort(config.getGrpcPort())
-                .addService(grpcServicer)
+                .addService(ServerInterceptors.intercept(grpcServicer, authorizationCapture))
                 // Keepalive settings - server sends pings to keep connection alive
                 .keepAliveTime(30, TimeUnit.SECONDS)
                 .keepAliveTimeout(10, TimeUnit.SECONDS)
@@ -443,6 +465,15 @@ public class NanoLinkServer {
 
         public Builder tokenValidator(TokenValidator validator) {
             config.setTokenValidator(validator);
+            return this;
+        }
+
+        /**
+         * Explicit compatibility opt-out for accepting anonymous metrics streams
+         * with READ_ONLY permission. Authentication is required by default.
+         */
+        public Builder allowUnauthenticatedMetrics(boolean enabled) {
+            config.setRequireAuthentication(!enabled);
             return this;
         }
 

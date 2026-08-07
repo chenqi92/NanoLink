@@ -10,6 +10,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import jakarta.annotation.PreDestroy;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 /**
  * NanoLink Server Configuration
@@ -21,7 +23,6 @@ import jakarta.annotation.PreDestroy;
  * </p>
  * <ul>
  * <li>Agent connections: gRPC (port 39100 by default)</li>
- * <li>Dashboard connections: WebSocket (port 9100 by default)</li>
  * </ul>
  */
 @Configuration
@@ -29,16 +30,10 @@ public class NanoLinkConfig {
 
     private static final Logger log = LoggerFactory.getLogger(NanoLinkConfig.class);
 
-    @Value("${nanolink.server.ws-port:9100}")
-    private int wsPort;
-
     @Value("${nanolink.server.grpc-port:39100}")
     private int grpcPort;
 
-    @Value("${nanolink.server.static-files-path:}")
-    private String staticFilesPath;
-
-    @Value("${nanolink.server.token:}")
+    @Value("${nanolink.server.token}")
     private String serverToken;
 
     private NanoLinkServer nanoLinkServer;
@@ -48,10 +43,9 @@ public class NanoLinkConfig {
      */
     @Bean
     public NanoLinkServer nanoLinkServer(MetricsService metricsService) {
-        log.info("Starting NanoLink Server - WebSocket port: {}, gRPC port: {}", wsPort, grpcPort);
+        log.info("Starting NanoLink Server - gRPC port: {}", grpcPort);
 
         var builder = NanoLinkServer.builder()
-                .wsPort(wsPort)
                 .grpcPort(grpcPort)
                 .tokenValidator(createTokenValidator())
                 .onAgentConnect(agent -> {
@@ -77,11 +71,6 @@ public class NanoLinkConfig {
                     metricsService.processPeriodicData(periodic);
                 });
 
-        // Configure static files path if provided
-        if (staticFilesPath != null && !staticFilesPath.isEmpty()) {
-            builder.staticFilesPath(staticFilesPath);
-        }
-
         nanoLinkServer = builder.build();
 
         // Start server in background
@@ -94,12 +83,6 @@ public class NanoLinkConfig {
         }, "nanolink-server").start();
 
         log.info("NanoLink Server started successfully");
-        if (staticFilesPath != null && !staticFilesPath.isEmpty()) {
-            log.info("Dashboard available at http://localhost:{}/", wsPort);
-        } else {
-            log.info("No static files configured. To enable dashboard, set nanolink.server.static-files-path");
-        }
-
         return nanoLinkServer;
     }
 
@@ -107,18 +90,18 @@ public class NanoLinkConfig {
      * Creates a token validator based on configuration
      */
     private TokenValidator createTokenValidator() {
-        if (serverToken == null || serverToken.isEmpty()) {
-            // Accept all tokens in development mode
-            log.warn("No token configured - accepting all connections (not recommended for production)");
-            return token -> new TokenValidator.ValidationResult(true, 3, null);
+        if (serverToken == null || serverToken.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException(
+                    "nanolink.server.token must be configured with at least 32 bytes");
         }
 
         return token -> {
-            if (serverToken.equals(token)) {
-                return new TokenValidator.ValidationResult(true, 3, null);
+            byte[] expected = serverToken.getBytes(StandardCharsets.UTF_8);
+            byte[] actual = token == null ? new byte[0] : token.getBytes(StandardCharsets.UTF_8);
+            if (MessageDigest.isEqual(expected, actual)) {
+                return TokenValidator.ValidationResult.success(TokenValidator.PermissionLevel.SYSTEM_ADMIN);
             }
-            // Read-only access for any other token
-            return new TokenValidator.ValidationResult(true, 0, null);
+            return TokenValidator.ValidationResult.failure("Invalid token");
         };
     }
 

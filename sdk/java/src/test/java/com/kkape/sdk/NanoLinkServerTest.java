@@ -22,6 +22,17 @@ class NanoLinkServerTest {
         assertNotNull(server);
         assertNotNull(server.getConfig());
         assertEquals(NanoLinkConfig.DEFAULT_GRPC_PORT, server.getConfig().getGrpcPort());
+        assertTrue(server.getConfig().isRequireAuthentication());
+        assertFalse(server.getConfig().getTokenValidator().validate("anything").isValid());
+    }
+
+    @Test
+    @DisplayName("Anonymous metrics require an explicit compatibility opt-out")
+    void testAllowUnauthenticatedMetricsOptOut() {
+        NanoLinkServer server = NanoLinkServer.builder()
+                .allowUnauthenticatedMetrics(true)
+                .build();
+        assertFalse(server.getConfig().isRequireAuthentication());
     }
 
     @Test

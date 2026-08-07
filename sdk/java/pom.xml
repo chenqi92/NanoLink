@@ -38,7 +38,7 @@
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <protobuf.version>3.25.5</protobuf.version>
-        <grpc.version>1.77.0</grpc.version>
+        <grpc.version>1.83.1</grpc.version>
         <slf4j.version>2.0.16</slf4j.version>
         <skip.protobuf>false</skip.protobuf>
     </properties>
@@ -82,7 +82,7 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.5.19</version>
+            <version>1.6.1</version>
             <scope>runtime</scope>
             <optional>true</optional>
         </dependency>
@@ -91,14 +91,14 @@
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
-            <version>2.11.0</version>
+            <version>2.14.0</version>
         </dependency>
 
         <!-- Lombok (optional) -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.18.36</version>
+            <version>1.18.46</version>
             <scope>provided</scope>
         </dependency>
 

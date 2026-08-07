@@ -8,17 +8,17 @@ public class NanoLinkConfig {
     public static final int DEFAULT_GRPC_PORT = 39100;
 
     /**
-     * Default token validator that accepts every agent with READ_ONLY. Exposed as
-     * a named constant so the server can detect when no real validator was set and
-     * warn about the insecure posture. Do NOT use in production.
+     * Default token validator fails closed until the embedding application
+     * supplies an authentication policy.
      */
     public static final TokenValidator DEFAULT_TOKEN_VALIDATOR =
-            token -> new TokenValidator.ValidationResult(true, 0);
+            token -> TokenValidator.ValidationResult.failure("no token validator configured");
 
     private int grpcPort = DEFAULT_GRPC_PORT;
     private String tlsCertPath;
     private String tlsKeyPath;
     private TokenValidator tokenValidator = DEFAULT_TOKEN_VALIDATOR;
+    private boolean requireAuthentication = true;
 
     public int getGrpcPort() {
         return grpcPort;
@@ -50,5 +50,13 @@ public class NanoLinkConfig {
 
     public void setTokenValidator(TokenValidator tokenValidator) {
         this.tokenValidator = tokenValidator;
+    }
+
+    public boolean isRequireAuthentication() {
+        return requireAuthentication;
+    }
+
+    public void setRequireAuthentication(boolean requireAuthentication) {
+        this.requireAuthentication = requireAuthentication;
     }
 }

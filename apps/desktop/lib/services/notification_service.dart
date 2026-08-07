@@ -28,11 +28,13 @@ class NotificationService {
         requestBadgePermission: true,
         requestSoundPermission: true,
       );
-      await _plugin.initialize(const InitializationSettings(
-        android: android,
-        iOS: darwin,
-        macOS: darwin,
-      ));
+      await _plugin.initialize(
+        settings: const InitializationSettings(
+          android: android,
+          iOS: darwin,
+          macOS: darwin,
+        ),
+      );
 
       // Android 13+ runtime permission + channel.
       final android13 = _plugin.resolvePlatformSpecificImplementation<
@@ -57,10 +59,10 @@ class NotificationService {
     if (!_supported || !_ready) return;
     try {
       await _plugin.show(
-        key.hashCode & 0x7fffffff,
-        title,
-        body,
-        const NotificationDetails(
+        id: key.hashCode & 0x7fffffff,
+        title: title,
+        body: body,
+        notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
             _channelName,

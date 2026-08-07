@@ -12,6 +12,7 @@ class TestServerConfig:
         assert config.host == "0.0.0.0"
         assert config.tls_cert_path is None
         assert config.tls_key_path is None
+        assert config.require_authentication is True
 
     def test_custom_values(self):
         config = ServerConfig(
@@ -27,14 +28,10 @@ class TestServerConfig:
 
 
 class TestDefaultTokenValidator:
-    def test_accepts_any_token(self):
+    def test_rejects_tokens_without_a_policy(self):
         result = default_token_validator("any-token")
-        assert result.valid is True
-        assert result.permission_level == 0
-
-    def test_returns_read_only_permission(self):
-        result = default_token_validator("test-token")
-        assert result.permission_level == 0
+        assert result.valid is False
+        assert result.error_message
 
 
 class TestCustomTokenValidator:

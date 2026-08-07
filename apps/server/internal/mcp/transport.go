@@ -3,12 +3,15 @@ package mcp
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -84,11 +87,12 @@ type SSETransport struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	logger    *zap.SugaredLogger
+	authToken []byte
 	mu        sync.Mutex
 }
 
 // NewSSETransport creates a new SSE transport
-func NewSSETransport(addr string, logger *zap.SugaredLogger) *SSETransport {
+func NewSSETransport(addr, authToken string, logger *zap.SugaredLogger) *SSETransport {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &SSETransport{
 		addr:      addr,
@@ -97,6 +101,7 @@ func NewSSETransport(addr string, logger *zap.SugaredLogger) *SSETransport {
 		ctx:       ctx,
 		cancel:    cancel,
 		logger:    logger,
+		authToken: []byte(authToken),
 	}
 }
 
@@ -164,7 +169,11 @@ func (t *SSETransport) GetResponse(ctx context.Context) ([]byte, error) {
 // It blocks until the server stops, so run it in a goroutine.
 func (t *SSETransport) Serve() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/sse", t.requireBearer(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -184,15 +193,19 @@ func (t *SSETransport) Serve() error {
 			fmt.Fprintf(w, "event: message\ndata: %s\n\n", string(data))
 			flusher.Flush()
 		}
-	})
-	mux.HandleFunc("/message", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/message", t.requireBearer(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		body, err := io.ReadAll(io.LimitReader(r.Body, MaxMessageSize))
+		body, err := io.ReadAll(io.LimitReader(r.Body, MaxMessageSize+1))
 		if err != nil {
 			http.Error(w, "read error", http.StatusBadRequest)
+			return
+		}
+		if len(body) > MaxMessageSize {
+			http.Error(w, "message too large", http.StatusRequestEntityTooLarge)
 			return
 		}
 		if err := t.EnqueueMessage(body); err != nil {
@@ -200,9 +213,16 @@ func (t *SSETransport) Serve() error {
 			return
 		}
 		w.WriteHeader(http.StatusAccepted)
-	})
+	}))
 
-	server := &http.Server{Addr: t.addr, Handler: mux}
+	server := &http.Server{
+		Addr:              t.addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20,
+	}
 	// Shut the HTTP server down when the transport is closed.
 	go func() {
 		<-t.ctx.Done()
@@ -210,6 +230,19 @@ func (t *SSETransport) Serve() error {
 	}()
 	t.logger.Infof("MCP SSE endpoint listening on %s (GET /sse, POST /message)", t.addr)
 	return server.ListenAndServe()
+}
+
+func (t *SSETransport) requireBearer(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		header := strings.TrimSpace(r.Header.Get("Authorization"))
+		parts := strings.SplitN(header, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") || len(parts[1]) != len(t.authToken) || subtle.ConstantTimeCompare([]byte(parts[1]), t.authToken) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="nanolink-mcp"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
 }
 
 // JSONRPCMessage represents a JSON-RPC 2.0 message
