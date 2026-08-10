@@ -59,7 +59,7 @@ subtle = "2.6"           # P1-1: 常量时间比较
 regex = "1.11"           # P0-2: Shell命令模式匹配
 sha2 = "0.10"            # Script checksum verification
 ring = "0.17"            # Ed25519 verification of self-update binaries (already in tree via rustls/tonic)
-machine-uid = "0.5"      # Cross-platform hardware machine ID
+machine-uid = "0.6"      # Cross-platform hardware machine ID
 url = "2.5"              # Validate artifact and health-check URLs
 
 # CLI
