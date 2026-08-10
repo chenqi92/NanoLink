@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -361,6 +362,31 @@ func main() {
 	h.SetGRPCServer(grpcServer)
 	h.SetAuditService(auditService)
 
+	deploymentHandler, err := handler.NewDeploymentHandler(
+		database.GetDB(), grpcServer, cfg.Deployment, cfg.Server.ExternalURL, sugar,
+	)
+	if err != nil {
+		sugar.Fatalf("Failed to initialize deployment service: %v", err)
+	}
+	// Agents authenticate artifact downloads with a short-lived task token, not
+	// a browser cookie. All management and upload routes remain super-admin only.
+	router.GET("/api/deployment-artifacts/:taskId", deploymentHandler.DownloadArtifact)
+	deploymentAPI := router.Group("/api")
+	deploymentAPI.Use(handler.LimitRequestBody(cfg.Server.MaxRequestBodyBytes))
+	deploymentAPI.Use(handler.AuthMiddleware(authService), handler.RequireSuperAdmin())
+	{
+		deploymentAPI.GET("/deployment-projects", deploymentHandler.ListProjects)
+		deploymentAPI.GET("/deployment-projects/:id", deploymentHandler.GetProject)
+		deploymentAPI.POST("/deployment-projects", deploymentHandler.CreateProject)
+		deploymentAPI.PUT("/deployment-projects/:id", deploymentHandler.UpdateProject)
+		deploymentAPI.POST("/deployment-projects/:id/releases/:releaseId/deploy", deploymentHandler.DeployRelease)
+		deploymentAPI.POST("/deployment-projects/:id/releases/:releaseId/rollback", deploymentHandler.RollbackRelease)
+		deploymentAPI.GET("/deployment-tasks/:taskId", deploymentHandler.GetTask)
+	}
+	deploymentUploadAPI := router.Group("/api")
+	deploymentUploadAPI.Use(handler.AuthMiddleware(authService), handler.RequireSuperAdmin())
+	deploymentUploadAPI.POST("/deployment-projects/:id/releases", deploymentHandler.UploadRelease)
+
 	// Register protected dashboard and shell WebSocket handlers (after gRPC server is available)
 	dashboardWSHandler := handler.NewDashboardWSHandler(sugar, permService, agentService, metricsService, cfg.Server.AllowedOrigins)
 	shellHandler := handler.NewShellHandler(sugar, grpcServer, cfg.Server.AllowedOrigins)
@@ -421,9 +447,11 @@ func main() {
 			logQueryHandler.QueryAuditLogs)
 	}
 
-	// Connect gRPC command results to shell WebSocket sessions
+	// Fan command results out to both interactive shell sessions and persistent
+	// deployment tasks.
 	grpcServer.SetCommandResultHandler(func(agentID, commandID, output string, success bool) {
 		shellHandler.SendOutputToSession(agentID, commandID, output, success)
+		deploymentHandler.HandleCommandResult(agentID, commandID, output, success)
 	})
 
 	// Set broadcast callback in metrics service for real-time push
@@ -440,6 +468,7 @@ func main() {
 		WriteTimeout:      90 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    1 << 20,
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 
 	go func() {
@@ -463,6 +492,7 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    1 << 20,
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 
 	go func() {
@@ -480,7 +510,7 @@ func main() {
 
 	go func() {
 		sugar.Infof("gRPC server starting on port %d", cfg.Server.GRPCPort)
-		if err := grpcServer.Start(cfg.Server.GRPCPort, cfg.Server.TLSCert, cfg.Server.TLSKey); err != nil {
+		if err := grpcServer.Start(cfg.Server.GRPCPort, cfg.Server.TLSCert, cfg.Server.TLSKey, cfg.Server.GRPCClientCA); err != nil {
 			sugar.Fatalf("gRPC server error: %v", err)
 		}
 	}()

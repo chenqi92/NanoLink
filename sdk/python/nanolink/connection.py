@@ -148,6 +148,8 @@ class AgentConnection:
             CommandType.SYSTEM_REBOOT,
             CommandType.SHELL_EXECUTE,
             CommandType.FILE_UPLOAD,
+            CommandType.DEPLOY_EXECUTE,
+            CommandType.DEPLOY_ROLLBACK,
         ]:
             return 3
 

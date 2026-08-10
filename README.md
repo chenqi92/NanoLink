@@ -192,7 +192,8 @@ NanoLink uses a layered communication architecture:
 
 | Mechanism | Description |
 |-----------|-------------|
-| TLS Encryption | All communication (WebSocket/gRPC) enforces TLS |
+| Strict TLS | When enabled, certificate and hostname verification are mandatory; system and private CA roots are supported |
+| Mutual TLS | Optional two-way public-key certificate authentication between Server and Agent |
 | Token Authentication | Each connection uses an independent token |
 | Command Whitelist | Only predefined command patterns allowed |
 | Command Blacklist | Dangerous commands are always blocked |
@@ -313,18 +314,9 @@ Enable TLS? [y/N]:
 | **N** (No) | Server is **not** configured with HTTPS/TLS (most common for self-hosted) |
 | **Y** (Yes) | Server uses TLS certificate (Let's Encrypt, etc.) |
 
-If you select Yes:
+Certificate and hostname verification is always enforced when TLS is enabled; the installer no longer offers a bypass. Public certificates use system roots. For an internal or self-signed PKI, set `tls_ca_cert` in the Agent configuration. When connecting through an SSH tunnel such as `127.0.0.1`, set `tls_server_name` to the real DNS name in the certificate.
 
-```
-Verify TLS certificate? [Y/n]: 
-```
-
-| Choice | When to use |
-|--------|-------------|
-| **Y** (Yes) | Production: Server has a valid, trusted certificate |
-| **N** (No) | Testing only: Self-signed certificate (security warning) |
-
-> **⚠️ Common Mistake:** If your server doesn't have TLS configured but you enable TLS on the agent, the connection will fail with "Cannot reach server".
+> **Common mistake:** TLS fails safely if the Server is plaintext, or if a private CA certificate was not supplied. Do not work around this by disabling verification.
 
 ### Step 5: Connection Test
 
@@ -431,6 +423,10 @@ curl -fsSL URL | sudo bash -s -- [OPTIONS]
 | `--token` | Authentication token | `--token "your_token"` |
 | `--permission` | Permission level (0-3) | `--permission 2` |
 | `--no-tls` | Disable TLS | `--no-tls` |
+| `--tls-ca-cert` | Private CA PEM path | `--tls-ca-cert /etc/nanolink/tls/ca.crt` |
+| `--tls-server-name` | Certificate name verified through a tunnel | `--tls-server-name monitor.example.com` |
+| `--tls-client-cert` | mTLS Agent certificate | `--tls-client-cert /etc/nanolink/tls/agent.crt` |
+| `--tls-client-key` | mTLS Agent private key | `--tls-client-key /etc/nanolink/tls/agent.key` |
 | `--hostname` | Custom hostname | `--hostname "prod-01"` |
 | `--shell-enabled` | Enable shell | `--shell-enabled` |
 | `--shell-token` | Shell SuperToken | `--shell-token "super_secret"` |
@@ -451,6 +447,15 @@ curl -fsSL URL | sudo bash -s -- --silent \
   --token "prod_token" \
   --permission 2 \
   --hostname "web-server-01"
+
+# Private CA + mTLS Server reached through a local SSH tunnel
+curl -fsSL URL | sudo bash -s -- --silent \
+  --url "127.0.0.1:39100" \
+  --token "prod_token" \
+  --tls-ca-cert /etc/nanolink/tls/ca.crt \
+  --tls-server-name monitor.example.com \
+  --tls-client-cert /etc/nanolink/tls/agent.crt \
+  --tls-client-key /etc/nanolink/tls/agent.key
 
 # With shell access enabled
 curl -fsSL URL | sudo bash -s -- --silent \
@@ -729,8 +734,15 @@ servers:
     port: 39100           # Default gRPC port
     token: "your-auth-token"
     permission: 2
-    tls_enabled: false    # Recommended: true for production
-    tls_verify: true
+    tls_enabled: true
+    tls_verify: true      # Must remain true whenever TLS is enabled
+    # Internal/self-signed PKI:
+    # tls_ca_cert: /etc/nanolink/tls/ca.crt
+    # SNI/hostname used when host is an SSH tunnel endpoint:
+    # tls_server_name: monitor.example.com
+    # Optional mTLS Agent identity; configure both and keep the key mode 0600:
+    # tls_client_cert: /etc/nanolink/tls/agent.crt
+    # tls_client_key: /etc/nanolink/tls/agent.key
 
 collector:
   cpu_interval_ms: 1000
@@ -757,6 +769,22 @@ logging:
   audit_enabled: true
   audit_file: "/var/log/nanolink/audit.log"
 ```
+
+### Native Server TLS and mTLS
+
+The Server certificate SAN must contain the name verified by each Agent; do not rely on `/etc/hosts` as the trust mechanism. Configure the Server with:
+
+```yaml
+server:
+  tls_cert: /etc/nanolink/tls/server.crt
+  tls_key: /etc/nanolink/tls/server.key
+  # Optional: only Agent certificates issued by this CA may use gRPC
+  grpc_client_ca: /etc/nanolink/tls/agent-ca.crt
+```
+
+The equivalent environment variables are `NANOLINK_TLS_CERT`, `NANOLINK_TLS_KEY`, and `NANOLINK_GRPC_CLIENT_CA`. With mTLS enabled, an Agent must pass both client-certificate and token authentication: the certificate identifies the device and the token grants NanoLink permissions. Keep Server and Agent private keys readable only by their service accounts (mode `0600` on Linux), outside images, Git, and command lines. Existing environment-variable and `file://` token references avoid storing token values directly in YAML.
+
+TLS already uses asymmetric cryptography for authentication and key agreement, protecting application data and credentials from network interception or modification when the CA, certificate name, and private keys remain trusted. Network endpoints and traffic timing are not hidden by TLS. A TLS connection with `tls_verify: false` is rejected.
 
 ## SDK Integration
 
@@ -1110,6 +1138,31 @@ cd apps/docker && docker-compose build
 # Desktop (requires Rust + Node.js)
 cd apps/desktop && npm install && npm run tauri build
 ```
+
+## Application Deployment
+
+The web dashboard includes a super-admin deployment center for Java/systemd
+services and static/Nginx sites. Releases are stored as immutable artifacts on
+the NanoLink server, downloaded by the target agent through a short-lived token,
+verified with SHA-256, and activated through a `current` symlink. A failed
+service activation or health check restores the previous release automatically.
+
+Deployment is opt-in on each agent:
+
+```yaml
+deployments:
+  enabled: true
+  allowed_roots:
+    - /opt/nanolink/apps
+    - /var/www/nanolink
+  max_artifact_size: 536870912
+  timeout_seconds: 600
+```
+
+The agent connection must have `SYSTEM_ADMIN` (level 3) permission. Configure
+`NANOLINK_EXTERNAL_URL` on the server so remote agents can download artifacts.
+Java systemd units should launch `/opt/nanolink/apps/<project>/current/app.jar`;
+Nginx roots should point to `/var/www/nanolink/<project>/current`.
 
 ## Service Management
 

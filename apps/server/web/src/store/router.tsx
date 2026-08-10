@@ -8,6 +8,7 @@ export type Page =
   | "alerts"
   | "assistant"
   | "operations"
+  | "deployments"
   | "logs"
   | "tokens"
   | "devices"

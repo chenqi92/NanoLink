@@ -192,7 +192,8 @@ NanoLink 使用分层通信架构：
 
 | 机制 | 描述 |
 |------|------|
-| TLS 加密 | 所有通信 (WebSocket/gRPC) 强制 TLS |
+| 严格 TLS | 开启 TLS 时强制校验证书与主机名，支持系统根证书和私有 CA，禁止跳过验证 |
+| 双向 mTLS | 可选；服务端与 Agent 使用各自的公私钥证书进行双向身份认证 |
 | Token 认证 | 每个连接使用独立 Token |
 | 命令白名单 | 只允许执行预定义的命令模式 |
 | 命令黑名单 | 危险命令始终被阻止 |
@@ -313,18 +314,9 @@ Enable TLS? [y/N]:
 | **N** (否) | 服务端**未配置** HTTPS/TLS（自建服务器常见） |
 | **Y** (是) | 服务端使用 TLS 证书（Let's Encrypt 等） |
 
-如果选择是：
+启用后会始终校验服务端证书和主机名，不再提供“跳过验证”选项。公网证书使用系统根证书；内网或自签证书请在 Agent 配置中填写 `tls_ca_cert`。通过 `127.0.0.1` 等 SSH 隧道连接时，再用 `tls_server_name` 指定证书中的真实 DNS 名称。
 
-```
-Verify TLS certificate? [Y/n]: 
-```
-
-| 选择 | 适用场景 |
-|------|----------|
-| **Y** (是) | 生产环境：服务端有有效的受信任证书 |
-| **N** (否) | 仅测试：自签名证书（会有安全警告） |
-
-> **⚠️ 常见错误:** 如果服务端没有配置 TLS，但 Agent 启用了 TLS，连接会失败并提示 "Cannot reach server"。
+> **常见错误:** 如果服务端没有配置 TLS，但 Agent 启用了 TLS，连接会失败；如果证书由私有 CA 签发但没有配置 `tls_ca_cert`，连接会以不受信任签发者错误安全失败。不要用关闭证书验证来绕过。
 
 ### 第五步：连接测试
 
@@ -431,6 +423,10 @@ curl -fsSL URL | sudo bash -s -- [参数]
 | `--token` | 认证令牌 | `--token "your_token"` |
 | `--permission` | 权限级别 (0-3) | `--permission 2` |
 | `--no-tls` | 禁用 TLS | `--no-tls` |
+| `--tls-ca-cert` | 私有 CA PEM 路径 | `--tls-ca-cert /etc/nanolink/tls/ca.crt` |
+| `--tls-server-name` | 隧道连接时校验的证书域名 | `--tls-server-name monitor.example.com` |
+| `--tls-client-cert` | mTLS Agent 证书 | `--tls-client-cert /etc/nanolink/tls/agent.crt` |
+| `--tls-client-key` | mTLS Agent 私钥 | `--tls-client-key /etc/nanolink/tls/agent.key` |
 | `--hostname` | 自定义主机名 | `--hostname "prod-01"` |
 | `--shell-enabled` | 启用 Shell | `--shell-enabled` |
 | `--shell-token` | Shell SuperToken | `--shell-token "super_secret"` |
@@ -451,6 +447,15 @@ curl -fsSL URL | sudo bash -s -- --silent \
   --token "prod_token" \
   --permission 2 \
   --hostname "web-server-01"
+
+# 通过本机 SSH 隧道连接私有 CA + mTLS 服务端
+curl -fsSL URL | sudo bash -s -- --silent \
+  --url "127.0.0.1:39100" \
+  --token "prod_token" \
+  --tls-ca-cert /etc/nanolink/tls/ca.crt \
+  --tls-server-name monitor.example.com \
+  --tls-client-cert /etc/nanolink/tls/agent.crt \
+  --tls-client-key /etc/nanolink/tls/agent.key
 
 # 启用 Shell 访问
 curl -fsSL URL | sudo bash -s -- --silent \
@@ -748,8 +753,15 @@ servers:
     port: 39100           # 默认 gRPC 端口
     token: "your-auth-token"
     permission: 2
-    tls_enabled: false    # 生产环境推荐使用 true
-    tls_verify: true
+    tls_enabled: true
+    tls_verify: true      # TLS 开启时必须为 true
+    # 私有 CA / 自签 PKI：
+    # tls_ca_cert: /etc/nanolink/tls/ca.crt
+    # SSH 隧道等场景下，用证书中的真实 DNS 名称进行 SNI 和主机名校验：
+    # tls_server_name: monitor.example.com
+    # 可选 mTLS Agent 身份，两个文件必须同时配置，私钥权限应为 0600：
+    # tls_client_cert: /etc/nanolink/tls/agent.crt
+    # tls_client_key: /etc/nanolink/tls/agent.key
 
 collector:
   cpu_interval_ms: 1000
@@ -776,6 +788,22 @@ logging:
   audit_enabled: true
   audit_file: "/var/log/nanolink/audit.log"
 ```
+
+### 服务端原生 TLS 与 mTLS
+
+服务端证书的 SAN 必须包含 Agent 校验的域名；不要只依赖 `/etc/hosts`。服务端配置：
+
+```yaml
+server:
+  tls_cert: /etc/nanolink/tls/server.crt
+  tls_key: /etc/nanolink/tls/server.key
+  # 可选：启用后，gRPC 只接受该 CA 签发的 Agent 客户端证书
+  grpc_client_ca: /etc/nanolink/tls/agent-ca.crt
+```
+
+也可用环境变量 `NANOLINK_TLS_CERT`、`NANOLINK_TLS_KEY` 和 `NANOLINK_GRPC_CLIENT_CA`。mTLS 启用后，Agent 必须同时通过客户端证书和 Token 认证；证书用于设备身份，Token 用于 NanoLink 权限。服务端私钥、Agent 私钥应只对服务账号可读，建议权限 `0600`，不要放入镜像、Git 或安装命令行。Token 可使用已有的环境变量或 `file://` 引用，避免明文写入配置。
+
+TLS 已使用公钥/私钥完成密钥协商和身份认证，能够防止网络中间人读取或篡改应用数据与凭据；关键前提是 CA、证书域名和私钥可信。TLS 不会隐藏连接端点和流量时序。`tls_verify: false` 在 TLS 连接中会被拒绝。
 
 ## SDK 集成
 
@@ -1148,6 +1176,30 @@ cd apps/docker && docker-compose build
 # Desktop (需要 Rust + Node.js)
 cd apps/desktop && npm install && npm run tauri build
 ```
+
+## 应用部署
+
+Web Dashboard 已提供仅超级管理员可见的部署中心，首版支持 Java/systemd
+服务和静态站点/Nginx。版本制品以不可变文件保存到 NanoLink Server，目标
+Agent 使用短时令牌下载，完成 SHA-256 校验后通过 `current` 软链接原子切换。
+服务启动或健康检查失败时，Agent 会自动恢复上一版本。
+
+每个 Agent 都需要显式开启部署能力：
+
+```yaml
+deployments:
+  enabled: true
+  allowed_roots:
+    - /opt/nanolink/apps
+    - /var/www/nanolink
+  max_artifact_size: 536870912
+  timeout_seconds: 600
+```
+
+Agent 连接必须使用 `SYSTEM_ADMIN`（权限等级 3）。Server 还需要设置
+`NANOLINK_EXTERNAL_URL`，确保远端 Agent 能访问制品下载地址。Java 的
+systemd 单元建议启动 `/opt/nanolink/apps/<项目>/current/app.jar`；Nginx
+站点根目录建议指向 `/var/www/nanolink/<项目>/current`。
 
 ## 服务管理
 

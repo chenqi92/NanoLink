@@ -57,6 +57,10 @@ pub struct Config {
     /// Package management settings
     #[serde(default)]
     pub package_management: PackageManagementConfig,
+
+    /// Application deployment settings
+    #[serde(default)]
+    pub deployments: DeploymentsConfig,
 }
 
 fn default_config_version() -> u32 {
@@ -205,6 +209,54 @@ fn default_script_timeout() -> u64 {
 
 fn default_max_output_size() -> usize {
     1024 * 1024 // 1MB
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeploymentsConfig {
+    /// Deployment is opt-in because it combines filesystem writes and service control.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Absolute application roots accepted from the server.
+    #[serde(default = "default_deployment_roots")]
+    pub allowed_roots: Vec<String>,
+
+    /// Maximum downloaded artifact size in bytes.
+    #[serde(default = "default_deployment_max_artifact_size")]
+    pub max_artifact_size: u64,
+
+    /// Maximum time allowed for the artifact download.
+    #[serde(default = "default_deployment_timeout")]
+    pub timeout_seconds: u64,
+}
+
+impl Default for DeploymentsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            allowed_roots: default_deployment_roots(),
+            max_artifact_size: default_deployment_max_artifact_size(),
+            timeout_seconds: default_deployment_timeout(),
+        }
+    }
+}
+
+fn default_deployment_roots() -> Vec<String> {
+    #[cfg(unix)]
+    return vec![
+        "/opt/nanolink/apps".to_string(),
+        "/var/www/nanolink".to_string(),
+    ];
+    #[cfg(windows)]
+    return vec!["C:\\ProgramData\\NanoLink\\apps".to_string()];
+}
+
+fn default_deployment_max_artifact_size() -> u64 {
+    512 * 1024 * 1024
+}
+
+fn default_deployment_timeout() -> u64 {
+    600
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -495,6 +547,23 @@ pub struct ServerConfig {
     /// Enable TLS certificate verification
     #[serde(default = "default_true")]
     pub tls_verify: bool,
+
+    /// Optional PEM trust bundle added to the system/web PKI roots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls_ca_cert: Option<String>,
+
+    /// Optional certificate name used for SNI and hostname verification. This
+    /// is useful when connecting through 127.0.0.1 or a private tunnel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls_server_name: Option<String>,
+
+    /// Optional PEM client certificate chain for mutual TLS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls_client_cert: Option<String>,
+
+    /// Optional PEM private key paired with tls_client_cert.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls_client_key: Option<String>,
 }
 
 impl ServerConfig {
@@ -505,6 +574,45 @@ impl ServerConfig {
         } else {
             format!("http://{}:{}", self.host, self.port)
         }
+    }
+
+    /// Validate fail-closed TLS semantics before attempting a connection.
+    pub fn validate_tls_security(&self) -> Result<(), String> {
+        let has_ca = self
+            .tls_ca_cert
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty());
+        let has_name = self
+            .tls_server_name
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty());
+        let has_client_cert = self
+            .tls_client_cert
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty());
+        let has_client_key = self
+            .tls_client_key
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty());
+
+        if !self.tls_enabled {
+            if has_ca || has_name || has_client_cert || has_client_key {
+                return Err("TLS certificate settings require tls_enabled=true".to_string());
+            }
+            return Ok(());
+        }
+        if !self.tls_verify {
+            return Err(
+                "tls_verify=false is not permitted for TLS connections; configure tls_ca_cert for a private CA"
+                    .to_string(),
+            );
+        }
+        if has_client_cert != has_client_key {
+            return Err(
+                "tls_client_cert and tls_client_key must be configured together".to_string(),
+            );
+        }
+        Ok(())
     }
 
     /// Resolve token value, supporting environment variables and file references
@@ -1042,6 +1150,10 @@ impl Config {
                 permission: 0,
                 tls_enabled: false,
                 tls_verify: true,
+                tls_ca_cert: None,
+                tls_server_name: None,
+                tls_client_cert: None,
+                tls_client_key: None,
             }],
             collector: CollectorConfig::default(),
             buffer: BufferConfig::default(),
@@ -1081,6 +1193,7 @@ impl Config {
             scripts: ScriptsConfig::default(),
             config_management: ConfigManagementConfig::default(),
             package_management: PackageManagementConfig::default(),
+            deployments: DeploymentsConfig::default(),
         }
     }
 
@@ -1100,10 +1213,30 @@ impl Config {
             if server.permission > 3 {
                 anyhow::bail!("Server {i} permission must be 0-3");
             }
+            if let Err(error) = server.validate_tls_security() {
+                anyhow::bail!("Server {i} TLS configuration is invalid: {error}");
+            }
         }
 
         if self.shell.enabled && self.shell.super_token.is_none() {
             anyhow::bail!("Shell is enabled but super_token is not set");
+        }
+
+        if self.deployments.enabled {
+            if self.deployments.allowed_roots.is_empty() {
+                anyhow::bail!("Deployment is enabled but allowed_roots is empty");
+            }
+            for root in &self.deployments.allowed_roots {
+                if !std::path::Path::new(root).is_absolute() {
+                    anyhow::bail!("Deployment allowed root must be absolute: {root}");
+                }
+            }
+            if self.deployments.max_artifact_size == 0 {
+                anyhow::bail!("Deployment max_artifact_size must be greater than zero");
+            }
+            if self.deployments.timeout_seconds == 0 {
+                anyhow::bail!("Deployment timeout_seconds must be greater than zero");
+            }
         }
 
         // P1-2: 检查危险的通配符配置
@@ -1137,5 +1270,50 @@ impl Config {
                 .and_then(|h| h.into_string().ok())
                 .unwrap_or_else(|| "unknown".to_string())
         })
+    }
+}
+
+#[cfg(test)]
+mod tls_config_tests {
+    use super::*;
+
+    fn server() -> ServerConfig {
+        ServerConfig {
+            host: "server.example.com".to_string(),
+            port: DEFAULT_GRPC_PORT,
+            token: "test-token".to_string(),
+            management_token: None,
+            permission: 0,
+            tls_enabled: true,
+            tls_verify: true,
+            tls_ca_cert: None,
+            tls_server_name: None,
+            tls_client_cert: None,
+            tls_client_key: None,
+        }
+    }
+
+    #[test]
+    fn tls_verification_cannot_be_disabled() {
+        let mut cfg = server();
+        cfg.tls_verify = false;
+        assert!(cfg.validate_tls_security().is_err());
+    }
+
+    #[test]
+    fn mtls_identity_requires_cert_and_key() {
+        let mut cfg = server();
+        cfg.tls_client_cert = Some("/etc/nanolink/tls/agent.crt".to_string());
+        assert!(cfg.validate_tls_security().is_err());
+        cfg.tls_client_key = Some("/etc/nanolink/tls/agent.key".to_string());
+        assert!(cfg.validate_tls_security().is_ok());
+    }
+
+    #[test]
+    fn tls_material_is_rejected_on_plaintext_connection() {
+        let mut cfg = server();
+        cfg.tls_enabled = false;
+        cfg.tls_ca_cert = Some("/etc/nanolink/tls/ca.crt".to_string());
+        assert!(cfg.validate_tls_security().is_err());
     }
 }

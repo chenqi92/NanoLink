@@ -423,6 +423,10 @@ enum CommandType {
   // Health Check Commands
   HEALTH_CHECK = 110;         // Custom health check
   CONNECTIVITY_TEST = 111;    // Network connectivity test
+
+  // Application deployment (SYSTEM_ADMIN; structured, audited operations)
+  DEPLOY_EXECUTE = 120;       // Download, verify, activate, restart/reload, health-check
+  DEPLOY_ROLLBACK = 121;      // Atomically activate an existing release
 }
 
 message CommandResult {

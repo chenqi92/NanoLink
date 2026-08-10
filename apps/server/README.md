@@ -43,7 +43,12 @@ Create `config.yaml`:
 server:
   http_port: 8080
   ws_port: 9100
+  grpc_port: 39100
   mode: release
+  tls_cert: /etc/nanolink/tls/server.crt
+  tls_key: /etc/nanolink/tls/server.key
+  # Optional: require an Agent certificate issued by this CA.
+  grpc_client_ca: /etc/nanolink/tls/agent-ca.crt
 
 auth:
   enabled: true
@@ -62,7 +67,28 @@ storage:
 metrics:
   retention_days: 7
   max_agents: 100
+
+deployment:
+  storage_path: ./data/artifacts
+  max_artifact_bytes: 536870912
+  download_ttl_minutes: 30
 ```
+
+Set `server.external_url` (or `NANOLINK_EXTERNAL_URL`) to the HTTPS URL that
+agents can reach before using the deployment center. Artifacts are stored under
+`deployment.storage_path`; Docker deployments should keep `/app/data` on a
+persistent volume.
+
+`tls_cert` and `tls_key` enable native TLS on the HTTP, WebSocket, and gRPC
+listeners. `grpc_client_ca` additionally enables mutual TLS on gRPC: Agents
+must present a valid client certificate and still pass token authentication.
+The equivalent environment variables are `NANOLINK_TLS_CERT`,
+`NANOLINK_TLS_KEY`, and `NANOLINK_GRPC_CLIENT_CA`. Keep all private keys outside
+the container image and repository, mounted read-only and mode `0600` on Linux.
+
+For a private CA, set `tls_ca_cert` in each Agent configuration. When the Agent
+connects to a local SSH tunnel address, set `tls_server_name` to the DNS SAN in
+the Server certificate. TLS verification cannot be disabled.
 
 ## API Endpoints
 
@@ -76,6 +102,10 @@ metrics:
 | GET | /api/metrics/history | Get historical metrics |
 | GET | /api/summary | Get metrics summary |
 | POST | /api/agents/:id/command | Send command to agent |
+| GET/POST | /api/deployment-projects | List or create deployment projects |
+| POST | /api/deployment-projects/:id/releases | Upload an immutable release artifact |
+| POST | /api/deployment-projects/:id/releases/:releaseId/deploy | Deploy a release |
+| POST | /api/deployment-projects/:id/releases/:releaseId/rollback | Activate an earlier release |
 
 ## WebSocket Protocol
 

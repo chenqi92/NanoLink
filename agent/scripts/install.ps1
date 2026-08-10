@@ -20,7 +20,22 @@
     Permission level (0-3, default: 0)
 
 .PARAMETER NoTlsVerify
-    Disable TLS certificate verification
+    Deprecated and rejected. Configure a trusted CA instead.
+
+.PARAMETER NoTls
+    Use plaintext gRPC. Only suitable when another trusted transport protects the connection.
+
+.PARAMETER TlsCaCert
+    PEM CA certificate path for an internal or private PKI.
+
+.PARAMETER TlsServerName
+    Certificate DNS name to verify when connecting through a tunnel endpoint.
+
+.PARAMETER TlsClientCert
+    PEM Agent client certificate path for mutual TLS.
+
+.PARAMETER TlsClientKey
+    PEM Agent private key path for mutual TLS.
 
 .PARAMETER Hostname
     Override system hostname
@@ -47,6 +62,11 @@ param(
     [string]$Token,
     [int]$Permission = 0,
     [switch]$NoTlsVerify,
+    [switch]$NoTls,
+    [string]$TlsCaCert,
+    [string]$TlsServerName,
+    [string]$TlsClientCert,
+    [string]$TlsClientKey,
     [string]$Hostname,
     [switch]$ShellEnabled,
     [string]$ShellToken,
@@ -60,6 +80,21 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($NoTlsVerify) {
+    throw "-NoTlsVerify is no longer supported; configure a trusted CA or tls_ca_cert"
+}
+if ($NoTls -and ($TlsCaCert -or $TlsServerName -or $TlsClientCert -or $TlsClientKey)) {
+    throw "TLS certificate options cannot be combined with -NoTls"
+}
+if ([bool]$TlsClientCert -ne [bool]$TlsClientKey) {
+    throw "-TlsClientCert and -TlsClientKey must be provided together"
+}
+foreach ($tlsFile in @($TlsCaCert, $TlsClientCert, $TlsClientKey)) {
+    if ($tlsFile -and -not (Test-Path -LiteralPath $tlsFile -PathType Leaf)) {
+        throw "TLS file not found: $tlsFile"
+    }
+}
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -71,6 +106,12 @@ $Script:ConfigDir = "C:\ProgramData\NanoLink"
 $Script:LogDir = "C:\ProgramData\NanoLink\logs"
 $Script:BinaryName = "nanolink-agent.exe"
 $Script:GitHubRepo = "chenqi92/NanoLink"
+$Script:TlsEnabled = -not $NoTls
+$Script:TlsVerify = $true
+$Script:TlsCaCert = $TlsCaCert
+$Script:TlsServerName = $TlsServerName
+$Script:TlsClientCert = $TlsClientCert
+$Script:TlsClientKey = $TlsClientKey
 
 # =============================================================================
 # Internationalization (i18n)
@@ -542,10 +583,7 @@ function Get-InteractiveConfig {
     $Script:TlsVerify = $true
     if (Read-YesNo -Prompt "Enable TLS?" -Default $false) {
         $Script:TlsEnabled = $true
-        if (-not (Read-YesNo -Prompt "Verify TLS certificate?" -Default $true)) {
-            $Script:TlsVerify = $false
-            Write-Warn "TLS verification disabled - only use for testing!"
-        }
+        Write-Info "TLS certificate verification is required. Configure tls_ca_cert for a private CA."
     }
 
     # Test connection
@@ -796,6 +834,21 @@ function New-Configuration {
         "  # super_token: `"your_super_token`""
     }
 
+    $tlsConfigLines = @()
+    if ($Script:TlsCaCert) {
+        $tlsConfigLines += "    tls_ca_cert: '$($Script:TlsCaCert.Replace("'", "''"))'"
+    }
+    if ($Script:TlsServerName) {
+        $tlsConfigLines += "    tls_server_name: '$($Script:TlsServerName.Replace("'", "''"))'"
+    }
+    if ($Script:TlsClientCert) {
+        $tlsConfigLines += "    tls_client_cert: '$($Script:TlsClientCert.Replace("'", "''"))'"
+    }
+    if ($Script:TlsClientKey) {
+        $tlsConfigLines += "    tls_client_key: '$($Script:TlsClientKey.Replace("'", "''"))'"
+    }
+    $tlsConfigSection = $tlsConfigLines -join "`r`n"
+
     $config = @"
 # NanoLink Agent Configuration
 # Generated on $(Get-Date)
@@ -813,6 +866,7 @@ servers:
     token: "$Script:AuthToken"
     permission: $Script:PermissionLevel
     tls_verify: $($Script:TlsVerify.ToString().ToLower())
+$tlsConfigSection
 
 collector:
   cpu_interval_ms: 1000
@@ -967,6 +1021,9 @@ function Write-Summary {
 # =============================================================================
 function Add-ServerToConfig {
     $configPath = Join-Path $Script:ConfigDir "nanolink.yaml"
+    $agentPath = Join-Path $Script:InstallDir $Script:BinaryName
+    $serverUrl = if ($Script:Url) { $Script:Url } else { $Url }
+    $serverToken = if ($Script:Token) { $Script:Token } else { $Token }
 
     if (-not (Test-Path $configPath)) {
         Write-Err "Configuration file not found: $configPath"
@@ -974,52 +1031,32 @@ function Add-ServerToConfig {
         exit 1
     }
 
-    # Read existing config
-    $content = Get-Content $configPath -Raw
-
-    # Check if server already exists
-    if ($content -match [regex]::Escape("url: `"$Url`"")) {
-        Write-Err "Server $Url already exists in configuration"
-        Write-Host "Use -RemoveServer first to remove it, or update manually"
+    if (-not (Test-Path -LiteralPath $agentPath -PathType Leaf)) {
+        Write-Err "Agent binary not found: $agentPath"
         exit 1
     }
 
-    # Backup config
-    $backup = "$configPath.backup.$(Get-Date -Format 'yyyyMMddHHmmss')"
-    Copy-Item $configPath $backup
+    $addArguments = @(
+        "--config", $configPath, "server", "add",
+        "--host", $serverUrl,
+        "--token", $serverToken,
+        "--permission", $Permission.ToString(),
+        "--tls-enabled", $Script:TlsEnabled.ToString().ToLowerInvariant(),
+        "--tls-verify", "true"
+    )
+    if ($Script:TlsCaCert) { $addArguments += @("--tls-ca-cert", $Script:TlsCaCert) }
+    if ($Script:TlsServerName) { $addArguments += @("--tls-server-name", $Script:TlsServerName) }
+    if ($Script:TlsClientCert) { $addArguments += @("--tls-client-cert", $Script:TlsClientCert) }
+    if ($Script:TlsClientKey) { $addArguments += @("--tls-client-key", $Script:TlsClientKey) }
 
-    # Add new server entry after "servers:" line
-    $tlsVerify = if ($NoTlsVerify) { "false" } else { "true" }
-    $newServer = @"
-
-  - url: "$Url"
-    token: "$Token"
-    permission: $Permission
-    tls_verify: $tlsVerify
-"@
-
-    $content = $content -replace "(servers:)", "`$1$newServer"
-    Set-Content -Path $configPath -Value $content -Encoding UTF8
-
-    Write-Success "Server $Url added to configuration"
-
-    # Try to notify via management API
-    try {
-        $body = @{
-            url        = $Url
-            token      = $Token
-            permission = $Permission
-            tls_verify = -not $NoTlsVerify
-        } | ConvertTo-Json
-
-        $response = Invoke-RestMethod -Uri "http://localhost:9101/api/servers" -Method Post -Body $body -ContentType "application/json" -ErrorAction SilentlyContinue
-        if ($response.success) {
-            Write-Success "Server added via management API (hot-reload)"
-        }
+    & $agentPath @addArguments
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "Failed to add server $serverUrl"
+        exit $LASTEXITCODE
     }
-    catch {
-        Write-Info "Restart the agent to apply changes: Restart-Service $Script:ServiceName"
-    }
+
+    Write-Success "Server $serverUrl added to configuration"
+    Write-Info "Restart the agent to apply changes: Restart-Service $Script:ServiceName"
 }
 
 function Remove-ServerFromConfig {
@@ -1072,7 +1109,8 @@ function Get-ConfigFromServer {
         $Script:ServerUrl = $response.serverUrl
         $Script:AuthToken = $response.token
         $Script:PermissionLevel = if ($response.permission) { $response.permission } else { 0 }
-        $Script:TlsVerify = if ($null -ne $response.tlsVerify) { $response.tlsVerify } else { $true }
+        $Script:TlsEnabled = if ($null -ne $response.tlsVerify) { $response.tlsVerify } else { $true }
+        $Script:TlsVerify = $true
 
         if ([string]::IsNullOrEmpty($Script:ServerUrl) -or [string]::IsNullOrEmpty($Script:AuthToken)) {
             Write-Err "Invalid configuration response from server"
@@ -1100,7 +1138,12 @@ Installation Options:
   -Url URL          Server address (host:port)
   -Token TOKEN      Authentication token
   -Permission N     Permission level (0-3)
-  -NoTlsVerify      Disable TLS verification
+  -NoTls            Use plaintext gRPC (trusted private transport only)
+  -TlsCaCert PATH   PEM CA for an internal/private PKI
+  -TlsServerName N  Certificate DNS name when connecting through a tunnel
+  -TlsClientCert P  PEM Agent certificate for mutual TLS
+  -TlsClientKey P   PEM Agent private key for mutual TLS
+  -NoTlsVerify      Rejected (configure a trusted CA instead)
   -Hostname NAME    Override hostname
   -ShellEnabled     Enable shell commands
   -ShellToken TOKEN Shell super token
@@ -1448,7 +1491,12 @@ function Main {
             $Script:ServerUrl = $Url
             $Script:AuthToken = $Token
             $Script:PermissionLevel = $Permission
-            $Script:TlsVerify = -not $NoTlsVerify
+            $Script:TlsEnabled = -not $NoTls
+            $Script:TlsVerify = $true
+            $Script:TlsCaCert = $TlsCaCert
+            $Script:TlsServerName = $TlsServerName
+            $Script:TlsClientCert = $TlsClientCert
+            $Script:TlsClientKey = $TlsClientKey
             $Script:HostnameOverride = $Hostname
             $Script:ShellEnabled = $ShellEnabled.IsPresent
             $Script:ShellSuperToken = $ShellToken

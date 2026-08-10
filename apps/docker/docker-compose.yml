@@ -15,9 +15,16 @@ services:
     volumes:
       - nanolink-data:/app/data
       - ./config.yaml:/app/config.yaml:ro
+      # Uncomment after creating ./tls and configuring the TLS environment
+      # variables below. Private keys must remain outside the image.
+      # - ./tls:/app/tls:ro
     environment:
       - TZ=Asia/Shanghai
       - NANOLINK_SERVER_MODE=release
+      # Native TLS and optional Agent mutual TLS:
+      # - NANOLINK_TLS_CERT=/app/tls/server.crt
+      # - NANOLINK_TLS_KEY=/app/tls/server.key
+      # - NANOLINK_GRPC_CLIENT_CA=/app/tls/agent-ca.crt
       # Required secrets: Compose refuses to start until the operator supplies
       # non-placeholder values (for example via a local, uncommitted .env file).
       - "NANOLINK_ADMIN_USERNAME=${NANOLINK_ADMIN_USERNAME:?Set NANOLINK_ADMIN_USERNAME}"
@@ -27,6 +34,10 @@ services:
       # Database configuration (SQLite by default)
       - NANOLINK_DATABASE_TYPE=sqlite
       - NANOLINK_DATABASE_PATH=/app/data/nanolink.db
+      # Required for remote application deployment artifact downloads.
+      # Example: https://nanolink.example.com
+      - NANOLINK_EXTERNAL_URL=${NANOLINK_EXTERNAL_URL:-}
+      - NANOLINK_DEPLOYMENT_STORAGE_PATH=/app/data/artifacts
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
       interval: 30s

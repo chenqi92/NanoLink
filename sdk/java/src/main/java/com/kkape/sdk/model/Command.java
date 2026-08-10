@@ -37,7 +37,10 @@ public class Command {
         DOCKER_LOGS(34, TokenValidator.PermissionLevel.BASIC_WRITE),
 
         SYSTEM_REBOOT(40, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
-        SHELL_EXECUTE(50, TokenValidator.PermissionLevel.SYSTEM_ADMIN);
+        SHELL_EXECUTE(50, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
+
+        DEPLOY_EXECUTE(120, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
+        DEPLOY_ROLLBACK(121, TokenValidator.PermissionLevel.SYSTEM_ADMIN);
 
         private final int code;
         private final int requiredPermission;

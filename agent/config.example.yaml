@@ -20,7 +20,15 @@ servers:
     token: your_token_here
     permission: 0        # 0=READ_ONLY, 1=BASIC_WRITE, 2=SERVICE_CONTROL, 3=SYSTEM_ADMIN
     tls_enabled: true    # Production default: encrypted gRPC (grpcs://)
-    tls_verify: true     # Verify TLS certificates
+    tls_verify: true     # Required when TLS is enabled; false is rejected
+    # Private/internal PKI: add the issuing CA without disabling verification.
+    # tls_ca_cert: /etc/nanolink/tls/ca.crt
+    # Override SNI/hostname verification when host is a tunnel endpoint such as
+    # 127.0.0.1. This must match a DNS/IP SAN in the server certificate.
+    # tls_server_name: monitor.example.com
+    # Optional mutual TLS identity. Configure both files; keep the key mode 0600.
+    # tls_client_cert: /etc/nanolink/tls/agent.crt
+    # tls_client_key: /etc/nanolink/tls/agent.key
 
 # Agent self-update is fail-closed: applying a binary requires an Ed25519
 # signature verified by a pinned release key. Leave auto-apply disabled unless
@@ -73,6 +81,17 @@ shell:
     - "mkfs"
     - "> /dev"
     - "dd if="
+
+# Application deployment (requires permission level 3).
+# Keep disabled until the writable roots below are also allowed by the
+# nanolink-agent systemd sandbox.
+deployments:
+  enabled: false
+  allowed_roots:
+    - /opt/nanolink/apps
+    - /var/www/nanolink
+  max_artifact_size: 536870912 # 512 MiB
+  timeout_seconds: 600
 
 # Logging settings
 logging:

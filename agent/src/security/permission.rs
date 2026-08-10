@@ -56,11 +56,11 @@ impl PermissionChecker {
             CommandType::DockerStart => 2,
             CommandType::DockerStop => 2,
             CommandType::DockerRestart => 2,
-            CommandType::FileUpload => 2,
 
             // System admin operations (level 3)
             CommandType::SystemReboot => 3,
             CommandType::ShellExecute => 3,
+            CommandType::FileUpload => 3,
 
             // Agent update operations (level 3 - SYSTEM_ADMIN required)
             CommandType::AgentCheckUpdate => 3,
@@ -95,6 +95,9 @@ impl PermissionChecker {
             // Health check commands
             CommandType::HealthCheck => 0,      // All levels
             CommandType::ConnectivityTest => 0, // All levels
+
+            // Application deployment is a privileged filesystem + service action.
+            CommandType::DeployExecute | CommandType::DeployRollback => 3,
 
             // Unknown commands require highest level
             _ => 3,

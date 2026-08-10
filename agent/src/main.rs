@@ -135,6 +135,18 @@ enum ServerAction {
         /// Enable TLS certificate verification
         #[arg(long)]
         tls_verify: Option<bool>,
+        /// Additional PEM CA bundle used to verify the server
+        #[arg(long)]
+        tls_ca_cert: Option<String>,
+        /// Certificate name used for TLS SNI/hostname verification
+        #[arg(long)]
+        tls_server_name: Option<String>,
+        /// PEM client certificate chain for mutual TLS
+        #[arg(long)]
+        tls_client_cert: Option<String>,
+        /// PEM client private key for mutual TLS
+        #[arg(long)]
+        tls_client_key: Option<String>,
     },
     /// Remove a server (interactive if host not provided)
     Remove {
@@ -167,6 +179,18 @@ enum ServerAction {
         /// Enable TLS certificate verification
         #[arg(long)]
         tls_verify: Option<bool>,
+        /// Additional PEM CA bundle used to verify the server
+        #[arg(long)]
+        tls_ca_cert: Option<String>,
+        /// Certificate name used for TLS SNI/hostname verification
+        #[arg(long)]
+        tls_server_name: Option<String>,
+        /// PEM client certificate chain for mutual TLS
+        #[arg(long)]
+        tls_client_cert: Option<String>,
+        /// PEM client private key for mutual TLS
+        #[arg(long)]
+        tls_client_key: Option<String>,
     },
 }
 
@@ -471,6 +495,10 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                     permission,
                     tls_enabled,
                     tls_verify,
+                    tls_ca_cert,
+                    tls_server_name,
+                    tls_client_cert,
+                    tls_client_key,
                 } => {
                     handle_server_add(
                         &mut config,
@@ -481,6 +509,10 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                         *permission,
                         *tls_enabled,
                         *tls_verify,
+                        tls_ca_cert.clone(),
+                        tls_server_name.clone(),
+                        tls_client_cert.clone(),
+                        tls_client_key.clone(),
                     )?;
                 }
                 ServerAction::Remove { host, port } => {
@@ -508,6 +540,10 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                     permission,
                     tls_enabled,
                     tls_verify,
+                    tls_ca_cert,
+                    tls_server_name,
+                    tls_client_cert,
+                    tls_client_key,
                 } => {
                     handle_server_update(
                         &mut config,
@@ -518,6 +554,10 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                         *permission,
                         *tls_enabled,
                         *tls_verify,
+                        tls_ca_cert.clone(),
+                        tls_server_name.clone(),
+                        tls_client_cert.clone(),
+                        tls_client_key.clone(),
                     )?;
                 }
             }
@@ -538,6 +578,10 @@ fn handle_server_add(
     permission: Option<u8>,
     tls_enabled: Option<bool>,
     tls_verify: Option<bool>,
+    tls_ca_cert: Option<String>,
+    tls_server_name: Option<String>,
+    tls_client_cert: Option<String>,
+    tls_client_key: Option<String>,
 ) -> Result<()> {
     use crate::config::ServerConfig;
     use dialoguer::{Confirm, Input, Password, Select};
@@ -601,18 +645,9 @@ fn handle_server_add(
         false
     };
 
-    let final_tls_verify = if let Some(tv) = tls_verify {
-        tv
-    } else if needs_interactive && final_tls_enabled {
-        Confirm::new()
-            .with_prompt("Verify TLS certificate?")
-            .default(true)
-            .interact()?
-    } else {
-        true
-    };
+    let final_tls_verify = tls_verify.unwrap_or(true);
 
-    config.servers.push(ServerConfig {
+    let server = ServerConfig {
         host: final_host.clone(),
         port: final_port,
         token: final_token,
@@ -620,7 +655,13 @@ fn handle_server_add(
         permission: final_permission,
         tls_enabled: final_tls_enabled,
         tls_verify: final_tls_verify,
-    });
+        tls_ca_cert,
+        tls_server_name,
+        tls_client_cert,
+        tls_client_key,
+    };
+    server.validate_tls_security().map_err(anyhow::Error::msg)?;
+    config.servers.push(server);
 
     save_config(config, config_path)?;
     println!("Server {final_host}:{final_port} added successfully.");
@@ -705,6 +746,10 @@ fn handle_server_update(
     permission: Option<u8>,
     tls_enabled: Option<bool>,
     tls_verify: Option<bool>,
+    tls_ca_cert: Option<String>,
+    tls_server_name: Option<String>,
+    tls_client_cert: Option<String>,
+    tls_client_key: Option<String>,
 ) -> Result<()> {
     use dialoguer::{Confirm, Password, Select};
 
@@ -799,12 +844,27 @@ fn handle_server_update(
 
             if let Some(tv) = tls_verify {
                 s.tls_verify = tv;
-            } else if needs_interactive && s.tls_enabled {
-                s.tls_verify = Confirm::new()
-                    .with_prompt("Verify TLS certificate?")
-                    .default(s.tls_verify)
-                    .interact()?;
             }
+
+            if let Some(value) = tls_ca_cert {
+                s.tls_ca_cert = Some(value);
+            }
+            if let Some(value) = tls_server_name {
+                s.tls_server_name = Some(value);
+            }
+            if let Some(value) = tls_client_cert {
+                s.tls_client_cert = Some(value);
+            }
+            if let Some(value) = tls_client_key {
+                s.tls_client_key = Some(value);
+            }
+            if !s.tls_enabled {
+                s.tls_ca_cert = None;
+                s.tls_server_name = None;
+                s.tls_client_cert = None;
+                s.tls_client_key = None;
+            }
+            s.validate_tls_security().map_err(anyhow::Error::msg)?;
 
             save_config(config, config_path)?;
             println!("Server {final_host}:{final_port} updated successfully.");
@@ -1242,10 +1302,7 @@ fn interactive_server_action(
                             .default(s.tls_enabled)
                             .interact()?;
                         if s.tls_enabled {
-                            s.tls_verify = Confirm::with_theme(&theme)
-                                .with_prompt(t("server.verify_tls", lang))
-                                .default(s.tls_verify)
-                                .interact()?;
+                            s.tls_verify = true;
                         }
                     }
 
@@ -1339,14 +1396,7 @@ fn interactive_add_server(config_path: &Path, lang: Lang) -> Result<()> {
         .default(false)
         .interact()?;
 
-    let tls_verify = if tls_enabled {
-        Confirm::with_theme(&theme)
-            .with_prompt(t("server.verify_tls", lang))
-            .default(true)
-            .interact()?
-    } else {
-        true
-    };
+    let tls_verify = true;
 
     // Add server
     let mut config = Config::load(config_path)?;
@@ -1368,6 +1418,10 @@ fn interactive_add_server(config_path: &Path, lang: Lang) -> Result<()> {
         permission,
         tls_enabled,
         tls_verify,
+        tls_ca_cert: None,
+        tls_server_name: None,
+        tls_client_cert: None,
+        tls_client_key: None,
     });
 
     save_config(&config, config_path)?;

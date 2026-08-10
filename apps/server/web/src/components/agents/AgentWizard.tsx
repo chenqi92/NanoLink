@@ -15,6 +15,10 @@ export function AgentWizard({ onClose }: { onClose: () => void }) {
   const [perm, setPerm] = useState(0)
   const [shell, setShell] = useState(false)
   const [tls, setTls] = useState(true)
+  const [tlsCaCert, setTlsCaCert] = useState("")
+  const [tlsServerName, setTlsServerName] = useState("")
+  const [tlsClientCert, setTlsClientCert] = useState("")
+  const [tlsClientKey, setTlsClientKey] = useState("")
   const [generating, setGenerating] = useState(false)
   const [config, setConfig] = useState<GeneratedConfig | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -31,6 +35,10 @@ export function AgentWizard({ onClose }: { onClose: () => void }) {
         tlsVerify: tls,
         hostname: name || undefined,
         shellEnabled: shell,
+        tlsCaCert: tlsCaCert || undefined,
+        tlsServerName: tlsServerName || undefined,
+        tlsClientCert: tlsClientCert || undefined,
+        tlsClientKey: tlsClientKey || undefined,
       })
       setConfig(data)
     } catch (e) {
@@ -119,9 +127,29 @@ export function AgentWizard({ onClose }: { onClose: () => void }) {
                 <span>{t("wizard.enableShell")}</span>
               </label>
               <label className="row gap-2" style={{ alignItems: "center", cursor: "pointer", fontSize: 12.5 }}>
-                <input type="checkbox" checked={tls} onChange={(e) => setTls(e.target.checked)} style={{ accentColor: "var(--fg)" }} />
+                <input type="checkbox" checked={tls} onChange={(e) => {
+                  setTls(e.target.checked)
+                  if (!e.target.checked) {
+                    setTlsCaCert("")
+                    setTlsServerName("")
+                    setTlsClientCert("")
+                    setTlsClientKey("")
+                  }
+                }} style={{ accentColor: "var(--fg)" }} />
                 <span>{t("wizard.enableTls")}</span>
               </label>
+              {tls && (
+                <details className="card" style={{ padding: "9px 11px", marginTop: 4 }}>
+                  <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--fg-2)" }}>{t("wizard.tlsAdvanced")}</summary>
+                  <div className="col gap-2" style={{ marginTop: 10 }}>
+                    <input className="input mono" value={tlsCaCert} onChange={(e) => setTlsCaCert(e.target.value)} placeholder={t("wizard.tlsCaCertPlaceholder")} />
+                    <input className="input mono" value={tlsServerName} onChange={(e) => setTlsServerName(e.target.value)} placeholder={t("wizard.tlsServerNamePlaceholder")} />
+                    <input className="input mono" value={tlsClientCert} onChange={(e) => setTlsClientCert(e.target.value)} placeholder={t("wizard.tlsClientCertPlaceholder")} />
+                    <input className="input mono" value={tlsClientKey} onChange={(e) => setTlsClientKey(e.target.value)} placeholder={t("wizard.tlsClientKeyPlaceholder")} />
+                    <span className="dim" style={{ fontSize: 10.5 }}>{t("wizard.tlsAdvancedHint")}</span>
+                  </div>
+                </details>
+              )}
             </div>
           </FormBlock>
         </div>

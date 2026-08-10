@@ -41,6 +41,10 @@ class CommandType(IntEnum):
     # Shell command (requires SuperToken)
     SHELL_EXECUTE = 50
 
+    # Application deployment
+    DEPLOY_EXECUTE = 120
+    DEPLOY_ROLLBACK = 121
+
 
 @dataclass
 class Command:

@@ -197,6 +197,9 @@ const (
 	// Health Check Commands
 	CommandType_HEALTH_CHECK      CommandType = 110 // Custom health check
 	CommandType_CONNECTIVITY_TEST CommandType = 111 // Network connectivity test
+	// Application deployment (SYSTEM_ADMIN; structured, audited operations)
+	CommandType_DEPLOY_EXECUTE  CommandType = 120 // Download, verify, activate, restart/reload, health-check
+	CommandType_DEPLOY_ROLLBACK CommandType = 121 // Atomically activate an existing release
 )
 
 // Enum value maps for CommandType.
@@ -245,6 +248,8 @@ var (
 		104: "CONFIG_LIST_BACKUPS",
 		110: "HEALTH_CHECK",
 		111: "CONNECTIVITY_TEST",
+		120: "DEPLOY_EXECUTE",
+		121: "DEPLOY_ROLLBACK",
 	}
 	CommandType_value = map[string]int32{
 		"COMMAND_TYPE_UNSPECIFIED": 0,
@@ -290,6 +295,8 @@ var (
 		"CONFIG_LIST_BACKUPS":      104,
 		"HEALTH_CHECK":             110,
 		"CONNECTIVITY_TEST":        111,
+		"DEPLOY_EXECUTE":           120,
+		"DEPLOY_ROLLBACK":          121,
 	}
 )
 
@@ -6579,7 +6586,7 @@ const file_nanolink_proto_rawDesc = "" +
 	"\x19DATA_REQUEST_NETWORK_INFO\x10\x03\x12\x1e\n" +
 	"\x1aDATA_REQUEST_USER_SESSIONS\x10\x04\x12\x19\n" +
 	"\x15DATA_REQUEST_GPU_INFO\x10\x05\x12\x17\n" +
-	"\x13DATA_REQUEST_HEALTH\x10\x06*\xde\x06\n" +
+	"\x13DATA_REQUEST_HEALTH\x10\x06*\x87\a\n" +
 	"\vCommandType\x12\x1c\n" +
 	"\x18COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fPROCESS_LIST\x10\x01\x12\x10\n" +
@@ -6626,7 +6633,9 @@ const file_nanolink_proto_rawDesc = "" +
 	"\x0fCONFIG_ROLLBACK\x10g\x12\x17\n" +
 	"\x13CONFIG_LIST_BACKUPS\x10h\x12\x10\n" +
 	"\fHEALTH_CHECK\x10n\x12\x15\n" +
-	"\x11CONNECTIVITY_TEST\x10o2\xf9\x03\n" +
+	"\x11CONNECTIVITY_TEST\x10o\x12\x12\n" +
+	"\x0eDEPLOY_EXECUTE\x10x\x12\x13\n" +
+	"\x0fDEPLOY_ROLLBACK\x10y2\xf9\x03\n" +
 	"\x0fNanoLinkService\x12=\n" +
 	"\fAuthenticate\x12\x15.nanolink.AuthRequest\x1a\x16.nanolink.AuthResponse\x12T\n" +
 	"\rStreamMetrics\x12\x1e.nanolink.MetricsStreamRequest\x1a\x1f.nanolink.MetricsStreamResponse(\x010\x01\x128\n" +

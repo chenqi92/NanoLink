@@ -91,6 +91,10 @@ impl WizardState {
             permission: PERMISSION_LEVELS[self.permission].1,
             tls_enabled: self.tls_enabled,
             tls_verify: self.tls_verify,
+            tls_ca_cert: None,
+            tls_server_name: None,
+            tls_client_cert: None,
+            tls_client_key: None,
         };
 
         let mut config = Config::sample();
@@ -281,7 +285,8 @@ impl WizardApp {
                 ui.horizontal(|ui| {
                     ui.checkbox(&mut self.state.tls_enabled, "Enable TLS");
                     if self.state.tls_enabled {
-                        ui.checkbox(&mut self.state.tls_verify, "Verify Certificate");
+                        self.state.tls_verify = true;
+                        ui.label("Certificate verification is required");
                     }
                 });
                 ui.end_row();

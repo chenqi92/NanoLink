@@ -1,4 +1,5 @@
 mod config_mgr;
+mod deployment;
 mod docker_ops;
 mod file_ops;
 mod health;
@@ -11,6 +12,7 @@ mod shell;
 mod update;
 
 pub use config_mgr::ConfigManager;
+pub use deployment::DeploymentExecutor;
 pub use docker_ops::DockerExecutor;
 pub use file_ops::FileExecutor;
 pub use health::HealthExecutor;

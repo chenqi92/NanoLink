@@ -484,6 +484,14 @@ struct AddServerRequest {
     tls_enabled: bool,
     #[serde(default = "default_true")]
     tls_verify: bool,
+    #[serde(default)]
+    tls_ca_cert: Option<String>,
+    #[serde(default)]
+    tls_server_name: Option<String>,
+    #[serde(default)]
+    tls_client_cert: Option<String>,
+    #[serde(default)]
+    tls_client_key: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -627,7 +635,20 @@ async fn add_server(
         permission: req.permission,
         tls_enabled: req.tls_enabled,
         tls_verify: req.tls_verify,
+        tls_ca_cert: req.tls_ca_cert.clone(),
+        tls_server_name: req.tls_server_name.clone(),
+        tls_client_cert: req.tls_client_cert.clone(),
+        tls_client_key: req.tls_client_key.clone(),
     };
+    if let Err(message) = server_config.validate_tls_security() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message,
+            }),
+        );
+    }
 
     // Check if server already exists
     {
@@ -693,6 +714,37 @@ async fn update_server(
             }),
         );
     }
+    if req.permission > 3 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message: "Permission must be 0-3".to_string(),
+            }),
+        );
+    }
+    let tls_candidate = ServerConfig {
+        host: req.host.clone(),
+        port: req.port,
+        token: String::new(),
+        management_token: None,
+        permission: req.permission,
+        tls_enabled: req.tls_enabled,
+        tls_verify: req.tls_verify,
+        tls_ca_cert: req.tls_ca_cert.clone(),
+        tls_server_name: req.tls_server_name.clone(),
+        tls_client_cert: req.tls_client_cert.clone(),
+        tls_client_key: req.tls_client_key.clone(),
+    };
+    if let Err(message) = tls_candidate.validate_tls_security() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                message,
+            }),
+        );
+    }
 
     // Update server in config
     {
@@ -723,6 +775,10 @@ async fn update_server(
                     permission: req.permission,
                     tls_enabled: req.tls_enabled,
                     tls_verify: req.tls_verify,
+                    tls_ca_cert: req.tls_ca_cert.clone(),
+                    tls_server_name: req.tls_server_name.clone(),
+                    tls_client_cert: req.tls_client_cert.clone(),
+                    tls_client_key: req.tls_client_key.clone(),
                 };
             }
             None => {
@@ -758,6 +814,10 @@ async fn update_server(
         permission: req.permission,
         tls_enabled: req.tls_enabled,
         tls_verify: req.tls_verify,
+        tls_ca_cert: req.tls_ca_cert.clone(),
+        tls_server_name: req.tls_server_name.clone(),
+        tls_client_cert: req.tls_client_cert.clone(),
+        tls_client_key: req.tls_client_key.clone(),
     }));
 
     info!("Updated server: {}:{}", req.host, req.port);

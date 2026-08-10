@@ -1,6 +1,9 @@
 package handler
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseServerEndpoint(t *testing.T) {
 	tests := []struct {
@@ -92,5 +95,48 @@ func TestHostForCLIWrapsIPv6(t *testing.T) {
 	}
 	if got := hostForCLI("example.com"); got != "example.com" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestGenerateTLSConfigIncludesPrivateCAAndMTLS(t *testing.T) {
+	req := GenerateConfigRequest{
+		Permission:    2,
+		TLSVerify:     true,
+		TLSCACert:     "/etc/nanolink/tls/ca.crt",
+		TLSServerName: "monitor.example.com",
+		TLSClientCert: "/etc/nanolink/tls/agent.crt",
+		TLSClientKey:  "/etc/nanolink/tls/agent.key",
+	}
+
+	yaml := generateYAMLConfig(req, "token", "127.0.0.1", 39100)
+	for _, expected := range []string{
+		"tls_enabled: true",
+		"tls_verify: true",
+		"tls_ca_cert: \"/etc/nanolink/tls/ca.crt\"",
+		"tls_server_name: \"monitor.example.com\"",
+		"tls_client_cert: \"/etc/nanolink/tls/agent.crt\"",
+		"tls_client_key: \"/etc/nanolink/tls/agent.key\"",
+	} {
+		if !strings.Contains(yaml, expected) {
+			t.Fatalf("generated YAML does not contain %q:\n%s", expected, yaml)
+		}
+	}
+
+	command := generateUnixInstallCommand(req, "token", "127.0.0.1:39100")
+	for _, flag := range []string{"--tls-ca-cert", "--tls-server-name", "--tls-client-cert", "--tls-client-key"} {
+		if !strings.Contains(command, flag) {
+			t.Fatalf("generated command does not contain %q: %s", flag, command)
+		}
+	}
+}
+
+func TestGeneratePlaintextInstallUsesNoTLSInsteadOfDisablingVerification(t *testing.T) {
+	req := GenerateConfigRequest{TLSVerify: false}
+	command := generateUnixInstallCommand(req, "token", "example.com:39100")
+	if !strings.Contains(command, "--no-tls") {
+		t.Fatalf("generated command does not disable TLS explicitly: %s", command)
+	}
+	if strings.Contains(command, "--no-tls-verify") {
+		t.Fatalf("generated command disables certificate verification: %s", command)
 	}
 }

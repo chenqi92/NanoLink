@@ -18,9 +18,17 @@ INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/nanolink"
 LOG_DIR="/var/log/nanolink"
 DATA_DIR="/var/lib/nanolink"
+APP_DEPLOY_DIR="/opt/nanolink/apps"
+STATIC_DEPLOY_DIR="/var/www/nanolink"
 SERVICE_NAME="nanolink-agent"
 BINARY_NAME="nanolink-agent"
 GITHUB_REPO="chenqi92/NanoLink"
+TLS_ENABLED="true"
+TLS_VERIFY="true"
+TLS_CA_CERT=""
+TLS_SERVER_NAME=""
+TLS_CLIENT_CERT=""
+TLS_CLIENT_KEY=""
 
 # Colors
 RED='\033[0;31m'
@@ -767,12 +775,7 @@ interactive_config() {
     TLS_VERIFY="true"
     if prompt_yes_no "Enable TLS?" "n"; then
         TLS_ENABLED="true"
-        if prompt_yes_no "$(msg verify_tls)" "y"; then
-            TLS_VERIFY="true"
-        else
-            TLS_VERIFY="false"
-            warn "$(msg tls_disabled_warn)"
-        fi
+        info "TLS certificate verification is required. Use tls_ca_cert for a private CA."
     fi
 
     # Test connection
@@ -1027,11 +1030,15 @@ create_directories() {
     mkdir -p "$CONFIG_DIR"
     mkdir -p "$LOG_DIR"
     mkdir -p "$DATA_DIR"
+    mkdir -p "$APP_DEPLOY_DIR"
+    mkdir -p "$STATIC_DEPLOY_DIR"
 
     # Set permissions
     chmod 755 "$CONFIG_DIR"
     chmod 755 "$LOG_DIR"
     chmod 755 "$DATA_DIR"
+    chmod 755 "$APP_DEPLOY_DIR"
+    chmod 755 "$STATIC_DEPLOY_DIR"
 
     success "Directories created"
 }
@@ -1040,6 +1047,12 @@ generate_config() {
     step "Generating Configuration"
 
     local config_file="${CONFIG_DIR}/nanolink.yaml"
+    local tls_extra_config=""
+
+    [ -n "$TLS_CA_CERT" ] && tls_extra_config+="    tls_ca_cert: \"${TLS_CA_CERT}\""$'\n'
+    [ -n "$TLS_SERVER_NAME" ] && tls_extra_config+="    tls_server_name: \"${TLS_SERVER_NAME}\""$'\n'
+    [ -n "$TLS_CLIENT_CERT" ] && tls_extra_config+="    tls_client_cert: \"${TLS_CLIENT_CERT}\""$'\n'
+    [ -n "$TLS_CLIENT_KEY" ] && tls_extra_config+="    tls_client_key: \"${TLS_CLIENT_KEY}\""$'\n'
 
     # Backup existing config
     if [ -f "$config_file" ]; then
@@ -1066,6 +1079,7 @@ servers:
     token: "${TOKEN}"
     permission: ${PERMISSION}
     tls_verify: ${TLS_VERIFY}
+${tls_extra_config}
 
 collector:
   cpu_interval_ms: 1000
@@ -1113,6 +1127,15 @@ logging:
   level: info
   audit_enabled: true
   audit_file: "${LOG_DIR}/audit.log"
+
+# Structured application deployment is opt-in and always requires permission 3.
+deployments:
+  enabled: false
+  allowed_roots:
+    - "${APP_DEPLOY_DIR}"
+    - "${STATIC_DEPLOY_DIR}"
+  max_artifact_size: 536870912
+  timeout_seconds: 600
 EOF
 
     # Secure the config file (contains tokens)
@@ -1155,7 +1178,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/log/nanolink /var/lib/nanolink
+ReadWritePaths=/var/log/nanolink /var/lib/nanolink -/opt/nanolink/apps -/var/www/nanolink
 ReadOnlyPaths=/etc/nanolink
 
 # Resource limits
@@ -1374,9 +1397,33 @@ parse_args() {
                 PERMISSION="$2"
                 shift 2
                 ;;
-            --no-tls-verify)
-                TLS_VERIFY="false"
+            --no-tls)
+                TLS_ENABLED="false"
                 shift
+                ;;
+            --tls-ca-cert)
+                TLS_CA_CERT="$2"
+                TLS_ENABLED="true"
+                shift 2
+                ;;
+            --tls-server-name)
+                TLS_SERVER_NAME="$2"
+                TLS_ENABLED="true"
+                shift 2
+                ;;
+            --tls-client-cert)
+                TLS_CLIENT_CERT="$2"
+                TLS_ENABLED="true"
+                shift 2
+                ;;
+            --tls-client-key)
+                TLS_CLIENT_KEY="$2"
+                TLS_ENABLED="true"
+                shift 2
+                ;;
+            --no-tls-verify)
+                error "--no-tls-verify is no longer supported; use a trusted CA or tls_ca_cert"
+                exit 1
                 ;;
             --hostname)
                 HOSTNAME_OVERRIDE="$2"
@@ -1420,7 +1467,12 @@ parse_args() {
                 echo "  --url URL           Server address (host:port)"
                 echo "  --token TOKEN       Authentication token"
                 echo "  --permission N      Permission level (0-3)"
-                echo "  --no-tls-verify     Disable TLS verification"
+                echo "  --no-tls            Use plaintext gRPC (trusted private transport only)"
+                echo "  --tls-ca-cert PATH  PEM CA for an internal/private PKI"
+                echo "  --tls-server-name N Certificate DNS name when connecting through a tunnel"
+                echo "  --tls-client-cert P PEM Agent certificate for mutual TLS"
+                echo "  --tls-client-key P  PEM Agent private key for mutual TLS"
+                echo "  --no-tls-verify     Rejected (use a trusted CA or tls_ca_cert)"
                 echo "  --hostname NAME     Override hostname"
                 echo "  --shell-enabled     Enable shell commands"
                 echo "  --shell-token TOKEN Shell super token"
@@ -1469,8 +1521,32 @@ parse_args() {
             exit 1
         fi
         PERMISSION="${PERMISSION:-0}"
+        TLS_ENABLED="${TLS_ENABLED:-true}"
         TLS_VERIFY="${TLS_VERIFY:-true}"
         SHELL_ENABLED="${SHELL_ENABLED:-false}"
+    fi
+
+    if [ "$TLS_ENABLED" != "true" ] && { [ -n "$TLS_CA_CERT" ] || [ -n "$TLS_SERVER_NAME" ] || [ -n "$TLS_CLIENT_CERT" ] || [ -n "$TLS_CLIENT_KEY" ]; }; then
+        error "TLS certificate options cannot be combined with --no-tls"
+        exit 1
+    fi
+    if { [ -n "$TLS_CLIENT_CERT" ] && [ -z "$TLS_CLIENT_KEY" ]; } || { [ -z "$TLS_CLIENT_CERT" ] && [ -n "$TLS_CLIENT_KEY" ]; }; then
+        error "--tls-client-cert and --tls-client-key must be provided together"
+        exit 1
+    fi
+    for tls_file in "$TLS_CA_CERT" "$TLS_CLIENT_CERT" "$TLS_CLIENT_KEY"; do
+        if [ -n "$tls_file" ] && [ ! -f "$tls_file" ]; then
+            error "TLS file not found: $tls_file"
+            exit 1
+        fi
+        if [[ "$tls_file" == *'"'* ]] || [[ "$tls_file" == *$'\n'* ]]; then
+            error "TLS file paths cannot contain quotes or newlines"
+            exit 1
+        fi
+    done
+    if [[ "$TLS_SERVER_NAME" == *'"'* ]] || [[ "$TLS_SERVER_NAME" == *$'\n'* ]]; then
+        error "TLS server name cannot contain quotes or newlines"
+        exit 1
     fi
 }
 
@@ -1479,6 +1555,7 @@ parse_args() {
 # =============================================================================
 add_server_to_config() {
     local config_file="${CONFIG_DIR}/nanolink.yaml"
+    local agent_binary="${INSTALL_DIR}/${BINARY_NAME}"
 
     if [ ! -f "$config_file" ]; then
         error "Configuration file not found: $config_file"
@@ -1486,36 +1563,31 @@ add_server_to_config() {
         exit 1
     fi
 
-    # Check if server already exists
-    if grep -q "url: \"${SERVER_URL}\"" "$config_file" 2>/dev/null; then
-        error "Server ${SERVER_URL} already exists in configuration"
-        echo "Use --remove-server first to remove it, or update manually"
+    if [ ! -x "$agent_binary" ]; then
+        error "Agent binary not found or not executable: $agent_binary"
         exit 1
     fi
 
-    # Backup config
-    cp "$config_file" "${config_file}.backup.$(date +%Y%m%d%H%M%S)"
+    local add_args=(
+        --config "$config_file" server add
+        --host "$SERVER_URL"
+        --token "$TOKEN"
+        --permission "${PERMISSION:-0}"
+        --tls-enabled "${TLS_ENABLED:-true}"
+        --tls-verify true
+    )
+    [ -n "$TLS_CA_CERT" ] && add_args+=(--tls-ca-cert "$TLS_CA_CERT")
+    [ -n "$TLS_SERVER_NAME" ] && add_args+=(--tls-server-name "$TLS_SERVER_NAME")
+    [ -n "$TLS_CLIENT_CERT" ] && add_args+=(--tls-client-cert "$TLS_CLIENT_CERT")
+    [ -n "$TLS_CLIENT_KEY" ] && add_args+=(--tls-client-key "$TLS_CLIENT_KEY")
 
-    # Add new server entry
-    # Find the line with "servers:" and add after it
-    sed -i "/^servers:/a\\  - url: \"${SERVER_URL}\"\n    token: \"${TOKEN}\"\n    permission: ${PERMISSION:-0}\n    tls_verify: ${TLS_VERIFY:-true}" "$config_file"
+    if ! "$agent_binary" "${add_args[@]}"; then
+        error "Failed to add server ${SERVER_URL}"
+        exit 1
+    fi
 
     success "Server ${SERVER_URL} added to configuration"
-
-    # Notify via management API if available
-    if command -v curl &> /dev/null; then
-        local mgmt_response=$(curl -s -X POST "http://localhost:9101/api/servers" \
-            -H "Content-Type: application/json" \
-            -d "{\"url\":\"${SERVER_URL}\",\"token\":\"${TOKEN}\",\"permission\":${PERMISSION:-0},\"tls_verify\":${TLS_VERIFY:-true}}" 2>/dev/null)
-
-        if echo "$mgmt_response" | grep -q '"success":true'; then
-            success "Server added via management API (hot-reload)"
-        else
-            info "Restart the agent to apply changes: sudo systemctl restart nanolink-agent"
-        fi
-    else
-        info "Restart the agent to apply changes: sudo systemctl restart nanolink-agent"
-    fi
+    info "Restart the agent to apply changes: sudo systemctl restart nanolink-agent"
 }
 
 remove_server_from_config() {
@@ -1573,13 +1645,15 @@ fetch_and_apply_config() {
         SERVER_URL=$(echo "$response" | jq -r '.serverUrl // empty')
         TOKEN=$(echo "$response" | jq -r '.token // empty')
         PERMISSION=$(echo "$response" | jq -r '.permission // 0')
-        TLS_VERIFY=$(echo "$response" | jq -r '.tlsVerify // true')
+        TLS_ENABLED=$(echo "$response" | jq -r '.tlsVerify // true')
+        TLS_VERIFY="true"
     else
         # Fallback: basic grep parsing
         SERVER_URL=$(echo "$response" | grep -o '"serverUrl":"[^"]*"' | cut -d'"' -f4)
         TOKEN=$(echo "$response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
         PERMISSION=$(echo "$response" | grep -o '"permission":[0-9]*' | cut -d':' -f2)
-        TLS_VERIFY=$(echo "$response" | grep -o '"tlsVerify":[a-z]*' | cut -d':' -f2)
+        TLS_ENABLED=$(echo "$response" | grep -o '"tlsVerify":[a-z]*' | cut -d':' -f2)
+        TLS_VERIFY="true"
     fi
 
     if [ -z "$SERVER_URL" ] || [ -z "$TOKEN" ]; then
@@ -1588,7 +1662,8 @@ fetch_and_apply_config() {
     fi
 
     PERMISSION="${PERMISSION:-0}"
-    TLS_VERIFY="${TLS_VERIFY:-true}"
+    TLS_ENABLED="${TLS_ENABLED:-true}"
+    TLS_VERIFY="true"
     SILENT_MODE=true
 
     success "Configuration fetched successfully"
@@ -1782,9 +1857,7 @@ interactive_add_server() {
     TLS_VERIFY="true"
     if prompt_yes_no "Enable TLS?" "n"; then
         TLS_ENABLED="true"
-        if ! prompt_yes_no "Verify TLS certificate?" "y"; then
-            TLS_VERIFY="false"
-        fi
+        info "TLS certificate verification is required. Use tls_ca_cert for a private CA."
     fi
     
     add_server_to_config

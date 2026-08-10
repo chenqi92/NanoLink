@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 use tokio::time;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::metadata::MetadataValue;
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use tonic::{Request, Streaming};
 use tracing::{debug, error, info, warn};
 
@@ -36,6 +36,69 @@ static AGENT_START: OnceLock<Instant> = OnceLock::new();
 
 fn agent_uptime_seconds() -> u64 {
     AGENT_START.get_or_init(Instant::now).elapsed().as_secs()
+}
+
+fn configure_tls_endpoint(endpoint: Endpoint, server_config: &ServerConfig) -> Result<Endpoint> {
+    server_config
+        .validate_tls_security()
+        .map_err(anyhow::Error::msg)?;
+    if !server_config.tls_enabled {
+        return Ok(endpoint);
+    }
+
+    // Tonic 0.14 does not activate compiled-in root stores merely because the
+    // feature flags are enabled. with_enabled_roots() is required; omitting it
+    // creates an empty trust store and surfaces as UnknownIssuer.
+    let mut tls_config = ClientTlsConfig::new()
+        .with_enabled_roots()
+        .timeout(Duration::from_secs(10));
+
+    if let Some(server_name) = nonempty(&server_config.tls_server_name) {
+        tls_config = tls_config.domain_name(server_name);
+    }
+    if let Some(ca_path) = nonempty(&server_config.tls_ca_cert) {
+        let pem = std::fs::read(ca_path)
+            .with_context(|| format!("Failed to read TLS CA certificate: {ca_path}"))?;
+        tls_config = tls_config.ca_certificate(Certificate::from_pem(pem));
+    }
+    if let (Some(cert_path), Some(key_path)) = (
+        nonempty(&server_config.tls_client_cert),
+        nonempty(&server_config.tls_client_key),
+    ) {
+        validate_private_key_permissions(key_path)?;
+        let cert = std::fs::read(cert_path)
+            .with_context(|| format!("Failed to read mTLS client certificate: {cert_path}"))?;
+        let key = std::fs::read(key_path)
+            .with_context(|| format!("Failed to read mTLS client private key: {key_path}"))?;
+        tls_config = tls_config.identity(Identity::from_pem(cert, key));
+    }
+
+    endpoint
+        .tls_config(tls_config)
+        .context("Invalid TLS certificate, key, CA, or server name")
+}
+
+fn nonempty(value: &Option<String>) -> Option<&str> {
+    value.as_deref().map(str::trim).filter(|v| !v.is_empty())
+}
+
+#[cfg(unix)]
+fn validate_private_key_permissions(path: &str) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("Failed to inspect mTLS client private key: {path}"))?;
+    if metadata.permissions().mode() & 0o077 != 0 {
+        anyhow::bail!("mTLS client private key must not be accessible by group or others: {path}");
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn validate_private_key_permissions(path: &str) -> Result<()> {
+    std::fs::metadata(path)
+        .with_context(|| format!("Failed to inspect mTLS client private key: {path}"))?;
+    Ok(())
 }
 
 /// Guard that ensures spawned tasks are aborted when dropped.
@@ -111,11 +174,7 @@ impl GrpcClient {
             .keep_alive_timeout(Duration::from_secs(10))
             .keep_alive_while_idle(true);
 
-        // Configure TLS if enabled
-        if server_config.tls_enabled {
-            let tls_config = ClientTlsConfig::new();
-            endpoint = endpoint.tls_config(tls_config)?;
-        }
+        endpoint = configure_tls_endpoint(endpoint, server_config)?;
 
         info!(
             "Connecting to gRPC server: {} with HTTP/2 keepalive enabled",
@@ -405,11 +464,7 @@ impl GrpcClient {
             .connect_timeout(Duration::from_secs(10))
             .tcp_keepalive(Some(Duration::from_secs(20)));
 
-        // Configure TLS if enabled
-        if server_config.tls_enabled {
-            let tls_config = ClientTlsConfig::new();
-            endpoint = endpoint.tls_config(tls_config)?;
-        }
+        endpoint = configure_tls_endpoint(endpoint, server_config)?;
 
         let channel = endpoint
             .connect()

@@ -2033,6 +2033,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "winapi",
  "windows-service",

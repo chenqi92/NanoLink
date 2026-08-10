@@ -150,11 +150,13 @@ const (
 	CommandType_SERVICE_STOP    CommandType = 11
 	CommandType_SERVICE_RESTART CommandType = 12
 	CommandType_SERVICE_STATUS  CommandType = 13
+	CommandType_SERVICE_LIST    CommandType = 14 // List all services
 	// File Operations
 	CommandType_FILE_TAIL     CommandType = 20
 	CommandType_FILE_DOWNLOAD CommandType = 21
 	CommandType_FILE_UPLOAD   CommandType = 22
 	CommandType_FILE_TRUNCATE CommandType = 23
+	CommandType_FILE_LIST     CommandType = 24 // List directory entries
 	// Docker Operations
 	CommandType_DOCKER_LIST    CommandType = 30
 	CommandType_DOCKER_START   CommandType = 31
@@ -170,6 +172,7 @@ const (
 	CommandType_AGENT_DOWNLOAD_UPDATE CommandType = 61 // Download update package
 	CommandType_AGENT_APPLY_UPDATE    CommandType = 62 // Apply update and restart agent
 	CommandType_AGENT_GET_VERSION     CommandType = 63 // Get current agent version info
+	CommandType_AGENT_PROCESS_RESTART CommandType = 64 // Gracefully restart the agent process only (host stays up); requires SYSTEM_ADMIN/L3
 	// ========== DevOps Extension Commands ==========
 	// Log Query Commands (Level 0/1+ with sanitization)
 	CommandType_SERVICE_LOGS CommandType = 70 // Query journald/systemd service logs
@@ -194,6 +197,9 @@ const (
 	// Health Check Commands
 	CommandType_HEALTH_CHECK      CommandType = 110 // Custom health check
 	CommandType_CONNECTIVITY_TEST CommandType = 111 // Network connectivity test
+	// Application deployment (SYSTEM_ADMIN; structured, audited operations)
+	CommandType_DEPLOY_EXECUTE  CommandType = 120 // Download, verify, activate, restart/reload, health-check
+	CommandType_DEPLOY_ROLLBACK CommandType = 121 // Atomically activate an existing release
 )
 
 // Enum value maps for CommandType.
@@ -206,10 +212,12 @@ var (
 		11:  "SERVICE_STOP",
 		12:  "SERVICE_RESTART",
 		13:  "SERVICE_STATUS",
+		14:  "SERVICE_LIST",
 		20:  "FILE_TAIL",
 		21:  "FILE_DOWNLOAD",
 		22:  "FILE_UPLOAD",
 		23:  "FILE_TRUNCATE",
+		24:  "FILE_LIST",
 		30:  "DOCKER_LIST",
 		31:  "DOCKER_START",
 		32:  "DOCKER_STOP",
@@ -221,6 +229,7 @@ var (
 		61:  "AGENT_DOWNLOAD_UPDATE",
 		62:  "AGENT_APPLY_UPDATE",
 		63:  "AGENT_GET_VERSION",
+		64:  "AGENT_PROCESS_RESTART",
 		70:  "SERVICE_LOGS",
 		71:  "SYSTEM_LOGS",
 		72:  "AUDIT_LOGS",
@@ -239,6 +248,8 @@ var (
 		104: "CONFIG_LIST_BACKUPS",
 		110: "HEALTH_CHECK",
 		111: "CONNECTIVITY_TEST",
+		120: "DEPLOY_EXECUTE",
+		121: "DEPLOY_ROLLBACK",
 	}
 	CommandType_value = map[string]int32{
 		"COMMAND_TYPE_UNSPECIFIED": 0,
@@ -248,10 +259,12 @@ var (
 		"SERVICE_STOP":             11,
 		"SERVICE_RESTART":          12,
 		"SERVICE_STATUS":           13,
+		"SERVICE_LIST":             14,
 		"FILE_TAIL":                20,
 		"FILE_DOWNLOAD":            21,
 		"FILE_UPLOAD":              22,
 		"FILE_TRUNCATE":            23,
+		"FILE_LIST":                24,
 		"DOCKER_LIST":              30,
 		"DOCKER_START":             31,
 		"DOCKER_STOP":              32,
@@ -263,6 +276,7 @@ var (
 		"AGENT_DOWNLOAD_UPDATE":    61,
 		"AGENT_APPLY_UPDATE":       62,
 		"AGENT_GET_VERSION":        63,
+		"AGENT_PROCESS_RESTART":    64,
 		"SERVICE_LOGS":             70,
 		"SYSTEM_LOGS":              71,
 		"AUDIT_LOGS":               72,
@@ -281,6 +295,8 @@ var (
 		"CONFIG_LIST_BACKUPS":      104,
 		"HEALTH_CHECK":             110,
 		"CONNECTIVITY_TEST":        111,
+		"DEPLOY_EXECUTE":           120,
+		"DEPLOY_ROLLBACK":          121,
 	}
 )
 
@@ -357,7 +373,7 @@ func (x AgentEvent_EventType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AgentEvent_EventType.Descriptor instead.
 func (AgentEvent_EventType) EnumDescriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{55, 0}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{58, 0}
 }
 
 // ========== Message Envelope ==========
@@ -2020,7 +2036,7 @@ type PeriodicData struct {
 	DiskUsage      []*DiskUsage            `protobuf:"bytes,2,rep,name=disk_usage,json=diskUsage,proto3" json:"disk_usage,omitempty"`
 	UserSessions   []*UserSession          `protobuf:"bytes,3,rep,name=user_sessions,json=userSessions,proto3" json:"user_sessions,omitempty"`
 	NetworkUpdates []*NetworkAddressUpdate `protobuf:"bytes,4,rep,name=network_updates,json=networkUpdates,proto3" json:"network_updates,omitempty"`
-	CpuPerCore     []float64              `protobuf:"fixed64,5,rep,packed,name=cpu_per_core,json=cpuPerCore,proto3" json:"cpu_per_core,omitempty"`
+	CpuPerCore     []float64               `protobuf:"fixed64,5,rep,packed,name=cpu_per_core,json=cpuPerCore,proto3" json:"cpu_per_core,omitempty"` // Per-core CPU usage (sent at lower frequency than realtime)
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2915,6 +2931,8 @@ type SystemInfo struct {
 	BiosVersion       string                 `protobuf:"bytes,9,opt,name=bios_version,json=biosVersion,proto3" json:"bios_version,omitempty"`                   // BIOS version
 	SystemModel       string                 `protobuf:"bytes,10,opt,name=system_model,json=systemModel,proto3" json:"system_model,omitempty"`                  // System model (for branded PCs/servers)
 	SystemVendor      string                 `protobuf:"bytes,11,opt,name=system_vendor,json=systemVendor,proto3" json:"system_vendor,omitempty"`               // System vendor
+	Chassis           string                 `protobuf:"bytes,12,opt,name=chassis,proto3" json:"chassis,omitempty"`                                             // Chassis type (e.g., "Laptop", "Desktop", "Server")
+	PrimaryIp         string                 `protobuf:"bytes,13,opt,name=primary_ip,json=primaryIp,proto3" json:"primary_ip,omitempty"`                        // Primary outbound IP address
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -3022,6 +3040,20 @@ func (x *SystemInfo) GetSystemModel() string {
 func (x *SystemInfo) GetSystemVendor() string {
 	if x != nil {
 		return x.SystemVendor
+	}
+	return ""
+}
+
+func (x *SystemInfo) GetChassis() string {
+	if x != nil {
+		return x.Chassis
+	}
+	return ""
+}
+
+func (x *SystemInfo) GetPrimaryIp() string {
+	if x != nil {
+		return x.PrimaryIp
 	}
 	return ""
 }
@@ -3364,6 +3396,8 @@ type CommandResult struct {
 	Scripts       []*ScriptInfo      `protobuf:"bytes,12,rep,name=scripts,proto3" json:"scripts,omitempty"`                               // For SCRIPT_LIST
 	ConfigResult  *ConfigResult      `protobuf:"bytes,13,opt,name=config_result,json=configResult,proto3" json:"config_result,omitempty"` // For CONFIG_READ/CONFIG_WRITE/CONFIG_ROLLBACK
 	HealthResult  *HealthCheckResult `protobuf:"bytes,14,opt,name=health_result,json=healthResult,proto3" json:"health_result,omitempty"` // For HEALTH_CHECK/CONNECTIVITY_TEST
+	Services      []*ServiceInfo     `protobuf:"bytes,15,rep,name=services,proto3" json:"services,omitempty"`                             // For SERVICE_LIST
+	Files         []*FileEntry       `protobuf:"bytes,16,rep,name=files,proto3" json:"files,omitempty"`                                   // For FILE_LIST
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3489,6 +3523,174 @@ func (x *CommandResult) GetHealthResult() *HealthCheckResult {
 	return nil
 }
 
+func (x *CommandResult) GetServices() []*ServiceInfo {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+func (x *CommandResult) GetFiles() []*FileEntry {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+// ServiceInfo describes a single service/unit (SERVICE_LIST)
+type ServiceInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`                         // Unit/service name
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`                     // Active state: active, inactive, failed
+	SubState      string                 `protobuf:"bytes,3,opt,name=sub_state,json=subState,proto3" json:"sub_state,omitempty"` // running, dead, exited, ...
+	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Uptime        string                 `protobuf:"bytes,5,opt,name=uptime,proto3" json:"uptime,omitempty"`      // Human-readable active duration (e.g. "3d4h")
+	Restarts      int32                  `protobuf:"varint,6,opt,name=restarts,proto3" json:"restarts,omitempty"` // Restart count (systemd NRestarts)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceInfo) Reset() {
+	*x = ServiceInfo{}
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceInfo) ProtoMessage() {}
+
+func (x *ServiceInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceInfo.ProtoReflect.Descriptor instead.
+func (*ServiceInfo) Descriptor() ([]byte, []int) {
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ServiceInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ServiceInfo) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ServiceInfo) GetSubState() string {
+	if x != nil {
+		return x.SubState
+	}
+	return ""
+}
+
+func (x *ServiceInfo) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ServiceInfo) GetUptime() string {
+	if x != nil {
+		return x.Uptime
+	}
+	return ""
+}
+
+func (x *ServiceInfo) GetRestarts() int32 {
+	if x != nil {
+		return x.Restarts
+	}
+	return 0
+}
+
+// FileEntry describes a single directory entry (FILE_LIST)
+type FileEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	IsDir         bool                   `protobuf:"varint,2,opt,name=is_dir,json=isDir,proto3" json:"is_dir,omitempty"`
+	Size          uint64                 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	Modified      int64                  `protobuf:"varint,4,opt,name=modified,proto3" json:"modified,omitempty"` // Unix epoch milliseconds
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FileEntry) Reset() {
+	*x = FileEntry{}
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FileEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FileEntry) ProtoMessage() {}
+
+func (x *FileEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
+func (*FileEntry) Descriptor() ([]byte, []int) {
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *FileEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *FileEntry) GetIsDir() bool {
+	if x != nil {
+		return x.IsDir
+	}
+	return false
+}
+
+func (x *FileEntry) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *FileEntry) GetModified() int64 {
+	if x != nil {
+		return x.Modified
+	}
+	return 0
+}
+
 // LogQueryResult contains log query results with sanitization info
 type LogQueryResult struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -3505,7 +3707,7 @@ type LogQueryResult struct {
 
 func (x *LogQueryResult) Reset() {
 	*x = LogQueryResult{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[31]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3517,7 +3719,7 @@ func (x *LogQueryResult) String() string {
 func (*LogQueryResult) ProtoMessage() {}
 
 func (x *LogQueryResult) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[31]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3530,7 +3732,7 @@ func (x *LogQueryResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogQueryResult.ProtoReflect.Descriptor instead.
 func (*LogQueryResult) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{31}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *LogQueryResult) GetLines() []*LogEntry {
@@ -3596,7 +3798,7 @@ type LogEntry struct {
 
 func (x *LogEntry) Reset() {
 	*x = LogEntry{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[32]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3608,7 +3810,7 @@ func (x *LogEntry) String() string {
 func (*LogEntry) ProtoMessage() {}
 
 func (x *LogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[32]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3621,7 +3823,7 @@ func (x *LogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
 func (*LogEntry) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{32}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *LogEntry) GetTimestamp() string {
@@ -3678,7 +3880,7 @@ type PackageInfo struct {
 
 func (x *PackageInfo) Reset() {
 	*x = PackageInfo{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[33]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3690,7 +3892,7 @@ func (x *PackageInfo) String() string {
 func (*PackageInfo) ProtoMessage() {}
 
 func (x *PackageInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[33]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3703,7 +3905,7 @@ func (x *PackageInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageInfo.ProtoReflect.Descriptor instead.
 func (*PackageInfo) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{33}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *PackageInfo) GetName() string {
@@ -3794,7 +3996,7 @@ type ScriptInfo struct {
 
 func (x *ScriptInfo) Reset() {
 	*x = ScriptInfo{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[34]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3806,7 +4008,7 @@ func (x *ScriptInfo) String() string {
 func (*ScriptInfo) ProtoMessage() {}
 
 func (x *ScriptInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[34]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3819,7 +4021,7 @@ func (x *ScriptInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScriptInfo.ProtoReflect.Descriptor instead.
 func (*ScriptInfo) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{34}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ScriptInfo) GetName() string {
@@ -3901,7 +4103,7 @@ type ConfigResult struct {
 
 func (x *ConfigResult) Reset() {
 	*x = ConfigResult{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[35]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3913,7 +4115,7 @@ func (x *ConfigResult) String() string {
 func (*ConfigResult) ProtoMessage() {}
 
 func (x *ConfigResult) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[35]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3926,7 +4128,7 @@ func (x *ConfigResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigResult.ProtoReflect.Descriptor instead.
 func (*ConfigResult) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{35}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ConfigResult) GetPath() string {
@@ -3991,7 +4193,7 @@ type ConfigBackup struct {
 
 func (x *ConfigBackup) Reset() {
 	*x = ConfigBackup{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[36]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4003,7 +4205,7 @@ func (x *ConfigBackup) String() string {
 func (*ConfigBackup) ProtoMessage() {}
 
 func (x *ConfigBackup) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[36]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4016,7 +4218,7 @@ func (x *ConfigBackup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigBackup.ProtoReflect.Descriptor instead.
 func (*ConfigBackup) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{36}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ConfigBackup) GetPath() string {
@@ -4058,7 +4260,7 @@ type HealthCheckResult struct {
 
 func (x *HealthCheckResult) Reset() {
 	*x = HealthCheckResult{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[37]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4070,7 +4272,7 @@ func (x *HealthCheckResult) String() string {
 func (*HealthCheckResult) ProtoMessage() {}
 
 func (x *HealthCheckResult) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[37]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4083,7 +4285,7 @@ func (x *HealthCheckResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheckResult.ProtoReflect.Descriptor instead.
 func (*HealthCheckResult) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{37}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *HealthCheckResult) GetHealthy() bool {
@@ -4114,7 +4316,7 @@ type HealthCheckItem struct {
 
 func (x *HealthCheckItem) Reset() {
 	*x = HealthCheckItem{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[38]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4126,7 +4328,7 @@ func (x *HealthCheckItem) String() string {
 func (*HealthCheckItem) ProtoMessage() {}
 
 func (x *HealthCheckItem) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[38]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4139,7 +4341,7 @@ func (x *HealthCheckItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheckItem.ProtoReflect.Descriptor instead.
 func (*HealthCheckItem) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{38}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *HealthCheckItem) GetName() string {
@@ -4195,7 +4397,7 @@ type UpdateInfo struct {
 
 func (x *UpdateInfo) Reset() {
 	*x = UpdateInfo{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[39]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4207,7 +4409,7 @@ func (x *UpdateInfo) String() string {
 func (*UpdateInfo) ProtoMessage() {}
 
 func (x *UpdateInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[39]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4220,7 +4422,7 @@ func (x *UpdateInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateInfo.ProtoReflect.Descriptor instead.
 func (*UpdateInfo) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{39}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *UpdateInfo) GetCurrentVersion() string {
@@ -4301,7 +4503,7 @@ type ProcessInfo struct {
 
 func (x *ProcessInfo) Reset() {
 	*x = ProcessInfo{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[40]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4313,7 +4515,7 @@ func (x *ProcessInfo) String() string {
 func (*ProcessInfo) ProtoMessage() {}
 
 func (x *ProcessInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[40]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4326,7 +4528,7 @@ func (x *ProcessInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProcessInfo.ProtoReflect.Descriptor instead.
 func (*ProcessInfo) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{40}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ProcessInfo) GetPid() uint32 {
@@ -4386,13 +4588,18 @@ type ContainerInfo struct {
 	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
 	State         string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"`
 	Created       uint64                 `protobuf:"varint,6,opt,name=created,proto3" json:"created,omitempty"`
+	CpuPercent    float64                `protobuf:"fixed64,7,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`   // Live CPU usage % (docker stats)
+	MemoryBytes   uint64                 `protobuf:"varint,8,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"` // Live memory usage in bytes
+	MemoryLimit   uint64                 `protobuf:"varint,9,opt,name=memory_limit,json=memoryLimit,proto3" json:"memory_limit,omitempty"` // Memory limit in bytes
+	Ports         string                 `protobuf:"bytes,10,opt,name=ports,proto3" json:"ports,omitempty"`                                // Published ports (e.g. "80:80, 443:443")
+	Network       string                 `protobuf:"bytes,11,opt,name=network,proto3" json:"network,omitempty"`                            // Network name(s)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ContainerInfo) Reset() {
 	*x = ContainerInfo{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[41]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4404,7 +4611,7 @@ func (x *ContainerInfo) String() string {
 func (*ContainerInfo) ProtoMessage() {}
 
 func (x *ContainerInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[41]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4417,7 +4624,7 @@ func (x *ContainerInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerInfo.ProtoReflect.Descriptor instead.
 func (*ContainerInfo) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{41}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ContainerInfo) GetId() string {
@@ -4462,6 +4669,41 @@ func (x *ContainerInfo) GetCreated() uint64 {
 	return 0
 }
 
+func (x *ContainerInfo) GetCpuPercent() float64 {
+	if x != nil {
+		return x.CpuPercent
+	}
+	return 0
+}
+
+func (x *ContainerInfo) GetMemoryBytes() uint64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *ContainerInfo) GetMemoryLimit() uint64 {
+	if x != nil {
+		return x.MemoryLimit
+	}
+	return 0
+}
+
+func (x *ContainerInfo) GetPorts() string {
+	if x != nil {
+		return x.Ports
+	}
+	return ""
+}
+
+func (x *ContainerInfo) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
 // ========== Heartbeat ==========
 type Heartbeat struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -4473,7 +4715,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[42]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4485,7 +4727,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[42]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4498,7 +4740,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{42}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *Heartbeat) GetTimestamp() uint64 {
@@ -4524,7 +4766,7 @@ type HeartbeatAck struct {
 
 func (x *HeartbeatAck) Reset() {
 	*x = HeartbeatAck{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[43]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4536,7 +4778,7 @@ func (x *HeartbeatAck) String() string {
 func (*HeartbeatAck) ProtoMessage() {}
 
 func (x *HeartbeatAck) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[43]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4549,7 +4791,7 @@ func (x *HeartbeatAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatAck.ProtoReflect.Descriptor instead.
 func (*HeartbeatAck) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{43}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *HeartbeatAck) GetTimestamp() uint64 {
@@ -4557,6 +4799,84 @@ func (x *HeartbeatAck) GetTimestamp() uint64 {
 		return x.Timestamp
 	}
 	return 0
+}
+
+// AgentInit is sent as the first message when agent connects
+// Contains the persistent agent ID for data continuity
+type AgentInit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`                // Agent's persistent UUID (generated once, stored in config)
+	Hostname      string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`                             // Machine hostname
+	Os            string                 `protobuf:"bytes,3,opt,name=os,proto3" json:"os,omitempty"`                                         // Operating system name
+	Arch          string                 `protobuf:"bytes,4,opt,name=arch,proto3" json:"arch,omitempty"`                                     // Architecture (x86_64, aarch64, etc.)
+	AgentVersion  string                 `protobuf:"bytes,5,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"` // Agent software version
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentInit) Reset() {
+	*x = AgentInit{}
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentInit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentInit) ProtoMessage() {}
+
+func (x *AgentInit) ProtoReflect() protoreflect.Message {
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentInit.ProtoReflect.Descriptor instead.
+func (*AgentInit) Descriptor() ([]byte, []int) {
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *AgentInit) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *AgentInit) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
+func (x *AgentInit) GetOs() string {
+	if x != nil {
+		return x.Os
+	}
+	return ""
+}
+
+func (x *AgentInit) GetArch() string {
+	if x != nil {
+		return x.Arch
+	}
+	return ""
+}
+
+func (x *AgentInit) GetAgentVersion() string {
+	if x != nil {
+		return x.AgentVersion
+	}
+	return ""
 }
 
 // MetricsStreamRequest is sent by agent in the bidirectional stream
@@ -4570,6 +4890,7 @@ type MetricsStreamRequest struct {
 	//	*MetricsStreamRequest_Realtime
 	//	*MetricsStreamRequest_StaticInfo
 	//	*MetricsStreamRequest_Periodic
+	//	*MetricsStreamRequest_AgentInit
 	Request       isMetricsStreamRequest_Request `protobuf_oneof:"request"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4577,7 +4898,7 @@ type MetricsStreamRequest struct {
 
 func (x *MetricsStreamRequest) Reset() {
 	*x = MetricsStreamRequest{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[44]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4589,7 +4910,7 @@ func (x *MetricsStreamRequest) String() string {
 func (*MetricsStreamRequest) ProtoMessage() {}
 
 func (x *MetricsStreamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[44]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4602,7 +4923,7 @@ func (x *MetricsStreamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsStreamRequest.ProtoReflect.Descriptor instead.
 func (*MetricsStreamRequest) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{44}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *MetricsStreamRequest) GetRequest() isMetricsStreamRequest_Request {
@@ -4666,6 +4987,15 @@ func (x *MetricsStreamRequest) GetPeriodic() *PeriodicData {
 	return nil
 }
 
+func (x *MetricsStreamRequest) GetAgentInit() *AgentInit {
+	if x != nil {
+		if x, ok := x.Request.(*MetricsStreamRequest_AgentInit); ok {
+			return x.AgentInit
+		}
+	}
+	return nil
+}
+
 type isMetricsStreamRequest_Request interface {
 	isMetricsStreamRequest_Request()
 }
@@ -4694,6 +5024,10 @@ type MetricsStreamRequest_Periodic struct {
 	Periodic *PeriodicData `protobuf:"bytes,6,opt,name=periodic,proto3,oneof"` // Periodic data (disk usage, sessions)
 }
 
+type MetricsStreamRequest_AgentInit struct {
+	AgentInit *AgentInit `protobuf:"bytes,7,opt,name=agent_init,json=agentInit,proto3,oneof"` // Agent initialization (MUST be first message)
+}
+
 func (*MetricsStreamRequest_Metrics) isMetricsStreamRequest_Request() {}
 
 func (*MetricsStreamRequest_Heartbeat) isMetricsStreamRequest_Request() {}
@@ -4705,6 +5039,8 @@ func (*MetricsStreamRequest_Realtime) isMetricsStreamRequest_Request() {}
 func (*MetricsStreamRequest_StaticInfo) isMetricsStreamRequest_Request() {}
 
 func (*MetricsStreamRequest_Periodic) isMetricsStreamRequest_Request() {}
+
+func (*MetricsStreamRequest_AgentInit) isMetricsStreamRequest_Request() {}
 
 // MetricsStreamResponse is sent by server in the bidirectional stream
 type MetricsStreamResponse struct {
@@ -4722,7 +5058,7 @@ type MetricsStreamResponse struct {
 
 func (x *MetricsStreamResponse) Reset() {
 	*x = MetricsStreamResponse{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[45]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4734,7 +5070,7 @@ func (x *MetricsStreamResponse) String() string {
 func (*MetricsStreamResponse) ProtoMessage() {}
 
 func (x *MetricsStreamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[45]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4747,7 +5083,7 @@ func (x *MetricsStreamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsStreamResponse.ProtoReflect.Descriptor instead.
 func (*MetricsStreamResponse) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{45}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *MetricsStreamResponse) GetResponse() isMetricsStreamResponse_Response {
@@ -4832,7 +5168,7 @@ type MetricsAck struct {
 
 func (x *MetricsAck) Reset() {
 	*x = MetricsAck{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[46]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4844,7 +5180,7 @@ func (x *MetricsAck) String() string {
 func (*MetricsAck) ProtoMessage() {}
 
 func (x *MetricsAck) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[46]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4857,7 +5193,7 @@ func (x *MetricsAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsAck.ProtoReflect.Descriptor instead.
 func (*MetricsAck) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{46}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *MetricsAck) GetSuccess() bool {
@@ -4886,7 +5222,7 @@ type HeartbeatRequest struct {
 
 func (x *HeartbeatRequest) Reset() {
 	*x = HeartbeatRequest{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[47]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4898,7 +5234,7 @@ func (x *HeartbeatRequest) String() string {
 func (*HeartbeatRequest) ProtoMessage() {}
 
 func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[47]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4911,7 +5247,7 @@ func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
 func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{47}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *HeartbeatRequest) GetAgentId() string {
@@ -4946,7 +5282,7 @@ type HeartbeatResponse struct {
 
 func (x *HeartbeatResponse) Reset() {
 	*x = HeartbeatResponse{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[48]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4958,7 +5294,7 @@ func (x *HeartbeatResponse) String() string {
 func (*HeartbeatResponse) ProtoMessage() {}
 
 func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[48]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4971,7 +5307,7 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{48}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *HeartbeatResponse) GetServerTimestamp() uint64 {
@@ -4999,7 +5335,7 @@ type MetricsSyncRequest struct {
 
 func (x *MetricsSyncRequest) Reset() {
 	*x = MetricsSyncRequest{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[49]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5011,7 +5347,7 @@ func (x *MetricsSyncRequest) String() string {
 func (*MetricsSyncRequest) ProtoMessage() {}
 
 func (x *MetricsSyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[49]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5024,7 +5360,7 @@ func (x *MetricsSyncRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsSyncRequest.ProtoReflect.Descriptor instead.
 func (*MetricsSyncRequest) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{49}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *MetricsSyncRequest) GetAgentId() string {
@@ -5053,7 +5389,7 @@ type MetricsSyncResponse struct {
 
 func (x *MetricsSyncResponse) Reset() {
 	*x = MetricsSyncResponse{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[50]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5065,7 +5401,7 @@ func (x *MetricsSyncResponse) String() string {
 func (*MetricsSyncResponse) ProtoMessage() {}
 
 func (x *MetricsSyncResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[50]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5078,7 +5414,7 @@ func (x *MetricsSyncResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsSyncResponse.ProtoReflect.Descriptor instead.
 func (*MetricsSyncResponse) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{50}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *MetricsSyncResponse) GetSuccess() bool {
@@ -5112,7 +5448,7 @@ type AgentInfoRequest struct {
 
 func (x *AgentInfoRequest) Reset() {
 	*x = AgentInfoRequest{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[51]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5124,7 +5460,7 @@ func (x *AgentInfoRequest) String() string {
 func (*AgentInfoRequest) ProtoMessage() {}
 
 func (x *AgentInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[51]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5137,7 +5473,7 @@ func (x *AgentInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentInfoRequest.ProtoReflect.Descriptor instead.
 func (*AgentInfoRequest) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{51}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *AgentInfoRequest) GetAgentId() string {
@@ -5165,7 +5501,7 @@ type AgentInfoResponse struct {
 
 func (x *AgentInfoResponse) Reset() {
 	*x = AgentInfoResponse{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[52]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5177,7 +5513,7 @@ func (x *AgentInfoResponse) String() string {
 func (*AgentInfoResponse) ProtoMessage() {}
 
 func (x *AgentInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[52]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5190,7 +5526,7 @@ func (x *AgentInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentInfoResponse.ProtoReflect.Descriptor instead.
 func (*AgentInfoResponse) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{52}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *AgentInfoResponse) GetAgentId() string {
@@ -5269,7 +5605,7 @@ type ServerConfig struct {
 
 func (x *ServerConfig) Reset() {
 	*x = ServerConfig{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[53]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5281,7 +5617,7 @@ func (x *ServerConfig) String() string {
 func (*ServerConfig) ProtoMessage() {}
 
 func (x *ServerConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[53]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5294,7 +5630,7 @@ func (x *ServerConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerConfig.ProtoReflect.Descriptor instead.
 func (*ServerConfig) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{53}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ServerConfig) GetMetricsIntervalMs() uint64 {
@@ -5335,7 +5671,7 @@ type WatchAgentsRequest struct {
 
 func (x *WatchAgentsRequest) Reset() {
 	*x = WatchAgentsRequest{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[54]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5347,7 +5683,7 @@ func (x *WatchAgentsRequest) String() string {
 func (*WatchAgentsRequest) ProtoMessage() {}
 
 func (x *WatchAgentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[54]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5360,7 +5696,7 @@ func (x *WatchAgentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchAgentsRequest.ProtoReflect.Descriptor instead.
 func (*WatchAgentsRequest) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{54}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *WatchAgentsRequest) GetIncludeInitial() bool {
@@ -5382,7 +5718,7 @@ type AgentEvent struct {
 
 func (x *AgentEvent) Reset() {
 	*x = AgentEvent{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[55]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5394,7 +5730,7 @@ func (x *AgentEvent) String() string {
 func (*AgentEvent) ProtoMessage() {}
 
 func (x *AgentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[55]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5407,7 +5743,7 @@ func (x *AgentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentEvent.ProtoReflect.Descriptor instead.
 func (*AgentEvent) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{55}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *AgentEvent) GetEventType() AgentEvent_EventType {
@@ -5442,7 +5778,7 @@ type WatchMetricsRequest struct {
 
 func (x *WatchMetricsRequest) Reset() {
 	*x = WatchMetricsRequest{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[56]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5454,7 +5790,7 @@ func (x *WatchMetricsRequest) String() string {
 func (*WatchMetricsRequest) ProtoMessage() {}
 
 func (x *WatchMetricsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[56]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5467,7 +5803,7 @@ func (x *WatchMetricsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchMetricsRequest.ProtoReflect.Descriptor instead.
 func (*WatchMetricsRequest) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{56}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *WatchMetricsRequest) GetAgentIds() []string {
@@ -5494,7 +5830,7 @@ type GetAgentsRequest struct {
 
 func (x *GetAgentsRequest) Reset() {
 	*x = GetAgentsRequest{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[57]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5506,7 +5842,7 @@ func (x *GetAgentsRequest) String() string {
 func (*GetAgentsRequest) ProtoMessage() {}
 
 func (x *GetAgentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[57]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5519,7 +5855,7 @@ func (x *GetAgentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentsRequest.ProtoReflect.Descriptor instead.
 func (*GetAgentsRequest) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{57}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *GetAgentsRequest) GetIncludeOffline() bool {
@@ -5539,7 +5875,7 @@ type GetAgentsResponse struct {
 
 func (x *GetAgentsResponse) Reset() {
 	*x = GetAgentsResponse{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[58]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5551,7 +5887,7 @@ func (x *GetAgentsResponse) String() string {
 func (*GetAgentsResponse) ProtoMessage() {}
 
 func (x *GetAgentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[58]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5564,7 +5900,7 @@ func (x *GetAgentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentsResponse.ProtoReflect.Descriptor instead.
 func (*GetAgentsResponse) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{58}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *GetAgentsResponse) GetAgents() []*AgentInfoResponse {
@@ -5584,7 +5920,7 @@ type GetAgentMetricsRequest struct {
 
 func (x *GetAgentMetricsRequest) Reset() {
 	*x = GetAgentMetricsRequest{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[59]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5596,7 +5932,7 @@ func (x *GetAgentMetricsRequest) String() string {
 func (*GetAgentMetricsRequest) ProtoMessage() {}
 
 func (x *GetAgentMetricsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[59]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5609,7 +5945,7 @@ func (x *GetAgentMetricsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentMetricsRequest.ProtoReflect.Descriptor instead.
 func (*GetAgentMetricsRequest) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{59}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *GetAgentMetricsRequest) GetAgentId() string {
@@ -5631,7 +5967,7 @@ type DashboardCommandRequest struct {
 
 func (x *DashboardCommandRequest) Reset() {
 	*x = DashboardCommandRequest{}
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[60]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5643,7 +5979,7 @@ func (x *DashboardCommandRequest) String() string {
 func (*DashboardCommandRequest) ProtoMessage() {}
 
 func (x *DashboardCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sdk_protocol_nanolink_proto_msgTypes[60]
+	mi := &file_sdk_protocol_nanolink_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5656,7 +5992,7 @@ func (x *DashboardCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DashboardCommandRequest.ProtoReflect.Descriptor instead.
 func (*DashboardCommandRequest) Descriptor() ([]byte, []int) {
-	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{60}
+	return file_sdk_protocol_nanolink_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *DashboardCommandRequest) GetAgentId() string {
@@ -5846,13 +6182,15 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
 	"\x06vendor\x18\x03 \x01(\tR\x06vendor\x12!\n" +
 	"\fmemory_total\x18\x04 \x01(\x04R\vmemoryTotal\x12%\n" +
-	"\x0edriver_version\x18\x05 \x01(\tR\rdriverVersion\"\xe5\x01\n" +
+	"\x0edriver_version\x18\x05 \x01(\tR\rdriverVersion\"\x87\x02\n" +
 	"\fPeriodicData\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x04R\ttimestamp\x122\n" +
 	"\n" +
 	"disk_usage\x18\x02 \x03(\v2\x13.nanolink.DiskUsageR\tdiskUsage\x12:\n" +
 	"\ruser_sessions\x18\x03 \x03(\v2\x15.nanolink.UserSessionR\fuserSessions\x12G\n" +
-	"\x0fnetwork_updates\x18\x04 \x03(\v2\x1e.nanolink.NetworkAddressUpdateR\x0enetworkUpdates\"\xae\x01\n" +
+	"\x0fnetwork_updates\x18\x04 \x03(\v2\x1e.nanolink.NetworkAddressUpdateR\x0enetworkUpdates\x12 \n" +
+	"\fcpu_per_core\x18\x05 \x03(\x01R\n" +
+	"cpuPerCore\"\xae\x01\n" +
 	"\tDiskUsage\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x1f\n" +
 	"\vmount_point\x18\x02 \x01(\tR\n" +
@@ -5947,7 +6285,7 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"\x0edriver_version\x18\r \x01(\tR\rdriverVersion\x12'\n" +
 	"\x0fpcie_generation\x18\x0e \x01(\tR\x0epcieGeneration\x12#\n" +
 	"\rencoder_usage\x18\x0f \x01(\x01R\fencoderUsage\x12#\n" +
-	"\rdecoder_usage\x18\x10 \x01(\x01R\fdecoderUsage\"\x92\x03\n" +
+	"\rdecoder_usage\x18\x10 \x01(\x01R\fdecoderUsage\"\xcb\x03\n" +
 	"\n" +
 	"SystemInfo\x12\x17\n" +
 	"\aos_name\x18\x01 \x01(\tR\x06osName\x12\x1d\n" +
@@ -5962,7 +6300,10 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"\fbios_version\x18\t \x01(\tR\vbiosVersion\x12!\n" +
 	"\fsystem_model\x18\n" +
 	" \x01(\tR\vsystemModel\x12#\n" +
-	"\rsystem_vendor\x18\v \x01(\tR\fsystemVendor\"\xc1\x01\n" +
+	"\rsystem_vendor\x18\v \x01(\tR\fsystemVendor\x12\x18\n" +
+	"\achassis\x18\f \x01(\tR\achassis\x12\x1d\n" +
+	"\n" +
+	"primary_ip\x18\r \x01(\tR\tprimaryIp\"\xc1\x01\n" +
 	"\vUserSession\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x10\n" +
 	"\x03tty\x18\x02 \x01(\tR\x03tty\x12\x1d\n" +
@@ -5998,7 +6339,7 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"superToken\x1a9\n" +
 	"\vParamsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd9\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb7\x05\n" +
 	"\rCommandResult\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x18\n" +
@@ -6018,7 +6359,21 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"\bpackages\x18\v \x03(\v2\x15.nanolink.PackageInfoR\bpackages\x12.\n" +
 	"\ascripts\x18\f \x03(\v2\x14.nanolink.ScriptInfoR\ascripts\x12;\n" +
 	"\rconfig_result\x18\r \x01(\v2\x16.nanolink.ConfigResultR\fconfigResult\x12@\n" +
-	"\rhealth_result\x18\x0e \x01(\v2\x1b.nanolink.HealthCheckResultR\fhealthResult\"\xfb\x01\n" +
+	"\rhealth_result\x18\x0e \x01(\v2\x1b.nanolink.HealthCheckResultR\fhealthResult\x121\n" +
+	"\bservices\x18\x0f \x03(\v2\x15.nanolink.ServiceInfoR\bservices\x12)\n" +
+	"\x05files\x18\x10 \x03(\v2\x13.nanolink.FileEntryR\x05files\"\xac\x01\n" +
+	"\vServiceInfo\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1b\n" +
+	"\tsub_state\x18\x03 \x01(\tR\bsubState\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x16\n" +
+	"\x06uptime\x18\x05 \x01(\tR\x06uptime\x12\x1a\n" +
+	"\brestarts\x18\x06 \x01(\x05R\brestarts\"f\n" +
+	"\tFileEntry\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x15\n" +
+	"\x06is_dir\x18\x02 \x01(\bR\x05isDir\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x04R\x04size\x12\x1a\n" +
+	"\bmodified\x18\x04 \x01(\x03R\bmodified\"\xfb\x01\n" +
 	"\x0eLogQueryResult\x12(\n" +
 	"\x05lines\x18\x01 \x03(\v2\x12.nanolink.LogEntryR\x05lines\x12\x1f\n" +
 	"\vtotal_lines\x18\x02 \x01(\x03R\n" +
@@ -6114,19 +6469,32 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"\fmemory_bytes\x18\x05 \x01(\x04R\vmemoryBytes\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x12\x1d\n" +
 	"\n" +
-	"start_time\x18\a \x01(\x04R\tstartTime\"\x91\x01\n" +
+	"start_time\x18\a \x01(\x04R\tstartTime\"\xa8\x02\n" +
 	"\rContainerInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
 	"\x05image\x18\x03 \x01(\tR\x05image\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12\x14\n" +
 	"\x05state\x18\x05 \x01(\tR\x05state\x12\x18\n" +
-	"\acreated\x18\x06 \x01(\x04R\acreated\"P\n" +
+	"\acreated\x18\x06 \x01(\x04R\acreated\x12\x1f\n" +
+	"\vcpu_percent\x18\a \x01(\x01R\n" +
+	"cpuPercent\x12!\n" +
+	"\fmemory_bytes\x18\b \x01(\x04R\vmemoryBytes\x12!\n" +
+	"\fmemory_limit\x18\t \x01(\x04R\vmemoryLimit\x12\x14\n" +
+	"\x05ports\x18\n" +
+	" \x01(\tR\x05ports\x12\x18\n" +
+	"\anetwork\x18\v \x01(\tR\anetwork\"P\n" +
 	"\tHeartbeat\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x04R\ttimestamp\x12%\n" +
 	"\x0euptime_seconds\x18\x02 \x01(\x04R\ruptimeSeconds\",\n" +
 	"\fHeartbeatAck\x12\x1c\n" +
-	"\ttimestamp\x18\x01 \x01(\x04R\ttimestamp\"\xef\x02\n" +
+	"\ttimestamp\x18\x01 \x01(\x04R\ttimestamp\"\x8b\x01\n" +
+	"\tAgentInit\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1a\n" +
+	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x0e\n" +
+	"\x02os\x18\x03 \x01(\tR\x02os\x12\x12\n" +
+	"\x04arch\x18\x04 \x01(\tR\x04arch\x12#\n" +
+	"\ragent_version\x18\x05 \x01(\tR\fagentVersion\"\xa5\x03\n" +
 	"\x14MetricsStreamRequest\x12-\n" +
 	"\ametrics\x18\x01 \x01(\v2\x11.nanolink.MetricsH\x00R\ametrics\x123\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x13.nanolink.HeartbeatH\x00R\theartbeat\x12@\n" +
@@ -6134,7 +6502,9 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"\brealtime\x18\x04 \x01(\v2\x19.nanolink.RealtimeMetricsH\x00R\brealtime\x127\n" +
 	"\vstatic_info\x18\x05 \x01(\v2\x14.nanolink.StaticInfoH\x00R\n" +
 	"staticInfo\x124\n" +
-	"\bperiodic\x18\x06 \x01(\v2\x16.nanolink.PeriodicDataH\x00R\bperiodicB\t\n" +
+	"\bperiodic\x18\x06 \x01(\v2\x16.nanolink.PeriodicDataH\x00R\bperiodic\x124\n" +
+	"\n" +
+	"agent_init\x18\a \x01(\v2\x13.nanolink.AgentInitH\x00R\tagentInitB\t\n" +
 	"\arequest\"\x8c\x02\n" +
 	"\x15MetricsStreamResponse\x12-\n" +
 	"\acommand\x18\x01 \x01(\v2\x11.nanolink.CommandH\x00R\acommand\x12=\n" +
@@ -6216,7 +6586,7 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"\x19DATA_REQUEST_NETWORK_INFO\x10\x03\x12\x1e\n" +
 	"\x1aDATA_REQUEST_USER_SESSIONS\x10\x04\x12\x19\n" +
 	"\x15DATA_REQUEST_GPU_INFO\x10\x05\x12\x17\n" +
-	"\x13DATA_REQUEST_HEALTH\x10\x06*\xa2\x06\n" +
+	"\x13DATA_REQUEST_HEALTH\x10\x06*\x87\a\n" +
 	"\vCommandType\x12\x1c\n" +
 	"\x18COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fPROCESS_LIST\x10\x01\x12\x10\n" +
@@ -6225,11 +6595,13 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"\x12\x10\n" +
 	"\fSERVICE_STOP\x10\v\x12\x13\n" +
 	"\x0fSERVICE_RESTART\x10\f\x12\x12\n" +
-	"\x0eSERVICE_STATUS\x10\r\x12\r\n" +
+	"\x0eSERVICE_STATUS\x10\r\x12\x10\n" +
+	"\fSERVICE_LIST\x10\x0e\x12\r\n" +
 	"\tFILE_TAIL\x10\x14\x12\x11\n" +
 	"\rFILE_DOWNLOAD\x10\x15\x12\x0f\n" +
 	"\vFILE_UPLOAD\x10\x16\x12\x11\n" +
-	"\rFILE_TRUNCATE\x10\x17\x12\x0f\n" +
+	"\rFILE_TRUNCATE\x10\x17\x12\r\n" +
+	"\tFILE_LIST\x10\x18\x12\x0f\n" +
 	"\vDOCKER_LIST\x10\x1e\x12\x10\n" +
 	"\fDOCKER_START\x10\x1f\x12\x0f\n" +
 	"\vDOCKER_STOP\x10 \x12\x12\n" +
@@ -6240,7 +6612,8 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"\x12AGENT_CHECK_UPDATE\x10<\x12\x19\n" +
 	"\x15AGENT_DOWNLOAD_UPDATE\x10=\x12\x16\n" +
 	"\x12AGENT_APPLY_UPDATE\x10>\x12\x15\n" +
-	"\x11AGENT_GET_VERSION\x10?\x12\x10\n" +
+	"\x11AGENT_GET_VERSION\x10?\x12\x19\n" +
+	"\x15AGENT_PROCESS_RESTART\x10@\x12\x10\n" +
 	"\fSERVICE_LOGS\x10F\x12\x0f\n" +
 	"\vSYSTEM_LOGS\x10G\x12\x0e\n" +
 	"\n" +
@@ -6260,7 +6633,9 @@ const file_sdk_protocol_nanolink_proto_rawDesc = "" +
 	"\x0fCONFIG_ROLLBACK\x10g\x12\x17\n" +
 	"\x13CONFIG_LIST_BACKUPS\x10h\x12\x10\n" +
 	"\fHEALTH_CHECK\x10n\x12\x15\n" +
-	"\x11CONNECTIVITY_TEST\x10o2\xf9\x03\n" +
+	"\x11CONNECTIVITY_TEST\x10o\x12\x12\n" +
+	"\x0eDEPLOY_EXECUTE\x10x\x12\x13\n" +
+	"\x0fDEPLOY_ROLLBACK\x10y2\xf9\x03\n" +
 	"\x0fNanoLinkService\x12=\n" +
 	"\fAuthenticate\x12\x15.nanolink.AuthRequest\x1a\x16.nanolink.AuthResponse\x12T\n" +
 	"\rStreamMetrics\x12\x1e.nanolink.MetricsStreamRequest\x1a\x1f.nanolink.MetricsStreamResponse(\x010\x01\x128\n" +
@@ -6290,7 +6665,7 @@ func file_sdk_protocol_nanolink_proto_rawDescGZIP() []byte {
 }
 
 var file_sdk_protocol_nanolink_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_sdk_protocol_nanolink_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
+var file_sdk_protocol_nanolink_proto_msgTypes = make([]protoimpl.MessageInfo, 67)
 var file_sdk_protocol_nanolink_proto_goTypes = []any{
 	(MetricsType)(0),                // 0: nanolink.MetricsType
 	(DataRequestType)(0),            // 1: nanolink.DataRequestType
@@ -6327,39 +6702,42 @@ var file_sdk_protocol_nanolink_proto_goTypes = []any{
 	(*MetricsSync)(nil),             // 32: nanolink.MetricsSync
 	(*Command)(nil),                 // 33: nanolink.Command
 	(*CommandResult)(nil),           // 34: nanolink.CommandResult
-	(*LogQueryResult)(nil),          // 35: nanolink.LogQueryResult
-	(*LogEntry)(nil),                // 36: nanolink.LogEntry
-	(*PackageInfo)(nil),             // 37: nanolink.PackageInfo
-	(*ScriptInfo)(nil),              // 38: nanolink.ScriptInfo
-	(*ConfigResult)(nil),            // 39: nanolink.ConfigResult
-	(*ConfigBackup)(nil),            // 40: nanolink.ConfigBackup
-	(*HealthCheckResult)(nil),       // 41: nanolink.HealthCheckResult
-	(*HealthCheckItem)(nil),         // 42: nanolink.HealthCheckItem
-	(*UpdateInfo)(nil),              // 43: nanolink.UpdateInfo
-	(*ProcessInfo)(nil),             // 44: nanolink.ProcessInfo
-	(*ContainerInfo)(nil),           // 45: nanolink.ContainerInfo
-	(*Heartbeat)(nil),               // 46: nanolink.Heartbeat
-	(*HeartbeatAck)(nil),            // 47: nanolink.HeartbeatAck
-	(*MetricsStreamRequest)(nil),    // 48: nanolink.MetricsStreamRequest
-	(*MetricsStreamResponse)(nil),   // 49: nanolink.MetricsStreamResponse
-	(*MetricsAck)(nil),              // 50: nanolink.MetricsAck
-	(*HeartbeatRequest)(nil),        // 51: nanolink.HeartbeatRequest
-	(*HeartbeatResponse)(nil),       // 52: nanolink.HeartbeatResponse
-	(*MetricsSyncRequest)(nil),      // 53: nanolink.MetricsSyncRequest
-	(*MetricsSyncResponse)(nil),     // 54: nanolink.MetricsSyncResponse
-	(*AgentInfoRequest)(nil),        // 55: nanolink.AgentInfoRequest
-	(*AgentInfoResponse)(nil),       // 56: nanolink.AgentInfoResponse
-	(*ServerConfig)(nil),            // 57: nanolink.ServerConfig
-	(*WatchAgentsRequest)(nil),      // 58: nanolink.WatchAgentsRequest
-	(*AgentEvent)(nil),              // 59: nanolink.AgentEvent
-	(*WatchMetricsRequest)(nil),     // 60: nanolink.WatchMetricsRequest
-	(*GetAgentsRequest)(nil),        // 61: nanolink.GetAgentsRequest
-	(*GetAgentsResponse)(nil),       // 62: nanolink.GetAgentsResponse
-	(*GetAgentMetricsRequest)(nil),  // 63: nanolink.GetAgentMetricsRequest
-	(*DashboardCommandRequest)(nil), // 64: nanolink.DashboardCommandRequest
-	nil,                             // 65: nanolink.Command.ParamsEntry
-	nil,                             // 66: nanolink.LogEntry.MetadataEntry
-	nil,                             // 67: nanolink.HealthCheckItem.DetailsEntry
+	(*ServiceInfo)(nil),             // 35: nanolink.ServiceInfo
+	(*FileEntry)(nil),               // 36: nanolink.FileEntry
+	(*LogQueryResult)(nil),          // 37: nanolink.LogQueryResult
+	(*LogEntry)(nil),                // 38: nanolink.LogEntry
+	(*PackageInfo)(nil),             // 39: nanolink.PackageInfo
+	(*ScriptInfo)(nil),              // 40: nanolink.ScriptInfo
+	(*ConfigResult)(nil),            // 41: nanolink.ConfigResult
+	(*ConfigBackup)(nil),            // 42: nanolink.ConfigBackup
+	(*HealthCheckResult)(nil),       // 43: nanolink.HealthCheckResult
+	(*HealthCheckItem)(nil),         // 44: nanolink.HealthCheckItem
+	(*UpdateInfo)(nil),              // 45: nanolink.UpdateInfo
+	(*ProcessInfo)(nil),             // 46: nanolink.ProcessInfo
+	(*ContainerInfo)(nil),           // 47: nanolink.ContainerInfo
+	(*Heartbeat)(nil),               // 48: nanolink.Heartbeat
+	(*HeartbeatAck)(nil),            // 49: nanolink.HeartbeatAck
+	(*AgentInit)(nil),               // 50: nanolink.AgentInit
+	(*MetricsStreamRequest)(nil),    // 51: nanolink.MetricsStreamRequest
+	(*MetricsStreamResponse)(nil),   // 52: nanolink.MetricsStreamResponse
+	(*MetricsAck)(nil),              // 53: nanolink.MetricsAck
+	(*HeartbeatRequest)(nil),        // 54: nanolink.HeartbeatRequest
+	(*HeartbeatResponse)(nil),       // 55: nanolink.HeartbeatResponse
+	(*MetricsSyncRequest)(nil),      // 56: nanolink.MetricsSyncRequest
+	(*MetricsSyncResponse)(nil),     // 57: nanolink.MetricsSyncResponse
+	(*AgentInfoRequest)(nil),        // 58: nanolink.AgentInfoRequest
+	(*AgentInfoResponse)(nil),       // 59: nanolink.AgentInfoResponse
+	(*ServerConfig)(nil),            // 60: nanolink.ServerConfig
+	(*WatchAgentsRequest)(nil),      // 61: nanolink.WatchAgentsRequest
+	(*AgentEvent)(nil),              // 62: nanolink.AgentEvent
+	(*WatchMetricsRequest)(nil),     // 63: nanolink.WatchMetricsRequest
+	(*GetAgentsRequest)(nil),        // 64: nanolink.GetAgentsRequest
+	(*GetAgentsResponse)(nil),       // 65: nanolink.GetAgentsResponse
+	(*GetAgentMetricsRequest)(nil),  // 66: nanolink.GetAgentMetricsRequest
+	(*DashboardCommandRequest)(nil), // 67: nanolink.DashboardCommandRequest
+	nil,                             // 68: nanolink.Command.ParamsEntry
+	nil,                             // 69: nanolink.LogEntry.MetadataEntry
+	nil,                             // 70: nanolink.HealthCheckItem.DetailsEntry
 }
 var file_sdk_protocol_nanolink_proto_depIdxs = []int32{
 	5,  // 0: nanolink.Envelope.auth_request:type_name -> nanolink.AuthRequest
@@ -6368,8 +6746,8 @@ var file_sdk_protocol_nanolink_proto_depIdxs = []int32{
 	32, // 3: nanolink.Envelope.metrics_sync:type_name -> nanolink.MetricsSync
 	33, // 4: nanolink.Envelope.command:type_name -> nanolink.Command
 	34, // 5: nanolink.Envelope.command_result:type_name -> nanolink.CommandResult
-	46, // 6: nanolink.Envelope.heartbeat:type_name -> nanolink.Heartbeat
-	47, // 7: nanolink.Envelope.heartbeat_ack:type_name -> nanolink.HeartbeatAck
+	48, // 6: nanolink.Envelope.heartbeat:type_name -> nanolink.Heartbeat
+	49, // 7: nanolink.Envelope.heartbeat_ack:type_name -> nanolink.HeartbeatAck
 	1,  // 8: nanolink.DataRequest.request_type:type_name -> nanolink.DataRequestType
 	24, // 9: nanolink.Metrics.cpu:type_name -> nanolink.CpuMetrics
 	25, // 10: nanolink.Metrics.memory:type_name -> nanolink.MemoryMetrics
@@ -6396,64 +6774,67 @@ var file_sdk_protocol_nanolink_proto_depIdxs = []int32{
 	23, // 31: nanolink.PeriodicData.network_updates:type_name -> nanolink.NetworkAddressUpdate
 	8,  // 32: nanolink.MetricsSync.buffered_metrics:type_name -> nanolink.Metrics
 	2,  // 33: nanolink.Command.type:type_name -> nanolink.CommandType
-	65, // 34: nanolink.Command.params:type_name -> nanolink.Command.ParamsEntry
-	44, // 35: nanolink.CommandResult.processes:type_name -> nanolink.ProcessInfo
-	45, // 36: nanolink.CommandResult.containers:type_name -> nanolink.ContainerInfo
-	43, // 37: nanolink.CommandResult.update_info:type_name -> nanolink.UpdateInfo
-	35, // 38: nanolink.CommandResult.log_result:type_name -> nanolink.LogQueryResult
-	37, // 39: nanolink.CommandResult.packages:type_name -> nanolink.PackageInfo
-	38, // 40: nanolink.CommandResult.scripts:type_name -> nanolink.ScriptInfo
-	39, // 41: nanolink.CommandResult.config_result:type_name -> nanolink.ConfigResult
-	41, // 42: nanolink.CommandResult.health_result:type_name -> nanolink.HealthCheckResult
-	36, // 43: nanolink.LogQueryResult.lines:type_name -> nanolink.LogEntry
-	66, // 44: nanolink.LogEntry.metadata:type_name -> nanolink.LogEntry.MetadataEntry
-	40, // 45: nanolink.ConfigResult.backups:type_name -> nanolink.ConfigBackup
-	42, // 46: nanolink.HealthCheckResult.checks:type_name -> nanolink.HealthCheckItem
-	67, // 47: nanolink.HealthCheckItem.details:type_name -> nanolink.HealthCheckItem.DetailsEntry
-	8,  // 48: nanolink.MetricsStreamRequest.metrics:type_name -> nanolink.Metrics
-	46, // 49: nanolink.MetricsStreamRequest.heartbeat:type_name -> nanolink.Heartbeat
-	34, // 50: nanolink.MetricsStreamRequest.command_result:type_name -> nanolink.CommandResult
-	9,  // 51: nanolink.MetricsStreamRequest.realtime:type_name -> nanolink.RealtimeMetrics
-	14, // 52: nanolink.MetricsStreamRequest.static_info:type_name -> nanolink.StaticInfo
-	21, // 53: nanolink.MetricsStreamRequest.periodic:type_name -> nanolink.PeriodicData
-	33, // 54: nanolink.MetricsStreamResponse.command:type_name -> nanolink.Command
-	47, // 55: nanolink.MetricsStreamResponse.heartbeat_ack:type_name -> nanolink.HeartbeatAck
-	57, // 56: nanolink.MetricsStreamResponse.config_update:type_name -> nanolink.ServerConfig
-	7,  // 57: nanolink.MetricsStreamResponse.data_request:type_name -> nanolink.DataRequest
-	8,  // 58: nanolink.MetricsSyncResponse.metrics:type_name -> nanolink.Metrics
-	3,  // 59: nanolink.AgentEvent.event_type:type_name -> nanolink.AgentEvent.EventType
-	56, // 60: nanolink.AgentEvent.agent:type_name -> nanolink.AgentInfoResponse
-	56, // 61: nanolink.GetAgentsResponse.agents:type_name -> nanolink.AgentInfoResponse
-	33, // 62: nanolink.DashboardCommandRequest.command:type_name -> nanolink.Command
-	5,  // 63: nanolink.NanoLinkService.Authenticate:input_type -> nanolink.AuthRequest
-	48, // 64: nanolink.NanoLinkService.StreamMetrics:input_type -> nanolink.MetricsStreamRequest
-	8,  // 65: nanolink.NanoLinkService.ReportMetrics:input_type -> nanolink.Metrics
-	33, // 66: nanolink.NanoLinkService.ExecuteCommand:input_type -> nanolink.Command
-	51, // 67: nanolink.NanoLinkService.Heartbeat:input_type -> nanolink.HeartbeatRequest
-	53, // 68: nanolink.NanoLinkService.SyncMetrics:input_type -> nanolink.MetricsSyncRequest
-	55, // 69: nanolink.NanoLinkService.GetAgentInfo:input_type -> nanolink.AgentInfoRequest
-	58, // 70: nanolink.DashboardService.WatchAgents:input_type -> nanolink.WatchAgentsRequest
-	60, // 71: nanolink.DashboardService.WatchMetrics:input_type -> nanolink.WatchMetricsRequest
-	61, // 72: nanolink.DashboardService.GetAgents:input_type -> nanolink.GetAgentsRequest
-	63, // 73: nanolink.DashboardService.GetAgentMetrics:input_type -> nanolink.GetAgentMetricsRequest
-	64, // 74: nanolink.DashboardService.SendCommand:input_type -> nanolink.DashboardCommandRequest
-	6,  // 75: nanolink.NanoLinkService.Authenticate:output_type -> nanolink.AuthResponse
-	49, // 76: nanolink.NanoLinkService.StreamMetrics:output_type -> nanolink.MetricsStreamResponse
-	50, // 77: nanolink.NanoLinkService.ReportMetrics:output_type -> nanolink.MetricsAck
-	34, // 78: nanolink.NanoLinkService.ExecuteCommand:output_type -> nanolink.CommandResult
-	52, // 79: nanolink.NanoLinkService.Heartbeat:output_type -> nanolink.HeartbeatResponse
-	54, // 80: nanolink.NanoLinkService.SyncMetrics:output_type -> nanolink.MetricsSyncResponse
-	56, // 81: nanolink.NanoLinkService.GetAgentInfo:output_type -> nanolink.AgentInfoResponse
-	59, // 82: nanolink.DashboardService.WatchAgents:output_type -> nanolink.AgentEvent
-	8,  // 83: nanolink.DashboardService.WatchMetrics:output_type -> nanolink.Metrics
-	62, // 84: nanolink.DashboardService.GetAgents:output_type -> nanolink.GetAgentsResponse
-	8,  // 85: nanolink.DashboardService.GetAgentMetrics:output_type -> nanolink.Metrics
-	34, // 86: nanolink.DashboardService.SendCommand:output_type -> nanolink.CommandResult
-	75, // [75:87] is the sub-list for method output_type
-	63, // [63:75] is the sub-list for method input_type
-	63, // [63:63] is the sub-list for extension type_name
-	63, // [63:63] is the sub-list for extension extendee
-	0,  // [0:63] is the sub-list for field type_name
+	68, // 34: nanolink.Command.params:type_name -> nanolink.Command.ParamsEntry
+	46, // 35: nanolink.CommandResult.processes:type_name -> nanolink.ProcessInfo
+	47, // 36: nanolink.CommandResult.containers:type_name -> nanolink.ContainerInfo
+	45, // 37: nanolink.CommandResult.update_info:type_name -> nanolink.UpdateInfo
+	37, // 38: nanolink.CommandResult.log_result:type_name -> nanolink.LogQueryResult
+	39, // 39: nanolink.CommandResult.packages:type_name -> nanolink.PackageInfo
+	40, // 40: nanolink.CommandResult.scripts:type_name -> nanolink.ScriptInfo
+	41, // 41: nanolink.CommandResult.config_result:type_name -> nanolink.ConfigResult
+	43, // 42: nanolink.CommandResult.health_result:type_name -> nanolink.HealthCheckResult
+	35, // 43: nanolink.CommandResult.services:type_name -> nanolink.ServiceInfo
+	36, // 44: nanolink.CommandResult.files:type_name -> nanolink.FileEntry
+	38, // 45: nanolink.LogQueryResult.lines:type_name -> nanolink.LogEntry
+	69, // 46: nanolink.LogEntry.metadata:type_name -> nanolink.LogEntry.MetadataEntry
+	42, // 47: nanolink.ConfigResult.backups:type_name -> nanolink.ConfigBackup
+	44, // 48: nanolink.HealthCheckResult.checks:type_name -> nanolink.HealthCheckItem
+	70, // 49: nanolink.HealthCheckItem.details:type_name -> nanolink.HealthCheckItem.DetailsEntry
+	8,  // 50: nanolink.MetricsStreamRequest.metrics:type_name -> nanolink.Metrics
+	48, // 51: nanolink.MetricsStreamRequest.heartbeat:type_name -> nanolink.Heartbeat
+	34, // 52: nanolink.MetricsStreamRequest.command_result:type_name -> nanolink.CommandResult
+	9,  // 53: nanolink.MetricsStreamRequest.realtime:type_name -> nanolink.RealtimeMetrics
+	14, // 54: nanolink.MetricsStreamRequest.static_info:type_name -> nanolink.StaticInfo
+	21, // 55: nanolink.MetricsStreamRequest.periodic:type_name -> nanolink.PeriodicData
+	50, // 56: nanolink.MetricsStreamRequest.agent_init:type_name -> nanolink.AgentInit
+	33, // 57: nanolink.MetricsStreamResponse.command:type_name -> nanolink.Command
+	49, // 58: nanolink.MetricsStreamResponse.heartbeat_ack:type_name -> nanolink.HeartbeatAck
+	60, // 59: nanolink.MetricsStreamResponse.config_update:type_name -> nanolink.ServerConfig
+	7,  // 60: nanolink.MetricsStreamResponse.data_request:type_name -> nanolink.DataRequest
+	8,  // 61: nanolink.MetricsSyncResponse.metrics:type_name -> nanolink.Metrics
+	3,  // 62: nanolink.AgentEvent.event_type:type_name -> nanolink.AgentEvent.EventType
+	59, // 63: nanolink.AgentEvent.agent:type_name -> nanolink.AgentInfoResponse
+	59, // 64: nanolink.GetAgentsResponse.agents:type_name -> nanolink.AgentInfoResponse
+	33, // 65: nanolink.DashboardCommandRequest.command:type_name -> nanolink.Command
+	5,  // 66: nanolink.NanoLinkService.Authenticate:input_type -> nanolink.AuthRequest
+	51, // 67: nanolink.NanoLinkService.StreamMetrics:input_type -> nanolink.MetricsStreamRequest
+	8,  // 68: nanolink.NanoLinkService.ReportMetrics:input_type -> nanolink.Metrics
+	33, // 69: nanolink.NanoLinkService.ExecuteCommand:input_type -> nanolink.Command
+	54, // 70: nanolink.NanoLinkService.Heartbeat:input_type -> nanolink.HeartbeatRequest
+	56, // 71: nanolink.NanoLinkService.SyncMetrics:input_type -> nanolink.MetricsSyncRequest
+	58, // 72: nanolink.NanoLinkService.GetAgentInfo:input_type -> nanolink.AgentInfoRequest
+	61, // 73: nanolink.DashboardService.WatchAgents:input_type -> nanolink.WatchAgentsRequest
+	63, // 74: nanolink.DashboardService.WatchMetrics:input_type -> nanolink.WatchMetricsRequest
+	64, // 75: nanolink.DashboardService.GetAgents:input_type -> nanolink.GetAgentsRequest
+	66, // 76: nanolink.DashboardService.GetAgentMetrics:input_type -> nanolink.GetAgentMetricsRequest
+	67, // 77: nanolink.DashboardService.SendCommand:input_type -> nanolink.DashboardCommandRequest
+	6,  // 78: nanolink.NanoLinkService.Authenticate:output_type -> nanolink.AuthResponse
+	52, // 79: nanolink.NanoLinkService.StreamMetrics:output_type -> nanolink.MetricsStreamResponse
+	53, // 80: nanolink.NanoLinkService.ReportMetrics:output_type -> nanolink.MetricsAck
+	34, // 81: nanolink.NanoLinkService.ExecuteCommand:output_type -> nanolink.CommandResult
+	55, // 82: nanolink.NanoLinkService.Heartbeat:output_type -> nanolink.HeartbeatResponse
+	57, // 83: nanolink.NanoLinkService.SyncMetrics:output_type -> nanolink.MetricsSyncResponse
+	59, // 84: nanolink.NanoLinkService.GetAgentInfo:output_type -> nanolink.AgentInfoResponse
+	62, // 85: nanolink.DashboardService.WatchAgents:output_type -> nanolink.AgentEvent
+	8,  // 86: nanolink.DashboardService.WatchMetrics:output_type -> nanolink.Metrics
+	65, // 87: nanolink.DashboardService.GetAgents:output_type -> nanolink.GetAgentsResponse
+	8,  // 88: nanolink.DashboardService.GetAgentMetrics:output_type -> nanolink.Metrics
+	34, // 89: nanolink.DashboardService.SendCommand:output_type -> nanolink.CommandResult
+	78, // [78:90] is the sub-list for method output_type
+	66, // [66:78] is the sub-list for method input_type
+	66, // [66:66] is the sub-list for extension type_name
+	66, // [66:66] is the sub-list for extension extendee
+	0,  // [0:66] is the sub-list for field type_name
 }
 
 func init() { file_sdk_protocol_nanolink_proto_init() }
@@ -6471,15 +6852,16 @@ func file_sdk_protocol_nanolink_proto_init() {
 		(*Envelope_Heartbeat)(nil),
 		(*Envelope_HeartbeatAck)(nil),
 	}
-	file_sdk_protocol_nanolink_proto_msgTypes[44].OneofWrappers = []any{
+	file_sdk_protocol_nanolink_proto_msgTypes[47].OneofWrappers = []any{
 		(*MetricsStreamRequest_Metrics)(nil),
 		(*MetricsStreamRequest_Heartbeat)(nil),
 		(*MetricsStreamRequest_CommandResult)(nil),
 		(*MetricsStreamRequest_Realtime)(nil),
 		(*MetricsStreamRequest_StaticInfo)(nil),
 		(*MetricsStreamRequest_Periodic)(nil),
+		(*MetricsStreamRequest_AgentInit)(nil),
 	}
-	file_sdk_protocol_nanolink_proto_msgTypes[45].OneofWrappers = []any{
+	file_sdk_protocol_nanolink_proto_msgTypes[48].OneofWrappers = []any{
 		(*MetricsStreamResponse_Command)(nil),
 		(*MetricsStreamResponse_HeartbeatAck)(nil),
 		(*MetricsStreamResponse_ConfigUpdate)(nil),
@@ -6491,7 +6873,7 @@ func file_sdk_protocol_nanolink_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sdk_protocol_nanolink_proto_rawDesc), len(file_sdk_protocol_nanolink_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   64,
+			NumMessages:   67,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

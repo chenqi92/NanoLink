@@ -18,7 +18,9 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/log/nanolink
+# Optional deployment roots are writable only when they exist. Deployment is
+# still disabled by default in nanolink.yaml and restricted by allowed_roots.
+ReadWritePaths=/var/log/nanolink -/opt/nanolink/apps -/var/www/nanolink
 ReadOnlyPaths=/etc/nanolink
 
 # Resource limits

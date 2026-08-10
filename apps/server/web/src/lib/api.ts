@@ -56,6 +56,19 @@ class ApiClient {
   async delete<T>(url: string): Promise<T> {
     return this.fetch<T>(url, { method: "DELETE" })
   }
+
+  async upload<T>(url: string, body: FormData): Promise<T> {
+    const response = await fetch(`${API_BASE}${url}`, {
+      method: "POST",
+      body,
+      credentials: "include",
+    })
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw { error: data.error || "Upload failed", status: response.status } as ApiError
+    }
+    return response.json()
+  }
 }
 
 export const api = new ApiClient()
@@ -277,7 +290,7 @@ export interface GeneratedConfig {
   serverId?: string
 }
 export const configApi = {
-  generate: (body: { serverUrl?: string; permission: number; tlsVerify: boolean; hostname?: string; shellEnabled: boolean }) =>
+  generate: (body: { serverUrl?: string; permission: number; tlsVerify: boolean; hostname?: string; shellEnabled: boolean; tlsCaCert?: string; tlsServerName?: string; tlsClientCert?: string; tlsClientKey?: string }) =>
     api.post<GeneratedConfig>("/config/generate", body),
 }
 
@@ -529,6 +542,82 @@ export const metricsApi = {
   summary: () => api.get<Summary>("/summary"),
   history: (agentId: string, start: number, end: number, interval: string) =>
     api.get<Metrics[]>(`/metrics/history?agentId=${agentId}&start=${start}&end=${end}&interval=${interval}`),
+}
+
+// Application deployment
+export interface DeploymentProject {
+  id: number
+  name: string
+  type: "java" | "static"
+  agentId: string
+  deployPath: string
+  serviceName: string
+  healthUrl: string
+  keepReleases: number
+  currentReleaseId?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DeploymentRelease {
+  id: string
+  projectId: number
+  version: string
+  artifactName: string
+  artifactSize: number
+  sha256: string
+  notes: string
+  createdAt: string
+}
+
+export interface DeploymentTask {
+  id: string
+  projectId: number
+  releaseId: string
+  agentId: string
+  commandId: string
+  action: "deploy" | "rollback"
+  status: "queued" | "running" | "success" | "failed"
+  output: string
+  error: string
+  createdByName: string
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+  release?: DeploymentRelease
+  project?: DeploymentProject
+}
+
+export interface DeploymentProjectDetail extends DeploymentProject {
+  releases: DeploymentRelease[]
+  deployments: DeploymentTask[]
+}
+
+export interface DeploymentProjectInput {
+  name: string
+  type: "java" | "static"
+  agentId: string
+  deployPath: string
+  serviceName: string
+  healthUrl: string
+  keepReleases: number
+}
+
+export const deploymentsApi = {
+  projects: () => api.get<DeploymentProject[]>("/deployment-projects"),
+  project: (id: number) => api.get<DeploymentProjectDetail>(`/deployment-projects/${id}`),
+  createProject: (body: DeploymentProjectInput) => api.post<DeploymentProject>("/deployment-projects", body),
+  updateProject: (id: number, body: DeploymentProjectInput) => api.put<DeploymentProject>(`/deployment-projects/${id}`, body),
+  uploadRelease: (projectId: number, version: string, notes: string, artifact: File) => {
+    const form = new FormData()
+    form.set("version", version)
+    form.set("notes", notes)
+    form.set("artifact", artifact)
+    return api.upload<DeploymentRelease>(`/deployment-projects/${projectId}/releases`, form)
+  },
+  deploy: (projectId: number, releaseId: string) => api.post<DeploymentTask>(`/deployment-projects/${projectId}/releases/${releaseId}/deploy`),
+  rollback: (projectId: number, releaseId: string) => api.post<DeploymentTask>(`/deployment-projects/${projectId}/releases/${releaseId}/rollback`),
+  task: (taskId: string) => api.get<DeploymentTask>(`/deployment-tasks/${taskId}`),
 }
 
 // Agent Token types and API

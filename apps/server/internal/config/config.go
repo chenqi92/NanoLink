@@ -25,6 +25,7 @@ type Config struct {
 	SuperAdmin SuperAdminConfig `mapstructure:"superadmin"`
 	MCP        MCPConfig        `mapstructure:"mcp"`
 	LLM        LLMConfig        `mapstructure:"llm"`
+	Deployment DeploymentConfig `mapstructure:"deployment"`
 }
 
 // ServerConfig holds server configuration
@@ -35,6 +36,7 @@ type ServerConfig struct {
 	Mode                string   `mapstructure:"mode"`
 	TLSCert             string   `mapstructure:"tls_cert"`
 	TLSKey              string   `mapstructure:"tls_key"`
+	GRPCClientCA        string   `mapstructure:"grpc_client_ca"`  // Optional CA bundle; when set gRPC requires a verified client certificate
 	AllowedOrigins      []string `mapstructure:"allowed_origins"` // CORS whitelist for WebSocket connections
 	ExternalURL         string   `mapstructure:"external_url"`    // External URL for device pairing QR codes (e.g., https://myserver.com:8080)
 	TrustedProxies      []string `mapstructure:"trusted_proxies"` // Exact proxy IPs/CIDRs allowed to supply forwarding headers
@@ -141,6 +143,15 @@ type LLMConfig struct {
 	MaxTokens int    `mapstructure:"max_tokens"` // Max response tokens (default 1024)
 }
 
+// DeploymentConfig controls server-side artifact storage. Artifacts are never
+// embedded into JSON/gRPC command messages; agents download them through a
+// short-lived task token instead.
+type DeploymentConfig struct {
+	StoragePath      string `mapstructure:"storage_path"`
+	MaxArtifactBytes int64  `mapstructure:"max_artifact_bytes"`
+	DownloadTTLMin   int    `mapstructure:"download_ttl_minutes"`
+}
+
 // Default returns default configuration
 func Default() *Config {
 	return &Config{
@@ -193,6 +204,11 @@ func Default() *Config {
 			Model:     "claude-opus-4-8",
 			MaxTokens: 1024,
 		},
+		Deployment: DeploymentConfig{
+			StoragePath:      "./data/artifacts",
+			MaxArtifactBytes: 512 * 1024 * 1024,
+			DownloadTTLMin:   30,
+		},
 	}
 }
 
@@ -218,6 +234,9 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("metrics.max_memory_history", 600)
 	viper.SetDefault("metrics.prometheus_enabled", false)
 	viper.SetDefault("mcp.sse_bind_address", "127.0.0.1")
+	viper.SetDefault("deployment.storage_path", "./data/artifacts")
+	viper.SetDefault("deployment.max_artifact_bytes", int64(512*1024*1024))
+	viper.SetDefault("deployment.download_ttl_minutes", 30)
 
 	// Environment variable support
 	viper.SetEnvPrefix("NANOLINK")
@@ -236,6 +255,9 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("superadmin.username", "NANOLINK_ADMIN_USERNAME")
 	_ = viper.BindEnv("superadmin.password", "NANOLINK_ADMIN_PASSWORD")
 	_ = viper.BindEnv("server.external_url", "NANOLINK_EXTERNAL_URL")
+	_ = viper.BindEnv("server.tls_cert", "NANOLINK_TLS_CERT")
+	_ = viper.BindEnv("server.tls_key", "NANOLINK_TLS_KEY")
+	_ = viper.BindEnv("server.grpc_client_ca", "NANOLINK_GRPC_CLIENT_CA")
 	_ = viper.BindEnv("server.trusted_proxies", "NANOLINK_TRUSTED_PROXIES")
 	_ = viper.BindEnv("server.max_request_body_bytes", "NANOLINK_MAX_REQUEST_BODY_BYTES")
 	_ = viper.BindEnv("auth.allow_public_registration", "NANOLINK_ALLOW_PUBLIC_REGISTRATION")
@@ -243,6 +265,9 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("metrics.prometheus_token", "NANOLINK_PROMETHEUS_TOKEN")
 	_ = viper.BindEnv("mcp.sse_bind_address", "NANOLINK_MCP_SSE_BIND_ADDRESS")
 	_ = viper.BindEnv("mcp.sse_auth_token", "NANOLINK_MCP_SSE_AUTH_TOKEN")
+	_ = viper.BindEnv("deployment.storage_path", "NANOLINK_DEPLOYMENT_STORAGE_PATH")
+	_ = viper.BindEnv("deployment.max_artifact_bytes", "NANOLINK_DEPLOYMENT_MAX_ARTIFACT_BYTES")
+	_ = viper.BindEnv("deployment.download_ttl_minutes", "NANOLINK_DEPLOYMENT_DOWNLOAD_TTL_MINUTES")
 
 	// Try to read config file (optional - environment variables take precedence)
 	configErr := viper.ReadInConfig()
@@ -269,6 +294,15 @@ func Load(path string) (*Config, error) {
 	if externalURL := os.Getenv("NANOLINK_EXTERNAL_URL"); externalURL != "" {
 		cfg.Server.ExternalURL = externalURL
 	}
+	if tlsCert := os.Getenv("NANOLINK_TLS_CERT"); tlsCert != "" {
+		cfg.Server.TLSCert = tlsCert
+	}
+	if tlsKey := os.Getenv("NANOLINK_TLS_KEY"); tlsKey != "" {
+		cfg.Server.TLSKey = tlsKey
+	}
+	if clientCA := os.Getenv("NANOLINK_GRPC_CLIENT_CA"); clientCA != "" {
+		cfg.Server.GRPCClientCA = clientCA
+	}
 	if proxies := os.Getenv("NANOLINK_TRUSTED_PROXIES"); proxies != "" {
 		cfg.Server.TrustedProxies = splitAndTrim(proxies)
 	}
@@ -283,6 +317,19 @@ func Load(path string) (*Config, error) {
 			cfg.Auth.AllowPublicRegistration = true
 		default:
 			cfg.Auth.AllowPublicRegistration = false
+		}
+	}
+	if storagePath := os.Getenv("NANOLINK_DEPLOYMENT_STORAGE_PATH"); storagePath != "" {
+		cfg.Deployment.StoragePath = storagePath
+	}
+	if raw := os.Getenv("NANOLINK_DEPLOYMENT_MAX_ARTIFACT_BYTES"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			cfg.Deployment.MaxArtifactBytes = n
+		}
+	}
+	if raw := os.Getenv("NANOLINK_DEPLOYMENT_DOWNLOAD_TTL_MINUTES"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			cfg.Deployment.DownloadTTLMin = n
 		}
 	}
 
@@ -312,9 +359,21 @@ func (c *Config) ValidateAndSecure() {
 	if c.Server.MaxRequestBodyBytes <= 0 {
 		c.Server.MaxRequestBodyBytes = 1024 * 1024
 	}
+	if strings.TrimSpace(c.Deployment.StoragePath) == "" {
+		c.Deployment.StoragePath = "./data/artifacts"
+	}
+	if c.Deployment.MaxArtifactBytes <= 0 {
+		c.Deployment.MaxArtifactBytes = 512 * 1024 * 1024
+	}
+	if c.Deployment.DownloadTTLMin <= 0 {
+		c.Deployment.DownloadTTLMin = 30
+	}
 
 	if (c.Server.TLSCert == "") != (c.Server.TLSKey == "") {
 		log.Fatalf("[FATAL] server.tls_cert and server.tls_key must be configured together")
+	}
+	if c.Server.GRPCClientCA != "" && (c.Server.TLSCert == "" || c.Server.TLSKey == "") {
+		log.Fatalf("[FATAL] server.grpc_client_ca requires server.tls_cert and server.tls_key")
 	}
 
 	if (c.SuperAdmin.Username == "") != (c.SuperAdmin.Password == "") {

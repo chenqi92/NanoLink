@@ -38,6 +38,10 @@ const (
 
 	// Shell Command (requires SuperToken)
 	CommandShellExecute CommandType = 50
+
+	// Application deployment
+	CommandDeployExecute  CommandType = 120
+	CommandDeployRollback CommandType = 121
 )
 
 // Command represents a command to be sent to an agent
@@ -59,7 +63,8 @@ func (c *Command) RequiredPermission() int {
 	case CommandProcessKill, CommandServiceStart, CommandServiceStop, CommandServiceRestart,
 		CommandDockerStart, CommandDockerStop, CommandDockerRestart:
 		return PermissionServiceControl
-	case CommandSystemReboot, CommandShellExecute, CommandFileUpload:
+	case CommandSystemReboot, CommandShellExecute, CommandFileUpload,
+		CommandDeployExecute, CommandDeployRollback:
 		return PermissionSystemAdmin
 	default:
 		return PermissionSystemAdmin

@@ -30,6 +30,7 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0 }: { collapsed
       label: t("nav.ops"),
       items: [
         { id: "operations", icon: I.bolt({}), label: t("nav.operations") },
+        ...(user?.isSuperAdmin ? [{ id: "deployments" as Page, icon: I.arrowUp({}), label: t("nav.deployments") }] : []),
         { id: "logs", icon: I.audit({}), label: t("nav.logs") },
       ],
     },

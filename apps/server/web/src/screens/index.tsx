@@ -8,6 +8,7 @@ import { UsersScreen } from "./UsersScreen"
 import { GroupsScreen } from "./GroupsScreen"
 import { PermissionsScreen } from "./PermissionsScreen"
 import { OperationsScreen } from "./OperationsScreen"
+import { DeploymentsScreen } from "./DeploymentsScreen"
 import { LogsScreen } from "./LogsScreen"
 import { AuditScreen } from "./AuditScreen"
 import { SettingsScreen } from "./SettingsScreen"
@@ -30,6 +31,8 @@ export function ScreenRouter() {
       return <AssistantScreen />
     case "operations":
       return <OperationsScreen />
+    case "deployments":
+      return <DeploymentsScreen />
     case "logs":
       return <LogsScreen />
     case "tokens":

@@ -2,10 +2,13 @@ package grpc
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -222,7 +225,7 @@ func NewServerWithAuth(
 }
 
 // Start starts the gRPC server
-func (s *Server) Start(port int, tlsCert, tlsKey string) error {
+func (s *Server) Start(port int, tlsCert, tlsKey, clientCAPath string) error {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
@@ -232,11 +235,31 @@ func (s *Server) Start(port int, tlsCert, tlsKey string) error {
 
 	// Configure TLS if provided
 	if tlsCert != "" && tlsKey != "" {
-		creds, err := credentials.NewServerTLSFromFile(tlsCert, tlsKey)
+		certificate, err := tls.LoadX509KeyPair(tlsCert, tlsKey)
 		if err != nil {
-			return fmt.Errorf("failed to load TLS credentials: %w", err)
+			return fmt.Errorf("failed to load TLS certificate or private key: %w", err)
 		}
+		tlsConfig := &tls.Config{
+			Certificates: []tls.Certificate{certificate},
+			MinVersion:   tls.VersionTLS12,
+		}
+		if clientCAPath != "" {
+			pem, err := os.ReadFile(clientCAPath)
+			if err != nil {
+				return fmt.Errorf("failed to read gRPC client CA: %w", err)
+			}
+			clientCAs := x509.NewCertPool()
+			if !clientCAs.AppendCertsFromPEM(pem) {
+				return errors.New("gRPC client CA does not contain a valid PEM certificate")
+			}
+			tlsConfig.ClientCAs = clientCAs
+			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+			s.logger.Info("gRPC mutual TLS client-certificate verification enabled")
+		}
+		creds := credentials.NewTLS(tlsConfig)
 		opts = append(opts, grpc.Creds(creds))
+	} else if clientCAPath != "" {
+		return errors.New("gRPC client CA requires a TLS certificate and private key")
 	}
 
 	// Configure keepalive
