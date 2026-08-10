@@ -26,7 +26,7 @@ import (
 
 var (
 	configFile = flag.String("config", "config.yaml", "Configuration file path")
-	version    = "0.4.7"
+	version    = "0.4.9"
 )
 
 func main() {
@@ -172,7 +172,7 @@ func main() {
 		api.POST("/auth/login", authHandler.Login)
 
 		// Device token authentication (public, uses X-Device-Token header)
-		deviceHandler := handler.NewDeviceHandler(deviceService, sugar, "NanoLink")
+		deviceHandler := handler.NewDeviceHandler(deviceService, sugar, "NanoOps")
 		api.POST("/auth/device", deviceHandler.AuthenticateDevice)
 		// Pairing-code redemption (public): exchange a manual 6-digit code for a token
 		api.POST("/auth/pairing", deviceHandler.RedeemPairingCode)
@@ -224,7 +224,7 @@ func main() {
 			protected.GET("/agents/:id/groups", permHandler.GetAgentGroups)
 
 			// Device management routes (logged-in users can manage their own devices)
-			deviceHandler := handler.NewDeviceHandler(deviceService, sugar, "NanoLink")
+			deviceHandler := handler.NewDeviceHandler(deviceService, sugar, "NanoOps")
 			protected.POST("/devices/token", deviceHandler.GenerateToken)
 			protected.GET("/devices", deviceHandler.ListDevices)
 			protected.GET("/devices/:id", deviceHandler.GetDevice)

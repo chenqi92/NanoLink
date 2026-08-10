@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "io.nanolink" "\0"
-            VALUE "FileDescription", "NanoLink" "\0"
+            VALUE "FileDescription", "NanoOps" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "NanoLink" "\0"
+            VALUE "InternalName", "NanoOps" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 io.nanolink. All rights reserved." "\0"
-            VALUE "OriginalFilename", "NanoLink.exe" "\0"
-            VALUE "ProductName", "NanoLink" "\0"
+            VALUE "OriginalFilename", "NanoOps.exe" "\0"
+            VALUE "ProductName", "NanoOps" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

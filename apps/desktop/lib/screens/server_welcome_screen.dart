@@ -47,7 +47,7 @@ class ServerWelcomeScreen extends StatelessWidget {
                       children: [
                         _BrandMark(size: t.isIOS ? 72 : 64, t: t),
                         const SizedBox(height: 26),
-                        Text('NanoLink',
+                        Text('NanoOps',
                             textAlign:
                                 t.isIOS ? TextAlign.center : TextAlign.start,
                             style: TextStyle(

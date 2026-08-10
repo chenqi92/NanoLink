@@ -7,6 +7,7 @@ mod executor;
 mod gui;
 mod hardware_id;
 mod i18n;
+mod instance_lock;
 mod management;
 mod platform;
 mod security;
@@ -46,7 +47,7 @@ const CONFIG_SEARCH_PATHS: &[&str] = &[
 #[derive(Parser, Debug)]
 #[command(name = "nanolink-agent")]
 #[command(author = "NanoLink Team")]
-#[command(version = "0.4.7")]
+#[command(version = "0.4.9")]
 #[command(about = "Lightweight server monitoring agent", long_about = None)]
 struct Args {
     /// Path to configuration file (auto-detected if not specified)
@@ -3493,6 +3494,10 @@ fn interactive_export_config(args: &Args, lang: Lang) -> Result<()> {
 
 /// Run the agent (public for Windows service support)
 pub async fn run_agent(config_path: PathBuf) -> Result<()> {
+    // Hold this guard for the lifetime of the agent. A second process using the
+    // same canonical config exits before it can create competing gRPC streams.
+    let _instance_lock = instance_lock::InstanceLock::acquire(&config_path)?;
+
     info!("NanoLink Agent v{} starting...", env!("CARGO_PKG_VERSION"));
 
     // Load configuration

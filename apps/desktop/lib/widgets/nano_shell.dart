@@ -236,7 +236,7 @@ class _Sidebar extends StatelessWidget {
                         color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 12),
-                  Text('NanoLink',
+                  Text('NanoOps',
                       style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,

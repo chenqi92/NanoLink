@@ -35,7 +35,7 @@ class NanoLinkApp extends StatelessWidget {
         builder: (context, themeProvider, _) {
           final style = NanoTheme.styleForPlatform();
           return MaterialApp(
-            title: 'NanoLink',
+            title: 'NanoOps',
             debugShowCheckedModeBanner: false,
             themeMode: themeProvider.materialThemeMode,
             theme: NanoTheme.build(style, Brightness.light),

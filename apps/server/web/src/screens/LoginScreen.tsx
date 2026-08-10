@@ -75,7 +75,7 @@ export function LoginScreen() {
         <div className="row gap-3" style={{ alignItems: "center" }}>
           {I.brand({ size: 26 })}
           <div className="col" style={{ lineHeight: 1.1, gap: 0 }}>
-            <div className="display" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.02em" }}>NanoLink</div>
+            <div className="display" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.02em" }}>NanoOps</div>
             <div className="mono dim" style={{ fontSize: 10.5, letterSpacing: "0.04em" }}>monitoring · control · audit</div>
           </div>
         </div>

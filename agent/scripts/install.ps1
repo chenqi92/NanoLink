@@ -98,7 +98,7 @@ foreach ($tlsFile in @($TlsCaCert, $TlsClientCert, $TlsClientKey)) {
 # =============================================================================
 # Configuration
 # =============================================================================
-$Script:VERSION = "0.4.7"
+$Script:VERSION = "0.4.9"
 $Script:ServiceName = "NanoLinkAgent"
 $Script:ServiceDisplayName = "NanoLink Monitoring Agent"
 $Script:InstallDir = "C:\Program Files\NanoLink"

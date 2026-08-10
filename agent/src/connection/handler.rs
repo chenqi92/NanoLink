@@ -460,6 +460,9 @@ impl MessageHandler {
                 let args: Vec<String> = std::env::args().skip(1).collect();
                 let mut cmd = std::process::Command::new(exe);
                 cmd.args(&args);
+                // The replacement starts before this process exits, so allow it
+                // to wait briefly for the per-config instance lock to be released.
+                cmd.env(crate::instance_lock::RESTART_WAIT_ENV, "10000");
 
                 #[cfg(windows)]
                 {

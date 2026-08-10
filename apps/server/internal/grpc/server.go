@@ -154,6 +154,31 @@ type Server struct {
 	metricsHistoryMu sync.Mutex
 }
 
+// registerAgentIfAbsent atomically reserves an agent ID for one active gRPC
+// stream. Duplicate processes using the same persistent ID are rejected instead
+// of replacing the dashboard's healthy connection and making its status flap.
+func (s *Server) registerAgentIfAbsent(agentID string, agent *GrpcAgent) bool {
+	s.agentsMu.Lock()
+	defer s.agentsMu.Unlock()
+	if _, exists := s.agents[agentID]; exists {
+		return false
+	}
+	s.agents[agentID] = agent
+	return true
+}
+
+// removeAgentIfCurrent prevents a stale stream's deferred cleanup from
+// unregistering a newer stream should registration policy change in the future.
+func (s *Server) removeAgentIfCurrent(agentID string, agent *GrpcAgent) bool {
+	s.agentsMu.Lock()
+	defer s.agentsMu.Unlock()
+	if current, exists := s.agents[agentID]; !exists || current != agent {
+		return false
+	}
+	delete(s.agents, agentID)
+	return true
+}
+
 // maxMetricsHistory bounds the per-agent SyncMetrics buffer.
 const maxMetricsHistory = 200
 
@@ -446,10 +471,13 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 	}
 	s.logger.Info("StreamMetrics: Sent initial heartbeat ack")
 
-	// Register agent in gRPC server's internal map
-	s.agentsMu.Lock()
-	s.agents[agentID] = agent
-	s.agentsMu.Unlock()
+	// Reserve the persistent ID for exactly one active stream. This protects the
+	// service even when an older Agent binary without a local instance lock is
+	// accidentally started alongside the supervised process.
+	if !s.registerAgentIfAbsent(agentID, agent) {
+		s.logger.Warnf("Rejected duplicate gRPC connection for %s (%s)", agent.Hostname, agentID)
+		return status.Errorf(codes.AlreadyExists, "agent %s is already connected", agentID)
+	}
 
 	// Also register to AgentService so it appears in dashboard API
 	s.agentService.RegisterGrpcAgent(agentID, service.AgentInfo{
@@ -475,9 +503,11 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 
 	// Handle disconnection
 	defer func() {
-		s.agentsMu.Lock()
-		delete(s.agents, agentID)
-		s.agentsMu.Unlock()
+		if !s.removeAgentIfCurrent(agentID, agent) {
+			agent.markClosed()
+			s.logger.Infof("Stale gRPC stream closed without unregistering current agent: %s (%s)", agent.Hostname, agentID)
+			return
+		}
 
 		// Unregister from AgentService
 		s.agentService.UnregisterAgent(agentID)

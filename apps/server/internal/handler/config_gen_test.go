@@ -140,3 +140,17 @@ func TestGeneratePlaintextInstallUsesNoTLSInsteadOfDisablingVerification(t *test
 		t.Fatalf("generated command disables certificate verification: %s", command)
 	}
 }
+
+func TestGenerateUnixInstallUsesCanonicalDomain(t *testing.T) {
+	command := generateUnixInstallCommand(
+		GenerateConfigRequest{TLSVerify: true},
+		"token",
+		"server.example.com:39100",
+	)
+	if !strings.Contains(command, "https://agent.download.kkape.com/newest/install.sh") {
+		t.Fatalf("generated command does not use the canonical install domain: %s", command)
+	}
+	if strings.Contains(command, "kkape.cn") {
+		t.Fatalf("generated command contains the retired domain: %s", command)
+	}
+}

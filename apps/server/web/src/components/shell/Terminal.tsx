@@ -117,7 +117,7 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
     resizeObserver.observe(terminalRef.current)
 
     // Connect to shell
-    term.writeln("\x1b[36mNanoLink Web Shell\x1b[0m")
+    term.writeln("\x1b[36mNanoOps Web Shell\x1b[0m")
     term.writeln(`\x1b[90mConnecting to agent: ${agentId}\x1b[0m`)
     term.writeln("")
     connect()

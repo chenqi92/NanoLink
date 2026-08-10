@@ -7,7 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// every call is a guarded no-op so the rest of the app stays unaffected.
 class NotificationService {
   static const _channelId = 'nanolink_alerts';
-  static const _channelName = 'NanoLink 告警';
+  static const _channelName = 'NanoOps 告警';
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();

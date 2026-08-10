@@ -8,6 +8,8 @@ use sha2::{Digest, Sha256};
 use crate::config::{UpdateConfig, UpdateSource};
 use crate::proto::{CommandResult, UpdateInfo};
 
+const CLOUDFLARE_UPDATE_BASE_URL: &str = "https://agent.download.kkape.com/newest";
+
 /// Validate URL to prevent command injection
 fn is_safe_url(url: &str) -> bool {
     // Only allow http/https URLs
@@ -210,9 +212,9 @@ impl UpdateExecutor {
 
     /// Fetch release from Cloudflare R2
     async fn fetch_cloudflare_release(&self) -> Result<ReleaseInfo, String> {
-        let version_url = "https://agent.download.kkape.cn/newest/version.json";
+        let version_url = format!("{CLOUDFLARE_UPDATE_BASE_URL}/version.json");
 
-        let release = self.fetch_cloudflare_version(version_url).await?;
+        let release = self.fetch_cloudflare_version(&version_url).await?;
         let download_url = self.get_cloudflare_download_url(&release);
         let checksum = Self::get_platform_checksum(&release);
 
@@ -792,12 +794,12 @@ del /F "%~f0"
 
         // Try to get from assets map first
         if let Some(asset_name) = release.assets.get(platform) {
-            return format!("https://agent.download.kkape.cn/newest/{asset_name}");
+            return format!("{CLOUDFLARE_UPDATE_BASE_URL}/{asset_name}");
         }
 
         // Fallback to default naming
         let binary_name = Self::get_binary_name().unwrap_or_default();
-        format!("https://agent.download.kkape.cn/newest/{binary_name}")
+        format!("{CLOUDFLARE_UPDATE_BASE_URL}/{binary_name}")
     }
 
     /// Get platform-specific download URL from custom source
@@ -975,6 +977,15 @@ mod tests {
         assert_eq!(hex_decode("00ff10").unwrap(), vec![0u8, 255u8, 16u8]);
         assert!(hex_decode("abc").is_err()); // odd length
         assert!(hex_decode("zz").is_err()); // non-hex
+    }
+
+    #[test]
+    fn cloudflare_update_source_uses_canonical_domain() {
+        assert_eq!(
+            CLOUDFLARE_UPDATE_BASE_URL,
+            "https://agent.download.kkape.com/newest"
+        );
+        assert!(!CLOUDFLARE_UPDATE_BASE_URL.contains("kkape.cn"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "NanoLink"
+    "title": "NanoOps"
   },
   "common": {
     "loading": "加载中...",
@@ -32,7 +32,7 @@
   },
   "home": {
     "noServersTitle": "未连接服务器",
-    "noServersDesc": "添加 NanoLink 服务器以开始监控您的代理",
+    "noServersDesc": "添加 NanoOps 服务器以开始监控您的代理",
     "noAgentsTitle": "暂无代理连接",
     "noAgentsDesc": "代理连接后将显示在这里",
     "connectingToServers": "正在连接服务器...",
@@ -77,7 +77,7 @@
     "loginFailed": "登录失败，请检查用户名和密码。",
     "invalidQrCode": "无效的二维码格式",
     "chooseMethod": "连接服务器",
-    "chooseMethodDesc": "选择添加 NanoLink 服务器的方式",
+    "chooseMethodDesc": "选择添加 NanoOps 服务器的方式",
     "scanQrCode": "扫描二维码",
     "scanQrCodeDesc": "扫描网页控制台上的二维码",
     "enterPairingCode": "配对码",
@@ -302,7 +302,7 @@
   },
   "assistant": {
     "title": "AI 运维助手",
-    "greeting": "你好，我是 NanoLink 助手",
+    "greeting": "你好，我是 NanoOps 助手",
     "intro": "通过 MCP 协议连接，我可以帮你查询节点指标、诊断异常、生成运维建议。",
     "tryThese": "试试这些",
     "suggestTopCpu": "哪些节点 CPU 最高？",
@@ -358,7 +358,7 @@
     "notifyDisk": "磁盘空间",
     "sourceCodeLabel": "源码",
     "pairNeedsLogin": "生成配对码需要先用账号登录一个服务器",
-    "footer": "NanoLink Mobile · v0.5.0",
+    "footer": "NanoOps Mobile · v0.5.0",
     "nodeCount": "{n} 节点",
     "compactMode": "紧凑模式",
     "terminal": "终端",
@@ -426,9 +426,9 @@
   },
   "addServer": {
     "title": "添加服务器",
-    "defaultServerName": "NanoLink 服务器",
+    "defaultServerName": "NanoOps 服务器",
     "connectionFailed": "连接失败，请检查服务器地址与令牌",
-    "qrInvalid": "二维码无效，请对准 NanoLink 配对二维码",
+    "qrInvalid": "二维码无效，请对准 NanoOps 配对二维码",
     "loginFailed": "登录失败，请检查地址与账号密码",
     "headerScanQr": "扫描二维码",
     "headerAccount": "账号登录",
@@ -486,7 +486,7 @@
   },
   "pairing": {
     "title": "配对新设备",
-    "intro": "用新设备的 NanoLink 扫描下方二维码，或手动输入配对码即可加入「{name}」。",
+    "intro": "用新设备的 NanoOps 扫描下方二维码，或手动输入配对码即可加入「{name}」。",
     "pairingCode": "配对码",
     "codeCopied": "已复制配对码",
     "securityNote": "二维码内含访问令牌，请勿截图外传。完成配对后可在「设备」中随时撤销。",
@@ -525,11 +525,11 @@
     "addServer": "添加服务器"
   },
   "shell": {
-    "appName": "NanoLink",
+    "appName": "NanoOps",
     "servers": "{n} 服务器",
     "aiAssistant": "AI 运维助手",
     "settings": "设置",
-    "footer": "NanoLink Mobile",
+    "footer": "NanoOps Mobile",
     "sectionServers": "服务器",
     "sectionOther": "其他",
     "addServer": "添加服务器",

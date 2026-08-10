@@ -206,7 +206,7 @@ export function TerminalSettingsDialog({
             }}
           >
             <div>
-              <span style={{ color: selectedTheme.theme.green as string }}>user@nanolink</span>
+              <span style={{ color: selectedTheme.theme.green as string }}>user@nanoops</span>
               <span style={{ color: selectedTheme.theme.white as string }}>:</span>
               <span style={{ color: selectedTheme.theme.blue as string }}>~</span>
               <span style={{ color: selectedTheme.theme.white as string }}>$ </span>

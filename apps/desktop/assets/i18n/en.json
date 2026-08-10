@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "NanoLink"
+    "title": "NanoOps"
   },
   "common": {
     "loading": "Loading...",
@@ -32,7 +32,7 @@
   },
   "home": {
     "noServersTitle": "No Servers Connected",
-    "noServersDesc": "Add a NanoLink server to start monitoring your agents",
+    "noServersDesc": "Add a NanoOps server to start monitoring your agents",
     "noAgentsTitle": "No Agents Connected",
     "noAgentsDesc": "Agents will appear here when they connect to your servers",
     "connectingToServers": "Connecting to servers...",
@@ -77,7 +77,7 @@
     "loginFailed": "Login failed. Please check your credentials.",
     "invalidQrCode": "Invalid QR code format",
     "chooseMethod": "Connect to Server",
-    "chooseMethodDesc": "Choose how you'd like to add your NanoLink server",
+    "chooseMethodDesc": "Choose how you'd like to add your NanoOps server",
     "scanQrCode": "Scan QR Code",
     "scanQrCodeDesc": "Scan the code from the web dashboard",
     "enterPairingCode": "Pairing Code",
@@ -302,7 +302,7 @@
   },
   "assistant": {
     "title": "AI Ops Assistant",
-    "greeting": "Hi, I'm the NanoLink assistant",
+    "greeting": "Hi, I'm the NanoOps assistant",
     "intro": "Connected over the MCP protocol, I can help you query node metrics, diagnose anomalies, and generate ops recommendations.",
     "tryThese": "Try these",
     "suggestTopCpu": "Which nodes have the highest CPU?",
@@ -358,7 +358,7 @@
     "notifyDisk": "Disk space",
     "sourceCodeLabel": "Source",
     "pairNeedsLogin": "Generating a pairing code requires signing in to a server with an account first",
-    "footer": "NanoLink Mobile · v0.5.0",
+    "footer": "NanoOps Mobile · v0.5.0",
     "nodeCount": "{n} nodes",
     "compactMode": "Compact mode",
     "terminal": "Terminal",
@@ -426,9 +426,9 @@
   },
   "addServer": {
     "title": "Add Server",
-    "defaultServerName": "NanoLink Server",
+    "defaultServerName": "NanoOps Server",
     "connectionFailed": "Failed to connect. Please check the server URL and token",
-    "qrInvalid": "Invalid QR code. Please aim at a NanoLink pairing QR code",
+    "qrInvalid": "Invalid QR code. Please aim at a NanoOps pairing QR code",
     "loginFailed": "Login failed. Please check the URL and credentials",
     "headerScanQr": "Scan QR Code",
     "headerAccount": "Account Login",
@@ -486,7 +486,7 @@
   },
   "pairing": {
     "title": "Pair New Device",
-    "intro": "Scan the QR code below with NanoLink on the new device, or enter the pairing code manually to join “{name}”.",
+    "intro": "Scan the QR code below with NanoOps on the new device, or enter the pairing code manually to join “{name}”.",
     "pairingCode": "Pairing Code",
     "codeCopied": "Pairing code copied",
     "securityNote": "The QR code contains an access token. Do not screenshot or share it. You can revoke it anytime under “Devices” after pairing.",
@@ -525,11 +525,11 @@
     "addServer": "Add Server"
   },
   "shell": {
-    "appName": "NanoLink",
+    "appName": "NanoOps",
     "servers": "{n} servers",
     "aiAssistant": "AI Ops Assistant",
     "settings": "Settings",
-    "footer": "NanoLink Mobile",
+    "footer": "NanoOps Mobile",
     "sectionServers": "Servers",
     "sectionOther": "Other",
     "addServer": "Add Server",

@@ -20,7 +20,10 @@ import (
 	"go.uber.org/zap"
 )
 
-const defaultAgentGRPCPort = 39100
+const (
+	defaultAgentGRPCPort  = 39100
+	agentInstallScriptURL = "https://agent.download.kkape.com/newest/install.sh"
+)
 
 // ConfigGenHandler handles agent configuration generation
 type ConfigGenHandler struct {
@@ -294,7 +297,7 @@ func (h *ConfigGenHandler) GetServerURLInfo(c *gin.Context) {
 		"host":        host,
 		"authEnabled": h.cfg.Auth.Enabled,
 		// Read-only server configuration surfaced in the Settings screen.
-		"serverName":          "NanoLink",
+		"serverName":          "NanoOps",
 		"externalUrl":         h.cfg.Server.ExternalURL,
 		"retentionDays":       h.cfg.Metrics.RetentionDays,
 		"hourlyRetentionDays": h.cfg.Metrics.HourlyRetentionDays,
@@ -584,7 +587,7 @@ logging:
 func generateUnixInstallCommand(req GenerateConfigRequest, token string, connString string) string {
 	// Primary: Cloudflare R2 (China optimized)
 	// Fallback: GitHub raw
-	baseCmd := "curl -fsSL https://nanolink.r2.kkape.cn/install.sh | sudo bash -s --"
+	baseCmd := "curl -fsSL " + agentInstallScriptURL + " | sudo bash -s --"
 
 	params := fmt.Sprintf(` --silent --url %s --token %s --permission %d`,
 		shellQuote(connString), shellQuote(token), req.Permission)

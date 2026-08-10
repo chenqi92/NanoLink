@@ -307,7 +307,7 @@ class AppProvider extends ChangeNotifier {
       case TargetPlatform.linux:
         return 'Linux device';
       default:
-        return 'NanoLink client';
+        return 'NanoOps client';
     }
   }
 

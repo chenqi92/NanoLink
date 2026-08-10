@@ -82,7 +82,7 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0 }: { collapsed
           {I.brand({ size: 20 })}
           {!isRail && (
             <div className="col" style={{ gap: 0, lineHeight: 1.1 }}>
-              <div style={{ fontWeight: 600, fontSize: 13.5, letterSpacing: "-0.01em" }}>NanoLink</div>
+              <div style={{ fontWeight: 600, fontSize: 13.5, letterSpacing: "-0.01em" }}>NanoOps</div>
               <div className="mono" style={{ fontSize: 9.5, color: "var(--fg-4)", letterSpacing: "0.04em" }}>prod</div>
             </div>
           )}

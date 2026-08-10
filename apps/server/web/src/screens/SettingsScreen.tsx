@@ -104,7 +104,7 @@ export function SettingsScreen() {
 
         <div className="col" style={{ gap: 16 }}>
           <Section title={t("plat.server")} icon={I.dashboard({ size: 13 })}>
-            <KVRow label={t("plat.serverName")} value={info?.serverName || "NanoLink"} />
+            <KVRow label={t("plat.serverName")} value={info?.serverName || "NanoOps"} />
             <KVRow label={t("plat.version")} value={info?.version ? `v${info.version}` : "—"} />
             {info?.serverUrl && <KVRow label="URL" value={info.serverUrl} />}
             {info?.grpcPort && <KVRow label="gRPC" value={String(info.grpcPort)} />}
@@ -125,7 +125,7 @@ export function SettingsScreen() {
 
           <Section title={t("plat.serverSettings")} icon={I.settings({ size: 13 })}>
             <FormBlock label={t("plat.serverName")}>
-              <input className="input" value={cfg.serverName ?? ""} onChange={(e) => setCfgVal("serverName", e.target.value)} placeholder="NanoLink" />
+              <input className="input" value={cfg.serverName ?? ""} onChange={(e) => setCfgVal("serverName", e.target.value)} placeholder="NanoOps" />
             </FormBlock>
             <FormBlock label={t("plat.agentAutoUpdate")}>
               <Segmented value={(cfg.agentAutoUpdate as "enabled" | "manual") || "manual"} onChange={(v) => setCfgVal("agentAutoUpdate", v)} options={[{ v: "enabled", label: t("plat.autoUpdateOn") }, { v: "manual", label: t("plat.autoUpdateManual") }]} />

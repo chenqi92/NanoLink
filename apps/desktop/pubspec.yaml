@@ -1,5 +1,5 @@
 name: nanolink_app
-description: "NanoLink - Cross-platform agent monitoring"
+description: "NanoOps - Cross-platform agent monitoring"
 publish_to: 'none'
 version: 0.5.0
 
