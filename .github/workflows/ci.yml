@@ -39,6 +39,10 @@ on:
         description: "Release Apps (check to enable)"
         type: boolean
         default: false
+      release_server:
+        description: "Release Server binaries (check to enable)"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -63,6 +67,7 @@ jobs:
       release_agent: ${{ steps.config.outputs.release_agent }}
       release_sdk: ${{ steps.config.outputs.release_sdk }}
       release_apps: ${{ steps.config.outputs.release_apps }}
+      release_server: ${{ steps.config.outputs.release_server }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -82,10 +87,12 @@ jobs:
             RELEASE_AGENT="${{ github.event.inputs.release_agent }}"
             RELEASE_SDK="${{ github.event.inputs.release_sdk }}"
             RELEASE_APPS="${{ github.event.inputs.release_apps }}"
-            
+            RELEASE_SERVER="${{ github.event.inputs.release_server }}"
+
             if [[ "$RELEASE_AGENT" == "true" ]] || \
                [[ "$RELEASE_SDK" == "true" ]] || \
-               [[ "$RELEASE_APPS" == "true" ]]; then
+               [[ "$RELEASE_APPS" == "true" ]] || \
+               [[ "$RELEASE_SERVER" == "true" ]]; then
               echo "is_release=true" >> $GITHUB_OUTPUT
               echo "🚀 Release mode: Manual release enabled"
             else
@@ -119,6 +126,7 @@ jobs:
             echo "release_agent=true" >> $GITHUB_OUTPUT
             echo "release_sdk=true" >> $GITHUB_OUTPUT
             echo "release_apps=true" >> $GITHUB_OUTPUT
+            echo "release_server=true" >> $GITHUB_OUTPUT
             echo "🚀 Auto release mode: All components will be tested and released"
           # PR 模式：全部测试，不发布
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -128,6 +136,7 @@ jobs:
             echo "release_agent=false" >> $GITHUB_OUTPUT
             echo "release_sdk=false" >> $GITHUB_OUTPUT
             echo "release_apps=false" >> $GITHUB_OUTPUT
+            echo "release_server=false" >> $GITHUB_OUTPUT
             echo "🔍 PR mode: All components will be tested, no release"
           # 手动模式：使用输入参数
           else
@@ -137,6 +146,7 @@ jobs:
             echo "release_agent=${{ github.event.inputs.release_agent || 'true' }}" >> $GITHUB_OUTPUT
             echo "release_sdk=${{ github.event.inputs.release_sdk || 'true' }}" >> $GITHUB_OUTPUT
             echo "release_apps=${{ github.event.inputs.release_apps || 'true' }}" >> $GITHUB_OUTPUT
+            echo "release_server=${{ github.event.inputs.release_server || 'true' }}" >> $GITHUB_OUTPUT
             echo "🖱️ Manual mode: Using input parameters"
           fi
 
@@ -154,6 +164,7 @@ jobs:
           echo "| Release Agent | ${{ steps.config.outputs.release_agent }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Release SDK | ${{ steps.config.outputs.release_sdk }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Release Apps | ${{ steps.config.outputs.release_apps }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release Server | ${{ steps.config.outputs.release_server }} |" >> $GITHUB_STEP_SUMMARY
 
   # ============================================================
   # Test: Agent
@@ -590,15 +601,34 @@ jobs:
     secrets: inherit
 
   # ============================================================
+  # Release: Server binaries (self-update channel)
+  # ============================================================
+  release-server:
+    name: Release Server
+    needs: [setup, test-apps-summary, create-release]
+    if: |
+      always() &&
+      needs.setup.outputs.is_release == 'true' &&
+      needs.setup.outputs.release_server == 'true' &&
+      needs.create-release.result == 'success' &&
+      (needs.test-apps-summary.outputs.success == 'true' || needs.setup.outputs.test_apps != 'true')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/server-release.yml
+    with:
+      version: ${{ needs.setup.outputs.version }}
+    secrets: inherit
+
+  # ============================================================
   # Upload to Cloudflare R2 (所有组件完成后执行)
   # ============================================================
   upload-to-r2:
     name: Upload to R2
-    needs: [setup, release-agent, release-sdk, release-apps]
+    needs: [setup, release-agent, release-sdk, release-apps, release-server]
     if: |
       always() &&
       needs.setup.outputs.is_release == 'true' &&
-      (needs.release-agent.result == 'success' || needs.release-sdk.result == 'success' || needs.release-apps.result == 'success')
+      (needs.release-agent.result == 'success' || needs.release-sdk.result == 'success' || needs.release-apps.result == 'success' || needs.release-server.result == 'success')
     permissions:
       contents: write
     uses: ./.github/workflows/upload-to-r2.yml
@@ -611,7 +641,7 @@ jobs:
   # ============================================================
   summary:
     name: Pipeline Summary
-    needs: [setup, test-agent-summary, test-sdk-summary, test-apps-summary, create-release, release-agent, release-sdk, release-apps, upload-to-r2]
+    needs: [setup, test-agent-summary, test-sdk-summary, test-apps-summary, create-release, release-agent, release-sdk, release-apps, release-server, upload-to-r2]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -690,6 +720,16 @@ jobs:
                 echo "| Apps | ⏭️ Skipped (test failed) |" >> $GITHUB_STEP_SUMMARY
               else
                 echo "| Apps | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+
+            if [[ "${{ needs.setup.outputs.release_server }}" == "true" ]]; then
+              if [[ "${{ needs.release-server.result }}" == "success" ]]; then
+                echo "| Server | ✅ Released |" >> $GITHUB_STEP_SUMMARY
+              elif [[ "${{ needs.release-server.result }}" == "skipped" ]]; then
+                echo "| Server | ⏭️ Skipped (test failed) |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| Server | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
               fi
             fi
           fi

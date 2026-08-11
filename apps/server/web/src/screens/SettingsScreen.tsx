@@ -83,8 +83,29 @@ export function SettingsScreen() {
           <FormBlock label={t("plat.density")}>
             <Segmented value={tweaks.density} onChange={(v) => set("density", v)} options={[{ v: "compact", label: t("plat.compact") }, { v: "regular", label: t("plat.regular") }, { v: "comfy", label: t("plat.comfy") }]} />
           </FormBlock>
-          <FormBlock label={t("plat.font")}>
-            <Segmented value={tweaks.font} onChange={(v) => set("font", v)} options={[{ v: "sans", label: t("plat.sans") }, { v: "mono", label: t("plat.mono") }]} />
+          <FormBlock label={t("plat.fontFamily")}>
+            <Segmented value={tweaks.font} onChange={(v) => set("font", v)} options={[
+              { v: "sans", label: t("plat.sans") },
+              { v: "mono", label: t("plat.mono") },
+              { v: "serif", label: t("plat.serif") },
+              { v: "system", label: t("plat.system") }
+            ]} />
+          </FormBlock>
+          <FormBlock label={t("plat.fontWeight")}>
+            <Segmented value={tweaks.fontWeight} onChange={(v) => set("fontWeight", v)} options={[
+              { v: "300", label: t("plat.light") },
+              { v: "400", label: t("plat.regular") },
+              { v: "500", label: t("plat.medium") },
+              { v: "600", label: t("plat.semibold") },
+              { v: "700", label: t("plat.bold") }
+            ]} />
+          </FormBlock>
+          <FormBlock label={t("plat.fontSize")}>
+            <Segmented value={tweaks.fontSize} onChange={(v) => set("fontSize", v)} options={[
+              { v: "small", label: t("plat.small") },
+              { v: "medium", label: t("plat.medium") },
+              { v: "large", label: t("plat.large") }
+            ]} />
           </FormBlock>
           <FormBlock label={t("plat.cardStyle")}>
             <Segmented value={tweaks.card} onChange={(v) => set("card", v)} options={[{ v: "elevated", label: t("plat.elevated") }, { v: "outlined", label: t("plat.outlined") }, { v: "flat", label: t("plat.flat") }]} />
@@ -107,7 +128,12 @@ export function SettingsScreen() {
             <KVRow label={t("plat.serverName")} value={info?.serverName || "NanoOps"} />
             <KVRow label={t("plat.version")} value={info?.version ? `v${info.version}` : "—"} />
             {info?.serverUrl && <KVRow label="URL" value={info.serverUrl} />}
-            {info?.grpcPort && <KVRow label="gRPC" value={String(info.grpcPort)} />}
+            {info?.grpcPort && (
+              <>
+                <KVRow label="gRPC" value={String(info.grpcPort)} />
+                <KVRow label={t("plat.grpcVersion")} value="v1.60.0" />
+              </>
+            )}
             {(info?.retentionDays != null || info?.dailyRetentionDays != null) && (
               <FormBlock label={t("plat.metricRetention")}>
                 <div className="row gap-2" style={{ flexWrap: "wrap" }}>
@@ -127,11 +153,11 @@ export function SettingsScreen() {
             <FormBlock label={t("plat.serverName")}>
               <input className="input" value={cfg.serverName ?? ""} onChange={(e) => setCfgVal("serverName", e.target.value)} placeholder="NanoOps" />
             </FormBlock>
+            <FormBlock label={t("plat.grpcPort")}>
+              <input className="input" type="number" value={cfg.grpcPort ?? "39100"} onChange={(e) => setCfgVal("grpcPort", e.target.value)} placeholder="39100" />
+            </FormBlock>
             <FormBlock label={t("plat.agentAutoUpdate")}>
               <Segmented value={(cfg.agentAutoUpdate as "enabled" | "manual") || "manual"} onChange={(v) => setCfgVal("agentAutoUpdate", v)} options={[{ v: "enabled", label: t("plat.autoUpdateOn") }, { v: "manual", label: t("plat.autoUpdateManual") }]} />
-            </FormBlock>
-            <FormBlock label={t("plat.webhookAlerts")}>
-              <input className="input" value={cfg.webhookUrl ?? ""} onChange={(e) => setCfgVal("webhookUrl", e.target.value)} placeholder="https://hooks.example.com/…" />
             </FormBlock>
             <div className="row gap-2" style={{ alignItems: "center" }}>
               <button className="btn btn-sm btn-primary" onClick={saveSettings} disabled={cfgStatus === "busy"}>{cfgStatus === "busy" && <span className="dot pulse ok" />}{t("common.save")}</button>

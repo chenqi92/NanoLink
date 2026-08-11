@@ -1,8 +1,10 @@
 import { useTranslation } from "react-i18next"
+import { useState, useRef, useEffect } from "react"
 import { I } from "@/lib/icons"
 import { useRouter } from "@/store/router"
 import { useSettings } from "@/store/settings"
 import { useData } from "@/contexts/DataContext"
+import { useAuth } from "@/contexts/AuthContext"
 import { isOnline } from "@/lib/format"
 
 const PAGE_KEYS: Record<string, string> = {
@@ -69,6 +71,130 @@ function ConnStatus() {
   )
 }
 
+function UserMenu() {
+  const { t } = useTranslation()
+  const { user, logout } = useAuth()
+  const { navigate } = useRouter()
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside)
+    return () => document.removeEventListener("mousedown", onClickOutside)
+  }, [open])
+
+  const avatar = (user?.username || "?").slice(0, 2).toUpperCase()
+
+  return (
+    <div style={{ position: "relative" }} ref={menuRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="row gap-2"
+        style={{
+          appearance: "none",
+          border: "1px solid var(--border)",
+          background: "var(--panel-2)",
+          borderRadius: 999,
+          padding: "3px 10px 3px 3px",
+          cursor: "pointer",
+          alignItems: "center",
+          height: 30,
+        }}
+      >
+        <div style={{ width: 24, height: 24, borderRadius: "50%", background: "linear-gradient(135deg, var(--fg-2), var(--fg-4))", color: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700 }}>
+          {avatar}
+        </div>
+        <span style={{ fontSize: 12, color: "var(--fg-2)", maxWidth: 100 }} className="truncate">{user?.username}</span>
+        {I.chev({ size: 12, style: { transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 120ms ease", color: "var(--fg-4)" } })}
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            right: 0,
+            minWidth: 200,
+            background: "var(--panel)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+            overflow: "hidden",
+            zIndex: 999,
+          }}
+        >
+          <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--fg)" }}>{user?.username}</div>
+            <div className="mono" style={{ fontSize: 10, color: "var(--fg-4)", marginTop: 2 }}>
+              {user?.isSuperAdmin ? "SuperAdmin" : "User"}
+            </div>
+          </div>
+
+          <div className="col" style={{ padding: 4 }}>
+            <button
+              onClick={() => {
+                setOpen(false)
+                navigate("settings")
+              }}
+              className="row gap-2"
+              style={{
+                appearance: "none",
+                border: "none",
+                background: "transparent",
+                padding: "8px 10px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: 12,
+                color: "var(--fg-2)",
+                textAlign: "left",
+                alignItems: "center",
+                borderRadius: 4,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              {I.settings({ size: 14 })}
+              <span>{t("nav.settings")}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setOpen(false)
+                logout()
+              }}
+              className="row gap-2"
+              style={{
+                appearance: "none",
+                border: "none",
+                background: "transparent",
+                padding: "8px 10px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: 12,
+                color: "var(--fg-2)",
+                textAlign: "left",
+                alignItems: "center",
+                borderRadius: 4,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              {I.power({ size: 14 })}
+              <span>{t("topbar.signOut")}</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const { t } = useTranslation()
   const { navigate } = useRouter()
@@ -105,6 +231,8 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
       <button className="btn btn-ghost btn-sm btn-icon" onClick={toggleTheme} title={t("header.theme")}>
         {tweaks.theme === "dark" ? I.sun({ size: 13 }) : I.moon({ size: 13 })}
       </button>
+
+      <UserMenu />
     </header>
   )
 }

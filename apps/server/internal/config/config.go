@@ -26,6 +26,7 @@ type Config struct {
 	MCP        MCPConfig        `mapstructure:"mcp"`
 	LLM        LLMConfig        `mapstructure:"llm"`
 	Deployment DeploymentConfig `mapstructure:"deployment"`
+	Update     UpdateConfig     `mapstructure:"update"`
 }
 
 // ServerConfig holds server configuration
@@ -152,6 +153,28 @@ type DeploymentConfig struct {
 	DownloadTTLMin   int    `mapstructure:"download_ttl_minutes"`
 }
 
+// UpdateConfig controls server version checking and self-update. The source
+// enum intentionally mirrors the agent's UpdateSource (agent/src/config.rs) so
+// operators configure both sides the same way.
+//
+// Applying an update replaces the running server binary, so PublicKey is the
+// integrity root: a detached Ed25519 signature over the downloaded binary is
+// required unless RequireSignature is explicitly turned off. A checksum alone
+// proves nothing when the same origin serves both the binary and the checksum.
+type UpdateConfig struct {
+	Source            string `mapstructure:"source"`     // "github" | "custom" | "disabled"
+	Repo              string `mapstructure:"repo"`       // owner/name, used when source=github
+	CustomURL         string `mapstructure:"custom_url"` // Base URL serving version.json, used when source=custom
+	AutoCheck         bool   `mapstructure:"auto_check"` // Periodically refresh the cached check result
+	CheckIntervalHour int    `mapstructure:"check_interval_hours"`
+	AllowPrerelease   bool   `mapstructure:"allow_prerelease"`
+	PublicKey         string `mapstructure:"public_key"`        // Ed25519 verify key, hex (32 bytes)
+	RequireSignature  bool   `mapstructure:"require_signature"` // Default true; refuses unsigned binaries
+	// RestartCommand overrides how the server restarts after a successful
+	// binary swap. Empty means: rely on the supervisor (systemd Restart=always).
+	RestartCommand string `mapstructure:"restart_command"`
+}
+
 // Default returns default configuration
 func Default() *Config {
 	return &Config{
@@ -209,6 +232,13 @@ func Default() *Config {
 			MaxArtifactBytes: 512 * 1024 * 1024,
 			DownloadTTLMin:   30,
 		},
+		Update: UpdateConfig{
+			Source:            "github",
+			Repo:              "chenqi92/NanoLink",
+			AutoCheck:         true,
+			CheckIntervalHour: 24,
+			RequireSignature:  true,
+		},
 	}
 }
 
@@ -237,6 +267,12 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("deployment.storage_path", "./data/artifacts")
 	viper.SetDefault("deployment.max_artifact_bytes", int64(512*1024*1024))
 	viper.SetDefault("deployment.download_ttl_minutes", 30)
+	viper.SetDefault("update.source", "github")
+	viper.SetDefault("update.repo", "chenqi92/NanoLink")
+	viper.SetDefault("update.auto_check", true)
+	viper.SetDefault("update.check_interval_hours", 24)
+	viper.SetDefault("update.allow_prerelease", false)
+	viper.SetDefault("update.require_signature", true)
 
 	// Environment variable support
 	viper.SetEnvPrefix("NANOLINK")
@@ -268,6 +304,15 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("deployment.storage_path", "NANOLINK_DEPLOYMENT_STORAGE_PATH")
 	_ = viper.BindEnv("deployment.max_artifact_bytes", "NANOLINK_DEPLOYMENT_MAX_ARTIFACT_BYTES")
 	_ = viper.BindEnv("deployment.download_ttl_minutes", "NANOLINK_DEPLOYMENT_DOWNLOAD_TTL_MINUTES")
+	_ = viper.BindEnv("update.source", "NANOLINK_UPDATE_SOURCE")
+	_ = viper.BindEnv("update.repo", "NANOLINK_UPDATE_REPO")
+	_ = viper.BindEnv("update.custom_url", "NANOLINK_UPDATE_CUSTOM_URL")
+	_ = viper.BindEnv("update.auto_check", "NANOLINK_UPDATE_AUTO_CHECK")
+	_ = viper.BindEnv("update.check_interval_hours", "NANOLINK_UPDATE_CHECK_INTERVAL_HOURS")
+	_ = viper.BindEnv("update.allow_prerelease", "NANOLINK_UPDATE_ALLOW_PRERELEASE")
+	_ = viper.BindEnv("update.public_key", "NANOLINK_UPDATE_PUBLIC_KEY")
+	_ = viper.BindEnv("update.require_signature", "NANOLINK_UPDATE_REQUIRE_SIGNATURE")
+	_ = viper.BindEnv("update.restart_command", "NANOLINK_UPDATE_RESTART_COMMAND")
 
 	// Try to read config file (optional - environment variables take precedence)
 	configErr := viper.ReadInConfig()
@@ -332,6 +377,35 @@ func Load(path string) (*Config, error) {
 			cfg.Deployment.DownloadTTLMin = n
 		}
 	}
+	if v := os.Getenv("NANOLINK_UPDATE_SOURCE"); v != "" {
+		cfg.Update.Source = v
+	}
+	if v := os.Getenv("NANOLINK_UPDATE_REPO"); v != "" {
+		cfg.Update.Repo = v
+	}
+	if v := os.Getenv("NANOLINK_UPDATE_CUSTOM_URL"); v != "" {
+		cfg.Update.CustomURL = v
+	}
+	if v := os.Getenv("NANOLINK_UPDATE_PUBLIC_KEY"); v != "" {
+		cfg.Update.PublicKey = v
+	}
+	if v := os.Getenv("NANOLINK_UPDATE_RESTART_COMMAND"); v != "" {
+		cfg.Update.RestartCommand = v
+	}
+	if raw := os.Getenv("NANOLINK_UPDATE_CHECK_INTERVAL_HOURS"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			cfg.Update.CheckIntervalHour = n
+		}
+	}
+	if v := os.Getenv("NANOLINK_UPDATE_AUTO_CHECK"); v != "" {
+		cfg.Update.AutoCheck = isTruthy(v)
+	}
+	if v := os.Getenv("NANOLINK_UPDATE_ALLOW_PRERELEASE"); v != "" {
+		cfg.Update.AllowPrerelease = isTruthy(v)
+	}
+	if v := os.Getenv("NANOLINK_UPDATE_REQUIRE_SIGNATURE"); v != "" {
+		cfg.Update.RequireSignature = isTruthy(v)
+	}
 
 	return &cfg, configErr
 }
@@ -368,6 +442,7 @@ func (c *Config) ValidateAndSecure() {
 	if c.Deployment.DownloadTTLMin <= 0 {
 		c.Deployment.DownloadTTLMin = 30
 	}
+	c.validateUpdate()
 
 	if (c.Server.TLSCert == "") != (c.Server.TLSKey == "") {
 		log.Fatalf("[FATAL] server.tls_cert and server.tls_key must be configured together")
@@ -411,6 +486,57 @@ func (c *Config) ValidateAndSecure() {
 			log.Println("[SECURITY WARNING] server.allowed_origins contains '*'. This entry is ignored at runtime to avoid credentialed-wildcard CORS (CSRF amplification). List the exact origins (https://example.com, ...) you want to allow.")
 			break
 		}
+	}
+}
+
+// validateUpdate normalises the update settings and refuses combinations that
+// would silently disable the integrity gate on a self-update.
+func (c *Config) validateUpdate() {
+	u := &c.Update
+	u.Source = strings.ToLower(strings.TrimSpace(u.Source))
+	if u.Source == "" {
+		u.Source = "github"
+	}
+	switch u.Source {
+	case "github", "custom", "disabled":
+	default:
+		log.Printf("[WARNING] update.source=%q is not one of github|custom|disabled; version checking disabled.", u.Source)
+		u.Source = "disabled"
+	}
+	if u.Source == "custom" && strings.TrimSpace(u.CustomURL) == "" {
+		log.Println("[WARNING] update.source=custom requires update.custom_url; version checking disabled.")
+		u.Source = "disabled"
+	}
+	if u.Source == "custom" && !strings.HasPrefix(strings.ToLower(u.CustomURL), "https://") {
+		// Plain HTTP would let a network attacker choose which binary the server
+		// is told to install. The signature check still gates the swap, but we
+		// refuse to fetch the manifest over an unauthenticated channel.
+		log.Printf("[WARNING] update.custom_url must use https:// (got %q); version checking disabled.", u.CustomURL)
+		u.Source = "disabled"
+	}
+	if strings.TrimSpace(u.Repo) == "" {
+		u.Repo = "chenqi92/NanoLink"
+	}
+	if u.CheckIntervalHour <= 0 {
+		u.CheckIntervalHour = 24
+	}
+	u.PublicKey = strings.TrimSpace(u.PublicKey)
+	if u.RequireSignature && u.PublicKey == "" {
+		log.Println("[SECURITY] update.require_signature is on but update.public_key is unset: " +
+			"version checking still works, but applying an update is refused until a verify key is configured.")
+	}
+	if !u.RequireSignature {
+		log.Println("[SECURITY WARNING] update.require_signature=false: a downloaded server binary would be " +
+			"applied without cryptographic verification. Configure update.public_key and sign releases instead.")
+	}
+}
+
+func isTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
 	}
 }
 

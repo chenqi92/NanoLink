@@ -14,7 +14,7 @@ interface NavItem {
 export function Sidebar({ collapsed, setCollapsed, alertCount = 0 }: { collapsed: boolean; setCollapsed: (v: boolean) => void; alertCount?: number }) {
   const { t } = useTranslation()
   const { route, navigate } = useRouter()
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
 
   const groups: { label: string; items: NavItem[] }[] = [
     {
@@ -48,13 +48,13 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0 }: { collapsed
       label: t("nav.platform"),
       items: [
         { id: "audit", icon: I.audit({}), label: t("nav.audit") },
+        { id: "alert-config", icon: I.bell({}), label: t("nav.alertConfig") },
         { id: "settings", icon: I.settings({}), label: t("nav.settings") },
       ],
     },
   ]
 
   const isRail = collapsed
-  const avatar = (user?.username || "?").slice(0, 2).toUpperCase()
 
   return (
     <aside
@@ -154,17 +154,10 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0 }: { collapsed
           </button>
         </div>
       ) : (
-        <div style={{ padding: 10, borderTop: "1px solid var(--border)" }}>
-          <div className="row gap-2" style={{ padding: "6px 8px", borderRadius: 6, background: "var(--panel)", border: "1px solid var(--border)" }}>
-            <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, var(--fg-2), var(--fg-4))", color: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 700 }}>{avatar}</div>
-            <div className="col flex-1" style={{ gap: 0, lineHeight: 1.15, minWidth: 0 }}>
-              <div className="truncate" style={{ fontSize: 12, fontWeight: 500 }}>{user?.username || "—"}</div>
-              <div className="mono truncate" style={{ fontSize: 10, color: "var(--fg-4)" }}>{user?.isSuperAdmin ? "SuperAdmin" : "User"}</div>
-            </div>
-            <button className="btn btn-ghost btn-icon btn-sm" title={t("topbar.signOut")} onClick={() => logout()}>
-              {I.power({ size: 14 })}
-            </button>
-          </div>
+        <div style={{ padding: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "center" }}>
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setCollapsed(true)} title="Collapse">
+            {I.back({ size: 14 })}
+          </button>
         </div>
       )}
     </aside>

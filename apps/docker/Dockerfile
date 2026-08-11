@@ -34,7 +34,18 @@ RUN mkdir -p internal/proto && \
   --go-grpc_out=./internal/proto --go-grpc_opt=paths=source_relative \
   ./sdk/protocol/nanolink.proto
 
-RUN CGO_ENABLED=1 GOOS=linux go build -mod=readonly -ldflags="-s -w" -o nanolink-server ./cmd
+# Version is injected at link time so the running server reports the same value
+# the repository tracks in VERSION, which the dashboard and update check read.
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+
+RUN CGO_ENABLED=1 GOOS=linux go build -mod=readonly \
+  -ldflags="-s -w \
+  -X github.com/chenqi92/NanoLink/apps/server/internal/version.Version=${VERSION} \
+  -X github.com/chenqi92/NanoLink/apps/server/internal/version.Commit=${GIT_COMMIT} \
+  -X github.com/chenqi92/NanoLink/apps/server/internal/version.BuildTime=${BUILD_TIME}" \
+  -o nanolink-server ./cmd
 
 # Final stage
 FROM alpine:3.24

@@ -20,24 +20,39 @@ import (
 	"github.com/chenqi92/NanoLink/apps/server/internal/handler"
 	"github.com/chenqi92/NanoLink/apps/server/internal/mcp"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
+	buildinfo "github.com/chenqi92/NanoLink/apps/server/internal/version"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
 var (
-	configFile = flag.String("config", "config.yaml", "Configuration file path")
-	version    = "0.4.9"
+	configFile  = flag.String("config", "config.yaml", "Configuration file path")
+	showVersion = flag.Bool("version", false, "Print version information and exit")
 )
+
+// version is the single source of truth for the running build, injected at link
+// time from the repository VERSION file.
+var version = buildinfo.Version
 
 func main() {
 	flag.Parse()
+
+	// -version must work before any config or database work: the self-update
+	// smoke test runs a freshly downloaded binary with this flag to confirm it
+	// is the build it claims to be.
+	if *showVersion {
+		info := buildinfo.Current()
+		fmt.Printf("nanoops-server %s\ncommit: %s\nbuilt: %s\ngo: %s\nplatform: %s (%s)\n",
+			info.Version, info.Commit, info.BuildTime, info.GoVersion, info.GoPlatform, info.AssetPlatform)
+		return
+	}
 
 	// Initialize logger
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 	sugar := logger.Sugar()
 
-	sugar.Infof("NanoLink Server v%s starting...", version)
+	sugar.Infof("NanoOps Server v%s starting...", version)
 
 	// Load configuration
 	cfg, err := config.Load(*configFile)
@@ -131,6 +146,12 @@ func main() {
 	alertService := service.NewAlertService(database.GetDB(), metricsService, agentService, sugar)
 	alertService.Start()
 	defer alertService.Stop()
+
+	// Upstream release checking. Start() only schedules background checks and
+	// never blocks startup, so an unreachable update feed cannot delay boot.
+	selfUpdateService := service.NewSelfUpdateService(cfg.Update, sugar)
+	selfUpdateService.Start()
+	defer selfUpdateService.Stop()
 
 	// Initialize device service for mobile/desktop client pairing
 	// Use ExternalURL from config for QR codes, fallback to localhost for development
@@ -260,10 +281,20 @@ func main() {
 			protected.GET("/assistant/findings", assistantHandler.Findings)
 			protected.POST("/assistant/chat", assistantHandler.Chat)
 
+			// Build identity and update state. The read is available to any
+			// authenticated user; checking and applying are admin-only below.
+			versionHandler := handler.NewVersionHandler(selfUpdateService, auditService, sugar)
+			protected.GET("/version", versionHandler.GetVersion)
+
 			// Super admin only routes
 			admin := protected.Group("")
 			admin.Use(handler.RequireSuperAdmin())
 			{
+				// Version check reaches out to the network on request; apply
+				// replaces the running binary. Both are super-admin only.
+				admin.GET("/version/check", versionHandler.CheckUpdate)
+				admin.POST("/version/apply", versionHandler.ApplyUpdate)
+
 				// User management (full CRUD)
 				userHandler := handler.NewUserHandler(database.GetDB(), sugar, authService, groupService)
 				admin.GET("/users", userHandler.ListUsers)

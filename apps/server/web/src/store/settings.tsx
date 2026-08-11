@@ -6,7 +6,9 @@ import i18n, { setLanguage } from "@/i18n"
 
 export type Theme = "dark" | "light"
 export type Density = "compact" | "regular" | "comfy"
-export type Font = "sans" | "mono"
+export type Font = "sans" | "mono" | "serif" | "system"
+export type FontWeight = "300" | "400" | "500" | "600" | "700"
+export type FontSize = "small" | "medium" | "large"
 export type CardStyle = "elevated" | "outlined" | "flat"
 export type Lang = "en" | "zh"
 
@@ -14,6 +16,8 @@ export interface Tweaks {
   theme: Theme
   density: Density
   font: Font
+  fontWeight: FontWeight
+  fontSize: FontSize
   card: CardStyle
   accent: string // "" = theme default (monochrome)
 }
@@ -22,6 +26,8 @@ const DEFAULTS: Tweaks = {
   theme: "dark",
   density: "regular",
   font: "sans",
+  fontWeight: "400",
+  fontSize: "medium",
   card: "elevated",
   accent: "",
 }
@@ -61,14 +67,16 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [tweaks, setTweaks] = useState<Tweaks>(loadTweaks)
   const [lang, setLangState] = useState<Lang>((i18n.language as Lang) === "zh" ? "zh" : "en")
 
-  // Apply theme / density / font / card to <html>
+  // Apply theme / density / font / card / font weight / font size to <html>
   useEffect(() => {
     const root = document.documentElement
     root.setAttribute("data-theme", tweaks.theme)
     root.setAttribute("data-density", tweaks.density)
     root.setAttribute("data-font", tweaks.font)
     root.setAttribute("data-card", tweaks.card)
-  }, [tweaks.theme, tweaks.density, tweaks.font, tweaks.card])
+    root.setAttribute("data-font-weight", tweaks.fontWeight)
+    root.setAttribute("data-font-size", tweaks.fontSize)
+  }, [tweaks.theme, tweaks.density, tweaks.font, tweaks.card, tweaks.fontWeight, tweaks.fontSize])
 
   // Apply accent override (or clear it to use the theme default)
   useEffect(() => {

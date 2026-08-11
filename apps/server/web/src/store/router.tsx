@@ -6,6 +6,7 @@ export type Page =
   | "agents"
   | "agent-detail"
   | "alerts"
+  | "alert-config"
   | "assistant"
   | "operations"
   | "deployments"

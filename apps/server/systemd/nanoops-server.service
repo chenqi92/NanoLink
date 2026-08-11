@@ -1,0 +1,54 @@
+[Unit]
+Description=NanoOps Server
+Documentation=https://github.com/chenqi92/NanoLink
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nanoops
+Group=nanoops
+WorkingDirectory=/opt/nanoops
+ExecStart=/opt/nanoops/nanoops-server -config /etc/nanoops/config.yaml
+
+# Restart=always is what makes self-update work: after replacing its own binary
+# the server exits, and systemd starts the new one. Without it, an applied update
+# would leave the service down.
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nanoops-server
+
+# Give the server time to close connections and flush metrics on stop.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Security hardening.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# ProtectSystem=full leaves /usr read-only but keeps /opt writable, which the
+# self-update needs: it stages the new binary next to the current one and renames
+# it into place. Do not raise this to "strict" without adding /opt/nanoops to
+# ReadWritePaths, or applying an update will fail with a read-only filesystem
+# error after the download has already succeeded.
+ProtectSystem=full
+ReadWritePaths=/opt/nanoops /var/lib/nanoops /var/log/nanoops
+ReadOnlyPaths=/etc/nanoops
+
+# Binding to a port below 1024 requires this; harmless otherwise.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

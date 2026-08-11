@@ -53,7 +53,7 @@ export const AgentCard = memo(function AgentCard({ agent: a, metrics: m, onClick
         </div>
         <div className="col" style={{ alignItems: "flex-end", gap: 4 }}>
           <Status status={status} />
-          <Perm level={a.permission} />
+          <Perm level={a.permissionLevel} />
         </div>
       </div>
 

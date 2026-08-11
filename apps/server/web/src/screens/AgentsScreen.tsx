@@ -169,7 +169,7 @@ export function AgentsScreen() {
                       <td className="mono num dim" style={{ fontSize: 10.5, whiteSpace: "nowrap" }}>{net ? `↓${formatRate(net.rxBytesPerSec)} ↑${formatRate(net.txBytesPerSec)}` : "—"}</td>
                       <td className="mono dim" style={{ fontSize: 11 }}>{ip || "—"}</td>
                       <td className="mono dim">{a.version ? `v${a.version}` : "—"}</td>
-                      <td><Perm level={a.permission} /></td>
+                      <td><Perm level={a.permissionLevel} /></td>
                       <td style={{ textAlign: "right", color: "var(--fg-4)" }}>{I.chev({ size: 13 })}</td>
                     </tr>
                   )

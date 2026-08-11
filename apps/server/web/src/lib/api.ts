@@ -106,7 +106,7 @@ export interface Agent {
   version: string
   connectedAt: string
   lastHeartbeat: string
-  permission: number
+  permissionLevel: number
 }
 
 // Metrics types

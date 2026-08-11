@@ -16,6 +16,7 @@ var allowedSettingKeys = map[string]bool{
 	"serverName":      true,
 	"agentAutoUpdate": true, // "enabled" | "manual"
 	"webhookUrl":      true,
+	"grpcPort":        true,
 }
 
 // SettingHandler exposes editable server settings backed by the Setting table.

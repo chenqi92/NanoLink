@@ -76,6 +76,7 @@ jobs:
             VERSION=$(cat VERSION | tr -d '[:space:]')
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
           echo "📦 Version: $VERSION"
 
       - name: Build and push to GHCR
@@ -88,6 +89,10 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.version.outputs.build_time }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -104,6 +109,10 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/nanolink-server:${{ steps.version.outputs.version }}
             ${{ secrets.DOCKERHUB_USERNAME }}/nanolink-server:latest
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.version.outputs.build_time }}
           cache-from: type=gha
 
   # Build Windows desktop application (Flutter)

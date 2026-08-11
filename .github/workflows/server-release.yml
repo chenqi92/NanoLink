@@ -1,0 +1,305 @@
+name: Release Server
+
+# Builds signed nanoops-server binaries for the self-update channel.
+#
+# The server links CGO (gorm.io/driver/sqlite -> mattn/go-sqlite3), so each
+# target is built on a runner that owns a matching C toolchain rather than
+# cross-compiled from one host. Linux aarch64 is the exception and uses the
+# distro cross-gcc.
+#
+# Signing: binaries are signed with an Ed25519 key held in the
+# NANOOPS_UPDATE_SIGNING_KEY secret. The server verifies that signature against
+# its configured update.public_key before installing anything, so a release
+# published without the secret is downloadable but not self-installable.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g., 0.5.0)"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to release (e.g., 0.5.0)"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+            TAG="v$VERSION"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG#v}"
+          else
+            VERSION=$(cat VERSION | tr -d '[:space:]')
+            TAG="v$VERSION"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION, Tag: $TAG"
+
+  build-dashboard:
+    name: Build Dashboard
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: apps/server/web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/server/web
+        run: npm ci
+
+      - name: Build
+        working-directory: apps/server/web
+        run: npm run build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: server-dashboard
+          path: apps/server/web/dist/
+
+  build-server:
+    name: Build Server (${{ matrix.name }})
+    needs: [prepare, build-dashboard]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 - built on the oldest supported runner so the resulting
+          # glibc floor is as low as the runner images allow.
+          - name: linux-x86_64
+            os: ubuntu-22.04
+            goos: linux
+            goarch: amd64
+          - name: linux-aarch64
+            os: ubuntu-22.04
+            goos: linux
+            goarch: arm64
+            cc: aarch64-linux-gnu-gcc
+            apt: gcc-aarch64-linux-gnu
+          # macOS - clang cross-compiles between the two arches natively.
+          - name: macos-x86_64
+            os: macos-15-intel
+            goos: darwin
+            goarch: amd64
+          - name: macos-aarch64
+            os: macos-latest
+            goos: darwin
+            goarch: arm64
+          # Windows - native, uses the runner's bundled mingw gcc.
+          - name: windows-x86_64
+            os: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+
+      - name: Install cross toolchain
+        if: matrix.apt != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt }}
+
+      - name: Install protoc (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - name: Install protoc (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc
+
+      - name: Install protoc plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
+
+      - name: Generate proto code
+        working-directory: apps/server
+        shell: bash
+        run: |
+          mkdir -p internal/proto sdk/protocol
+          cp ../../sdk/protocol/nanolink.proto sdk/protocol/
+          protoc --proto_path=./sdk/protocol \
+            --go_out=./internal/proto --go_opt=paths=source_relative \
+            --go-grpc_out=./internal/proto --go-grpc_opt=paths=source_relative \
+            ./sdk/protocol/nanolink.proto
+
+      - name: Download dashboard
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: server-dashboard
+          path: apps/server/web/dist
+
+      - name: Build
+        working-directory: apps/server
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          # sqlite needs cgo, so every target is built with a real C compiler.
+          CGO_ENABLED: "1"
+          CC: ${{ matrix.cc }}
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          PKG=github.com/chenqi92/NanoLink/apps/server/internal/version
+          mkdir -p dist
+          go build -mod=readonly -trimpath \
+            -ldflags "-s -w \
+              -X ${PKG}.Version=${VERSION} \
+              -X ${PKG}.Commit=$(git rev-parse --short HEAD) \
+              -X ${PKG}.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o "dist/nanolink-server-${{ matrix.name }}${{ matrix.ext }}" ./cmd
+
+      # A binary that cannot report its own version would fail the server's
+      # pre-install smoke test, so catch that here instead of at update time.
+      - name: Verify version output
+        if: matrix.goarch == 'amd64' || matrix.name == 'macos-aarch64'
+        working-directory: apps/server
+        shell: bash
+        run: |
+          OUT=$("./dist/nanolink-server-${{ matrix.name }}${{ matrix.ext }}" -version)
+          echo "$OUT"
+          echo "$OUT" | grep -q "${{ needs.prepare.outputs.version }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: server-${{ matrix.name }}
+          path: apps/server/dist/
+
+  sign-and-release:
+    name: Sign and Release
+    needs: [prepare, build-server]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+
+      - name: Download server artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: server-*
+          path: artifacts
+
+      - name: Collect binaries
+        run: |
+          mkdir -p release
+          if ls artifacts/server-* 1>/dev/null 2>&1; then
+            for dir in artifacts/server-*; do
+              # Skip the dashboard artifact; only binaries belong here.
+              [ -d "$dir" ] || continue
+              find "$dir" -maxdepth 1 -type f -name 'nanolink-server-*' -exec cp {} release/ \;
+            done
+          fi
+          chmod +x release/nanolink-server-* 2>/dev/null || true
+          echo "📦 Binaries:"
+          ls -la release/
+
+      - name: Build signing tool
+        working-directory: apps/server
+        run: go build -o "$RUNNER_TEMP/updatesign" ./cmd/updatesign
+
+      - name: Sign binaries and build version.json
+        id: sign
+        env:
+          # Passed via env, not argv, so the key never appears in a process list.
+          NANOOPS_UPDATE_SIGNING_KEY: ${{ secrets.NANOOPS_UPDATE_SIGNING_KEY }}
+          NANOOPS_UPDATE_PUBLIC_KEY: ${{ vars.NANOOPS_UPDATE_PUBLIC_KEY }}
+        run: |
+          if [ -z "$NANOOPS_UPDATE_SIGNING_KEY" ] || [ -z "$NANOOPS_UPDATE_PUBLIC_KEY" ]; then
+            echo "::warning::NANOOPS_UPDATE_SIGNING_KEY secret or NANOOPS_UPDATE_PUBLIC_KEY variable is not set."
+            echo "::warning::Binaries will be published unsigned; servers with require_signature=true will refuse to install them."
+            echo "signed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          cd release
+          "$RUNNER_TEMP/updatesign" sign -key env:NANOOPS_UPDATE_SIGNING_KEY nanolink-server-*
+          # Verify with the published public key: this is exactly the check every
+          # server will perform, so a key mismatch fails the release, not the fleet.
+          "$RUNNER_TEMP/updatesign" verify -pub "$NANOOPS_UPDATE_PUBLIC_KEY" \
+            $(ls nanolink-server-* | grep -v '\.sig$')
+          "$RUNNER_TEMP/updatesign" manifest \
+            -version "${{ needs.prepare.outputs.version }}" \
+            -pub "$NANOOPS_UPDATE_PUBLIC_KEY" \
+            -changelog "See release notes for ${{ needs.prepare.outputs.tag }}" \
+            -dir . -out version.json
+          cat version.json
+          echo "signed=true" >> $GITHUB_OUTPUT
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum nanolink-server-* > SHA256SUMS-server.txt
+          cat SHA256SUMS-server.txt
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77 # v1
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          files: release/*
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Server Release" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ needs.prepare.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Signed | ${{ steps.sign.outputs.signed }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Assets" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ls release/ >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

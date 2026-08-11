@@ -96,7 +96,7 @@ export function AgentDetailScreen() {
             <div className="row gap-2" style={{ alignItems: "center", flexWrap: "wrap" }}>
               <Status status={status} />
               <h1 className="mono" style={{ margin: 0, fontSize: 18, fontWeight: 500 }}>{a.hostname}</h1>
-              <Perm level={a.permission} />
+              <Perm level={a.permissionLevel} />
               <span className="badge"><span style={{ display: "inline-flex", marginRight: 2 }}>{osIcon(osFamily(a.os))}</span> {a.os}</span>
               <span className="badge mono">{a.arch}</span>
               {a.version && <span className="badge mono">agent v{a.version}</span>}
@@ -109,7 +109,7 @@ export function AgentDetailScreen() {
             </div>
           </div>
           <div className="row gap-2">
-            <button className="btn btn-sm" disabled={a.permission < 3} onClick={() => setTab("terminal")}>{I.term({ size: 13 })}<span>{t("mon.openTerminal")}</span></button>
+            <button className="btn btn-sm" disabled={a.permissionLevel < 3} onClick={() => setTab("terminal")}>{I.term({ size: 13 })}<span>{t("mon.openTerminal")}</span></button>
             <div ref={menuRef} style={{ position: "relative" }}>
               <button className="btn btn-sm btn-ghost btn-icon" onClick={() => setMenuOpen((o) => !o)}><span>{I.more({ size: 14 })}</span></button>
               {menuOpen && (
@@ -124,7 +124,7 @@ export function AgentDetailScreen() {
         </div>
         <div className="tabs" style={{ borderBottom: "none", marginBottom: -1, overflowX: "auto" }}>
           {tabs.map((tb) => {
-            const disabled = tb.k === "terminal" && a.permission < 1
+            const disabled = tb.k === "terminal" && a.permissionLevel < 1
             return (
               <button key={tb.k} className={`tab ${tab === tb.k ? "active" : ""}`} onClick={() => !disabled && setTab(tb.k)} disabled={disabled}>
                 {tb.icon} {tb.label}
@@ -139,12 +139,12 @@ export function AgentDetailScreen() {
         {tab === "realtime" &&
           (m ? <RealtimeTab m={m} history={hist} /> : <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{status === "online" ? t("common.loading") : t("mon.offlineNoHistory")}</div>)}
         {tab === "history" && <HistoryTab agentId={a.id} />}
-        {tab === "terminal" && <TerminalTab agentId={a.id} permission={a.permission} />}
-        {tab === "processes" && <ProcessesTab agentId={a.id} permission={a.permission} />}
-        {tab === "services" && <ServicesTab agentId={a.id} permission={a.permission} />}
-        {tab === "docker" && <DockerTab agentId={a.id} permission={a.permission} />}
+        {tab === "terminal" && <TerminalTab agentId={a.id} permission={a.permissionLevel} />}
+        {tab === "processes" && <ProcessesTab agentId={a.id} permission={a.permissionLevel} />}
+        {tab === "services" && <ServicesTab agentId={a.id} permission={a.permissionLevel} />}
+        {tab === "docker" && <DockerTab agentId={a.id} permission={a.permissionLevel} />}
         {tab === "files" && <FilesTab agentId={a.id} />}
-        {tab === "logs" && <AgentLogsTab agentId={a.id} permission={a.permission} />}
+        {tab === "logs" && <AgentLogsTab agentId={a.id} permission={a.permissionLevel} />}
       </div>
     </div>
   )

@@ -13,6 +13,7 @@ import { LogsScreen } from "./LogsScreen"
 import { AuditScreen } from "./AuditScreen"
 import { SettingsScreen } from "./SettingsScreen"
 import { AlertsScreen } from "./AlertsScreen"
+import { AlertConfigScreen } from "./AlertConfigScreen"
 import { AssistantScreen } from "./AssistantScreen"
 
 export function ScreenRouter() {
@@ -27,6 +28,8 @@ export function ScreenRouter() {
       return <AgentDetailScreen />
     case "alerts":
       return <AlertsScreen />
+    case "alert-config":
+      return <AlertConfigScreen />
     case "assistant":
       return <AssistantScreen />
     case "operations":

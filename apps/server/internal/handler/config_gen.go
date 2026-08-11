@@ -16,6 +16,7 @@ import (
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/config"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
+	"github.com/chenqi92/NanoLink/apps/server/internal/version"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -298,11 +299,13 @@ func (h *ConfigGenHandler) GetServerURLInfo(c *gin.Context) {
 		"authEnabled": h.cfg.Auth.Enabled,
 		// Read-only server configuration surfaced in the Settings screen.
 		"serverName":          "NanoOps",
+		"version":             version.Version,
 		"externalUrl":         h.cfg.Server.ExternalURL,
 		"retentionDays":       h.cfg.Metrics.RetentionDays,
 		"hourlyRetentionDays": h.cfg.Metrics.HourlyRetentionDays,
 		"dailyRetentionDays":  h.cfg.Metrics.DailyRetentionDays,
 		"tlsEnabled":          h.cfg.Server.TLSCert != "",
+		"grpcVersion":         "1.68.1", // gRPC version
 	})
 }
 
