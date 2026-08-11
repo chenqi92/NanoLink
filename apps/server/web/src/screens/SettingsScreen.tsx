@@ -188,7 +188,7 @@ export function SettingsScreen() {
       <div style={{ padding: 24, overflow: "auto", flex: 1 }}>
         {/* Appearance Tab */}
         {activeTab === "appearance" && (
-          <div className="col gap-16" style={{ maxWidth: 700 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
             <Section title={t("plat.appearance")} icon={I.settings({ size: 13 })}>
               <FormBlock label={t("plat.theme")}>
                 <Segmented value={tweaks.theme} onChange={(v) => set("theme", v)} options={[{ v: "dark", label: t("plat.dark") }, { v: "light", label: t("plat.light") }]} />
@@ -196,6 +196,19 @@ export function SettingsScreen() {
               <FormBlock label={t("plat.density")}>
                 <Segmented value={tweaks.density} onChange={(v) => set("density", v)} options={[{ v: "compact", label: t("plat.compact") }, { v: "regular", label: t("plat.regular") }, { v: "comfy", label: t("plat.comfy") }]} />
               </FormBlock>
+              <FormBlock label={t("plat.cardStyle")}>
+                <Segmented value={tweaks.card} onChange={(v) => set("card", v)} options={[{ v: "elevated", label: t("plat.elevated") }, { v: "outlined", label: t("plat.outlined") }, { v: "flat", label: t("plat.flat") }]} />
+              </FormBlock>
+              <FormBlock label={t("plat.accent")}>
+                <div className="row gap-2">
+                  {ACCENTS.map((a) => (
+                    <button key={a || "default"} onClick={() => setTweak("accent", a)} title={a || t("plat.accentDefault")}
+                      style={{ width: 26, height: 26, borderRadius: 6, cursor: "pointer", background: a || "linear-gradient(135deg,var(--fg),var(--fg-4))", border: tweaks.accent === a ? "2px solid var(--fg)" : "1px solid var(--border-2)" }} />
+                  ))}
+                </div>
+              </FormBlock>
+            </Section>
+            <Section title={t("plat.typography")} icon={I.edit({ size: 13 })}>
               <FormBlock label={t("plat.fontFamily")}>
                 <Segmented value={tweaks.font} onChange={(v) => set("font", v)} options={[
                   { v: "sans", label: t("plat.sans") },
@@ -219,17 +232,6 @@ export function SettingsScreen() {
                   { v: "medium", label: t("plat.medium") },
                   { v: "large", label: t("plat.large") }
                 ]} />
-              </FormBlock>
-              <FormBlock label={t("plat.cardStyle")}>
-                <Segmented value={tweaks.card} onChange={(v) => set("card", v)} options={[{ v: "elevated", label: t("plat.elevated") }, { v: "outlined", label: t("plat.outlined") }, { v: "flat", label: t("plat.flat") }]} />
-              </FormBlock>
-              <FormBlock label={t("plat.accent")}>
-                <div className="row gap-2">
-                  {ACCENTS.map((a) => (
-                    <button key={a || "default"} onClick={() => setTweak("accent", a)} title={a || t("plat.accentDefault")}
-                      style={{ width: 26, height: 26, borderRadius: 6, cursor: "pointer", background: a || "linear-gradient(135deg,var(--fg),var(--fg-4))", border: tweaks.accent === a ? "2px solid var(--fg)" : "1px solid var(--border-2)" }} />
-                  ))}
-                </div>
               </FormBlock>
               <FormBlock label={t("plat.language")}>
                 <Segmented value={lang} onChange={(v) => setLang(v)} options={[{ v: "en", label: "EN" }, { v: "zh", label: "中文" }]} />
@@ -287,7 +289,7 @@ export function SettingsScreen() {
 
         {/* Updates Tab */}
         {activeTab === "updates" && (
-          <div className="col gap-16" style={{ maxWidth: 700 }}>
+          <div style={{ maxWidth: 900 }}>
             <Section title={t("plat.serverUpdate")} icon={I.download({ size: 13 })}>
               <FormBlock label={t("plat.currentVersion")}>
                 <div className="row gap-2" style={{ alignItems: "center" }}>
@@ -355,7 +357,7 @@ export function SettingsScreen() {
 
         {/* AI Tab */}
         {activeTab === "ai" && llm && (
-          <div className="col gap-16" style={{ maxWidth: 700 }}>
+          <div style={{ maxWidth: 900 }}>
             <Section title={t("plat.aiProvider")} icon={I.sparkle({ size: 13 })}>
               <FormBlock label={t("plat.aiAssistant")}>
                 <Segmented
