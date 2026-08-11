@@ -30,7 +30,9 @@ func NewSettingHandler(db *gorm.DB, logger *zap.SugaredLogger) *SettingHandler {
 	return &SettingHandler{db: db, logger: logger}
 }
 
-// GetSettings returns all stored settings as a flat key/value map.
+// GetSettings returns only the generic UI settings as a flat key/value map.
+// Provider secrets use a dedicated redacted endpoint and must never leak
+// through this legacy key/value API.
 func (h *SettingHandler) GetSettings(c *gin.Context) {
 	var rows []database.Setting
 	if err := h.db.Find(&rows).Error; err != nil {
@@ -38,9 +40,11 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load settings"})
 		return
 	}
-	out := make(map[string]string, len(rows))
+	out := make(map[string]string, len(allowedSettingKeys))
 	for _, r := range rows {
-		out[r.Key] = r.Value
+		if allowedSettingKeys[r.Key] {
+			out[r.Key] = r.Value
+		}
 	}
 	c.JSON(http.StatusOK, out)
 }

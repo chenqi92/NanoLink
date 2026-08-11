@@ -93,6 +93,8 @@ export const I: Record<string, IconCmp> = {
   expand: (p) => <Icon {...p}><path d="M3 6V3h3M13 6V3h-3M3 10v3h3M13 10v3h-3"/></Icon>,
   bell: (p) => <Icon {...p}><path d="M4 11V7a4 4 0 018 0v4l1.5 1.5h-11L4 11z"/><path d="M6.5 13.5a1.5 1.5 0 003 0"/></Icon>,
   history: (p) => <Icon {...p}><path d="M2 8V3M2 8h5"/><path d="M3.5 12c1.2 1 3 1.5 4.5 1.5 3.3 0 6-2.7 6-6s-2.7-6-6-6c-2 0-3.8 1-4.8 2.5"/><path d="M8 5v3.5l2.5 1.5"/></Icon>,
+  lock: (p) => <Icon {...p}><rect x="3.5" y="7" width="9" height="7" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></Icon>,
+  download: (p) => <Icon {...p}><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 12v1a1 1 0 001 1h8a1 1 0 001-1v-1"/></Icon>,
 }
 
 export function osIcon(family?: string, size = 16) {

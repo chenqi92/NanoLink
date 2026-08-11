@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,9 +29,20 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
+// LLMStatus is the non-secret runtime state safe to return to authenticated
+// dashboard users. Configured means a model and API key are both available;
+// Enabled additionally reflects the operator's on/off switch.
+type LLMStatus struct {
+	Enabled    bool   `json:"enabled"`
+	Configured bool   `json:"configured"`
+	Provider   string `json:"provider"`
+	Model      string `json:"model"`
+}
+
 // LLMClient talks to an external LLM over HTTP. It supports the Anthropic
 // Messages API and OpenAI-compatible Chat Completions APIs.
 type LLMClient struct {
+	mu   sync.RWMutex
 	cfg  LLMConfig
 	http *http.Client
 }
@@ -41,44 +53,102 @@ func NewLLMClient(cfg LLMConfig) *LLMClient {
 	if cfg.APIKey == "" {
 		cfg.APIKey = os.Getenv("NANOLINK_LLM_API_KEY")
 	}
+	cfg = normalizeLLMRuntimeConfig(cfg)
+	return &LLMClient{cfg: cfg, http: &http.Client{Timeout: 60 * time.Second}}
+}
+
+func normalizeLLMRuntimeConfig(cfg LLMConfig) LLMConfig {
+	cfg.Provider = strings.ToLower(strings.TrimSpace(cfg.Provider))
+	if cfg.Provider == "" {
+		cfg.Provider = "anthropic"
+	}
+	cfg.Model = strings.TrimSpace(cfg.Model)
+	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = 1024
 	}
-	return &LLMClient{cfg: cfg, http: &http.Client{Timeout: 60 * time.Second}}
+	return cfg
+}
+
+// Configure atomically replaces the runtime provider configuration. Existing
+// in-flight requests keep their snapshot while new chats use the new settings,
+// so an admin save does not require a server restart.
+func (c *LLMClient) Configure(cfg LLMConfig) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.cfg = normalizeLLMRuntimeConfig(cfg)
+	c.mu.Unlock()
+}
+
+func (c *LLMClient) snapshot() LLMConfig {
+	if c == nil {
+		return LLMConfig{}
+	}
+	c.mu.RLock()
+	cfg := c.cfg
+	c.mu.RUnlock()
+	return cfg
+}
+
+// Status returns the non-secret current provider identity.
+func (c *LLMClient) Status() LLMStatus {
+	cfg := c.snapshot()
+	configured := cfg.APIKey != "" && cfg.Model != ""
+	return LLMStatus{
+		Enabled:    cfg.Enabled && configured,
+		Configured: configured,
+		Provider:   cfg.Provider,
+		Model:      cfg.Model,
+	}
 }
 
 // Enabled reports whether the assistant chat can be served.
 func (c *LLMClient) Enabled() bool {
-	return c != nil && c.cfg.Enabled && c.cfg.APIKey != "" && c.cfg.Model != ""
+	return c.Status().Enabled
 }
 
 // Chat sends a system prompt and conversation to the configured provider and
 // returns the assistant's text reply.
 func (c *LLMClient) Chat(ctx context.Context, system string, messages []ChatMessage) (string, error) {
-	if !c.Enabled() {
+	cfg := c.snapshot()
+	if !cfg.Enabled || cfg.APIKey == "" || cfg.Model == "" {
 		return "", fmt.Errorf("AI assistant is not configured: set llm.enabled, llm.model and NANOLINK_LLM_API_KEY")
 	}
-	switch strings.ToLower(c.cfg.Provider) {
+	return c.chatWithConfig(ctx, cfg, system, messages)
+}
+
+// Test verifies the saved provider credentials even when the assistant is
+// currently disabled. It intentionally sends a minimal request.
+func (c *LLMClient) Test(ctx context.Context) error {
+	cfg := c.snapshot()
+	if cfg.APIKey == "" || cfg.Model == "" {
+		return fmt.Errorf("model and API key are required")
+	}
+	_, err := c.chatWithConfig(ctx, cfg, "Reply with exactly OK.", []ChatMessage{{Role: "user", Content: "Connection test"}})
+	return err
+}
+
+func (c *LLMClient) chatWithConfig(ctx context.Context, cfg LLMConfig, system string, messages []ChatMessage) (string, error) {
+	switch cfg.Provider {
 	case "anthropic":
-		return c.chatAnthropic(ctx, system, messages)
+		return c.chatAnthropic(ctx, cfg, system, messages)
 	default: // openai and openai-compatible
-		return c.chatOpenAI(ctx, system, messages)
+		return c.chatOpenAI(ctx, cfg, system, messages)
 	}
 }
 
-func (c *LLMClient) chatAnthropic(ctx context.Context, system string, messages []ChatMessage) (string, error) {
-	base := c.cfg.BaseURL
-	if base == "" {
-		base = "https://api.anthropic.com"
-	}
+func (c *LLMClient) chatAnthropic(ctx context.Context, cfg LLMConfig, system string, messages []ChatMessage) (string, error) {
 	payload := map[string]interface{}{
-		"model":      c.cfg.Model,
-		"max_tokens": c.cfg.MaxTokens,
+		"model":      cfg.Model,
+		"max_tokens": cfg.MaxTokens,
 		"system":     system,
 		"messages":   messages,
 	}
-	respBody, err := c.post(ctx, strings.TrimRight(base, "/")+"/v1/messages", payload, map[string]string{
-		"x-api-key":         c.cfg.APIKey,
+	respBody, err := c.post(ctx, llmEndpoint(cfg.BaseURL, "https://api.anthropic.com", "/v1/messages"), payload, map[string]string{
+		"x-api-key":         cfg.APIKey,
 		"anthropic-version": "2023-06-01",
 	})
 	if err != nil {
@@ -108,11 +178,7 @@ func (c *LLMClient) chatAnthropic(ctx context.Context, system string, messages [
 	return strings.TrimSpace(sb.String()), nil
 }
 
-func (c *LLMClient) chatOpenAI(ctx context.Context, system string, messages []ChatMessage) (string, error) {
-	base := c.cfg.BaseURL
-	if base == "" {
-		base = "https://api.openai.com"
-	}
+func (c *LLMClient) chatOpenAI(ctx context.Context, cfg LLMConfig, system string, messages []ChatMessage) (string, error) {
 	msgs := make([]map[string]string, 0, len(messages)+1)
 	if system != "" {
 		msgs = append(msgs, map[string]string{"role": "system", "content": system})
@@ -121,12 +187,12 @@ func (c *LLMClient) chatOpenAI(ctx context.Context, system string, messages []Ch
 		msgs = append(msgs, map[string]string{"role": m.Role, "content": m.Content})
 	}
 	payload := map[string]interface{}{
-		"model":      c.cfg.Model,
+		"model":      cfg.Model,
 		"messages":   msgs,
-		"max_tokens": c.cfg.MaxTokens,
+		"max_tokens": cfg.MaxTokens,
 	}
-	respBody, err := c.post(ctx, strings.TrimRight(base, "/")+"/v1/chat/completions", payload, map[string]string{
-		"Authorization": "Bearer " + c.cfg.APIKey,
+	respBody, err := c.post(ctx, llmEndpoint(cfg.BaseURL, "https://api.openai.com", "/v1/chat/completions"), payload, map[string]string{
+		"Authorization": "Bearer " + cfg.APIKey,
 	})
 	if err != nil {
 		return "", err
@@ -151,6 +217,23 @@ func (c *LLMClient) chatOpenAI(ctx context.Context, system string, messages []Ch
 		return "", fmt.Errorf("LLM returned no choices")
 	}
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+}
+
+// llmEndpoint accepts either a service root (https://host), a conventional
+// version root (https://host/v1), or the full endpoint. This avoids the common
+// custom-provider failure where /v1 is accidentally appended twice.
+func llmEndpoint(base, defaultBase, endpoint string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if base == "" {
+		base = defaultBase
+	}
+	if strings.HasSuffix(base, endpoint) {
+		return base
+	}
+	if strings.HasSuffix(base, "/v1") && strings.HasPrefix(endpoint, "/v1/") {
+		return base + strings.TrimPrefix(endpoint, "/v1")
+	}
+	return base + endpoint
 }
 
 // post sends a JSON payload and returns the raw response body, treating non-2xx
@@ -178,7 +261,11 @@ func (c *LLMClient) post(ctx context.Context, url string, payload interface{}, h
 		return nil, err
 	}
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("LLM API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		detail := strings.TrimSpace(string(respBody))
+		if len(detail) > 2048 {
+			detail = detail[:2048] + "…"
+		}
+		return nil, fmt.Errorf("LLM API returned %d: %s", resp.StatusCode, detail)
 	}
 	return respBody, nil
 }

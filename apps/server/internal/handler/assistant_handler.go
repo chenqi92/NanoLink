@@ -183,13 +183,23 @@ func sanitizeAssistantMessages(messages []service.ChatMessage) ([]service.ChatMe
 	return msgs, nil
 }
 
+// Status returns the non-secret provider identity so the assistant UI can show
+// the configured model without exposing the base URL or API key.
+func (h *AssistantHandler) Status(c *gin.Context) {
+	if h.llm == nil {
+		c.JSON(http.StatusOK, service.LLMStatus{})
+		return
+	}
+	c.JSON(http.StatusOK, h.llm.Status())
+}
+
 // Chat answers a free-form question using the configured external LLM, grounding
 // it with a live snapshot of the fleet. Requires llm.enabled + an API key.
 // POST /assistant/chat
 func (h *AssistantHandler) Chat(c *gin.Context) {
 	if h.llm == nil || !h.llm.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "AI assistant chat is not configured. Enable llm in the server config and set NANOLINK_LLM_API_KEY.",
+			"error": "AI assistant chat is not configured. Ask a super admin to configure an AI provider in Settings.",
 		})
 		return
 	}
@@ -229,7 +239,7 @@ func (h *AssistantHandler) Chat(c *gin.Context) {
 // answers grounded in real data.
 func (h *AssistantHandler) buildSystemPrompt(visible map[string]struct{}, all bool) string {
 	var sb strings.Builder
-	sb.WriteString("You are NanoLink's infrastructure assistant. Answer concisely and only from the live snapshot below. ")
+	sb.WriteString("You are NanoOps' infrastructure assistant. Answer concisely and only from the live snapshot below. ")
 	sb.WriteString("You cannot run commands; when asked to act, describe the steps the operator should take.\n\n")
 
 	hostByID := map[string]string{}

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import { useRouter } from "@/store/router"
 import { PageHeader, SectionPanel } from "@/components/shell/primitives"
-import { assistantApi, auditApi, type FindingDTO, type ChatMessage, type AuditLog } from "@/lib/api"
+import { assistantApi, auditApi, type FindingDTO, type ChatMessage, type AuditLog, type AssistantStatus } from "@/lib/api"
 
 type Finding = FindingDTO
 
@@ -29,9 +29,11 @@ export function AssistantScreen() {
   const [findings, setFindings] = useState<Finding[]>([])
   const [loading, setLoading] = useState(true)
   const [recent, setRecent] = useState<AuditLog[]>([])
+  const [assistantStatus, setAssistantStatus] = useState<AssistantStatus | null>(null)
 
   const refresh = useCallback(() => {
     assistantApi.findings().then(setFindings).catch(() => {}).finally(() => setLoading(false))
+    assistantApi.status().then(setAssistantStatus).catch(() => {})
     auditApi.recent(6).then((r) => setRecent(r.logs ?? [])).catch(() => {})
   }, [])
 
@@ -48,7 +50,7 @@ export function AssistantScreen() {
 
   const send = async () => {
     const text = input.trim()
-    if (!text || sending) return
+    if (!text || sending || !assistantStatus?.enabled) return
     const next: ChatMessage[] = [...messages, { role: "user", content: text }]
     setMessages(next)
     setInput("")
@@ -109,7 +111,9 @@ export function AssistantScreen() {
             <div className="card" style={{ padding: 16 }}>
               <div className="row gap-2" style={{ marginBottom: 14 }}>
                 <span className="upper" style={{ color: "var(--fg-4)" }}>Chat</span>
-                <span className="badge mono" style={{ fontSize: 10 }}>claude-opus · {TOOLS.length} tools</span>
+                <span className={`badge mono ${assistantStatus?.enabled ? "ok" : "warn"}`} style={{ fontSize: 10 }}>
+                  {assistantStatus?.model || t("plat.aiNotConfigured")} · {TOOLS.length} tools
+                </span>
               </div>
               <div className="col gap-3" style={{ marginBottom: 14 }}>
                 {messages.length === 0 && (
@@ -131,11 +135,11 @@ export function AssistantScreen() {
               <div className="row gap-2" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", height: 36 }}>
                 <span style={{ color: "var(--fg-4)" }}>{I.sparkle({ size: 14 })}</span>
                 <input
-                  placeholder={t("plat.askPlaceholder")}
+                  placeholder={assistantStatus?.enabled ? t("plat.askPlaceholder") : t("plat.aiConfigureInSettings")}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }}
-                  disabled={sending}
+                  disabled={sending || !assistantStatus?.enabled}
                   style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "inherit", fontSize: 12.5 }}
                 />
                 <span className="kbd">↵</span>

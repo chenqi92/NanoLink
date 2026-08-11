@@ -264,6 +264,10 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("metrics.max_memory_history", 600)
 	viper.SetDefault("metrics.prometheus_enabled", false)
 	viper.SetDefault("mcp.sse_bind_address", "127.0.0.1")
+	viper.SetDefault("llm.enabled", false)
+	viper.SetDefault("llm.provider", "anthropic")
+	viper.SetDefault("llm.model", "claude-opus-4-8")
+	viper.SetDefault("llm.max_tokens", 1024)
 	viper.SetDefault("deployment.storage_path", "./data/artifacts")
 	viper.SetDefault("deployment.max_artifact_bytes", int64(512*1024*1024))
 	viper.SetDefault("deployment.download_ttl_minutes", 30)
@@ -301,6 +305,12 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("metrics.prometheus_token", "NANOLINK_PROMETHEUS_TOKEN")
 	_ = viper.BindEnv("mcp.sse_bind_address", "NANOLINK_MCP_SSE_BIND_ADDRESS")
 	_ = viper.BindEnv("mcp.sse_auth_token", "NANOLINK_MCP_SSE_AUTH_TOKEN")
+	_ = viper.BindEnv("llm.enabled", "NANOLINK_LLM_ENABLED")
+	_ = viper.BindEnv("llm.provider", "NANOLINK_LLM_PROVIDER")
+	_ = viper.BindEnv("llm.model", "NANOLINK_LLM_MODEL")
+	_ = viper.BindEnv("llm.base_url", "NANOLINK_LLM_BASE_URL")
+	_ = viper.BindEnv("llm.api_key", "NANOLINK_LLM_API_KEY")
+	_ = viper.BindEnv("llm.max_tokens", "NANOLINK_LLM_MAX_TOKENS")
 	_ = viper.BindEnv("deployment.storage_path", "NANOLINK_DEPLOYMENT_STORAGE_PATH")
 	_ = viper.BindEnv("deployment.max_artifact_bytes", "NANOLINK_DEPLOYMENT_MAX_ARTIFACT_BYTES")
 	_ = viper.BindEnv("deployment.download_ttl_minutes", "NANOLINK_DEPLOYMENT_DOWNLOAD_TTL_MINUTES")
@@ -362,6 +372,26 @@ func Load(path string) (*Config, error) {
 			cfg.Auth.AllowPublicRegistration = true
 		default:
 			cfg.Auth.AllowPublicRegistration = false
+		}
+	}
+	if v := os.Getenv("NANOLINK_LLM_ENABLED"); v != "" {
+		cfg.LLM.Enabled = isTruthy(v)
+	}
+	if v := os.Getenv("NANOLINK_LLM_PROVIDER"); v != "" {
+		cfg.LLM.Provider = v
+	}
+	if v := os.Getenv("NANOLINK_LLM_MODEL"); v != "" {
+		cfg.LLM.Model = v
+	}
+	if v := os.Getenv("NANOLINK_LLM_BASE_URL"); v != "" {
+		cfg.LLM.BaseURL = v
+	}
+	if v := os.Getenv("NANOLINK_LLM_API_KEY"); v != "" {
+		cfg.LLM.APIKey = v
+	}
+	if raw := os.Getenv("NANOLINK_LLM_MAX_TOKENS"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			cfg.LLM.MaxTokens = n
 		}
 	}
 	if storagePath := os.Getenv("NANOLINK_DEPLOYMENT_STORAGE_PATH"); storagePath != "" {

@@ -281,6 +281,31 @@ export const settingsApi = {
   update: (data: Record<string, string>) => api.put<Record<string, string>>("/settings", data),
 }
 
+export type LLMProvider = "anthropic" | "openai" | "openai-compatible"
+export interface LLMSettings {
+  enabled: boolean
+  provider: LLMProvider
+  model: string
+  baseUrl: string
+  maxTokens: number
+  apiKeyConfigured: boolean
+  apiKeySource: "stored" | "environment" | "none"
+}
+export interface LLMSettingsUpdate {
+  enabled: boolean
+  provider: LLMProvider
+  model: string
+  baseUrl: string
+  maxTokens: number
+  apiKey?: string
+  clearApiKey?: boolean
+}
+export const llmSettingsApi = {
+  get: () => api.get<LLMSettings>("/settings/llm"),
+  update: (data: LLMSettingsUpdate) => api.put<LLMSettings>("/settings/llm", data),
+  test: () => api.post<{ ok: boolean }>("/settings/llm/test"),
+}
+
 // Agent install config generation
 export interface GeneratedConfig {
   configYaml: string
@@ -395,8 +420,15 @@ export interface ChatMessage {
   role: "user" | "assistant"
   content: string
 }
+export interface AssistantStatus {
+  enabled: boolean
+  configured: boolean
+  provider: string
+  model: string
+}
 export const assistantApi = {
   findings: () => api.get<FindingDTO[]>("/assistant/findings"),
+  status: () => api.get<AssistantStatus>("/assistant/status"),
   chat: (messages: ChatMessage[]) => api.post<{ reply: string }>("/assistant/chat", { messages }),
 }
 

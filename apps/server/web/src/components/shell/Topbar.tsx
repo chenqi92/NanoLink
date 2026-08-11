@@ -28,7 +28,7 @@ function Breadcrumb() {
   const { route, navigate } = useRouter()
   const { agents } = useData()
 
-  const crumbs: { label: string; muted?: boolean; mono?: boolean; onClick?: () => void }[] = [{ label: "nano.io", muted: true }]
+  const crumbs: { label: string; muted?: boolean; mono?: boolean; onClick?: () => void }[] = []
   if (route.page === "agent-detail") {
     const a = agents.find((x) => x.id === route.agentId)
     crumbs.push({ label: t("nav.agents"), onClick: () => navigate("agents") })
@@ -76,6 +76,9 @@ function UserMenu() {
   const { user, logout } = useAuth()
   const { navigate } = useRouter()
   const [open, setOpen] = useState(false)
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
+  const [pwd, setPwd] = useState("")
+  const [pwdStatus, setPwdStatus] = useState<"idle" | "busy" | "done" | "error">("idle")
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -88,6 +91,23 @@ function UserMenu() {
     document.addEventListener("mousedown", onClickOutside)
     return () => document.removeEventListener("mousedown", onClickOutside)
   }, [open])
+
+  async function updatePassword() {
+    if (pwd.length < 8) return
+    setPwdStatus("busy")
+    try {
+      const { authApi } = await import("@/lib/api")
+      await authApi.changePassword(pwd)
+      setPwd("")
+      setPwdStatus("done")
+      setTimeout(() => {
+        setShowPasswordDialog(false)
+        setPwdStatus("idle")
+      }, 1500)
+    } catch {
+      setPwdStatus("error")
+    }
+  }
 
   const avatar = (user?.username || "?").slice(0, 2).toUpperCase()
 
@@ -140,7 +160,7 @@ function UserMenu() {
             <button
               onClick={() => {
                 setOpen(false)
-                navigate("settings")
+                setShowPasswordDialog(true)
               }}
               className="row gap-2"
               style={{
@@ -159,8 +179,8 @@ function UserMenu() {
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
-              {I.settings({ size: 14 })}
-              <span>{t("nav.settings")}</span>
+              {I.lock({ size: 14 })}
+              <span>{t("plat.changePassword")}</span>
             </button>
 
             <button
@@ -188,6 +208,94 @@ function UserMenu() {
               {I.power({ size: 14 })}
               <span>{t("topbar.signOut")}</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {showPasswordDialog && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowPasswordDialog(false)
+              setPwd("")
+              setPwdStatus("idle")
+            }
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: 400,
+              maxWidth: "90vw",
+              padding: 20,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 16, color: "var(--fg)" }}>
+              {t("plat.changePassword")}
+            </div>
+            <div className="col gap-3">
+              <div className="col gap-1">
+                <label style={{ fontSize: 12, color: "var(--fg-3)", fontWeight: 500 }}>
+                  {t("plat.newPassword")}
+                </label>
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="new-password"
+                  value={pwd}
+                  onChange={(e) => {
+                    setPwd(e.target.value)
+                    setPwdStatus("idle")
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && pwd.length >= 8) updatePassword()
+                  }}
+                  placeholder={t("plat.newPassword")}
+                  autoFocus
+                />
+                {pwd.length > 0 && pwd.length < 8 && (
+                  <div className="hint" style={{ color: "var(--warn)" }}>
+                    {t("plat.newPassword")}
+                  </div>
+                )}
+              </div>
+              {pwdStatus === "done" && (
+                <div className="badge ok">{t("plat.passwordUpdated")}</div>
+              )}
+              {pwdStatus === "error" && (
+                <div className="badge crit">{t("common.error")}</div>
+              )}
+              <div className="row gap-2" style={{ marginTop: 8 }}>
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={updatePassword}
+                  disabled={pwd.length < 8 || pwdStatus === "busy"}
+                >
+                  {pwdStatus === "busy" && <span className="dot pulse ok" />}
+                  {t("plat.updatePassword")}
+                </button>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => {
+                    setShowPasswordDialog(false)
+                    setPwd("")
+                    setPwdStatus("idle")
+                  }}
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -277,8 +277,24 @@ func main() {
 				APIKey:    cfg.LLM.APIKey,
 				MaxTokens: cfg.LLM.MaxTokens,
 			})
+			llmSettingsManager, err := service.NewLLMSettingsManager(database.GetDB(), llmClient, service.LLMConfig{
+				Enabled:   cfg.LLM.Enabled,
+				Provider:  cfg.LLM.Provider,
+				Model:     cfg.LLM.Model,
+				BaseURL:   cfg.LLM.BaseURL,
+				APIKey:    cfg.LLM.APIKey,
+				MaxTokens: cfg.LLM.MaxTokens,
+			}, cfg.JWT.Secret)
+			if err != nil {
+				sugar.Fatalf("initialize AI provider settings: %v", err)
+			}
+			if _, err := llmSettingsManager.Reload(context.Background()); err != nil {
+				sugar.Errorf("load persisted AI provider settings failed; using startup configuration: %v", err)
+			}
+			llmSettingHandler := handler.NewLLMSettingHandler(llmSettingsManager, sugar)
 			assistantHandler := handler.NewAssistantHandler(metricsService, agentService, database.GetDB(), permService, llmClient, sugar)
 			protected.GET("/assistant/findings", assistantHandler.Findings)
+			protected.GET("/assistant/status", assistantHandler.Status)
 			protected.POST("/assistant/chat", assistantHandler.Chat)
 
 			// Build identity and update state. The read is available to any
@@ -337,6 +353,9 @@ func main() {
 
 				admin.GET("/settings", settingHandler.GetSettings)
 				admin.PUT("/settings", settingHandler.UpdateSettings)
+				admin.GET("/settings/llm", llmSettingHandler.Get)
+				admin.PUT("/settings/llm", llmSettingHandler.Update)
+				admin.POST("/settings/llm/test", llmSettingHandler.Test)
 
 				admin.POST("/config/generate", configGen.GenerateConfig)
 				admin.POST("/config/add-server", configGen.GenerateAddServerCommand)
