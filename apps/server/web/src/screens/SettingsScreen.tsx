@@ -1,7 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
-import { serverApi, authApi, settingsApi, llmSettingsApi, type ServerInfo, type LLMSettings, type LLMProvider } from "@/lib/api"
-import { useAuth } from "@/contexts/AuthContext"
+import { serverApi, settingsApi, llmSettingsApi, versionApi, type ServerInfo, type ServerUpdateInfo, type LLMSettings, type LLMProvider } from "@/lib/api"
 import { useSettings, type Tweaks } from "@/store/settings"
 import { PageHeader, FormBlock, KVRow } from "@/components/shell/primitives"
 import { I } from "@/lib/icons"
@@ -38,7 +37,6 @@ type TabKey = "appearance" | "server" | "updates" | "ai"
 export function SettingsScreen() {
   const { t } = useTranslation()
   const { tweaks, setTweak, lang, setLang } = useSettings()
-  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<TabKey>("appearance")
   const [info, setInfo] = useState<ServerInfo | null>(null)
   const [cfg, setCfg] = useState<Record<string, string>>({})
@@ -48,7 +46,7 @@ export function SettingsScreen() {
   const [llmStatus, setLLMStatus] = useState<"idle" | "busy" | "done" | "tested" | "error">("idle")
 
   // Version update state
-  const [updateInfo, setUpdateInfo] = useState<any>(null)
+  const [updateInfo, setUpdateInfo] = useState<ServerUpdateInfo | null>(null)
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "applying" | "done" | "error">("idle")
   const [updateError, setUpdateError] = useState("")
 
@@ -110,35 +108,25 @@ export function SettingsScreen() {
     }
   }
 
-  async function checkForUpdates() {
+  const checkForUpdates = useCallback(async () => {
     setUpdateStatus("checking")
     setUpdateError("")
     try {
-      const res = await fetch("/api/version/check?refresh=true")
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
+      const data = await versionApi.check(true)
       setUpdateInfo(data)
       setUpdateStatus("idle")
     } catch (err) {
       setUpdateError(String(err))
       setUpdateStatus("error")
     }
-  }
+  }, [])
 
   async function applyUpdate() {
-    if (!updateInfo?.updateAvailable) return
+    if (!updateInfo?.updateAvailable || !updateInfo.latestVersion) return
     setUpdateStatus("applying")
     setUpdateError("")
     try {
-      const res = await fetch("/api/version/apply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version: updateInfo.latest.version }),
-      })
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}))
-        throw new Error(errorData.error || `HTTP ${res.status}`)
-      }
+      await versionApi.apply(updateInfo.latestVersion)
       setUpdateStatus("done")
       setTimeout(() => window.location.reload(), 3000)
     } catch (err) {
@@ -149,9 +137,9 @@ export function SettingsScreen() {
 
   useEffect(() => {
     if (activeTab === "updates" && !updateInfo) {
-      checkForUpdates()
+      void checkForUpdates()
     }
-  }, [activeTab])
+  }, [activeTab, checkForUpdates, updateInfo])
 
   const set = (k: keyof Tweaks, v: string) => setTweak(k, v as never)
 
@@ -311,7 +299,7 @@ export function SettingsScreen() {
                 <>
                   <FormBlock label={t("plat.latestVersion")}>
                     <div className="row gap-2" style={{ alignItems: "center" }}>
-                      <span className="mono badge" style={{ fontSize: 13 }}>v{updateInfo.latest?.version || "—"}</span>
+                      <span className="mono badge" style={{ fontSize: 13 }}>v{updateInfo.latestVersion || "—"}</span>
                       {updateInfo.updateAvailable && (
                         <span className="badge ok">{t("plat.updateAvailable")}</span>
                       )}

@@ -254,7 +254,8 @@ export const authApi = {
   register: (data: RegisterRequest) => api.post<AuthResponse>("/auth/register", data),
   me: () => api.get<User>("/auth/me"),
   logout: () => api.post<{ message: string }>("/auth/logout"),
-  changePassword: (newPassword: string) => api.put<{ message: string }>("/auth/password", { newPassword }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.put<{ message: string }>("/auth/password", { currentPassword, newPassword }),
 }
 
 // Server info (public)
@@ -274,6 +275,26 @@ export interface ServerInfo {
 export const serverApi = {
   info: () => api.get<ServerInfo>("/server-info"),
   health: () => api.get<{ status: string; agentCount: number }>("/health"),
+}
+
+export interface ServerUpdateInfo {
+  currentVersion: string
+  latestVersion: string
+  updateAvailable: boolean
+  changelog?: string
+  releaseDate?: string
+  downloadUrl?: string
+  source: string
+  checkedAt: string
+  deploymentMode: "docker" | "systemd" | "bare"
+  canSelfUpdate: boolean
+  blocker?: string
+  upgradeCommand?: string
+}
+
+export const versionApi = {
+  check: (refresh = false) => api.get<ServerUpdateInfo>(`/version/check${refresh ? "?refresh=true" : ""}`),
+  apply: (expectVersion: string) => api.post<{ fromVersion: string; toVersion: string; restarting: boolean }>("/version/apply", { expectVersion }),
 }
 
 export const settingsApi = {

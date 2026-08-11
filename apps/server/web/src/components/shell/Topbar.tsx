@@ -6,6 +6,7 @@ import { useSettings } from "@/store/settings"
 import { useData } from "@/contexts/DataContext"
 import { useAuth } from "@/contexts/AuthContext"
 import { isOnline } from "@/lib/format"
+import { authApi } from "@/lib/api"
 
 const PAGE_KEYS: Record<string, string> = {
   dashboard: "nav.dashboard",
@@ -74,11 +75,13 @@ function ConnStatus() {
 function UserMenu() {
   const { t } = useTranslation()
   const { user, logout } = useAuth()
-  const { navigate } = useRouter()
   const [open, setOpen] = useState(false)
   const [showPasswordDialog, setShowPasswordDialog] = useState(false)
+  const [currentPwd, setCurrentPwd] = useState("")
   const [pwd, setPwd] = useState("")
+  const [confirmPwd, setConfirmPwd] = useState("")
   const [pwdStatus, setPwdStatus] = useState<"idle" | "busy" | "done" | "error">("idle")
+  const [pwdError, setPwdError] = useState("")
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -93,19 +96,30 @@ function UserMenu() {
   }, [open])
 
   async function updatePassword() {
-    if (pwd.length < 8) return
+    if (currentPwd.length === 0 || pwd.length < 8 || confirmPwd.length < 8) return
+    if (pwd !== confirmPwd) {
+      setPwdError(t("plat.passwordMismatch"))
+      return
+    }
     setPwdStatus("busy")
+    setPwdError("")
     try {
-      const { authApi } = await import("@/lib/api")
-      await authApi.changePassword(pwd)
+      await authApi.changePassword(currentPwd, pwd)
+      setCurrentPwd("")
       setPwd("")
+      setConfirmPwd("")
       setPwdStatus("done")
       setTimeout(() => {
         setShowPasswordDialog(false)
         setPwdStatus("idle")
       }, 1500)
-    } catch {
+    } catch (err: any) {
       setPwdStatus("error")
+      if (err?.response?.status === 401) {
+        setPwdError(t("plat.incorrectPassword"))
+      } else {
+        setPwdError(t("common.error"))
+      }
     }
   }
 
@@ -226,8 +240,11 @@ function UserMenu() {
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowPasswordDialog(false)
+              setCurrentPwd("")
               setPwd("")
+              setConfirmPwd("")
               setPwdStatus("idle")
+              setPwdError("")
             }
           }}
         >
@@ -246,6 +263,24 @@ function UserMenu() {
             <div className="col gap-3">
               <div className="col gap-1">
                 <label style={{ fontSize: 12, color: "var(--fg-3)", fontWeight: 500 }}>
+                  {t("plat.currentPassword")}
+                </label>
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPwd}
+                  onChange={(e) => {
+                    setCurrentPwd(e.target.value)
+                    setPwdStatus("idle")
+                    setPwdError("")
+                  }}
+                  placeholder={t("plat.currentPassword")}
+                  autoFocus
+                />
+              </div>
+              <div className="col gap-1">
+                <label style={{ fontSize: 12, color: "var(--fg-3)", fontWeight: 500 }}>
                   {t("plat.newPassword")}
                 </label>
                 <input
@@ -256,30 +291,54 @@ function UserMenu() {
                   onChange={(e) => {
                     setPwd(e.target.value)
                     setPwdStatus("idle")
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && pwd.length >= 8) updatePassword()
+                    setPwdError("")
                   }}
                   placeholder={t("plat.newPassword")}
-                  autoFocus
                 />
                 {pwd.length > 0 && pwd.length < 8 && (
                   <div className="hint" style={{ color: "var(--warn)" }}>
-                    {t("plat.newPassword")}
+                    {t("plat.passwordMinLength")}
+                  </div>
+                )}
+              </div>
+              <div className="col gap-1">
+                <label style={{ fontSize: 12, color: "var(--fg-3)", fontWeight: 500 }}>
+                  {t("plat.confirmPassword")}
+                </label>
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPwd}
+                  onChange={(e) => {
+                    setConfirmPwd(e.target.value)
+                    setPwdStatus("idle")
+                    setPwdError("")
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && currentPwd.length > 0 && pwd.length >= 8 && confirmPwd.length >= 8) {
+                      updatePassword()
+                    }
+                  }}
+                  placeholder={t("plat.confirmPassword")}
+                />
+                {confirmPwd.length > 0 && pwd !== confirmPwd && (
+                  <div className="hint" style={{ color: "var(--warn)" }}>
+                    {t("plat.passwordMismatch")}
                   </div>
                 )}
               </div>
               {pwdStatus === "done" && (
                 <div className="badge ok">{t("plat.passwordUpdated")}</div>
               )}
-              {pwdStatus === "error" && (
-                <div className="badge crit">{t("common.error")}</div>
+              {pwdStatus === "error" && pwdError && (
+                <div className="badge crit">{pwdError}</div>
               )}
               <div className="row gap-2" style={{ marginTop: 8 }}>
                 <button
                   className="btn btn-sm btn-primary"
                   onClick={updatePassword}
-                  disabled={pwd.length < 8 || pwdStatus === "busy"}
+                  disabled={currentPwd.length === 0 || pwd.length < 8 || confirmPwd.length < 8 || pwd !== confirmPwd || pwdStatus === "busy"}
                 >
                   {pwdStatus === "busy" && <span className="dot pulse ok" />}
                   {t("plat.updatePassword")}
@@ -288,8 +347,11 @@ function UserMenu() {
                   className="btn btn-sm btn-ghost"
                   onClick={() => {
                     setShowPasswordDialog(false)
+                    setCurrentPwd("")
                     setPwd("")
+                    setConfirmPwd("")
                     setPwdStatus("idle")
+                    setPwdError("")
                   }}
                 >
                   {t("common.cancel")}

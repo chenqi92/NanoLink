@@ -234,7 +234,8 @@ func (h *AuthHandler) DeleteUser(c *gin.Context) {
 
 // UpdatePasswordRequest represents a password update request
 type UpdatePasswordRequest struct {
-	NewPassword string `json:"newPassword" binding:"required,min=8"`
+	CurrentPassword string `json:"currentPassword" binding:"required"`
+	NewPassword     string `json:"newPassword" binding:"required,min=8"`
 }
 
 // UpdatePassword updates user's password
@@ -248,6 +249,11 @@ func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 	user := GetCurrentUser(c)
 	if user == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+		return
+	}
+
+	if err := h.authService.VerifyPassword(user.ID, req.CurrentPassword); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "current password is incorrect"})
 		return
 	}
 
