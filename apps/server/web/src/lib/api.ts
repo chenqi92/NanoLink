@@ -447,10 +447,58 @@ export interface AssistantStatus {
   provider: string
   model: string
 }
+export interface LLMProfile {
+  id: number
+  name: string
+  provider: string
+  model: string
+  baseUrl: string
+  maxTokens: number
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProviderInfo {
+  id: string
+  label: string
+  defaultBaseURL: string
+  wire: string
+  canListModels: boolean
+  region: string
+}
+
+export interface ProviderModel {
+  id: string
+  name: string
+}
+
+export interface LLMProfileInput {
+  name: string
+  provider: string
+  model: string
+  baseUrl?: string
+  apiKey?: string
+  maxTokens?: number
+}
+
 export const assistantApi = {
   findings: () => api.get<FindingDTO[]>("/assistant/findings"),
   status: () => api.get<AssistantStatus>("/assistant/status"),
-  chat: (messages: ChatMessage[]) => api.post<{ reply: string }>("/assistant/chat", { messages }),
+  chat: (messages: ChatMessage[], profileId?: number) => api.post<{ reply: string }>("/assistant/chat", { messages, profileId }),
+  profiles: () => api.get<LLMProfile[]>("/assistant/profiles"),
+}
+
+export const llmProfilesApi = {
+  list: () => api.get<LLMProfile[]>("/settings/llm/profiles"),
+  get: (id: number) => api.get<LLMProfile>(`/settings/llm/profiles/${id}`),
+  create: (data: LLMProfileInput) => api.post<LLMProfile>("/settings/llm/profiles", data),
+  update: (id: number, data: Partial<LLMProfileInput>) => api.put<LLMProfile>(`/settings/llm/profiles/${id}`, data),
+  delete: (id: number) => api.delete(`/settings/llm/profiles/${id}`),
+  activate: (id: number) => api.post(`/settings/llm/profiles/${id}/activate`),
+  providers: () => api.get<{ providers: ProviderInfo[] }>("/settings/llm/providers"),
+  listModels: (provider: string, baseURL?: string, apiKey?: string, profileId?: number) =>
+    api.post<{ models: ProviderModel[] }>("/settings/llm/models", { provider, baseURL, apiKey, profileId }),
 }
 
 export const auditApi = {

@@ -16,16 +16,23 @@ import (
 // AssistantHandler produces metric-derived "findings" and, when an LLM is
 // configured, answers free-form questions grounded in the live fleet snapshot.
 type AssistantHandler struct {
-	metrics *service.MetricsService
-	agents  *service.AgentService
-	db      *gorm.DB
-	perm    *service.PermissionService
-	llm     *service.LLMClient
-	logger  *zap.SugaredLogger
+	metrics  *service.MetricsService
+	agents   *service.AgentService
+	db       *gorm.DB
+	perm     *service.PermissionService
+	llm      *service.LLMClient
+	profiles *service.LLMProfileService
+	logger   *zap.SugaredLogger
 }
 
 func NewAssistantHandler(metrics *service.MetricsService, agents *service.AgentService, db *gorm.DB, perm *service.PermissionService, llm *service.LLMClient, logger *zap.SugaredLogger) *AssistantHandler {
 	return &AssistantHandler{metrics: metrics, agents: agents, db: db, perm: perm, llm: llm, logger: logger}
+}
+
+// SetProfileService enables chatting through a saved provider profile selected
+// per request, falling back to the globally configured provider when unset.
+func (h *AssistantHandler) SetProfileService(profiles *service.LLMProfileService) {
+	h.profiles = profiles
 }
 
 func (h *AssistantHandler) visibility(c *gin.Context) (map[string]struct{}, bool, error) {
@@ -140,6 +147,9 @@ func (h *AssistantHandler) Findings(c *gin.Context) {
 
 type chatRequest struct {
 	Messages []service.ChatMessage `json:"messages"`
+	// ProfileID selects a saved provider profile. 0 means "use the active
+	// profile, or the globally configured provider if no profile is active".
+	ProfileID uint `json:"profileId"`
 }
 
 const (
@@ -184,8 +194,20 @@ func sanitizeAssistantMessages(messages []service.ChatMessage) ([]service.ChatMe
 }
 
 // Status returns the non-secret provider identity so the assistant UI can show
-// the configured model without exposing the base URL or API key.
+// the configured model without exposing the base URL or API key. An active
+// saved profile takes precedence over the legacy singleton configuration.
 func (h *AssistantHandler) Status(c *gin.Context) {
+	if h.profiles != nil {
+		if cfg, err := h.profiles.ActiveConfig(); err == nil && cfg.APIKey != "" && cfg.Model != "" {
+			c.JSON(http.StatusOK, service.LLMStatus{
+				Enabled:    true,
+				Configured: true,
+				Provider:   cfg.Provider,
+				Model:      cfg.Model,
+			})
+			return
+		}
+	}
 	if h.llm == nil {
 		c.JSON(http.StatusOK, service.LLMStatus{})
 		return
@@ -193,21 +215,50 @@ func (h *AssistantHandler) Status(c *gin.Context) {
 	c.JSON(http.StatusOK, h.llm.Status())
 }
 
+// resolveChatConfig picks the provider configuration for this request:
+// an explicitly requested profile, else the active profile, else the
+// globally configured provider. The second return reports whether a usable
+// provider configuration was found.
+func (h *AssistantHandler) resolveChatConfig(profileID uint) (service.LLMConfig, bool) {
+	if h.profiles != nil {
+		if profileID != 0 {
+			profile, err := h.profiles.GetProfile(profileID)
+			if err == nil {
+				if cfg, cfgErr := h.profiles.ConfigForProfile(profile); cfgErr == nil && cfg.APIKey != "" && cfg.Model != "" {
+					return cfg, true
+				}
+			}
+			// An explicit but unusable selection should not silently fall back
+			// to a different model than the user picked.
+			return service.LLMConfig{}, false
+		}
+		if cfg, err := h.profiles.ActiveConfig(); err == nil && cfg.APIKey != "" && cfg.Model != "" {
+			return cfg, true
+		}
+	}
+	if h.llm != nil && h.llm.Enabled() {
+		// Signal "use the client's own configuration" with an empty config.
+		return service.LLMConfig{}, true
+	}
+	return service.LLMConfig{}, false
+}
+
 // Chat answers a free-form question using the configured external LLM, grounding
 // it with a live snapshot of the fleet. Requires llm.enabled + an API key.
 // POST /assistant/chat
 func (h *AssistantHandler) Chat(c *gin.Context) {
-	if h.llm == nil || !h.llm.Enabled() {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "AI assistant chat is not configured. Ask a super admin to configure an AI provider in Settings.",
-		})
-		return
-	}
-
 	var req chatRequest
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAssistantRequestBytes)
 	if err := c.ShouldBindJSON(&req); err != nil || len(req.Messages) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "messages are required"})
+		return
+	}
+
+	cfg, ok := h.resolveChatConfig(req.ProfileID)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "AI assistant chat is not configured. Ask a super admin to configure an AI provider in Settings.",
+		})
 		return
 	}
 	// Only user/assistant turns are forwarded; the system prompt is injected here.
@@ -226,7 +277,14 @@ func (h *AssistantHandler) Chat(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve agent permissions"})
 		return
 	}
-	reply, err := h.llm.Chat(c.Request.Context(), h.buildSystemPrompt(visible, all), msgs)
+	system := h.buildSystemPrompt(visible, all)
+	var reply string
+	var err error
+	if cfg.Model != "" {
+		reply, err = h.llm.ChatWithConfig(c.Request.Context(), cfg, system, msgs)
+	} else {
+		reply, err = h.llm.Chat(c.Request.Context(), system, msgs)
+	}
 	if err != nil {
 		h.logger.Warnw("assistant chat failed", "err", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "assistant chat failed"})

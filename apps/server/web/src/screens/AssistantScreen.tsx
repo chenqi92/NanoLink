@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import { useRouter } from "@/store/router"
 import { PageHeader, SectionPanel } from "@/components/shell/primitives"
-import { assistantApi, auditApi, type FindingDTO, type ChatMessage, type AuditLog, type AssistantStatus } from "@/lib/api"
+import { assistantApi, auditApi, type FindingDTO, type ChatMessage, type AuditLog, type AssistantStatus, type LLMProfile } from "@/lib/api"
 
 type Finding = FindingDTO
 
@@ -30,12 +30,21 @@ export function AssistantScreen() {
   const [loading, setLoading] = useState(true)
   const [recent, setRecent] = useState<AuditLog[]>([])
   const [assistantStatus, setAssistantStatus] = useState<AssistantStatus | null>(null)
+  const [profiles, setProfiles] = useState<LLMProfile[]>([])
+  const [selectedProfileId, setSelectedProfileId] = useState<number | undefined>(undefined)
 
   const refresh = useCallback(() => {
     assistantApi.findings().then(setFindings).catch(() => {}).finally(() => setLoading(false))
     assistantApi.status().then(setAssistantStatus).catch(() => {})
+    assistantApi.profiles().then((ps) => {
+      setProfiles(ps)
+      if (selectedProfileId === undefined) {
+        const active = ps.find((p) => p.isActive)
+        if (active) setSelectedProfileId(active.id)
+      }
+    }).catch(() => {})
     auditApi.recent(6).then((r) => setRecent(r.logs ?? [])).catch(() => {})
-  }, [])
+  }, [selectedProfileId])
 
   useEffect(() => {
     refresh()
@@ -57,7 +66,7 @@ export function AssistantScreen() {
     setChatError(null)
     setSending(true)
     try {
-      const { reply } = await assistantApi.chat(next)
+      const { reply } = await assistantApi.chat(next, selectedProfileId)
       setMessages((m) => [...m, { role: "assistant", content: reply }])
     } catch (e) {
       setChatError((e as { error?: string })?.error || "Chat failed")
@@ -109,8 +118,23 @@ export function AssistantScreen() {
             </SectionPanel>
 
             <div className="card" style={{ padding: 16 }}>
-              <div className="row gap-2" style={{ marginBottom: 14 }}>
+              <div className="row gap-2" style={{ marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
                 <span className="upper" style={{ color: "var(--fg-4)" }}>Chat</span>
+                {profiles.length > 0 && (
+                  <select
+                    className="input"
+                    value={selectedProfileId ?? ""}
+                    onChange={(e) => setSelectedProfileId(e.target.value ? Number(e.target.value) : undefined)}
+                    style={{ flex: 1, maxWidth: 200, height: 26, fontSize: 11.5, padding: "0 8px" }}
+                  >
+                    <option value="">{t("plat.useGlobalConfig")}</option>
+                    {profiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} {p.isActive ? `(${t("plat.active")})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <span className={`badge mono ${assistantStatus?.enabled ? "ok" : "warn"}`} style={{ fontSize: 10 }}>
                   {assistantStatus?.model || t("plat.aiNotConfigured")} · {TOOLS.length} tools
                 </span>

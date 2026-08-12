@@ -131,6 +131,23 @@ func (c *LLMClient) Test(ctx context.Context) error {
 	return err
 }
 
+// ChatWithConfig serves a conversation from an explicit provider configuration
+// instead of the globally configured one, so a caller can chat through a saved
+// profile without mutating shared state.
+func (c *LLMClient) ChatWithConfig(ctx context.Context, cfg LLMConfig, system string, messages []ChatMessage) (string, error) {
+	cfg = normalizeLLMRuntimeConfig(cfg)
+	if cfg.APIKey == "" || cfg.Model == "" {
+		return "", fmt.Errorf("AI provider is not configured: model and API key are required")
+	}
+	return c.chatWithConfig(ctx, cfg, system, messages)
+}
+
+// TestConfig verifies an explicit provider configuration with a minimal request.
+func (c *LLMClient) TestConfig(ctx context.Context, cfg LLMConfig) error {
+	_, err := c.ChatWithConfig(ctx, cfg, "Reply with exactly OK.", []ChatMessage{{Role: "user", Content: "Connection test"}})
+	return err
+}
+
 func (c *LLMClient) chatWithConfig(ctx context.Context, cfg LLMConfig, system string, messages []ChatMessage) (string, error) {
 	switch cfg.Provider {
 	case "anthropic":

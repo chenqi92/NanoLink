@@ -283,6 +283,17 @@ func validateLLMSettingsUpdate(update LLMSettingsUpdate) (LLMConfig, error) {
 	}), nil
 }
 
+// EncryptSecret encrypts a provider API key for at-rest storage. It shares the
+// key derivation and payload format used for the singleton llm.api_key setting.
+func (m *LLMSettingsManager) EncryptSecret(plain string) (string, error) {
+	return m.encrypt(plain)
+}
+
+// DecryptSecret decrypts a secret produced by EncryptSecret.
+func (m *LLMSettingsManager) DecryptSecret(value string) (string, error) {
+	return m.decrypt(value)
+}
+
 func (m *LLMSettingsManager) encrypt(plain string) (string, error) {
 	nonce := make([]byte, m.aead.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {

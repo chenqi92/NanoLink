@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
-import { serverApi, settingsApi, llmSettingsApi, versionApi, type ServerInfo, type ServerUpdateInfo, type LLMSettings, type LLMProvider } from "@/lib/api"
+import { serverApi, settingsApi, llmSettingsApi, llmProfilesApi, versionApi, type ServerInfo, type ServerUpdateInfo, type LLMSettings, type LLMProvider, type LLMProfile, type ProviderInfo, type ProviderModel } from "@/lib/api"
 import { useSettings, type Tweaks } from "@/store/settings"
 import { PageHeader, FormBlock, KVRow } from "@/components/shell/primitives"
 import { I } from "@/lib/icons"
@@ -45,6 +45,15 @@ export function SettingsScreen() {
   const [llmApiKey, setLLMApiKey] = useState("")
   const [llmStatus, setLLMStatus] = useState<"idle" | "busy" | "done" | "tested" | "error">("idle")
 
+  // LLM Profiles state
+  const [profiles, setProfiles] = useState<LLMProfile[]>([])
+  const [providers, setProviders] = useState<ProviderInfo[]>([])
+  const [editingProfile, setEditingProfile] = useState<Partial<LLMProfile> | null>(null)
+  const [profileForm, setProfileForm] = useState({ name: "", provider: "", model: "", baseUrl: "", apiKey: "", maxTokens: 4096 })
+  const [profileStatus, setProfileStatus] = useState<"idle" | "busy" | "done" | "error">("idle")
+  const [availableModels, setAvailableModels] = useState<ProviderModel[]>([])
+  const [fetchingModels, setFetchingModels] = useState(false)
+
   // Version update state
   const [updateInfo, setUpdateInfo] = useState<ServerUpdateInfo | null>(null)
   const [updateStatus, setUpdateStatus] = useState<"idle" | "checking" | "applying" | "done" | "error">("idle")
@@ -53,6 +62,12 @@ export function SettingsScreen() {
   useEffect(() => { serverApi.info().then(setInfo).catch(() => {}) }, [])
   useEffect(() => { settingsApi.get().then(setCfg).catch(() => {}) }, [])
   useEffect(() => { llmSettingsApi.get().then(setLLM).catch(() => {}) }, [])
+  useEffect(() => {
+    if (activeTab === "ai") {
+      llmProfilesApi.list().then(setProfiles).catch(() => {})
+      llmProfilesApi.providers().then((r) => setProviders(r.providers)).catch(() => {})
+    }
+  }, [activeTab])
 
   const setCfgVal = (k: string, v: string) => { setCfg((c) => ({ ...c, [k]: v })); setCfgStatus("idle") }
   async function saveSettings() {
@@ -142,6 +157,92 @@ export function SettingsScreen() {
   }, [activeTab, checkForUpdates, updateInfo])
 
   const set = (k: keyof Tweaks, v: string) => setTweak(k, v as never)
+
+  const openProfileForm = (profile?: LLMProfile) => {
+    if (profile) {
+      setEditingProfile(profile)
+      setProfileForm({ name: profile.name, provider: profile.provider, model: profile.model, baseUrl: profile.baseUrl, apiKey: "", maxTokens: profile.maxTokens })
+    } else {
+      setEditingProfile({})
+      setProfileForm({ name: "", provider: providers[0]?.id || "anthropic", model: "", baseUrl: "", apiKey: "", maxTokens: 4096 })
+    }
+    setAvailableModels([])
+    setProfileStatus("idle")
+  }
+
+  const closeProfileForm = () => {
+    setEditingProfile(null)
+    setProfileForm({ name: "", provider: "", model: "", baseUrl: "", apiKey: "", maxTokens: 4096 })
+    setAvailableModels([])
+    setProfileStatus("idle")
+  }
+
+  const fetchModels = async () => {
+    if (!profileForm.provider) return
+    setFetchingModels(true)
+    try {
+      const { models } = await llmProfilesApi.listModels(
+        profileForm.provider,
+        profileForm.baseUrl || undefined,
+        profileForm.apiKey || undefined,
+        editingProfile?.id
+      )
+      setAvailableModels(models)
+    } catch {
+      setAvailableModels([])
+    } finally {
+      setFetchingModels(false)
+    }
+  }
+
+  const saveProfile = async () => {
+    if (!profileForm.name.trim() || !profileForm.provider || !profileForm.model.trim()) return
+    setProfileStatus("busy")
+    try {
+      if (editingProfile?.id) {
+        await llmProfilesApi.update(editingProfile.id, {
+          name: profileForm.name,
+          provider: profileForm.provider,
+          model: profileForm.model,
+          baseUrl: profileForm.baseUrl || undefined,
+          apiKey: profileForm.apiKey || undefined,
+          maxTokens: profileForm.maxTokens,
+        })
+      } else {
+        await llmProfilesApi.create({
+          name: profileForm.name,
+          provider: profileForm.provider,
+          model: profileForm.model,
+          baseUrl: profileForm.baseUrl || undefined,
+          apiKey: profileForm.apiKey || undefined,
+          maxTokens: profileForm.maxTokens,
+        })
+      }
+      const updated = await llmProfilesApi.list()
+      setProfiles(updated)
+      setProfileStatus("done")
+      setTimeout(closeProfileForm, 800)
+    } catch {
+      setProfileStatus("error")
+    }
+  }
+
+  const deleteProfile = async (id: number) => {
+    if (!confirm(t("plat.confirmDeleteProfile"))) return
+    try {
+      await llmProfilesApi.delete(id)
+      const updated = await llmProfilesApi.list()
+      setProfiles(updated)
+    } catch {}
+  }
+
+  const activateProfile = async (id: number) => {
+    try {
+      await llmProfilesApi.activate(id)
+      const updated = await llmProfilesApi.list()
+      setProfiles(updated)
+    } catch {}
+  }
 
   const tabs: { key: TabKey; label: string; icon: ReactNode }[] = [
     { key: "appearance", label: t("plat.appearance"), icon: I.settings({ size: 13 }) },
@@ -356,88 +457,174 @@ export function SettingsScreen() {
         )}
 
         {/* AI Tab */}
-        {activeTab === "ai" && llm && (
+        {activeTab === "ai" && (
           <div style={{ maxWidth: 900 }}>
-            <Section title={t("plat.aiProvider")} icon={I.sparkle({ size: 13 })}>
-              <FormBlock label={t("plat.aiAssistant")}>
-                <Segmented
-                  value={llm.enabled ? "enabled" : "disabled"}
-                  onChange={(v) => { setLLM((current) => current ? { ...current, enabled: v === "enabled" } : current); setLLMStatus("idle") }}
-                  options={[
-                    { v: "enabled", label: t("plat.enabled") },
-                    { v: "disabled", label: t("plat.disabled") },
-                  ]}
-                />
-              </FormBlock>
-              <FormBlock label={t("plat.aiProviderType")}>
-                <select
-                  className="input"
-                  value={llm.provider}
-                  onChange={(e) => { setLLM({ ...llm, provider: e.target.value as LLMProvider }); setLLMStatus("idle") }}
-                >
-                  <option value="anthropic">Anthropic</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="openai-compatible">{t("plat.openAICompatible")}</option>
-                </select>
-              </FormBlock>
-              <FormBlock label={t("plat.aiModel")}>
-                <input
-                  className="input mono"
-                  value={llm.model}
-                  onChange={(e) => { setLLM({ ...llm, model: e.target.value }); setLLMStatus("idle") }}
-                  placeholder={llm.provider === "anthropic" ? "claude-sonnet-4-5" : "gpt-5"}
-                />
-              </FormBlock>
-              <FormBlock label={t("plat.aiBaseUrl")}>
-                <input
-                  className="input mono"
-                  value={llm.baseUrl}
-                  onChange={(e) => { setLLM({ ...llm, baseUrl: e.target.value }); setLLMStatus("idle") }}
-                  placeholder={llm.provider === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com"}
-                />
-                <div className="hint" style={{ marginTop: 6 }}>{t("plat.aiBaseUrlHint")}</div>
-              </FormBlock>
-              <FormBlock label="API Key">
-                <input
-                  className="input mono"
-                  type="password"
-                  autoComplete="new-password"
-                  value={llmApiKey}
-                  onChange={(e) => { setLLMApiKey(e.target.value); setLLMStatus("idle") }}
-                  placeholder={llm.apiKeyConfigured ? t("plat.apiKeyConfigured") : t("plat.apiKeyPlaceholder")}
-                />
-                <div className="row gap-2" style={{ marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-                  <span className={`badge ${llm.apiKeyConfigured ? "ok" : "warn"}`}>
-                    {llm.apiKeyConfigured ? t("plat.apiKeyConfigured") : t("plat.apiKeyMissing")}
-                  </span>
-                  {llm.apiKeyConfigured && <span className="badge mono">{llm.apiKeySource === "stored" ? t("plat.apiKeyStored") : t("plat.apiKeyEnvironment")}</span>}
+            {editingProfile ? (
+              <Section title={editingProfile.id ? t("plat.editProfile") : t("plat.newProfile")} icon={I.sparkle({ size: 13 })}>
+                <FormBlock label={t("plat.profileName")}>
+                  <input className="input" value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} placeholder={t("plat.profileNamePlaceholder")} />
+                </FormBlock>
+                <FormBlock label={t("plat.aiProviderType")}>
+                  <select className="input" value={profileForm.provider} onChange={(e) => { setProfileForm({ ...profileForm, provider: e.target.value, baseUrl: providers.find((p) => p.id === e.target.value)?.defaultBaseURL || "" }); setAvailableModels([]) }}>
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </select>
+                </FormBlock>
+                <FormBlock label={t("plat.aiBaseUrl")}>
+                  <input className="input mono" value={profileForm.baseUrl} onChange={(e) => setProfileForm({ ...profileForm, baseUrl: e.target.value })} placeholder={providers.find((p) => p.id === profileForm.provider)?.defaultBaseURL} />
+                </FormBlock>
+                <FormBlock label="API Key">
+                  <input className="input mono" type="password" value={profileForm.apiKey} onChange={(e) => setProfileForm({ ...profileForm, apiKey: e.target.value })} placeholder={editingProfile.id ? t("plat.apiKeyKeepExisting") : t("plat.apiKeyPlaceholder")} />
+                  {editingProfile.id && <div className="hint">{t("plat.apiKeyUpdateHint")}</div>}
+                </FormBlock>
+                <FormBlock label={t("plat.aiModel")}>
+                  <div className="row gap-2" style={{ alignItems: "flex-start" }}>
+                    {availableModels.length === 0 ? (
+                      <input className="input mono" value={profileForm.model} onChange={(e) => setProfileForm({ ...profileForm, model: e.target.value })} placeholder="claude-sonnet-4-5" style={{ flex: 1 }} />
+                    ) : (
+                      <select className="input mono" value={profileForm.model} onChange={(e) => setProfileForm({ ...profileForm, model: e.target.value })} style={{ flex: 1 }}>
+                        <option value="">{t("plat.selectModel")}</option>
+                        {availableModels.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    )}
+                    <button className="btn btn-sm" onClick={fetchModels} disabled={fetchingModels || !profileForm.provider}>
+                      {fetchingModels && <span className="dot pulse ok" />}
+                      {t("plat.fetchModels")}
+                    </button>
+                  </div>
+                  {availableModels.length > 0 && <div className="hint">{t("plat.fetchedModels", { count: availableModels.length })}</div>}
+                </FormBlock>
+                <FormBlock label={t("plat.aiMaxTokens")}>
+                  <input className="input mono" type="number" min={1} max={65536} value={profileForm.maxTokens} onChange={(e) => setProfileForm({ ...profileForm, maxTokens: Number(e.target.value) })} />
+                </FormBlock>
+                <div className="row gap-2" style={{ alignItems: "center", flexWrap: "wrap" }}>
+                  <button className="btn btn-sm btn-primary" onClick={saveProfile} disabled={profileStatus === "busy" || !profileForm.name.trim() || !profileForm.model.trim()}>
+                    {profileStatus === "busy" && <span className="dot pulse ok" />}{t("common.save")}
+                  </button>
+                  <button className="btn btn-sm btn-ghost" onClick={closeProfileForm}>{t("common.cancel")}</button>
+                  {profileStatus === "done" && <span className="badge ok">{t("plat.settingsSaved")}</span>}
+                  {profileStatus === "error" && <span className="badge crit">{t("common.error")}</span>}
                 </div>
-              </FormBlock>
-              <FormBlock label={t("plat.aiMaxTokens")}>
-                <input
-                  className="input mono"
-                  type="number"
-                  min={1}
-                  max={65536}
-                  value={llm.maxTokens}
-                  onChange={(e) => { setLLM({ ...llm, maxTokens: Number(e.target.value) }); setLLMStatus("idle") }}
-                />
-              </FormBlock>
-              <div className="row gap-2" style={{ alignItems: "center", flexWrap: "wrap" }}>
-                <button className="btn btn-sm btn-primary" onClick={() => saveLLM(false)} disabled={llmStatus === "busy"}>
-                  {llmStatus === "busy" && <span className="dot pulse ok" />}{t("common.save")}
-                </button>
-                <button className="btn btn-sm" onClick={() => saveLLM(true)} disabled={llmStatus === "busy" || (!llm.apiKeyConfigured && !llmApiKey.trim()) || !llm.model.trim()}>
-                  {t("plat.saveAndTest")}
-                </button>
-                {llm.apiKeyConfigured && llm.apiKeySource === "stored" && (
-                  <button className="btn btn-sm btn-ghost" onClick={clearLLMApiKey} disabled={llmStatus === "busy"}>{t("plat.removeApiKey")}</button>
+              </Section>
+            ) : (
+              <Section title={t("plat.llmProfiles")} icon={I.sparkle({ size: 13 })}>
+                <div className="row gap-2" style={{ marginBottom: 12 }}>
+                  <button className="btn btn-sm btn-primary" onClick={() => openProfileForm()}>{I.plus({ size: 13 })}<span>{t("plat.newProfile")}</span></button>
+                </div>
+                {profiles.length === 0 ? (
+                  <div className="hint">{t("plat.noProfiles")}</div>
+                ) : (
+                  <div className="col gap-2">
+                    {profiles.map((p) => (
+                      <div key={p.id} className="card" style={{ padding: 12, border: "1px solid var(--border)" }}>
+                        <div className="row gap-2" style={{ alignItems: "center" }}>
+                          <div className="col flex-1" style={{ gap: 3, minWidth: 0 }}>
+                            <div className="row gap-2" style={{ alignItems: "center" }}>
+                              <span style={{ fontSize: 13, fontWeight: 500 }}>{p.name}</span>
+                              {p.isActive && <span className="badge ok" style={{ fontSize: 9.5 }}>{t("plat.active")}</span>}
+                            </div>
+                            <span className="mono muted" style={{ fontSize: 11 }}>{providers.find((pv) => pv.id === p.provider)?.label || p.provider} · {p.model}</span>
+                          </div>
+                          <div className="row gap-1">
+                            {!p.isActive && <button className="btn btn-sm btn-ghost" onClick={() => activateProfile(p.id)}>{t("plat.activate")}</button>}
+                            <button className="btn btn-sm btn-ghost btn-icon" onClick={() => openProfileForm(p)} title={t("common.edit")}>{I.edit({ size: 13 })}</button>
+                            <button className="btn btn-sm btn-ghost btn-icon" onClick={() => deleteProfile(p.id)} title={t("common.delete")}>{I.trash({ size: 13 })}</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
-                {llmStatus === "done" && <span className="badge ok">{t("plat.settingsSaved")}</span>}
-                {llmStatus === "tested" && <span className="badge ok">{t("plat.connectionSucceeded")}</span>}
-                {llmStatus === "error" && <span className="badge crit">{t("plat.connectionOrSaveFailed")}</span>}
-              </div>
-            </Section>
+                <div className="hint" style={{ marginTop: 12 }}>{t("plat.profilesHint")}</div>
+              </Section>
+            )}
+
+            {!editingProfile && llm && (
+              <Section title={t("plat.globalLLMFallback")} icon={I.settings({ size: 13 })}>
+                <FormBlock label={t("plat.aiAssistant")}>
+                  <Segmented
+                    value={llm.enabled ? "enabled" : "disabled"}
+                    onChange={(v) => { setLLM((current) => current ? { ...current, enabled: v === "enabled" } : current); setLLMStatus("idle") }}
+                    options={[
+                      { v: "enabled", label: t("plat.enabled") },
+                      { v: "disabled", label: t("plat.disabled") },
+                    ]}
+                  />
+                </FormBlock>
+                <FormBlock label={t("plat.aiProviderType")}>
+                  <select
+                    className="input"
+                    value={llm.provider}
+                    onChange={(e) => { setLLM({ ...llm, provider: e.target.value as LLMProvider }); setLLMStatus("idle") }}
+                  >
+                    <option value="anthropic">Anthropic</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="openai-compatible">{t("plat.openAICompatible")}</option>
+                  </select>
+                </FormBlock>
+                <FormBlock label={t("plat.aiModel")}>
+                  <input
+                    className="input mono"
+                    value={llm.model}
+                    onChange={(e) => { setLLM({ ...llm, model: e.target.value }); setLLMStatus("idle") }}
+                    placeholder={llm.provider === "anthropic" ? "claude-sonnet-4-5" : "gpt-5"}
+                  />
+                </FormBlock>
+                <FormBlock label={t("plat.aiBaseUrl")}>
+                  <input
+                    className="input mono"
+                    value={llm.baseUrl}
+                    onChange={(e) => { setLLM({ ...llm, baseUrl: e.target.value }); setLLMStatus("idle") }}
+                    placeholder={llm.provider === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com"}
+                  />
+                  <div className="hint" style={{ marginTop: 6 }}>{t("plat.aiBaseUrlHint")}</div>
+                </FormBlock>
+                <FormBlock label="API Key">
+                  <input
+                    className="input mono"
+                    type="password"
+                    autoComplete="new-password"
+                    value={llmApiKey}
+                    onChange={(e) => { setLLMApiKey(e.target.value); setLLMStatus("idle") }}
+                    placeholder={llm.apiKeyConfigured ? t("plat.apiKeyConfigured") : t("plat.apiKeyPlaceholder")}
+                  />
+                  <div className="row gap-2" style={{ marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span className={`badge ${llm.apiKeyConfigured ? "ok" : "warn"}`}>
+                      {llm.apiKeyConfigured ? t("plat.apiKeyConfigured") : t("plat.apiKeyMissing")}
+                    </span>
+                    {llm.apiKeyConfigured && <span className="badge mono">{llm.apiKeySource === "stored" ? t("plat.apiKeyStored") : t("plat.apiKeyEnvironment")}</span>}
+                  </div>
+                </FormBlock>
+                <FormBlock label={t("plat.aiMaxTokens")}>
+                  <input
+                    className="input mono"
+                    type="number"
+                    min={1}
+                    max={65536}
+                    value={llm.maxTokens}
+                    onChange={(e) => { setLLM({ ...llm, maxTokens: Number(e.target.value) }); setLLMStatus("idle") }}
+                  />
+                </FormBlock>
+                <div className="row gap-2" style={{ alignItems: "center", flexWrap: "wrap" }}>
+                  <button className="btn btn-sm btn-primary" onClick={() => saveLLM(false)} disabled={llmStatus === "busy"}>
+                    {llmStatus === "busy" && <span className="dot pulse ok" />}{t("common.save")}
+                  </button>
+                  <button className="btn btn-sm" onClick={() => saveLLM(true)} disabled={llmStatus === "busy" || (!llm.apiKeyConfigured && !llmApiKey.trim()) || !llm.model.trim()}>
+                    {t("plat.saveAndTest")}
+                  </button>
+                  {llm.apiKeyConfigured && llm.apiKeySource === "stored" && (
+                    <button className="btn btn-sm btn-ghost" onClick={clearLLMApiKey} disabled={llmStatus === "busy"}>{t("plat.removeApiKey")}</button>
+                  )}
+                  {llmStatus === "done" && <span className="badge ok">{t("plat.settingsSaved")}</span>}
+                  {llmStatus === "tested" && <span className="badge ok">{t("plat.connectionSucceeded")}</span>}
+                  {llmStatus === "error" && <span className="badge crit">{t("plat.connectionOrSaveFailed")}</span>}
+                </div>
+                <div className="hint">{t("plat.globalFallbackHint")}</div>
+              </Section>
+            )}
           </div>
         )}
       </div>

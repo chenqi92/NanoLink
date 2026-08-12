@@ -292,10 +292,19 @@ func main() {
 				sugar.Errorf("load persisted AI provider settings failed; using startup configuration: %v", err)
 			}
 			llmSettingHandler := handler.NewLLMSettingHandler(llmSettingsManager, sugar)
+
+			// Saved provider/model profiles, switchable from the assistant.
+			llmProfileService := service.NewLLMProfileService(database.GetDB(), llmSettingsManager)
+			llmProfileHandler := handler.NewLLMProfileHandler(llmProfileService, sugar)
+
 			assistantHandler := handler.NewAssistantHandler(metricsService, agentService, database.GetDB(), permService, llmClient, sugar)
+			assistantHandler.SetProfileService(llmProfileService)
 			protected.GET("/assistant/findings", assistantHandler.Findings)
 			protected.GET("/assistant/status", assistantHandler.Status)
 			protected.POST("/assistant/chat", assistantHandler.Chat)
+			// Read-only profile list so any authenticated user can pick a model
+			// in the assistant. Secrets are never included in the response.
+			protected.GET("/assistant/profiles", llmProfileHandler.ListProfiles)
 
 			// Build identity and update state. The read is available to any
 			// authenticated user; checking and applying are admin-only below.
@@ -356,6 +365,16 @@ func main() {
 				admin.GET("/settings/llm", llmSettingHandler.Get)
 				admin.PUT("/settings/llm", llmSettingHandler.Update)
 				admin.POST("/settings/llm/test", llmSettingHandler.Test)
+
+				// Provider/model profile management (secrets stay server-side)
+				admin.GET("/settings/llm/providers", llmProfileHandler.ListProviders)
+				admin.GET("/settings/llm/profiles", llmProfileHandler.ListProfiles)
+				admin.GET("/settings/llm/profiles/:id", llmProfileHandler.GetProfile)
+				admin.POST("/settings/llm/profiles", llmProfileHandler.CreateProfile)
+				admin.PUT("/settings/llm/profiles/:id", llmProfileHandler.UpdateProfile)
+				admin.DELETE("/settings/llm/profiles/:id", llmProfileHandler.DeleteProfile)
+				admin.POST("/settings/llm/profiles/:id/activate", llmProfileHandler.SetActiveProfile)
+				admin.POST("/settings/llm/models", llmProfileHandler.ListModels)
 
 				admin.POST("/config/generate", configGen.GenerateConfig)
 				admin.POST("/config/add-server", configGen.GenerateAddServerCommand)
