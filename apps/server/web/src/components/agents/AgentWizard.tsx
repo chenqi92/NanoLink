@@ -42,7 +42,7 @@ export function AgentWizard({ onClose }: { onClose: () => void }) {
       })
       setConfig(data)
     } catch (e) {
-      setError(typeof e === "object" && e && "error" in e ? String((e as { error: unknown }).error) : "failed")
+      setError(typeof e === "object" && e && "error" in e ? String((e as { error: unknown }).error) : t("common.error"))
     } finally {
       setGenerating(false)
     }
@@ -174,7 +174,7 @@ export function AgentWizard({ onClose }: { onClose: () => void }) {
                 </button>
               </FormBlock>
               {config.generatedToken && (
-                <FormBlock label="Token">
+                <FormBlock label={t("wizard.token")}>
                   <div className="code" style={{ wordBreak: "break-all" }}>{config.generatedToken}</div>
                 </FormBlock>
               )}

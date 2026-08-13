@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { commandsApi, type CommandResultData } from "@/lib/api"
+import i18n from "@/i18n"
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -18,7 +19,7 @@ export async function runAgentCommand(agentId: string, type: string, opts: { tar
       return r
     }
   }
-  throw new Error("timeout")
+  throw new Error(i18n.t("common.timeout"))
 }
 
 /**

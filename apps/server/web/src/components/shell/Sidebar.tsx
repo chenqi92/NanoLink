@@ -31,6 +31,7 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0, onNavigate }:
       label: t("nav.ops"),
       items: [
         { id: "operations", icon: I.bolt({}), label: t("nav.operations") },
+        { id: "builds", icon: I.cpu({}), label: t("nav.builds") },
         { id: "deployments", icon: I.arrowUp({}), label: t("nav.deployments") },
         { id: "logs", icon: I.audit({}), label: t("nav.logs") },
       ],
@@ -96,7 +97,7 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0, onNavigate }:
           )}
         </div>
         {!isRail && (
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setCollapsed(true)} title="Collapse">
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setCollapsed(true)} title={t("common.collapse")} aria-label={t("common.collapse")}>
             {I.back({ size: 14 })}
           </button>
         )}
@@ -161,13 +162,13 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0, onNavigate }:
 
       {isRail ? (
         <div style={{ padding: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "center" }}>
-          <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setCollapsed(false)} title="Expand">
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setCollapsed(false)} title={t("common.expand")} aria-label={t("common.expand")}>
             {I.chev({ size: 14 })}
           </button>
         </div>
       ) : (
         <div style={{ padding: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "center" }}>
-          <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setCollapsed(true)} title="Collapse">
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setCollapsed(true)} title={t("common.collapse")} aria-label={t("common.collapse")}>
             {I.back({ size: 14 })}
           </button>
         </div>

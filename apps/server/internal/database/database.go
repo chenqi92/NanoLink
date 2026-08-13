@@ -93,6 +93,9 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		&DeploymentProject{},
 		&DeploymentRelease{},
 		&DeploymentTask{},
+		&BuildPipeline{},
+		&BuildRun{},
+		&BuildArtifact{},
 		&LLMProfile{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:easy_localization/easy_localization.dart';
 
 /// Server connection configuration model
 class ServerConnection {
@@ -125,9 +126,9 @@ class Agent {
     return Agent(
       id: json['id'] as String,
       serverId: serverId,
-      hostname: json['hostname'] as String? ?? 'Unknown',
-      os: json['os'] as String? ?? 'Unknown',
-      arch: json['arch'] as String? ?? 'Unknown',
+      hostname: json['hostname'] as String? ?? 'common.unknown'.tr(),
+      os: json['os'] as String? ?? 'common.unknown'.tr(),
+      arch: json['arch'] as String? ?? 'common.unknown'.tr(),
       version: json['version'] as String?,
       permissionLevel: json['permissionLevel'] as int? ?? 0,
       connectedAt: json['connectedAt'] != null

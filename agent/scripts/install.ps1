@@ -80,21 +80,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if ($NoTlsVerify) {
-    throw "-NoTlsVerify is no longer supported; configure a trusted CA or tls_ca_cert"
-}
-if ($NoTls -and ($TlsCaCert -or $TlsServerName -or $TlsClientCert -or $TlsClientKey)) {
-    throw "TLS certificate options cannot be combined with -NoTls"
-}
-if ([bool]$TlsClientCert -ne [bool]$TlsClientKey) {
-    throw "-TlsClientCert and -TlsClientKey must be provided together"
-}
-foreach ($tlsFile in @($TlsCaCert, $TlsClientCert, $TlsClientKey)) {
-    if ($tlsFile -and -not (Test-Path -LiteralPath $tlsFile -PathType Leaf)) {
-        throw "TLS file not found: $tlsFile"
-    }
-}
-
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -123,6 +108,7 @@ $Script:EnMsgs = @{
     # General
     "banner_subtitle"     = "Lightweight Server Monitoring Agent"
     "detected"            = "Detected"
+    "version"             = "Version"
     
     # Status
     "info"                = "INFO"
@@ -203,7 +189,7 @@ $Script:EnMsgs = @{
     "status"              = "Status"
     "restart"             = "Restart"
     "stop"                = "Stop"
-    "view_logs"           = "View Logs"
+    "permission"          = "Permission"
     "uninstall"           = "Uninstall"
     
     # Management menu
@@ -261,12 +247,100 @@ $Script:EnMsgs = @{
     "reload_now"          = "Reload configuration now?"
     "reload_success"      = "Configuration reloaded successfully!"
     "service_restarted"   = "Service restarted"
+
+    # Runtime validation, maintenance, and help
+    "required_field"      = "This field is required"
+    "testing_connection"  = "Testing Connection"
+    "testing_server"      = "Testing connection to"
+    "server_reachable"    = "Server is reachable!"
+    "cannot_reach"        = "Cannot reach server at"
+    "continue_anyway"     = "Continue anyway?"
+    "connection_failed"   = "Connection test failed"
+    "enable_tls_transport" = "Enable TLS?"
+    "tls_verification_required" = "TLS certificate verification is required. Configure tls_ca_cert for a private CA."
+    "config_backed_up"    = "Existing config backed up to"
+    "service_installed_recovery" = "Windows Service installed with auto-recovery"
+    "check_logs"          = "Check logs at"
+    "event_viewer"        = "Event Viewer"
+    "binary_installed"    = "Binary installed"
+    "config_exists_check" = "Configuration exists"
+    "service_installed_check" = "Service installed"
+    "service_running_check" = "Service running"
+    "checks_passed"       = "checks passed"
+    "service_management"  = "Service Management"
+    "unknown"             = "Unknown"
+    "stopping_existing_service" = "Stopping existing service..."
+    "removing_existing_service" = "Removing existing service..."
+    "fresh_install_first" = "Please run a fresh installation first"
+    "agent_binary_not_found" = "Agent binary not found"
+    "server_add_failed"   = "Failed to add server"
+    "server_added"        = "Server added to configuration"
+    "restart_to_apply"    = "Restart the agent to apply changes"
+    "server_not_found"    = "Server not found in configuration"
+    "server_removed"      = "Server removed from configuration"
+    "server_removed_hot_reload" = "Server removed via management API (hot-reload)"
+    "fetching_config"     = "Fetching configuration from"
+    "invalid_config_response" = "Invalid configuration response from server"
+    "config_fetched"      = "Configuration fetched successfully"
+    "fetch_config_failed" = "Failed to fetch configuration"
+    "no_servers"          = "No servers configured"
+    "modify_intervals"    = "Modify collector intervals?"
+    "cpu_interval"        = "CPU interval (ms)"
+    "disk_interval"       = "Disk interval (ms)"
+    "network_interval"    = "Network interval (ms)"
+    "intervals_updated"   = "Collector intervals updated"
+    "reload_failed"       = "Hot reload failed. Restarting service..."
+    "reload_unavailable"  = "Hot reload not available. Restarting service..."
+    "view_logs"           = "View Logs"
+    "data_preserved"      = "Configuration and data preserved at"
+    "service_removed"     = "Service removed"
+    "add_mode_requires"   = "Add server mode requires -Url and -Token parameters"
+    "remove_mode_requires" = "Remove server mode requires -Url parameter"
+    "silent_requires_credentials" = "Silent mode requires -Url and -Token parameters"
+    "no_tls_verify_rejected" = "-NoTlsVerify is no longer supported; configure a trusted CA or tls_ca_cert"
+    "tls_options_conflict" = "TLS certificate options cannot be combined with -NoTls"
+    "tls_client_pair_required" = "-TlsClientCert and -TlsClientKey must be provided together"
+    "tls_file_not_found"  = "TLS file not found"
+
+    # Help
+    "help_title"          = "NanoLink Agent Installer for Windows"
+    "usage"               = "Usage"
+    "install_options"     = "Installation Options"
+    "silent_mode"         = "Silent mode (no prompts)"
+    "url_option"          = "Server address (host:port)"
+    "token_option"        = "Authentication token"
+    "permission_option"   = "Permission level (0-3)"
+    "no_tls_option"       = "Use plaintext gRPC (trusted private transport only)"
+    "tls_ca_option"       = "PEM CA for an internal/private PKI"
+    "tls_server_name_option" = "Certificate DNS name when connecting through a tunnel"
+    "tls_client_cert_option" = "PEM Agent certificate for mutual TLS"
+    "tls_client_key_option" = "PEM Agent private key for mutual TLS"
+    "no_tls_verify_option" = "Rejected (configure a trusted CA instead)"
+    "hostname_option"     = "Override hostname"
+    "shell_enabled_option" = "Enable shell commands"
+    "shell_token_option"  = "Shell super token"
+    "server_mgmt"         = "Server Management"
+    "add_server_option"   = "Add server to existing installation"
+    "remove_server_option" = "Remove server from existing installation"
+    "fetch_config_option" = "Fetch configuration from server API"
+    "management"          = "Management"
+    "manage_option"       = "Interactive management menu"
+    "lang_option"         = "Set language (en/zh)"
+    "help_option"         = "Show this help"
+    "examples"            = "Examples"
+    "interactive_install" = "Interactive installation"
+    "silent_install"      = "Silent installation"
+    "add_server_example"  = "Add additional server to existing agent"
+    "open_manage"         = "Open management menu"
+    "remove_server_example" = "Remove a server"
+    "fetch_config_example" = "Fetch config from server and install"
 }
 
 $Script:ZhMsgs = @{
     # General
     "banner_subtitle"     = "轻量级服务器监控代理"
     "detected"            = "检测到"
+    "version"             = "版本"
     
     # Status
     "info"                = "信息"
@@ -347,7 +421,7 @@ $Script:ZhMsgs = @{
     "status"              = "查看状态"
     "restart"             = "重启服务"
     "stop"                = "停止服务"
-    "view_logs"           = "查看日志"
+    "permission"          = "权限"
     "uninstall"           = "卸载"
     
     # Management menu
@@ -405,6 +479,93 @@ $Script:ZhMsgs = @{
     "reload_now"          = "立即重载配置？"
     "reload_success"      = "配置重载成功！"
     "service_restarted"   = "服务已重启"
+
+    # 运行时校验、维护和帮助
+    "required_field"      = "此字段为必填项"
+    "testing_connection"  = "测试连接"
+    "testing_server"      = "正在测试连接到"
+    "server_reachable"    = "服务器可访问！"
+    "cannot_reach"        = "无法连接到服务器"
+    "continue_anyway"     = "是否继续？"
+    "connection_failed"   = "连接测试失败"
+    "enable_tls_transport" = "启用 TLS？"
+    "tls_verification_required" = "必须验证 TLS 证书；私有 CA 请配置 tls_ca_cert。"
+    "config_backed_up"    = "已备份现有配置到"
+    "service_installed_recovery" = "Windows 服务已安装并配置自动恢复"
+    "check_logs"          = "查看日志"
+    "event_viewer"        = "事件查看器"
+    "binary_installed"    = "二进制文件已安装"
+    "config_exists_check" = "配置文件存在"
+    "service_installed_check" = "服务已安装"
+    "service_running_check" = "服务正在运行"
+    "checks_passed"       = "项检查通过"
+    "service_management"  = "服务管理"
+    "unknown"             = "未知"
+    "stopping_existing_service" = "正在停止现有服务..."
+    "removing_existing_service" = "正在删除现有服务..."
+    "fresh_install_first" = "请先执行全新安装"
+    "agent_binary_not_found" = "未找到 Agent 程序"
+    "server_add_failed"   = "添加服务器失败"
+    "server_added"        = "服务器已添加到配置"
+    "restart_to_apply"    = "重启 Agent 以应用更改"
+    "server_not_found"    = "配置中未找到此服务器"
+    "server_removed"      = "服务器已从配置中删除"
+    "server_removed_hot_reload" = "已通过管理 API 删除服务器（热重载）"
+    "fetching_config"     = "正在获取配置"
+    "invalid_config_response" = "服务器返回的配置无效"
+    "config_fetched"      = "配置获取成功"
+    "fetch_config_failed" = "获取配置失败"
+    "no_servers"          = "未配置服务器"
+    "modify_intervals"    = "修改采集频率？"
+    "cpu_interval"        = "CPU 采集间隔（毫秒）"
+    "disk_interval"       = "磁盘采集间隔（毫秒）"
+    "network_interval"    = "网络采集间隔（毫秒）"
+    "intervals_updated"   = "采集频率已更新"
+    "reload_failed"       = "热重载失败，正在重启服务..."
+    "reload_unavailable"  = "热重载不可用，正在重启服务..."
+    "view_logs"           = "查看日志"
+    "data_preserved"      = "配置和数据已保留在"
+    "service_removed"     = "服务已删除"
+    "add_mode_requires"   = "添加服务器模式需要 -Url 和 -Token 参数"
+    "remove_mode_requires" = "删除服务器模式需要 -Url 参数"
+    "silent_requires_credentials" = "静默模式需要 -Url 和 -Token 参数"
+    "no_tls_verify_rejected" = "不再支持 -NoTlsVerify；请配置受信任的 CA 或 tls_ca_cert"
+    "tls_options_conflict" = "TLS 证书选项不能与 -NoTls 同时使用"
+    "tls_client_pair_required" = "-TlsClientCert 和 -TlsClientKey 必须同时提供"
+    "tls_file_not_found"  = "未找到 TLS 文件"
+
+    # 帮助
+    "help_title"          = "NanoLink Agent Windows 安装程序"
+    "usage"               = "用法"
+    "install_options"     = "安装选项"
+    "silent_mode"         = "静默模式（无提示）"
+    "url_option"          = "服务器地址（host:port）"
+    "token_option"        = "认证令牌"
+    "permission_option"   = "权限级别（0-3）"
+    "no_tls_option"       = "使用明文 gRPC（仅限受信任的私有传输）"
+    "tls_ca_option"       = "内部或私有 PKI 的 PEM CA"
+    "tls_server_name_option" = "通过隧道连接时要验证的证书 DNS 名称"
+    "tls_client_cert_option" = "用于双向 TLS 的 Agent PEM 证书"
+    "tls_client_key_option" = "用于双向 TLS 的 Agent PEM 私钥"
+    "no_tls_verify_option" = "不再支持（请配置受信任的 CA）"
+    "hostname_option"     = "覆盖主机名"
+    "shell_enabled_option" = "启用 Shell 命令"
+    "shell_token_option"  = "Shell 超级令牌"
+    "server_mgmt"         = "服务器管理"
+    "add_server_option"   = "添加服务器到现有安装"
+    "remove_server_option" = "从现有安装中删除服务器"
+    "fetch_config_option" = "从服务器 API 获取配置"
+    "management"          = "管理"
+    "manage_option"       = "交互式管理菜单"
+    "lang_option"         = "设置语言（en/zh）"
+    "help_option"         = "显示帮助"
+    "examples"            = "示例"
+    "interactive_install" = "交互式安装"
+    "silent_install"      = "静默安装"
+    "add_server_example"  = "添加额外服务器到现有 Agent"
+    "open_manage"         = "打开管理菜单"
+    "remove_server_example" = "删除服务器"
+    "fetch_config_example" = "从服务器获取配置并安装"
 }
 
 function Initialize-Language {
@@ -444,6 +605,23 @@ function Get-Msg {
     return $msg
 }
 
+function Test-TlsParameters {
+    if ($NoTlsVerify) {
+        throw (Get-Msg "no_tls_verify_rejected")
+    }
+    if ($NoTls -and ($TlsCaCert -or $TlsServerName -or $TlsClientCert -or $TlsClientKey)) {
+        throw (Get-Msg "tls_options_conflict")
+    }
+    if ([bool]$TlsClientCert -ne [bool]$TlsClientKey) {
+        throw (Get-Msg "tls_client_pair_required")
+    }
+    foreach ($tlsFile in @($TlsCaCert, $TlsClientCert, $TlsClientKey)) {
+        if ($tlsFile -and -not (Test-Path -LiteralPath $tlsFile -PathType Leaf)) {
+            throw "$(Get-Msg 'tls_file_not_found'): $tlsFile"
+        }
+    }
+}
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
@@ -459,8 +637,8 @@ function Write-Banner {
     ║     ██║ ╚████║██║  ██║██║ ╚████║╚██████╔╝███████╗██║██║ ╚████║██║  ██╗     ║
     ║     ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝     ║
     ║                                                               ║
-    ║              Lightweight Server Monitoring Agent              ║
-    ║                        Version $Script:VERSION                           ║
+    ║              $(Get-Msg 'banner_subtitle')
+    ║                        $(Get-Msg 'version') $Script:VERSION
     ║                                                               ║
     ╚═══════════════════════════════════════════════════════════════╝
 
@@ -468,10 +646,10 @@ function Write-Banner {
     Write-Host $banner -ForegroundColor Cyan
 }
 
-function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor Blue }
-function Write-Success { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
-function Write-Warn { param([string]$Message) Write-Host "[WARN] $Message" -ForegroundColor Yellow }
-function Write-Err { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+function Write-Info { param([string]$Message) Write-Host "[$(Get-Msg 'info')] $Message" -ForegroundColor Blue }
+function Write-Success { param([string]$Message) Write-Host "[$(Get-Msg 'success')] $Message" -ForegroundColor Green }
+function Write-Warn { param([string]$Message) Write-Host "[$(Get-Msg 'warn')] $Message" -ForegroundColor Yellow }
+function Write-Err { param([string]$Message) Write-Host "[$(Get-Msg 'error')] $Message" -ForegroundColor Red }
 function Write-Step { param([string]$Message) Write-Host "`n▶ $Message" -ForegroundColor Cyan }
 
 function Read-PromptValue {
@@ -500,7 +678,7 @@ function Read-PromptValue {
                 return $Default
             }
             if ($Required) {
-                Write-Warn "This field is required"
+                Write-Warn (Get-Msg "required_field")
                 continue
             }
         }
@@ -520,7 +698,7 @@ function Read-YesNo {
     if ([string]::IsNullOrEmpty($response)) {
         return $Default
     }
-    return $response -match "^[Yy]"
+    return $response -match "^[Yy是]"
 }
 
 function Read-Choice {
@@ -535,14 +713,14 @@ function Read-Choice {
     }
 
     while ($true) {
-        $choice = Read-Host -Prompt "Select [1-$($Options.Count)]"
+        $choice = Read-Host -Prompt "$(Get-Msg 'select_option') [1-$($Options.Count)]"
         if ($choice -match '^\d+$') {
             $num = [int]$choice
             if ($num -ge 1 -and $num -le $Options.Count) {
                 return $num - 1
             }
         }
-        Write-Warn "Invalid choice, please try again"
+        Write-Warn (Get-Msg "invalid_option")
     }
 }
 
@@ -550,45 +728,45 @@ function Read-Choice {
 # Interactive Configuration
 # =============================================================================
 function Get-InteractiveConfig {
-    Write-Step "Server Configuration"
+    Write-Step (Get-Msg "server_config")
     Write-Host ""
 
     # Server URL (now host:port format)
     while ($true) {
-        $Script:ServerUrl = Read-PromptValue -Prompt "Server address (e.g., monitor.example.com:39100)" -Required
+        $Script:ServerUrl = Read-PromptValue -Prompt (Get-Msg "server_url_prompt") -Required
         # Validate host:port format
         if ($Script:ServerUrl -notmatch "^[a-zA-Z0-9]([a-zA-Z0-9.\-]*[a-zA-Z0-9])?(:[0-9]+)?$") {
-            Write-Warn "Invalid format. Use host:port (e.g., server.example.com:39100)"
+            Write-Warn (Get-Msg "url_invalid")
             continue
         }
         break
     }
 
     # Token
-    $Script:AuthToken = Read-PromptValue -Prompt "Authentication Token" -Required
+    $Script:AuthToken = Read-PromptValue -Prompt (Get-Msg "token_prompt") -Required
 
     # Permission level
     Write-Host ""
     $permOptions = @(
-        "Read Only (monitoring only)",
-        "Basic Write (logs, temp files)",
-        "Service Control (restart services)",
-        "System Admin (full control)"
+        (Get-Msg "perm_readonly"),
+        (Get-Msg "perm_basic"),
+        (Get-Msg "perm_shell"),
+        (Get-Msg "perm_full")
     )
-    $Script:PermissionLevel = Read-Choice -Prompt "Permission Level" -Options $permOptions
+    $Script:PermissionLevel = Read-Choice -Prompt (Get-Msg "permission_level") -Options $permOptions
 
     # TLS settings
     Write-Host ""
     $Script:TlsEnabled = $false
     $Script:TlsVerify = $true
-    if (Read-YesNo -Prompt "Enable TLS?" -Default $false) {
+    if (Read-YesNo -Prompt (Get-Msg "enable_tls_transport") -Default $false) {
         $Script:TlsEnabled = $true
-        Write-Info "TLS certificate verification is required. Configure tls_ca_cert for a private CA."
+        Write-Info (Get-Msg "tls_verification_required")
     }
 
     # Test connection
     Write-Host ""
-    if (Read-YesNo -Prompt "Test server connection before installing?" -Default $true) {
+    if (Read-YesNo -Prompt (Get-Msg "test_connection") -Default $true) {
         Test-ServerConnection
     }
 
@@ -596,8 +774,8 @@ function Get-InteractiveConfig {
     Write-Host ""
     $Script:HostnameOverride = ""
     $systemHostname = [System.Net.Dns]::GetHostName()
-    if (-not (Read-YesNo -Prompt "Use system hostname ($systemHostname)?" -Default $true)) {
-        $Script:HostnameOverride = Read-PromptValue -Prompt "Custom hostname"
+    if (-not (Read-YesNo -Prompt "$(Get-Msg 'use_hostname') ($systemHostname)?" -Default $true)) {
+        $Script:HostnameOverride = Read-PromptValue -Prompt (Get-Msg "custom_hostname")
     }
 
     # Shell commands
@@ -605,22 +783,22 @@ function Get-InteractiveConfig {
     $Script:ShellEnabled = $false
     $Script:ShellSuperToken = ""
     if ($Script:PermissionLevel -ge 2) {
-        if (Read-YesNo -Prompt "Enable shell command execution? (requires super token)" -Default $false) {
+        if (Read-YesNo -Prompt (Get-Msg "enable_shell") -Default $false) {
             $Script:ShellEnabled = $true
-            $Script:ShellSuperToken = Read-PromptValue -Prompt "Shell Super Token (different from auth token)" -Required -Password
+            $Script:ShellSuperToken = Read-PromptValue -Prompt (Get-Msg "shell_token_prompt") -Required -Password
         }
     }
 }
 
 function Test-ServerConnection {
-    Write-Step "Testing Connection"
+    Write-Step (Get-Msg "testing_connection")
 
     # Extract host and port from URL
     $uri = [System.Uri]$Script:ServerUrl
     $host_ = $uri.Host
     $port = if ($uri.Port -gt 0) { $uri.Port } else { 9100 }
 
-    Write-Info "Testing connection to ${host_}:$port..."
+    Write-Info "$(Get-Msg 'testing_server') ${host_}:$port..."
 
     try {
         $tcpClient = New-Object System.Net.Sockets.TcpClient
@@ -629,19 +807,19 @@ function Test-ServerConnection {
 
         if ($wait -and $tcpClient.Connected) {
             $tcpClient.Close()
-            Write-Success "Server is reachable!"
+            Write-Success (Get-Msg "server_reachable")
         }
         else {
             $tcpClient.Close()
-            Write-Warn "Cannot reach server at ${host_}:$port"
-            if (-not (Read-YesNo -Prompt "Continue anyway?" -Default $false)) {
+            Write-Warn "$(Get-Msg 'cannot_reach') ${host_}:$port"
+            if (-not (Read-YesNo -Prompt (Get-Msg "continue_anyway") -Default $false)) {
                 exit 1
             }
         }
     }
     catch {
-        Write-Warn "Connection test failed: $_"
-        if (-not (Read-YesNo -Prompt "Continue anyway?" -Default $false)) {
+        Write-Warn "$(Get-Msg 'connection_failed'): $_"
+        if (-not (Read-YesNo -Prompt (Get-Msg "continue_anyway") -Default $false)) {
             exit 1
         }
     }
@@ -661,11 +839,11 @@ function Test-ExistingAgent {
         return $false  # No existing installation
     }
     
-    Write-Step "Existing Installation Detected"
+    Write-Step (Get-Msg "existing_detected")
     Write-Host ""
     
     # Get current version if possible
-    $currentVersion = "unknown"
+    $currentVersion = Get-Msg "unknown"
     try {
         $versionOutput = & $binaryPath --version 2>$null
         if ($versionOutput) {
@@ -674,34 +852,34 @@ function Test-ExistingAgent {
     }
     catch {}
     
-    Write-Info "Installed version: $currentVersion"
-    Write-Info "Script version: $Script:VERSION"
+    Write-Info "$(Get-Msg 'installed_version'): $currentVersion"
+    Write-Info "$(Get-Msg 'script_version'): $Script:VERSION"
     
     # Check if service is running
     $service = Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue
     if ($service) {
         if ($service.Status -eq "Running") {
-            Write-Success "Agent service is currently running"
+            Write-Success (Get-Msg "service_running")
         }
         else {
-            Write-Warn "Agent service is stopped ($($service.Status))"
+            Write-Warn "$(Get-Msg 'service_stopped') ($($service.Status))"
         }
     }
     
     # Check if config exists
     if (Test-Path $configPath) {
-        Write-Info "Configuration exists at: $configPath"
+        Write-Info "$(Get-Msg 'config_exists'): $configPath"
     }
     
     Write-Host ""
-    Write-Host "What would you like to do?" -ForegroundColor White
+    Write-Host (Get-Msg "what_to_do") -ForegroundColor White
     $options = @(
-        "Update agent (download latest binary, keep config)",
-        "Manage existing agent (open management menu)",
-        "Fresh install (overwrite config and binary)",
-        "Cancel"
+        (Get-Msg "opt_update"),
+        (Get-Msg "opt_manage"),
+        (Get-Msg "opt_fresh"),
+        (Get-Msg "opt_cancel")
     )
-    $action = Read-Choice -Prompt "Select action" -Options $options
+    $action = Read-Choice -Prompt (Get-Msg "select_action") -Options $options
     
     switch ($action) {
         0 {
@@ -722,10 +900,10 @@ function Test-ExistingAgent {
             }
 
             if ($service -and $service.Status -eq "Running") {
-                Write-Info "Stopping agent service before update..."
+                Write-Info (Get-Msg "stopping_service")
                 Stop-Service -Name $Script:ServiceName -Force -ErrorAction SilentlyContinue
                 Start-Sleep -Seconds 2
-                Write-Success "Service stopped"
+                Write-Success (Get-Msg "service_stopped_ok")
             }
             return $true
         }
@@ -736,22 +914,22 @@ function Test-ExistingAgent {
         }
         2 {
             # Fresh install
-            Write-Warn "This will overwrite existing configuration!"
-            if (-not (Read-YesNo -Prompt "Are you sure?" -Default $false)) {
-                Write-Info "Installation cancelled"
+            Write-Warn (Get-Msg "warn_overwrite")
+            if (-not (Read-YesNo -Prompt (Get-Msg "are_you_sure") -Default $false)) {
+                Write-Info (Get-Msg "cancelled")
                 exit 0
             }
             if ($service -and $service.Status -eq "Running") {
-                Write-Info "Stopping agent service..."
+                Write-Info (Get-Msg "stopping_service")
                 Stop-Service -Name $Script:ServiceName -Force -ErrorAction SilentlyContinue
                 Start-Sleep -Seconds 2
-                Write-Success "Service stopped"
+                Write-Success (Get-Msg "service_stopped_ok")
             }
             return $true
         }
         3 {
             # Cancel
-            Write-Info "Installation cancelled"
+            Write-Info (Get-Msg "cancelled")
             exit 0
         }
     }
@@ -759,7 +937,7 @@ function Test-ExistingAgent {
 }
 function Stop-ExistingService {
     if (Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue) {
-        Write-Info "Stopping existing service..."
+        Write-Info (Get-Msg "stopping_existing_service")
         Stop-Service -Name $Script:ServiceName -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
     }
@@ -767,14 +945,14 @@ function Stop-ExistingService {
 
 function Remove-ExistingService {
     if (Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue) {
-        Write-Info "Removing existing service..."
+        Write-Info (Get-Msg "removing_existing_service")
         sc.exe delete $Script:ServiceName | Out-Null
         Start-Sleep -Seconds 2
     }
 }
 
 function New-Directories {
-    Write-Step "Creating Directories"
+    Write-Step (Get-Msg "creating_dirs")
 
     $dirs = @($Script:InstallDir, $Script:ConfigDir, $Script:LogDir)
     foreach ($dir in $dirs) {
@@ -783,11 +961,11 @@ function New-Directories {
         }
     }
 
-    Write-Success "Directories created"
+    Write-Success (Get-Msg "dirs_created")
 }
 
 function Get-Binary {
-    Write-Step "Downloading NanoLink Agent"
+    Write-Step (Get-Msg "downloading")
 
     $arch = if ([Environment]::Is64BitOperatingSystem) { "x86_64" } else { "x86" }
     $downloadUrl = "https://github.com/$Script:GitHubRepo/releases/latest/download/nanolink-agent-windows-$arch.exe"
@@ -799,16 +977,16 @@ function Get-Binary {
         # Show progress
         $ProgressPreference = 'Continue'
         Invoke-WebRequest -Uri $downloadUrl -OutFile $binaryPath -UseBasicParsing
-        Write-Success "Downloaded successfully"
+        Write-Success (Get-Msg "download_success")
     }
     catch {
-        Write-Err "Download failed: $_"
+        Write-Err "$(Get-Msg 'download_failed'): $_"
         exit 1
     }
 }
 
 function New-Configuration {
-    Write-Step "Generating Configuration"
+    Write-Step (Get-Msg "generating_config")
 
     $configPath = Join-Path $Script:ConfigDir "nanolink.yaml"
 
@@ -816,7 +994,7 @@ function New-Configuration {
     if (Test-Path $configPath) {
         $backup = "$configPath.backup.$(Get-Date -Format 'yyyyMMddHHmmss')"
         Copy-Item $configPath $backup
-        Write-Warn "Existing config backed up to: $backup"
+        Write-Warn "$(Get-Msg 'config_backed_up'): $backup"
     }
 
     # Generate config
@@ -911,11 +1089,11 @@ logging:
 "@
 
     Set-Content -Path $configPath -Value $config -Encoding UTF8
-    Write-Success "Configuration saved to $configPath"
+    Write-Success "$(Get-Msg 'config_saved') $configPath"
 }
 
 function Install-Service {
-    Write-Step "Installing Windows Service"
+    Write-Step (Get-Msg "installing_service")
 
     $binaryPath = Join-Path $Script:InstallDir $Script:BinaryName
     $configPath = Join-Path $Script:ConfigDir "nanolink.yaml"
@@ -941,36 +1119,36 @@ function Install-Service {
     # Configure service to restart on crash
     sc.exe failureflag $Script:ServiceName 1 | Out-Null
 
-    Write-Success "Windows Service installed with auto-recovery"
+    Write-Success (Get-Msg "service_installed_recovery")
 }
 
 function Start-InstalledService {
-    Write-Step "Starting Service"
+    Write-Step (Get-Msg "starting_service")
 
     Start-Service -Name $Script:ServiceName
     Start-Sleep -Seconds 3
 
     $service = Get-Service -Name $Script:ServiceName
     if ($service.Status -eq "Running") {
-        Write-Success "Service started successfully!"
+        Write-Success (Get-Msg "service_started")
     }
     else {
-        Write-Err "Service failed to start"
+        Write-Err (Get-Msg "start_failed")
         Write-Host ""
-        Write-Host "Check logs at: $Script:LogDir" -ForegroundColor Yellow
-        Write-Host "Event Viewer: eventvwr.msc -> Windows Logs -> Application" -ForegroundColor Yellow
+        Write-Host "$(Get-Msg 'check_logs'): $Script:LogDir" -ForegroundColor Yellow
+        Write-Host "$(Get-Msg 'event_viewer'): eventvwr.msc -> Windows Logs -> Application" -ForegroundColor Yellow
         exit 1
     }
 }
 
 function Test-Installation {
-    Write-Step "Verifying Installation"
+    Write-Step (Get-Msg "verifying")
 
     $checks = @{
-        "Binary installed"     = Test-Path (Join-Path $Script:InstallDir $Script:BinaryName)
-        "Configuration exists" = Test-Path (Join-Path $Script:ConfigDir "nanolink.yaml")
-        "Service installed"    = $null -ne (Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue)
-        "Service running"      = (Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue).Status -eq "Running"
+        (Get-Msg "binary_installed")     = Test-Path (Join-Path $Script:InstallDir $Script:BinaryName)
+        (Get-Msg "config_exists_check") = Test-Path (Join-Path $Script:ConfigDir "nanolink.yaml")
+        (Get-Msg "service_installed_check") = $null -ne (Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue)
+        (Get-Msg "service_running_check") = (Get-Service -Name $Script:ServiceName -ErrorAction SilentlyContinue).Status -eq "Running"
     }
 
     $passed = 0
@@ -986,32 +1164,32 @@ function Test-Installation {
 
     Write-Host ""
     if ($passed -eq $checks.Count) {
-        Write-Success "All checks passed!"
+        Write-Success (Get-Msg "all_passed")
     }
     else {
-        Write-Warn "$passed/$($checks.Count) checks passed"
+        Write-Warn "$passed/$($checks.Count) $(Get-Msg 'checks_passed')"
     }
 }
 
 function Write-Summary {
     Write-Host ""
     Write-Host "╔═══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "║              Installation Complete!                           ║" -ForegroundColor Cyan
+    Write-Host "║              $(Get-Msg 'install_complete')" -ForegroundColor Cyan
     Write-Host "╚═══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Installation Details:" -ForegroundColor White
-    Write-Host "  Binary:     $Script:InstallDir\$Script:BinaryName" -ForegroundColor Yellow
-    Write-Host "  Config:     $Script:ConfigDir\nanolink.yaml" -ForegroundColor Yellow
-    Write-Host "  Logs:       $Script:LogDir\" -ForegroundColor Yellow
-    Write-Host "  Server:     $Script:ServerUrl" -ForegroundColor Yellow
+    Write-Host "$(Get-Msg 'install_details'):" -ForegroundColor White
+    Write-Host "  $(Get-Msg 'binary'):     $Script:InstallDir\$Script:BinaryName" -ForegroundColor Yellow
+    Write-Host "  $(Get-Msg 'config'):     $Script:ConfigDir\nanolink.yaml" -ForegroundColor Yellow
+    Write-Host "  $(Get-Msg 'logs'):       $Script:LogDir\" -ForegroundColor Yellow
+    Write-Host "  $(Get-Msg 'server'):     $Script:ServerUrl" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "Service Management:" -ForegroundColor White
-    Write-Host "  Status:     Get-Service $Script:ServiceName" -ForegroundColor Yellow
-    Write-Host "  Logs:       Get-Content $Script:LogDir\*.log -Tail 50" -ForegroundColor Yellow
-    Write-Host "  Restart:    Restart-Service $Script:ServiceName" -ForegroundColor Yellow
-    Write-Host "  Stop:       Stop-Service $Script:ServiceName" -ForegroundColor Yellow
+    Write-Host "$(Get-Msg 'service_management'):" -ForegroundColor White
+    Write-Host "  $(Get-Msg 'status'):     Get-Service $Script:ServiceName" -ForegroundColor Yellow
+    Write-Host "  $(Get-Msg 'logs'):       Get-Content $Script:LogDir\*.log -Tail 50" -ForegroundColor Yellow
+    Write-Host "  $(Get-Msg 'restart'):    Restart-Service $Script:ServiceName" -ForegroundColor Yellow
+    Write-Host "  $(Get-Msg 'stop'):       Stop-Service $Script:ServiceName" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "Uninstall:" -ForegroundColor White
+    Write-Host "$(Get-Msg 'uninstall'):" -ForegroundColor White
     Write-Host "  irm https://raw.githubusercontent.com/$Script:GitHubRepo/main/agent/scripts/uninstall.ps1 | iex" -ForegroundColor Yellow
     Write-Host ""
 }
@@ -1026,13 +1204,13 @@ function Add-ServerToConfig {
     $serverToken = if ($Script:Token) { $Script:Token } else { $Token }
 
     if (-not (Test-Path $configPath)) {
-        Write-Err "Configuration file not found: $configPath"
-        Write-Err "Please run a fresh installation first"
+        Write-Err "$(Get-Msg 'config_not_found'): $configPath"
+        Write-Err (Get-Msg "fresh_install_first")
         exit 1
     }
 
     if (-not (Test-Path -LiteralPath $agentPath -PathType Leaf)) {
-        Write-Err "Agent binary not found: $agentPath"
+        Write-Err "$(Get-Msg 'agent_binary_not_found'): $agentPath"
         exit 1
     }
 
@@ -1051,19 +1229,19 @@ function Add-ServerToConfig {
 
     & $agentPath @addArguments
     if ($LASTEXITCODE -ne 0) {
-        Write-Err "Failed to add server $serverUrl"
+        Write-Err "$(Get-Msg 'server_add_failed'): $serverUrl"
         exit $LASTEXITCODE
     }
 
-    Write-Success "Server $serverUrl added to configuration"
-    Write-Info "Restart the agent to apply changes: Restart-Service $Script:ServiceName"
+    Write-Success "$(Get-Msg 'server_added'): $serverUrl"
+    Write-Info "$(Get-Msg 'restart_to_apply'): Restart-Service $Script:ServiceName"
 }
 
 function Remove-ServerFromConfig {
     $configPath = Join-Path $Script:ConfigDir "nanolink.yaml"
 
     if (-not (Test-Path $configPath)) {
-        Write-Err "Configuration file not found: $configPath"
+        Write-Err "$(Get-Msg 'config_not_found'): $configPath"
         exit 1
     }
 
@@ -1072,7 +1250,7 @@ function Remove-ServerFromConfig {
 
     # Check if server exists
     if (-not ($content -match [regex]::Escape("url: `"$Url`""))) {
-        Write-Err "Server $Url not found in configuration"
+        Write-Err "$(Get-Msg 'server_not_found'): $Url"
         exit 1
     }
 
@@ -1084,25 +1262,25 @@ function Remove-ServerFromConfig {
     $content = $content -replace "(?m)^\s+-\s+url:\s+`"$([regex]::Escape($Url))`".*?(?=^\s+-\s+url:|^\w+:|$)", ""
     Set-Content -Path $configPath -Value $content -Encoding UTF8
 
-    Write-Success "Server $Url removed from configuration"
+    Write-Success "$(Get-Msg 'server_removed'): $Url"
 
     # Try to notify via management API
     try {
         $encodedUrl = [System.Web.HttpUtility]::UrlEncode($Url)
         $response = Invoke-RestMethod -Uri "http://localhost:9101/api/servers?url=$encodedUrl" -Method Delete -ErrorAction SilentlyContinue
         if ($response.success) {
-            Write-Success "Server removed via management API (hot-reload)"
+            Write-Success (Get-Msg "server_removed_hot_reload")
         }
     }
     catch {
-        Write-Info "Restart the agent to apply changes: Restart-Service $Script:ServiceName"
+        Write-Info "$(Get-Msg 'restart_to_apply'): Restart-Service $Script:ServiceName"
     }
 }
 
 function Get-ConfigFromServer {
     param([string]$ApiUrl)
 
-    Write-Info "Fetching configuration from: $ApiUrl"
+    Write-Info "$(Get-Msg 'fetching_config'): $ApiUrl"
 
     try {
         $response = Invoke-RestMethod -Uri $ApiUrl -Method Get
@@ -1113,70 +1291,68 @@ function Get-ConfigFromServer {
         $Script:TlsVerify = $true
 
         if ([string]::IsNullOrEmpty($Script:ServerUrl) -or [string]::IsNullOrEmpty($Script:AuthToken)) {
-            Write-Err "Invalid configuration response from server"
+            Write-Err (Get-Msg "invalid_config_response")
             exit 1
         }
 
-        Write-Success "Configuration fetched successfully"
+        Write-Success (Get-Msg "config_fetched")
         Write-Info "  URL: $Script:ServerUrl"
-        Write-Info "  Permission: $Script:PermissionLevel"
+        Write-Info "  $(Get-Msg 'permission'): $Script:PermissionLevel"
     }
     catch {
-        Write-Err "Failed to fetch configuration: $_"
+        Write-Err "$(Get-Msg 'fetch_config_failed'): $_"
         exit 1
     }
 }
 
 function Show-Help {
-    Write-Host @"
-NanoLink Agent Installer for Windows
-
-Usage: .\install.ps1 [options]
-
-Installation Options:
-  -Silent           Silent mode (no prompts)
-  -Url URL          Server address (host:port)
-  -Token TOKEN      Authentication token
-  -Permission N     Permission level (0-3)
-  -NoTls            Use plaintext gRPC (trusted private transport only)
-  -TlsCaCert PATH   PEM CA for an internal/private PKI
-  -TlsServerName N  Certificate DNS name when connecting through a tunnel
-  -TlsClientCert P  PEM Agent certificate for mutual TLS
-  -TlsClientKey P   PEM Agent private key for mutual TLS
-  -NoTlsVerify      Rejected (configure a trusted CA instead)
-  -Hostname NAME    Override hostname
-  -ShellEnabled     Enable shell commands
-  -ShellToken TOKEN Shell super token
-
-Server Management:
-  -AddServer        Add server to existing installation
-  -RemoveServer     Remove server from existing installation
-  -FetchConfig URL  Fetch configuration from server API
-
-Management:
-  -Manage           Interactive management menu
-
-  -Help             Show this help
-
-Examples:
-  # Interactive installation
-  .\install.ps1
-
-  # Silent installation
-  .\install.ps1 -Silent -Url "server.example.com:39100" -Token "your_token"
-
-  # Add additional server to existing agent
-  .\install.ps1 -AddServer -Url "second.example.com:39100" -Token "yyy"
-
-  # Open management menu
-  .\install.ps1 -Manage
-
-  # Remove a server
-  .\install.ps1 -RemoveServer -Url "old.example.com:39100"
-
-  # Fetch config from server and install
-  .\install.ps1 -FetchConfig "http://monitor.example.com:8080/api/config/generate"
-"@
+    Write-Host (Get-Msg "help_title")
+    Write-Host ""
+    Write-Host "$(Get-Msg 'usage'): .\install.ps1 [options]"
+    Write-Host ""
+    Write-Host "$(Get-Msg 'install_options'):"
+    Write-Host "  -Silent           $(Get-Msg 'silent_mode')"
+    Write-Host "  -Url URL          $(Get-Msg 'url_option')"
+    Write-Host "  -Token TOKEN      $(Get-Msg 'token_option')"
+    Write-Host "  -Permission N     $(Get-Msg 'permission_option')"
+    Write-Host "  -NoTls            $(Get-Msg 'no_tls_option')"
+    Write-Host "  -TlsCaCert PATH   $(Get-Msg 'tls_ca_option')"
+    Write-Host "  -TlsServerName N  $(Get-Msg 'tls_server_name_option')"
+    Write-Host "  -TlsClientCert P  $(Get-Msg 'tls_client_cert_option')"
+    Write-Host "  -TlsClientKey P   $(Get-Msg 'tls_client_key_option')"
+    Write-Host "  -NoTlsVerify      $(Get-Msg 'no_tls_verify_option')"
+    Write-Host "  -Hostname NAME    $(Get-Msg 'hostname_option')"
+    Write-Host "  -ShellEnabled     $(Get-Msg 'shell_enabled_option')"
+    Write-Host "  -ShellToken TOKEN $(Get-Msg 'shell_token_option')"
+    Write-Host ""
+    Write-Host "$(Get-Msg 'server_mgmt'):"
+    Write-Host "  -AddServer        $(Get-Msg 'add_server_option')"
+    Write-Host "  -RemoveServer     $(Get-Msg 'remove_server_option')"
+    Write-Host "  -FetchConfig URL  $(Get-Msg 'fetch_config_option')"
+    Write-Host ""
+    Write-Host "$(Get-Msg 'management'):"
+    Write-Host "  -Manage           $(Get-Msg 'manage_option')"
+    Write-Host "  -Lang LANG        $(Get-Msg 'lang_option')"
+    Write-Host "  -Help             $(Get-Msg 'help_option')"
+    Write-Host ""
+    Write-Host "$(Get-Msg 'examples'):"
+    Write-Host "  # $(Get-Msg 'interactive_install')"
+    Write-Host "  .\install.ps1"
+    Write-Host ""
+    Write-Host "  # $(Get-Msg 'silent_install')"
+    Write-Host '  .\install.ps1 -Silent -Url "server.example.com:39100" -Token "your_token"'
+    Write-Host ""
+    Write-Host "  # $(Get-Msg 'add_server_example')"
+    Write-Host '  .\install.ps1 -AddServer -Url "second.example.com:39100" -Token "yyy"'
+    Write-Host ""
+    Write-Host "  # $(Get-Msg 'open_manage')"
+    Write-Host "  .\install.ps1 -Manage"
+    Write-Host ""
+    Write-Host "  # $(Get-Msg 'remove_server_example')"
+    Write-Host '  .\install.ps1 -RemoveServer -Url "old.example.com:39100"'
+    Write-Host ""
+    Write-Host "  # $(Get-Msg 'fetch_config_example')"
+    Write-Host '  .\install.ps1 -FetchConfig "http://monitor.example.com:8080/api/config/generate"'
 }
 
 # =============================================================================
@@ -1206,11 +1382,11 @@ function Show-AgentStatus {
 }
 
 function Show-Servers {
-    Write-Step "Configured Servers"
+    Write-Step (Get-Msg "configured_servers")
     
     $configPath = Join-Path $Script:ConfigDir "nanolink.yaml"
     if (-not (Test-Path $configPath)) {
-        Write-Err "Configuration file not found"
+        Write-Err (Get-Msg "config_not_found")
         return
     }
     
@@ -1221,31 +1397,31 @@ function Show-Servers {
         Write-Host $Matches[0] -ForegroundColor Yellow
     }
     else {
-        Write-Host "No servers configured" -ForegroundColor Yellow
+        Write-Host (Get-Msg "no_servers") -ForegroundColor Yellow
     }
 }
 
 function Edit-MetricsConfig {
-    Write-Step "Metrics Configuration"
+    Write-Step (Get-Msg "metrics_config")
     
     $configPath = Join-Path $Script:ConfigDir "nanolink.yaml"
     if (-not (Test-Path $configPath)) {
-        Write-Err "Configuration file not found"
+        Write-Err (Get-Msg "config_not_found")
         return
     }
     
     Write-Host ""
-    Write-Host "Current collector settings:" -ForegroundColor White
+    Write-Host "$(Get-Msg 'current_settings'):" -ForegroundColor White
     $content = Get-Content $configPath -Raw
     if ($content -match "collector:[\s\S]*?(?=\n\w+:|$)") {
         Write-Host $Matches[0] -ForegroundColor Yellow
     }
     
     Write-Host ""
-    if (Read-YesNo -Prompt "Modify collector intervals?" -Default $false) {
-        $cpuInterval = Read-PromptValue -Prompt "CPU interval (ms)" -Default "1000"
-        $diskInterval = Read-PromptValue -Prompt "Disk interval (ms)" -Default "3000"
-        $networkInterval = Read-PromptValue -Prompt "Network interval (ms)" -Default "1000"
+    if (Read-YesNo -Prompt (Get-Msg "modify_intervals") -Default $false) {
+        $cpuInterval = Read-PromptValue -Prompt (Get-Msg "cpu_interval") -Default "1000"
+        $diskInterval = Read-PromptValue -Prompt (Get-Msg "disk_interval") -Default "3000"
+        $networkInterval = Read-PromptValue -Prompt (Get-Msg "network_interval") -Default "1000"
         
         # Backup config
         $backup = "$configPath.backup.$(Get-Date -Format 'yyyyMMddHHmmss')"
@@ -1257,66 +1433,66 @@ function Edit-MetricsConfig {
         $content = $content -replace "network_interval_ms:\s*\d+", "network_interval_ms: $networkInterval"
         Set-Content -Path $configPath -Value $content -Encoding UTF8
         
-        Write-Success "Collector intervals updated"
+        Write-Success (Get-Msg "intervals_updated")
         
-        if (Read-YesNo -Prompt "Reload configuration now?" -Default $true) {
+        if (Read-YesNo -Prompt (Get-Msg "reload_now") -Default $true) {
             Invoke-ConfigReload
         }
     }
 }
 
 function Invoke-ConfigReload {
-    Write-Step "Reloading Configuration"
+    Write-Step (Get-Msg "reload_config")
     
     try {
         $response = Invoke-RestMethod -Uri "http://localhost:9101/api/reload" -Method Post -ErrorAction SilentlyContinue
         if ($response.success) {
-            Write-Success "Configuration reloaded successfully!"
+            Write-Success (Get-Msg "reload_success")
         }
         else {
-            Write-Warn "Hot reload failed. Restarting service..."
+            Write-Warn (Get-Msg "reload_failed")
             Restart-Service -Name $Script:ServiceName
-            Write-Success "Service restarted"
+            Write-Success (Get-Msg "service_restarted")
         }
     }
     catch {
-        Write-Warn "Hot reload not available. Restarting service..."
+        Write-Warn (Get-Msg "reload_unavailable")
         Restart-Service -Name $Script:ServiceName
-        Write-Success "Service restarted"
+        Write-Success (Get-Msg "service_restarted")
     }
 }
 
 function Show-Logs {
-    Write-Step "View Logs"
+    Write-Step (Get-Msg "view_logs")
     
     $logFile = Join-Path $Script:LogDir "agent.log"
     if (-not (Test-Path $logFile)) {
-        Write-Warn "Log file not found: $logFile"
+        Write-Warn "$(Get-Msg 'log_file_not_found'): $logFile"
         return
     }
     
     Write-Host ""
-    Write-Host "Last 30 lines of agent log:" -ForegroundColor White
+    Write-Host "$(Get-Msg 'last_lines'):" -ForegroundColor White
     Write-Host "────────────────────────────────────────" -ForegroundColor Gray
     Get-Content $logFile -Tail 30
     Write-Host "────────────────────────────────────────" -ForegroundColor Gray
     
     Write-Host ""
-    if (Read-YesNo -Prompt "Follow logs in real-time?" -Default $false) {
-        Write-Host "Press Ctrl+C to stop..." -ForegroundColor Yellow
+    if (Read-YesNo -Prompt (Get-Msg "follow_logs") -Default $false) {
+        Write-Host (Get-Msg "press_ctrl_c") -ForegroundColor Yellow
         Get-Content $logFile -Wait -Tail 10
     }
 }
 
 function Invoke-Uninstall {
-    Write-Step "Uninstall NanoLink Agent"
+    Write-Step (Get-Msg "uninstall_title")
     
     Write-Host ""
-    Write-Warn "This will remove the NanoLink Agent from your system."
+    Write-Warn (Get-Msg "uninstall_warn")
     Write-Host ""
     
-    if (-not (Read-YesNo -Prompt "Are you sure you want to uninstall?" -Default $false)) {
-        Write-Info "Uninstall cancelled"
+    if (-not (Read-YesNo -Prompt (Get-Msg "confirm_uninstall") -Default $false)) {
+        Write-Info (Get-Msg "uninstall_cancelled")
         return
     }
     
@@ -1326,29 +1502,29 @@ function Invoke-Uninstall {
         Stop-Service -Name $Script:ServiceName -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
         sc.exe delete $Script:ServiceName | Out-Null
-        Write-Success "Service removed"
+        Write-Success (Get-Msg "service_removed")
     }
     
     # Remove binary
     if (Test-Path $Script:InstallDir) {
         Remove-Item -Path $Script:InstallDir -Recurse -Force
-        Write-Success "Binary removed"
+        Write-Success (Get-Msg "binary_removed")
     }
     
     # Ask about data
     Write-Host ""
-    if (Read-YesNo -Prompt "Remove configuration and data?" -Default $false) {
+    if (Read-YesNo -Prompt (Get-Msg "remove_data") -Default $false) {
         if (Test-Path $Script:ConfigDir) {
             Remove-Item -Path $Script:ConfigDir -Recurse -Force
-            Write-Success "Configuration and data removed"
+            Write-Success (Get-Msg "data_removed")
         }
     }
     else {
-        Write-Info "Configuration and data preserved at: $Script:ConfigDir"
+        Write-Info "$(Get-Msg 'data_preserved'): $Script:ConfigDir"
     }
     
     Write-Host ""
-    Write-Success "NanoLink Agent has been uninstalled"
+    Write-Success (Get-Msg "uninstall_complete")
 }
 
 function Show-ManageMenu {
@@ -1441,6 +1617,7 @@ function Show-ManageMenu {
 function Main {
     # Initialize language detection
     Initialize-Language
+    Test-TlsParameters
     
     if ($Help) {
         Show-Help
@@ -1456,7 +1633,7 @@ function Main {
     # Handle add-server mode
     if ($AddServer) {
         if ([string]::IsNullOrEmpty($Url) -or [string]::IsNullOrEmpty($Token)) {
-            Write-Err "Add server mode requires -Url and -Token parameters"
+            Write-Err (Get-Msg "add_mode_requires")
             exit 1
         }
         Add-ServerToConfig
@@ -1466,7 +1643,7 @@ function Main {
     # Handle remove-server mode
     if ($RemoveServer) {
         if ([string]::IsNullOrEmpty($Url)) {
-            Write-Err "Remove server mode requires -Url parameter"
+            Write-Err (Get-Msg "remove_mode_requires")
             exit 1
         }
         Remove-ServerFromConfig
@@ -1483,7 +1660,7 @@ function Main {
     if ($Silent) {
         if ([string]::IsNullOrEmpty($Url) -or [string]::IsNullOrEmpty($Token)) {
             if ([string]::IsNullOrEmpty($Script:ServerUrl)) {
-                Write-Err "Silent mode requires -Url and -Token parameters"
+                Write-Err (Get-Msg "silent_requires_credentials")
                 exit 1
             }
         }
@@ -1507,7 +1684,7 @@ function Main {
     }
 
     $arch = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
-    Write-Info "Detected: Windows $([Environment]::OSVersion.Version) ($arch)"
+    Write-Info "$(Get-Msg 'detected'): Windows $([Environment]::OSVersion.Version) ($arch)"
 
     # Check for existing installation (only in interactive mode)
     $Script:UpdateMode = $false
@@ -1553,7 +1730,7 @@ function Main {
     Test-Installation
     
     if ($Script:UpdateMode) {
-        Write-Success "Agent updated successfully!"
+        Write-Success (Get-Msg "update_success")
     }
     Write-Summary
 }

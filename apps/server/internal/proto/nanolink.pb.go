@@ -200,6 +200,9 @@ const (
 	// Application deployment (SYSTEM_ADMIN; structured, audited operations)
 	CommandType_DEPLOY_EXECUTE  CommandType = 120 // Download, verify, activate, restart/reload, health-check
 	CommandType_DEPLOY_ROLLBACK CommandType = 121 // Atomically activate an existing release
+	// Automated build pipeline (SYSTEM_ADMIN; isolated workspace/container)
+	CommandType_BUILD_EXECUTE CommandType = 130 // Fetch source, execute validated DAG, upload verified artifact
+	CommandType_BUILD_CANCEL  CommandType = 131 // Stop an active build and clean its disposable workspace
 )
 
 // Enum value maps for CommandType.
@@ -250,6 +253,8 @@ var (
 		111: "CONNECTIVITY_TEST",
 		120: "DEPLOY_EXECUTE",
 		121: "DEPLOY_ROLLBACK",
+		130: "BUILD_EXECUTE",
+		131: "BUILD_CANCEL",
 	}
 	CommandType_value = map[string]int32{
 		"COMMAND_TYPE_UNSPECIFIED": 0,
@@ -297,6 +302,8 @@ var (
 		"CONNECTIVITY_TEST":        111,
 		"DEPLOY_EXECUTE":           120,
 		"DEPLOY_ROLLBACK":          121,
+		"BUILD_EXECUTE":            130,
+		"BUILD_CANCEL":             131,
 	}
 )
 
@@ -6586,7 +6593,7 @@ const file_nanolink_proto_rawDesc = "" +
 	"\x19DATA_REQUEST_NETWORK_INFO\x10\x03\x12\x1e\n" +
 	"\x1aDATA_REQUEST_USER_SESSIONS\x10\x04\x12\x19\n" +
 	"\x15DATA_REQUEST_GPU_INFO\x10\x05\x12\x17\n" +
-	"\x13DATA_REQUEST_HEALTH\x10\x06*\x87\a\n" +
+	"\x13DATA_REQUEST_HEALTH\x10\x06*\xae\a\n" +
 	"\vCommandType\x12\x1c\n" +
 	"\x18COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fPROCESS_LIST\x10\x01\x12\x10\n" +
@@ -6635,7 +6642,9 @@ const file_nanolink_proto_rawDesc = "" +
 	"\fHEALTH_CHECK\x10n\x12\x15\n" +
 	"\x11CONNECTIVITY_TEST\x10o\x12\x12\n" +
 	"\x0eDEPLOY_EXECUTE\x10x\x12\x13\n" +
-	"\x0fDEPLOY_ROLLBACK\x10y2\xf9\x03\n" +
+	"\x0fDEPLOY_ROLLBACK\x10y\x12\x12\n" +
+	"\rBUILD_EXECUTE\x10\x82\x01\x12\x11\n" +
+	"\fBUILD_CANCEL\x10\x83\x012\xf9\x03\n" +
 	"\x0fNanoLinkService\x12=\n" +
 	"\fAuthenticate\x12\x15.nanolink.AuthRequest\x1a\x16.nanolink.AuthResponse\x12T\n" +
 	"\rStreamMetrics\x12\x1e.nanolink.MetricsStreamRequest\x1a\x1f.nanolink.MetricsStreamResponse(\x010\x01\x128\n" +

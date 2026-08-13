@@ -129,7 +129,7 @@ function UserMenu() {
     <div style={{ position: "relative" }} ref={menuRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="row gap-2"
+        className="row gap-2 topbar-user-button"
         style={{
           appearance: "none",
           border: "1px solid var(--border)",
@@ -144,7 +144,7 @@ function UserMenu() {
         <div style={{ width: 24, height: 24, borderRadius: "50%", background: "linear-gradient(135deg, var(--fg-2), var(--fg-4))", color: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700 }}>
           {avatar}
         </div>
-        <span style={{ fontSize: 12, color: "var(--fg-2)", maxWidth: 100 }} className="truncate">{user?.username}</span>
+        <span style={{ fontSize: 12, color: "var(--fg-2)", maxWidth: 100 }} className="truncate topbar-user-name">{user?.username}</span>
         {I.chev({ size: 12, style: { transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 120ms ease", color: "var(--fg-4)" } })}
       </button>
 
@@ -166,7 +166,7 @@ function UserMenu() {
           <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: "var(--fg)" }}>{user?.username}</div>
             <div className="mono" style={{ fontSize: 10, color: "var(--fg-4)", marginTop: 2 }}>
-              {user?.isSuperAdmin ? "SuperAdmin" : "User"}
+              {user?.isSuperAdmin ? t("acc.roleSuper") : t("acc.roleUser")}
             </div>
           </div>
 
@@ -228,15 +228,7 @@ function UserMenu() {
 
       {showPasswordDialog && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
+          className="scrim password-scrim"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowPasswordDialog(false)
@@ -249,12 +241,7 @@ function UserMenu() {
           }}
         >
           <div
-            className="card"
-            style={{
-              width: 400,
-              maxWidth: "90vw",
-              padding: 20,
-            }}
+            className="card password-dialog"
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 16, color: "var(--fg)" }}>

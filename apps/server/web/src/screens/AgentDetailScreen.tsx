@@ -36,7 +36,7 @@ export function AgentDetailScreen() {
   }, [route.agentId, ctxM])
 
   // live history buffer for sparklines
-  const [hist, setHist] = useState<{ cpu: number[]; mem: number[] }>({ cpu: [], mem: [] })
+  const [hist, setHist] = useState<{ cpu: number[]; mem: number[]; timestamps: string[] }>({ cpu: [], mem: [], timestamps: [] })
   const lastTs = useRef("")
   useEffect(() => {
     if (!m) return
@@ -44,12 +44,16 @@ export function AgentDetailScreen() {
     lastTs.current = m.timestamp || ""
     const cpu = m.cpu?.usagePercent ?? 0
     const memPct = m.memory?.total ? (m.memory.used / m.memory.total) * 100 : 0
-    setHist((h) => ({ cpu: [...h.cpu, cpu].slice(-MAX_HIST), mem: [...h.mem, memPct].slice(-MAX_HIST) }))
+    setHist((h) => ({
+      cpu: [...h.cpu, cpu].slice(-MAX_HIST),
+      mem: [...h.mem, memPct].slice(-MAX_HIST),
+      timestamps: [...h.timestamps, m.timestamp || new Date().toISOString()].slice(-MAX_HIST),
+    }))
   }, [m])
 
   // reset history when switching agents
   useEffect(() => {
-    setHist({ cpu: [], mem: [] })
+    setHist({ cpu: [], mem: [], timestamps: [] })
     setFetched(null)
   }, [route.agentId])
 

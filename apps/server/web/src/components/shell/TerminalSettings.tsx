@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useTranslation } from "react-i18next"
 import { Settings, X, Check, Monitor } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { terminalThemes, getThemeById } from "./TerminalThemes"
@@ -41,6 +42,7 @@ export function TerminalSettingsDialog({
   settings,
   onSettingsChange,
 }: TerminalSettingsDialogProps) {
+  const { t } = useTranslation()
   const [localSettings, setLocalSettings] = useState(settings)
 
   useEffect(() => {
@@ -58,180 +60,141 @@ export function TerminalSettingsDialog({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-[var(--color-card)] rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            Terminal Settings
-          </h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
+    <div className="scrim" onClick={onClose}>
+      <div className="dialog terminal-settings-dialog" role="dialog" aria-modal="true" aria-label={t("terminalSettings.title")} onClick={(event) => event.stopPropagation()}>
+        <div className="dialog-hd">
+          <div className="terminal-settings-title">
+            <Settings size={17} />
+            <span>{t("terminalSettings.title")}</span>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label={t("common.close")} title={t("common.close")}>
+            <X size={14} />
           </Button>
         </div>
 
-        {/* Theme Selection */}
-        <div className="mb-6">
-          <h4 className="text-sm font-medium mb-3">Theme</h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {terminalThemes.map((theme) => (
-              <button
-                key={theme.id}
-                onClick={() => setLocalSettings({ ...localSettings, themeId: theme.id })}
-                className={`relative p-3 rounded-lg border-2 transition-all ${
-                  localSettings.themeId === theme.id
-                    ? "border-blue-500"
-                    : "border-[var(--color-border)] hover:border-[var(--color-muted-foreground)]"
-                }`}
-              >
-                {/* Theme preview */}
-                <div
-                  className="h-16 rounded mb-2 flex items-center justify-center font-mono text-xs"
-                  style={{
-                    backgroundColor: theme.theme.background,
-                    color: theme.theme.foreground as string,
-                  }}
-                >
-                  $ ls -la
-                </div>
-                <div className="text-xs font-medium truncate">{theme.name}</div>
-                {localSettings.themeId === theme.id && (
-                  <div className="absolute top-1 right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                    <Check className="h-3 w-3 text-white" />
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Font Settings */}
-        <div className="mb-6">
-          <h4 className="text-sm font-medium mb-3">Font</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-[var(--color-muted-foreground)] mb-1">
-                Font Family
-              </label>
-              <select
-                value={localSettings.fontFamily}
-                onChange={(e) => setLocalSettings({ ...localSettings, fontFamily: e.target.value })}
-                className="w-full px-3 py-2 border border-[var(--color-border)] rounded bg-[var(--color-background)]"
-              >
-                {fontFamilies.map((font) => (
-                  <option key={font.id} value={font.id}>
-                    {font.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-[var(--color-muted-foreground)] mb-1">
-                Font Size
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min="10"
-                  max="24"
-                  value={localSettings.fontSize}
-                  onChange={(e) =>
-                    setLocalSettings({ ...localSettings, fontSize: parseInt(e.target.value) })
-                  }
-                  className="flex-1"
-                />
-                <span className="text-sm w-8 text-center">{localSettings.fontSize}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Cursor Settings */}
-        <div className="mb-6">
-          <h4 className="text-sm font-medium mb-3">Cursor</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-[var(--color-muted-foreground)] mb-1">
-                Cursor Style
-              </label>
-              <div className="flex gap-2">
-                {(["block", "underline", "bar"] as const).map((style) => (
+        <div className="dialog-bd">
+          <section className="terminal-settings-section">
+            <h4>{t("terminalSettings.theme")}</h4>
+            <div className="terminal-theme-grid">
+              {terminalThemes.map((theme) => {
+                const active = localSettings.themeId === theme.id
+                return (
                   <button
-                    key={style}
-                    onClick={() => setLocalSettings({ ...localSettings, cursorStyle: style })}
-                    className={`flex-1 px-3 py-2 border rounded capitalize transition-all ${
-                      localSettings.cursorStyle === style
-                        ? "border-blue-500 bg-blue-500/10"
-                        : "border-[var(--color-border)] hover:border-[var(--color-muted-foreground)]"
-                    }`}
+                    key={theme.id}
+                    type="button"
+                    onClick={() => setLocalSettings({ ...localSettings, themeId: theme.id })}
+                    className={`terminal-theme-option${active ? " is-active" : ""}`}
+                    aria-pressed={active}
                   >
-                    {style}
+                    <div
+                      className="terminal-theme-preview"
+                      style={{ backgroundColor: theme.theme.background, color: theme.theme.foreground as string }}
+                    >
+                      $ ls -la
+                    </div>
+                    <div className="terminal-theme-name">{t(`terminalSettings.themes.${theme.id}`, { defaultValue: theme.name })}</div>
+                    {active && <span className="terminal-theme-check"><Check size={12} /></span>}
                   </button>
-                ))}
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="terminal-settings-section">
+            <h4>{t("terminalSettings.font")}</h4>
+            <div className="terminal-settings-grid">
+              <div className="terminal-settings-field">
+                <label htmlFor="terminal-font-family">{t("terminalSettings.fontFamily")}</label>
+                <select
+                  id="terminal-font-family"
+                  className="select"
+                  value={localSettings.fontFamily}
+                  onChange={(e) => setLocalSettings({ ...localSettings, fontFamily: e.target.value })}
+                >
+                  {fontFamilies.map((font) => <option key={font.id} value={font.id}>{font.name}</option>)}
+                </select>
+              </div>
+              <div className="terminal-settings-field">
+                <label htmlFor="terminal-font-size">{t("terminalSettings.fontSize")}</label>
+                <div className="terminal-settings-range">
+                  <input
+                    id="terminal-font-size"
+                    type="range"
+                    min="10"
+                    max="24"
+                    value={localSettings.fontSize}
+                    onChange={(e) => setLocalSettings({ ...localSettings, fontSize: Number(e.target.value) })}
+                  />
+                  <output htmlFor="terminal-font-size">{localSettings.fontSize}</output>
+                </div>
               </div>
             </div>
-            <div>
-              <label className="block text-xs text-[var(--color-muted-foreground)] mb-1">
-                Cursor Blink
-              </label>
-              <button
-                onClick={() =>
-                  setLocalSettings({ ...localSettings, cursorBlink: !localSettings.cursorBlink })
-                }
-                className={`w-full px-3 py-2 border rounded transition-all ${
-                  localSettings.cursorBlink
-                    ? "border-blue-500 bg-blue-500/10"
-                    : "border-[var(--color-border)]"
-                }`}
-              >
-                {localSettings.cursorBlink ? "On" : "Off"}
-              </button>
+          </section>
+
+          <section className="terminal-settings-section">
+            <h4>{t("terminalSettings.cursor")}</h4>
+            <div className="terminal-settings-grid">
+              <div className="terminal-settings-field">
+                <label>{t("terminalSettings.cursorStyle")}</label>
+                <div className="terminal-settings-options">
+                  {(["block", "underline", "bar"] as const).map((style) => (
+                    <Button
+                      key={style}
+                      variant={localSettings.cursorStyle === style ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setLocalSettings({ ...localSettings, cursorStyle: style })}
+                    >
+                      {t(`terminalSettings.cursor${style[0].toUpperCase()}${style.slice(1)}`)}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="terminal-settings-field">
+                <label>{t("terminalSettings.cursorBlink")}</label>
+                <Button
+                  variant={localSettings.cursorBlink ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setLocalSettings({ ...localSettings, cursorBlink: !localSettings.cursorBlink })}
+                  aria-pressed={localSettings.cursorBlink}
+                >
+                  {localSettings.cursorBlink ? t("common.on") : t("common.off")}
+                </Button>
+              </div>
             </div>
-          </div>
+          </section>
+
+          <section className="terminal-settings-section">
+            <h4 className="row gap-2"><Monitor size={14} />{t("terminalSettings.preview")}</h4>
+            <div
+              className="terminal-settings-preview"
+              style={{
+                backgroundColor: selectedTheme.theme.background,
+                color: selectedTheme.theme.foreground as string,
+                fontFamily: fontFamilies.find((font) => font.id === localSettings.fontFamily)?.fallback,
+                fontSize: localSettings.fontSize,
+              }}
+            >
+              <div>
+                <span style={{ color: selectedTheme.theme.green as string }}>user@nanoops</span>
+                <span style={{ color: selectedTheme.theme.white as string }}>:</span>
+                <span style={{ color: selectedTheme.theme.blue as string }}>~</span>
+                <span style={{ color: selectedTheme.theme.white as string }}>$ </span>
+                ls -la
+              </div>
+              <div>
+                <span style={{ color: selectedTheme.theme.blue as string }}>drwxr-xr-x</span>
+                <span> 5 user user 4096 Dec 21 </span>
+                <span style={{ color: selectedTheme.theme.cyan as string }}>Documents</span>
+              </div>
+              <div style={{ color: selectedTheme.theme.red as string }}>{t("terminalSettings.previewError")}</div>
+              <div style={{ color: selectedTheme.theme.yellow as string }}>{t("terminalSettings.previewWarning")}</div>
+            </div>
+          </section>
         </div>
 
-        {/* Preview */}
-        <div className="mb-6">
-          <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
-            <Monitor className="h-4 w-4" />
-            Preview
-          </h4>
-          <div
-            className="rounded-lg p-4 font-mono text-sm leading-relaxed"
-            style={{
-              backgroundColor: selectedTheme.theme.background,
-              color: selectedTheme.theme.foreground as string,
-              fontFamily: fontFamilies.find((f) => f.id === localSettings.fontFamily)?.fallback,
-              fontSize: localSettings.fontSize,
-            }}
-          >
-            <div>
-              <span style={{ color: selectedTheme.theme.green as string }}>user@nanoops</span>
-              <span style={{ color: selectedTheme.theme.white as string }}>:</span>
-              <span style={{ color: selectedTheme.theme.blue as string }}>~</span>
-              <span style={{ color: selectedTheme.theme.white as string }}>$ </span>
-              ls -la
-            </div>
-            <div>
-              <span style={{ color: selectedTheme.theme.blue as string }}>drwxr-xr-x</span>
-              <span> 5 user user 4096 Dec 21 </span>
-              <span style={{ color: selectedTheme.theme.cyan as string }}>Documents</span>
-            </div>
-            <div style={{ color: selectedTheme.theme.red as string }}>
-              error: permission denied
-            </div>
-            <div style={{ color: selectedTheme.theme.yellow as string }}>
-              warning: file not found
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>Apply Settings</Button>
+        <div className="dialog-ft">
+          <Button variant="outline" size="sm" onClick={onClose}>{t("common.cancel")}</Button>
+          <Button size="sm" onClick={handleSave}>{t("terminalSettings.apply")}</Button>
         </div>
       </div>
     </div>

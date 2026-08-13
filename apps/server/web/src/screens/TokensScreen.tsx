@@ -83,7 +83,7 @@ export function TokensScreen() {
         }
       />
       <div style={{ padding: "0 24px 24px", overflow: "auto", flex: 1 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+        <div className="kpi-grid" style={{ gap: 12, marginBottom: 16 }}>
           <MiniStat label={t("acc.online")} value={counts.online} color="var(--ok)" />
           <MiniStat label={t("acc.offline")} value={counts.offline} color="var(--crit)" />
           <MiniStat label={t("nav.tokens")} value={total} color="var(--fg-3)" />
@@ -98,7 +98,7 @@ export function TokensScreen() {
                 <th>{t("acc.agentName")}</th>
                 <th>{t("acc.status")}</th>
                 <th>{t("acc.permission")}</th>
-                <th>OS</th>
+                <th>{t("system.osName")}</th>
                 <th>{t("acc.lastIp")}</th>
                 <th>{t("acc.lastSeen")}</th>
                 <th>{t("acc.version")}</th>

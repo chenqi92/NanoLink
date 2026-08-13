@@ -421,12 +421,12 @@ private struct AgentHistoryView: View {
                       series: [NanoSeries(data: h.mem, color: t.fg2, fill: true, band: h.hasMaxBands ? h.memMax : nil)],
                       thresholds: [NanoThreshold(value: 90, color: t.crit, label: "90%")], history: h)
             chartCard(tr("history.network"), stat: "↓\(last(h.netRx)) ↑\(last(h.netTx))", unit: " MB/s", yMax: nil,
-                      series: [NanoSeries(data: h.netRx, color: t.accent, fill: true, label: "RX"), NanoSeries(data: h.netTx, color: t.warn, dashed: true, label: "TX")], history: h)
+                      series: [NanoSeries(data: h.netRx, color: t.accent, fill: true, label: tr("history.rx")), NanoSeries(data: h.netTx, color: t.warn, dashed: true, label: tr("history.tx"))], history: h)
             chartCard(tr("history.diskIo"), stat: "R \(last(h.diskRead)) · W \(last(h.diskWrite))", unit: " MB/s", yMax: nil,
-                      series: [NanoSeries(data: h.diskRead, color: t.ok, fill: true, label: "Read"), NanoSeries(data: h.diskWrite, color: t.warn, dashed: true, label: "Write")], history: h)
+                      series: [NanoSeries(data: h.diskRead, color: t.ok, fill: true, label: tr("history.read")), NanoSeries(data: h.diskWrite, color: t.warn, dashed: true, label: tr("history.write"))], history: h)
             if h.hasGpu {
                 chartCard(tr("history.gpu"), stat: "\(last(h.gpuUsage))%", unit: "%", yMax: 100,
-                          series: [NanoSeries(data: h.gpuUsage, color: t.tertiary, fill: true, label: "Util"), NanoSeries(data: h.gpuTemp, color: t.crit, dashed: true, label: "Temp")].filter { !$0.data.isEmpty }, history: h)
+                          series: [NanoSeries(data: h.gpuUsage, color: t.tertiary, fill: true, label: tr("history.utilization")), NanoSeries(data: h.gpuTemp, color: t.crit, dashed: true, label: tr("history.temperature"))].filter { !$0.data.isEmpty }, history: h)
             }
         }
     }

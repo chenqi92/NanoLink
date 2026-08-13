@@ -217,7 +217,7 @@ fn render_cpu_overview(f: &mut Frame, app: &App, area: Rect) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" CPU Overview ");
+        .title(format!(" {} ", t("metrics.cpu_overview", app.lang)));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -254,7 +254,7 @@ fn render_cpu_overview(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(usage_text, chunks[0]);
 
     // Cores text
-    let cores_text = Paragraph::new(format!("Logical Cores: {cores}"));
+    let cores_text = Paragraph::new(format!("{}: {cores}", t("metrics.logical_cores", app.lang)));
     f.render_widget(cores_text, chunks[1]);
 
     // CPU Gauge
@@ -277,7 +277,7 @@ fn render_cpu_overview(f: &mut Frame, app: &App, area: Rect) {
     {
         let load = System::load_average();
         let load_text = Paragraph::new(Line::from(vec![
-            Span::raw("Load Average: "),
+            Span::raw(format!("{}: ", t("metrics.load_average", app.lang))),
             Span::styled(format!("{:.2}", load.one), Style::default().fg(Color::Cyan)),
             Span::raw("  "),
             Span::styled(
@@ -303,9 +303,13 @@ fn render_cpu_cores(f: &mut Frame, app: &App, area: Rect) {
         .min(cpus.len().saturating_sub(visible_rows));
     let end = (start + visible_rows).min(cpus.len());
 
-    let header = Row::new(vec!["Core", "Usage", "Progress"])
-        .style(Style::default().add_modifier(Modifier::BOLD))
-        .height(1);
+    let header = Row::new(vec![
+        t("metrics.core", app.lang),
+        t("metrics.usage", app.lang),
+        t("metrics.progress", app.lang),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD))
+    .height(1);
 
     let rows: Vec<Row> = cpus
         .iter()
@@ -327,7 +331,7 @@ fn render_cpu_cores(f: &mut Frame, app: &App, area: Rect) {
             let bar: String = format!("[{}{}]", "█".repeat(filled), "░".repeat(bar_width - filled));
 
             Row::new(vec![
-                format!("Core {:>2}", i),
+                format!("{} {:>2}", t("metrics.core", app.lang), i),
                 format!("{:>5.1}%", usage),
                 bar,
             ])
@@ -337,13 +341,20 @@ fn render_cpu_cores(f: &mut Frame, app: &App, area: Rect) {
 
     let title = if cpus.len() > visible_rows {
         format!(
-            " CPU Cores ({}-{} of {}, ↑↓ to scroll) ",
+            " {} ({}-{} / {}, {}) ",
+            t("metrics.cpu_cores", app.lang),
             start + 1,
             end,
-            cpus.len()
+            cpus.len(),
+            t("metrics.scroll_hint", app.lang)
         )
     } else {
-        format!(" CPU Cores ({} total) ", cpus.len())
+        format!(
+            " {} ({}: {}) ",
+            t("metrics.cpu_cores", app.lang),
+            t("metrics.total", app.lang),
+            cpus.len()
+        )
     };
 
     let table = Table::new(
@@ -372,7 +383,9 @@ fn render_memory(f: &mut Frame, app: &App, area: Rect) {
         0.0
     };
 
-    let block = Block::default().borders(Borders::ALL).title(" Memory ");
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {} ", t("metrics.memory", app.lang)));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -404,11 +417,13 @@ fn render_memory(f: &mut Frame, app: &App, area: Rect) {
         .split(inner);
 
     // RAM
-    let ram_title = Paragraph::new("RAM").style(Style::default().add_modifier(Modifier::BOLD));
+    let ram_title = Paragraph::new(t("metrics.ram", app.lang))
+        .style(Style::default().add_modifier(Modifier::BOLD));
     f.render_widget(ram_title, chunks[0]);
 
     let ram_usage = Paragraph::new(format!(
-        "Used: {:.2} GB / {:.2} GB  ({:.1}%)",
+        "{}: {:.2} GB / {:.2} GB  ({:.1}%)",
+        t("metrics.used", app.lang),
         used as f64 / 1024.0 / 1024.0 / 1024.0,
         total as f64 / 1024.0 / 1024.0 / 1024.0,
         mem_percent
@@ -433,12 +448,13 @@ fn render_memory(f: &mut Frame, app: &App, area: Rect) {
     if has_swap {
         let swap_percent = (swap_used as f64 / swap_total as f64) * 100.0;
 
-        let swap_title =
-            Paragraph::new("Swap").style(Style::default().add_modifier(Modifier::BOLD));
+        let swap_title = Paragraph::new(t("metrics.swap", app.lang))
+            .style(Style::default().add_modifier(Modifier::BOLD));
         f.render_widget(swap_title, chunks[4]);
 
         let swap_usage = Paragraph::new(format!(
-            "Used: {:.2} GB / {:.2} GB  ({:.1}%)",
+            "{}: {:.2} GB / {:.2} GB  ({:.1}%)",
+            t("metrics.used", app.lang),
             swap_used as f64 / 1024.0 / 1024.0 / 1024.0,
             swap_total as f64 / 1024.0 / 1024.0 / 1024.0,
             swap_percent
@@ -464,9 +480,15 @@ fn render_memory(f: &mut Frame, app: &App, area: Rect) {
 fn render_disk(f: &mut Frame, app: &App, area: Rect) {
     let disks: Vec<_> = app.disks.list().iter().collect();
 
-    let header = Row::new(vec!["Mount", "FileSystem", "Used", "Total", "Usage"])
-        .style(Style::default().add_modifier(Modifier::BOLD))
-        .height(1);
+    let header = Row::new(vec![
+        t("metrics.mount", app.lang),
+        t("metrics.filesystem", app.lang),
+        t("metrics.used", app.lang),
+        t("metrics.total", app.lang),
+        t("metrics.usage", app.lang),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD))
+    .height(1);
 
     let rows: Vec<Row> = disks
         .iter()
@@ -513,16 +535,20 @@ fn render_disk(f: &mut Frame, app: &App, area: Rect) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .title(" Disk Storage "),
+            .title(format!(" {} ", t("metrics.disk_storage", app.lang))),
     );
 
     f.render_widget(table, area);
 }
 
 fn render_network(f: &mut Frame, app: &App, area: Rect) {
-    let header = Row::new(vec!["Interface", "Received", "Transmitted"])
-        .style(Style::default().add_modifier(Modifier::BOLD))
-        .height(1);
+    let header = Row::new(vec![
+        t("metrics.interface", app.lang),
+        t("metrics.received", app.lang),
+        t("metrics.transmitted", app.lang),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD))
+    .height(1);
 
     let rows: Vec<Row> = app
         .networks
@@ -555,7 +581,7 @@ fn render_network(f: &mut Frame, app: &App, area: Rect) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .title(" Network Interfaces "),
+            .title(format!(" {} ", t("metrics.network_interfaces", app.lang))),
     );
 
     f.render_widget(table, area);
@@ -567,7 +593,7 @@ fn render_gpu(f: &mut Frame, app: &App, area: Rect) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" GPU Information ");
+        .title(format!(" {} ", t("metrics.gpu_information", app.lang)));
 
     if gpus.is_empty() {
         let inner = block.inner(area);
@@ -647,7 +673,8 @@ fn render_gpu(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let memory = Paragraph::new(format!(
-            "Memory: {mem_used_mb:.0} MB / {mem_total_mb:.0} MB ({mem_percent:.1}%)"
+            "{}: {mem_used_mb:.0} MB / {mem_total_mb:.0} MB ({mem_percent:.1}%)",
+            t("metrics.memory", app.lang)
         ))
         .style(Style::default().fg(Color::Cyan));
         f.render_widget(memory, gpu_chunks[2]);
@@ -705,9 +732,15 @@ fn render_processes(f: &mut Frame, app: &App, area: Rect) {
         .min(procs.len().saturating_sub(visible_rows));
     let end = (start + visible_rows).min(procs.len());
 
-    let header = Row::new(vec!["PID", "CPU%", "MEM%", "MEM(MB)", "NAME"])
-        .style(Style::default().add_modifier(Modifier::BOLD))
-        .height(1);
+    let header = Row::new(vec![
+        "PID",
+        "CPU%",
+        t("metrics.memory_percent", app.lang),
+        t("metrics.memory_mb", app.lang),
+        t("metrics.name", app.lang),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD))
+    .height(1);
 
     let rows: Vec<Row> = procs
         .iter()
@@ -741,13 +774,20 @@ fn render_processes(f: &mut Frame, app: &App, area: Rect) {
 
     let title = if procs.len() > visible_rows {
         format!(
-            " Top Processes ({}-{} of {}, ↑↓ to scroll) ",
+            " {} ({}-{} / {}, {}) ",
+            t("metrics.processes", app.lang),
             start + 1,
             end,
-            procs.len()
+            procs.len(),
+            t("metrics.scroll_hint", app.lang)
         )
     } else {
-        format!(" Top Processes ({} total) ", procs.len())
+        format!(
+            " {} ({}: {}) ",
+            t("metrics.processes", app.lang),
+            t("metrics.total", app.lang),
+            procs.len()
+        )
     };
 
     let table = Table::new(
@@ -774,9 +814,14 @@ fn render_ports(f: &mut Frame, app: &App, area: Rect) {
         .min(ports.len().saturating_sub(visible_rows));
     let end = (start + visible_rows).min(ports.len());
 
-    let header = Row::new(vec!["PID", "Protocol", "Address", "Process"])
-        .style(Style::default().add_modifier(Modifier::BOLD))
-        .height(1);
+    let header = Row::new(vec![
+        "PID",
+        t("metrics.protocol", app.lang),
+        t("metrics.address", app.lang),
+        t("metrics.process", app.lang),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD))
+    .height(1);
 
     let rows: Vec<Row> = ports
         .iter()
@@ -801,13 +846,20 @@ fn render_ports(f: &mut Frame, app: &App, area: Rect) {
 
     let title = if ports.len() > visible_rows {
         format!(
-            " Listening Ports ({}-{} of {}, ↑↓ to scroll) ",
+            " {} ({}-{} / {}, {}) ",
+            t("metrics.ports", app.lang),
             start + 1,
             end,
-            ports.len()
+            ports.len(),
+            t("metrics.scroll_hint", app.lang)
         )
     } else {
-        format!(" Listening Ports ({} total) ", ports.len())
+        format!(
+            " {} ({}: {}) ",
+            t("metrics.ports", app.lang),
+            t("metrics.total", app.lang),
+            ports.len()
+        )
     };
 
     let table = Table::new(

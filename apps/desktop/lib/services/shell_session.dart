@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'ws_channel.dart';
 
@@ -57,7 +58,8 @@ class ShellSession {
           pingInterval: const Duration(seconds: 30),
           ignoreCert: ignoreCert);
     } catch (e) {
-      _emit(ShellLine(ShellLineKind.error, '连接失败：$e'));
+      _emit(ShellLine(ShellLineKind.error,
+          'terminal.connectError'.tr(namedArgs: {'err': e.toString()})));
       _setStatus(ShellStatus.error);
       return;
     }
@@ -70,8 +72,7 @@ class ShellSession {
     } catch (e) {
       // ready failing means the upgrade was rejected (auth/permission) or the
       // host is unreachable; onError/onDone also fire, but surface it here too.
-      _emit(ShellLine(ShellLineKind.error,
-          '无法建立终端会话。请确认拥有 L3 系统管理权限，且服务器已启用远程 Shell。'));
+      _emit(ShellLine(ShellLineKind.error, 'terminal.sessionUnavailable'.tr()));
       _setStatus(ShellStatus.error);
     }
   }
@@ -123,13 +124,14 @@ class ShellSession {
   }
 
   void _onError(Object error) {
-    _emit(ShellLine(ShellLineKind.error, '连接错误：$error'));
+    _emit(ShellLine(ShellLineKind.error,
+        'terminal.connectError'.tr(namedArgs: {'err': error.toString()})));
     _setStatus(ShellStatus.error);
   }
 
   void _onDone() {
     if (_status != ShellStatus.error) {
-      _emit(const ShellLine(ShellLineKind.sys, '[nano] 会话已结束'));
+      _emit(ShellLine(ShellLineKind.sys, 'terminal.sessionEnded'.tr()));
       _setStatus(ShellStatus.closed);
     }
   }

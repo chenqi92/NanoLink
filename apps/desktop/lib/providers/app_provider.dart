@@ -281,7 +281,8 @@ class AppProvider extends ChangeNotifier {
     }
 
     if (connected) {
-      _servers.add(server.copyWith(isConnected: true, lastConnected: DateTime.now()));
+      _servers.add(
+          server.copyWith(isConnected: true, lastConnected: DateTime.now()));
       await _storageService.saveServers(_servers);
       await _connectToServer(server);
       notifyListeners();
@@ -570,9 +571,9 @@ class AppProvider extends ChangeNotifier {
   /// list for that server. Returns null on success, else an error message.
   Future<String?> acknowledgeAlert(String alertId, {String? serverId}) async {
     final id = serverId ?? activeServerId;
-    if (id == null) return 'no active server';
+    if (id == null) return 'errors.noActiveServer'.tr();
     final service = _serverServices[id];
-    if (service == null) return 'server not connected';
+    if (service == null) return 'errors.serverNotConnected'.tr();
 
     final err = await service.ackAlert(alertId);
     if (err == null) {
@@ -707,8 +708,8 @@ class AppProvider extends ChangeNotifier {
   }) async {
     final index = _servers.indexWhere((s) => s.id == serverId);
     if (index == -1) return false;
-    final service = _serverServices[serverId] ??
-        ServerService(connection: _servers[index]);
+    final service =
+        _serverServices[serverId] ?? ServerService(connection: _servers[index]);
 
     final result = await service.loginDetailed(username, password);
     if (!result.ok || result.token == null) return false;
@@ -758,10 +759,13 @@ class AppProvider extends ChangeNotifier {
 
   /// Get server name for an agent
   String getServerName(String serverId) {
-    return _servers.firstWhere(
-      (s) => s.id == serverId,
-      orElse: () => ServerConnection(id: '', name: 'Unknown', url: ''),
-    ).name;
+    return _servers
+        .firstWhere(
+          (s) => s.id == serverId,
+          orElse: () =>
+              ServerConnection(id: '', name: 'common.unknown'.tr(), url: ''),
+        )
+        .name;
   }
 
   /// Get total summary across all servers

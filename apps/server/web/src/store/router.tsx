@@ -9,6 +9,7 @@ export type Page =
   | "alert-config"
   | "assistant"
   | "operations"
+  | "builds"
   | "deployments"
   | "logs"
   | "tokens"

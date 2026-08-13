@@ -104,7 +104,7 @@ export function LogsScreen() {
           {scope === "server" && (
             <div className="row gap-2" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", height: 30, minWidth: 180 }}>
               {I.bolt({ size: 13 })}
-              <input value={service} onChange={(e) => setService(e.target.value)} placeholder="service (e.g. nginx)" style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "inherit", fontSize: 12 }} />
+              <input value={service} onChange={(e) => setService(e.target.value)} placeholder={t("dev.serviceNamePlaceholder")} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "inherit", fontSize: 12 }} />
             </div>
           )}
           <select className="select" style={{ width: "auto" }} value={level} onChange={(e) => setLevel(e.target.value)}>

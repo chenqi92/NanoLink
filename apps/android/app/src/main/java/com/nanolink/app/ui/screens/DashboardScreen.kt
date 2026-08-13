@@ -458,7 +458,7 @@ private fun TopCpuRow(
                     fontWeight = FontWeight.SemiBold,
                     color = if (cpu > 85) t.crit else if (cpu > 70) t.warn else t.fg,
                 )
-                Text("CPU", fontSize = 10.sp, fontFamily = NanoMonoFamily, color = t.fg4)
+                Text(tr("metrics.cpu"), fontSize = 10.sp, fontFamily = NanoMonoFamily, color = t.fg4)
             }
         }
     }

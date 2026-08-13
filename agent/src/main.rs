@@ -197,10 +197,10 @@ enum ServerAction {
 
 /// Permission level options for interactive selection
 const PERMISSION_OPTIONS: &[(&str, u8)] = &[
-    ("READ_ONLY (0) - View metrics only", 0),
-    ("BASIC_WRITE (1) - Basic operations", 1),
-    ("SERVICE_CONTROL (2) - Manage services", 2),
-    ("SYSTEM_ADMIN (3) - Full control", 3),
+    ("permission.read_only", 0),
+    ("permission.basic_write", 1),
+    ("permission.service_control", 2),
+    ("permission.system_admin", 3),
 ];
 
 /// Parse host string that may contain port (e.g., "192.168.0.174:39100")
@@ -263,9 +263,10 @@ fn get_config_path(args: &Args) -> Option<PathBuf> {
 
 /// Print help message when no config is found
 fn print_no_config_help() {
-    eprintln!("Error: No configuration file found.");
+    let lang = detect_language();
+    eprintln!("{}", t("error.no_config", lang));
     eprintln!();
-    eprintln!("Searched locations:");
+    eprintln!("{}:", t("cli.searched_locations", lang));
     for path in CONFIG_SEARCH_PATHS {
         eprintln!("  - {path}");
     }
@@ -276,16 +277,26 @@ fn print_no_config_help() {
         }
     }
     eprintln!();
-    eprintln!("Quick start:");
-    eprintln!("  1. Initialize a new config:  nanolink-agent init");
+    eprintln!("{}:", t("cli.quick_start", lang));
+    eprintln!("  1. {}:  nanolink-agent init", t("cli.init_config", lang));
     eprintln!(
-        "  2. Add a server:             nanolink-agent server add --host <HOST> --token <TOKEN>"
+        "  2. {}:             nanolink-agent server add --host <HOST> --token <TOKEN>",
+        t("cli.add_server", lang)
     );
-    eprintln!("  3. Run the agent:            nanolink-agent");
+    eprintln!(
+        "  3. {}:            nanolink-agent",
+        t("cli.run_agent", lang)
+    );
     eprintln!();
-    eprintln!("Or specify a config file:      nanolink-agent -c /path/to/config.yaml");
+    eprintln!(
+        "{}:      nanolink-agent -c /path/to/config.yaml",
+        t("cli.specify_config", lang)
+    );
     eprintln!();
-    eprintln!("Generate sample config:        nanolink-agent --generate-config > nanolink.yaml");
+    eprintln!(
+        "{}:        nanolink-agent --generate-config > nanolink.yaml",
+        t("cli.generate_config", lang)
+    );
 }
 
 fn main() -> Result<()> {
@@ -360,6 +371,7 @@ fn main() -> Result<()> {
 }
 
 async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
+    let lang = detect_language();
     match command {
         #[cfg(target_os = "windows")]
         Commands::Service { action } => {
@@ -403,17 +415,22 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
 
             if output.exists() {
                 anyhow::bail!(
-                    "Config file already exists: {}. Use --output to specify a different path.",
-                    output.display()
+                    "{}: {}. {}",
+                    t("cli.config_exists", lang),
+                    output.display(),
+                    t("cli.use_other_output", lang)
                 );
             }
 
             std::fs::write(output, &content)?;
-            println!("Configuration file created: {}", output.display());
+            println!("{}: {}", t("init.success", lang), output.display());
             println!();
-            println!("Next steps:");
-            println!("  1. Add a server: nanolink-agent server add --host <HOST> --token <TOKEN>");
-            println!("  2. Run agent:    nanolink-agent");
+            println!("{}:", t("cli.next_steps", lang));
+            println!(
+                "  1. {}: nanolink-agent server add --host <HOST> --token <TOKEN>",
+                t("cli.add_server", lang)
+            );
+            println!("  2. {}:    nanolink-agent", t("cli.run_agent", lang));
             return Ok(());
         }
 
@@ -423,53 +440,67 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
 
             match get_config_path(args) {
                 Some(config_path) => {
-                    println!("Config file: {}", config_path.display());
+                    println!("{}: {}", t("cli.config_file", lang), config_path.display());
 
                     match Config::load(&config_path) {
                         Ok(config) => {
                             println!();
-                            println!("Configured servers:");
+                            println!("{}:", t("server.configured_servers", lang));
                             if config.servers.is_empty() {
-                                println!("  (none)");
+                                println!("  ({})", t("cli.none", lang));
                             } else {
                                 for (i, server) in config.servers.iter().enumerate() {
                                     println!("  {}. {}:{}", i + 1, server.host, server.port);
                                     println!(
-                                        "     Permission: {} ({})",
+                                        "     {}: {} ({})",
+                                        t("cli.permission", lang),
                                         server.permission,
                                         permission_name(server.permission)
                                     );
                                     println!(
-                                        "     TLS: {}, Verify: {}",
-                                        server.tls_enabled, server.tls_verify
+                                        "     TLS: {}, {}: {}",
+                                        server.tls_enabled,
+                                        t("cli.verify", lang),
+                                        server.tls_verify
                                     );
                                 }
                             }
 
                             println!();
-                            println!("Settings:");
+                            println!("{}:", t("cli.settings", lang));
                             println!(
-                                "  Realtime interval: {}ms",
+                                "  {}: {}ms",
+                                t("config.realtime_interval", lang),
                                 config.collector.realtime_interval_ms
                             );
-                            println!("  Buffer capacity: {}", config.buffer.capacity);
                             println!(
-                                "  Management API: {} (port {})",
+                                "  {}: {}",
+                                t("config.buffer_capacity", lang),
+                                config.buffer.capacity
+                            );
+                            println!(
+                                "  {}: {} ({} {})",
+                                t("config.management_enabled", lang),
                                 if config.management.enabled {
-                                    "enabled"
+                                    t("common.enabled", lang)
                                 } else {
-                                    "disabled"
+                                    t("common.disabled", lang)
                                 },
+                                t("cli.port", lang),
                                 config.management.port
                             );
                         }
                         Err(e) => {
-                            println!("  Error loading config: {e}");
+                            println!("  {}: {e}", t("cli.config_load_error", lang));
                         }
                     }
                 }
                 None => {
-                    println!("Config file: (not found)");
+                    println!(
+                        "{}: ({})",
+                        t("cli.config_file", lang),
+                        t("cli.not_found", lang)
+                    );
                     println!();
                     print_no_config_help();
                 }
@@ -520,17 +551,20 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                     handle_server_remove(&mut config, &config_path, host.clone(), *port)?;
                 }
                 ServerAction::List => {
-                    println!("Configured servers:");
+                    println!("{}:", t("server.configured_servers", lang));
                     for (i, server) in config.servers.iter().enumerate() {
                         println!("  {}. {}:{}", i + 1, server.host, server.port);
                         println!(
-                            "     Permission: {} ({})",
+                            "     {}: {} ({})",
+                            t("cli.permission", lang),
                             server.permission,
                             permission_name(server.permission)
                         );
                         println!(
-                            "     TLS: {}, Verify: {}",
-                            server.tls_enabled, server.tls_verify
+                            "     TLS: {}, {}: {}",
+                            server.tls_enabled,
+                            t("cli.verify", lang),
+                            server.tls_verify
                         );
                     }
                 }
@@ -586,6 +620,7 @@ fn handle_server_add(
 ) -> Result<()> {
     use crate::config::ServerConfig;
     use dialoguer::{Confirm, Input, Password, Select};
+    let lang = detect_language();
 
     // Determine if we need interactive mode
     let needs_interactive = host.is_none() || token.is_none();
@@ -595,7 +630,7 @@ fn handle_server_add(
     } else {
         // Interactive: prompt for host
         let host_input: String = Input::new()
-            .with_prompt("Server address (host:port)")
+            .with_prompt(t("server.enter_address", lang))
             .interact_text()?;
         parse_host_port(&host_input, default_port)
     };
@@ -607,7 +642,9 @@ fn handle_server_add(
         .any(|s| s.host == final_host && s.port == final_port)
     {
         anyhow::bail!(
-            "Server {final_host}:{final_port} already exists. Use 'server update' to modify."
+            "{} {final_host}:{final_port}. {}",
+            t("cli.server_exists", lang),
+            t("cli.use_server_update", lang)
         );
     }
 
@@ -616,7 +653,7 @@ fn handle_server_add(
     } else {
         // Interactive: prompt for token
         Password::new()
-            .with_prompt("Authentication token")
+            .with_prompt(t("server.enter_token", lang))
             .interact()?
     };
 
@@ -624,9 +661,12 @@ fn handle_server_add(
         p
     } else if needs_interactive {
         // Interactive: select permission
-        let options: Vec<&str> = PERMISSION_OPTIONS.iter().map(|(s, _)| *s).collect();
+        let options: Vec<&str> = PERMISSION_OPTIONS
+            .iter()
+            .map(|(key, _)| t(key, lang))
+            .collect();
         let selection = Select::new()
-            .with_prompt("Permission level")
+            .with_prompt(t("server.select_permission", lang))
             .items(&options)
             .default(0)
             .interact()?;
@@ -639,7 +679,7 @@ fn handle_server_add(
         te
     } else if needs_interactive {
         Confirm::new()
-            .with_prompt("Enable TLS?")
+            .with_prompt(t("server.enable_tls", lang))
             .default(false)
             .interact()?
     } else {
@@ -665,8 +705,11 @@ fn handle_server_add(
     config.servers.push(server);
 
     save_config(config, config_path)?;
-    println!("Server {final_host}:{final_port} added successfully.");
-    println!("Restart the agent to apply changes, or use the management API for hot-reload.");
+    println!(
+        "{} {final_host}:{final_port}",
+        t("status.server_added", lang)
+    );
+    println!("{}", t("config.restart_manual", lang));
     Ok(())
 }
 
@@ -678,6 +721,7 @@ fn handle_server_remove(
     default_port: u16,
 ) -> Result<()> {
     use dialoguer::{Confirm, Select};
+    let lang = detect_language();
 
     let is_interactive = host.is_none();
 
@@ -686,7 +730,7 @@ fn handle_server_remove(
     } else {
         // Interactive: show server list for selection
         if config.servers.is_empty() {
-            anyhow::bail!("No servers configured.");
+            anyhow::bail!(t("server.no_servers", lang));
         }
 
         let options: Vec<String> = config
@@ -696,7 +740,7 @@ fn handle_server_remove(
             .collect();
 
         let selection = Select::new()
-            .with_prompt("Select server to remove")
+            .with_prompt(t("cli.select_remove", lang))
             .items(&options)
             .interact()?;
 
@@ -707,12 +751,15 @@ fn handle_server_remove(
     // Confirm removal in interactive mode
     if is_interactive {
         let confirm = Confirm::new()
-            .with_prompt(format!("Confirm removal of {final_host}:{final_port}?"))
+            .with_prompt(format!(
+                "{} {final_host}:{final_port}?",
+                t("cli.confirm_remove", lang)
+            ))
             .default(false)
             .interact()?;
 
         if !confirm {
-            println!("Cancelled.");
+            println!("{}", t("cli.cancelled", lang));
             return Ok(());
         }
     }
@@ -723,16 +770,22 @@ fn handle_server_remove(
         .retain(|s| !(s.host == final_host && s.port == final_port));
 
     if config.servers.len() == original_len {
-        anyhow::bail!("Server {final_host}:{final_port} not found.");
+        anyhow::bail!(
+            "{}: {final_host}:{final_port}",
+            t("cli.server_not_found", lang)
+        );
     }
 
     if config.servers.is_empty() {
-        anyhow::bail!("Cannot remove the last server.");
+        anyhow::bail!(t("cli.cannot_remove_last", lang));
     }
 
     save_config(config, config_path)?;
-    println!("Server {final_host}:{final_port} removed successfully.");
-    println!("Restart the agent to apply changes.");
+    println!(
+        "{} {final_host}:{final_port}",
+        t("status.server_deleted", lang)
+    );
+    println!("{}", t("config.restart_manual", lang));
     Ok(())
 }
 
@@ -753,6 +806,7 @@ fn handle_server_update(
     tls_client_key: Option<String>,
 ) -> Result<()> {
     use dialoguer::{Confirm, Password, Select};
+    let lang = detect_language();
 
     let is_interactive = host.is_none();
 
@@ -761,7 +815,7 @@ fn handle_server_update(
     } else {
         // Interactive: show server list for selection
         if config.servers.is_empty() {
-            anyhow::bail!("No servers configured.");
+            anyhow::bail!(t("server.no_servers", lang));
         }
 
         let options: Vec<String> = config
@@ -771,7 +825,7 @@ fn handle_server_update(
             .collect();
 
         let selection = Select::new()
-            .with_prompt("Select server to update")
+            .with_prompt(t("cli.select_update", lang))
             .items(&options)
             .interact()?;
 
@@ -793,12 +847,12 @@ fn handle_server_update(
                 s.token = t;
             } else if needs_interactive {
                 let update_token = Confirm::new()
-                    .with_prompt("Update authentication token?")
+                    .with_prompt(t("server.update_token", lang))
                     .default(false)
                     .interact()?;
                 if update_token {
                     s.token = Password::new()
-                        .with_prompt("New authentication token")
+                        .with_prompt(t("server.new_token", lang))
                         .interact()?;
                 }
             }
@@ -808,18 +862,20 @@ fn handle_server_update(
                 s.permission = p;
             } else if needs_interactive {
                 let update_perm = Confirm::new()
-                    .with_prompt("Update permission level?")
+                    .with_prompt(t("server.update_permission", lang))
                     .default(false)
                     .interact()?;
                 if update_perm {
-                    let options: Vec<&str> =
-                        PERMISSION_OPTIONS.iter().map(|(label, _)| *label).collect();
+                    let options: Vec<&str> = PERMISSION_OPTIONS
+                        .iter()
+                        .map(|(key, _)| t(key, lang))
+                        .collect();
                     let current_idx = PERMISSION_OPTIONS
                         .iter()
                         .position(|(_, v)| *v == s.permission)
                         .unwrap_or(0);
                     let selection = Select::new()
-                        .with_prompt("Permission level")
+                        .with_prompt(t("server.permission_level", lang))
                         .items(&options)
                         .default(current_idx)
                         .interact()?;
@@ -832,12 +888,12 @@ fn handle_server_update(
                 s.tls_enabled = te;
             } else if needs_interactive {
                 let update_tls = Confirm::new()
-                    .with_prompt("Update TLS settings?")
+                    .with_prompt(t("server.update_tls", lang))
                     .default(false)
                     .interact()?;
                 if update_tls {
                     s.tls_enabled = Confirm::new()
-                        .with_prompt("Enable TLS?")
+                        .with_prompt(t("server.enable_tls", lang))
                         .default(s.tls_enabled)
                         .interact()?;
                 }
@@ -868,11 +924,17 @@ fn handle_server_update(
             s.validate_tls_security().map_err(anyhow::Error::msg)?;
 
             save_config(config, config_path)?;
-            println!("Server {final_host}:{final_port} updated successfully.");
-            println!("Restart the agent to apply changes.");
+            println!(
+                "{} {final_host}:{final_port}",
+                t("status.server_updated", lang)
+            );
+            println!("{}", t("config.restart_manual", lang));
         }
         None => {
-            anyhow::bail!("Server {final_host}:{final_port} not found.");
+            anyhow::bail!(
+                "{}: {final_host}:{final_port}",
+                t("cli.server_not_found", lang)
+            );
         }
     }
     Ok(())
@@ -969,7 +1031,7 @@ fn interactive_main_menu(args: &Args) -> Result<()> {
                 if let Some(config_path) = get_config_path(args) {
                     let rt = tokio::runtime::Runtime::new()?;
                     if let Err(e) = rt.block_on(run_agent(config_path)) {
-                        eprintln!("Error: {e}");
+                        eprintln!("{}: {e}", t("diag.error", lang));
                         wait_for_enter(lang);
                     }
                 } else {
@@ -1233,17 +1295,24 @@ fn interactive_server_action(
                 if let Some(s) = server {
                     println!();
                     println!("{}", t("server.current_config", lang));
-                    println!("  Host: {}:{}", s.host, s.port);
+                    println!("  {}: {}:{}", t("cli.host", lang), s.host, s.port);
                     println!(
-                        "  Token: {}...",
+                        "  {}: {}...",
+                        t("cli.token", lang),
                         &s.token.chars().take(8).collect::<String>()
                     );
                     println!(
-                        "  Permission: {} ({})",
+                        "  {}: {} ({})",
+                        t("cli.permission", lang),
                         s.permission,
                         permission_name(s.permission)
                     );
-                    println!("  TLS: {}, Verify: {}", s.tls_enabled, s.tls_verify);
+                    println!(
+                        "  TLS: {}, {}: {}",
+                        s.tls_enabled,
+                        t("cli.verify", lang),
+                        s.tls_verify
+                    );
                     println!();
 
                     // Update host
@@ -1278,8 +1347,10 @@ fn interactive_server_action(
                         .default(false)
                         .interact()?;
                     if update_perm {
-                        let options: Vec<&str> =
-                            PERMISSION_OPTIONS.iter().map(|(label, _)| *label).collect();
+                        let options: Vec<&str> = PERMISSION_OPTIONS
+                            .iter()
+                            .map(|(key, _)| t(key, lang))
+                            .collect();
                         let current_idx = PERMISSION_OPTIONS
                             .iter()
                             .position(|(_, v)| *v == s.permission)
@@ -1313,7 +1384,7 @@ fn interactive_server_action(
                     // Prompt for restart
                     prompt_restart_after_config_change(lang)?;
                 } else {
-                    println!("✗ Server not found");
+                    println!("✗ {}", t("cli.server_not_found", lang));
                     wait_for_enter(lang);
                 }
             }
@@ -1487,7 +1558,7 @@ fn interactive_show_status(args: &Args, lang: Lang) -> Result<()> {
 
     match get_config_path(args) {
         Some(config_path) => {
-            println!("Config file: {}", config_path.display());
+            println!("{}: {}", t("cli.config_file", lang), config_path.display());
 
             match Config::load(&config_path) {
                 Ok(config) => {
@@ -1499,36 +1570,46 @@ fn interactive_show_status(args: &Args, lang: Lang) -> Result<()> {
                         for (i, server) in config.servers.iter().enumerate() {
                             println!("  {}. {}:{}", i + 1, server.host, server.port);
                             println!(
-                                "     Permission: {} ({})",
+                                "     {}: {} ({})",
+                                t("cli.permission", lang),
                                 server.permission,
                                 permission_name(server.permission)
                             );
                             println!(
-                                "     TLS: {}, Verify: {}",
-                                server.tls_enabled, server.tls_verify
+                                "     TLS: {}, {}: {}",
+                                server.tls_enabled,
+                                t("cli.verify", lang),
+                                server.tls_verify
                             );
                         }
                     }
 
                     println!();
-                    println!("Settings:");
+                    println!("{}:", t("cli.settings", lang));
                     println!(
-                        "  Realtime interval: {}ms",
+                        "  {}: {}ms",
+                        t("config.realtime_interval", lang),
                         config.collector.realtime_interval_ms
                     );
-                    println!("  Buffer capacity: {}", config.buffer.capacity);
                     println!(
-                        "  Management API: {} (port {})",
+                        "  {}: {}",
+                        t("config.buffer_capacity", lang),
+                        config.buffer.capacity
+                    );
+                    println!(
+                        "  {}: {} ({} {})",
+                        t("config.management_enabled", lang),
                         if config.management.enabled {
-                            "enabled"
+                            t("common.enabled", lang)
                         } else {
-                            "disabled"
+                            t("common.disabled", lang)
                         },
+                        t("cli.port", lang),
                         config.management.port
                     );
                 }
                 Err(e) => {
-                    println!("  Error loading config: {e}");
+                    println!("  {}: {e}", t("cli.config_load_error", lang));
                 }
             }
         }
@@ -1654,7 +1735,7 @@ fn interactive_check_update(args: &Args, lang: Lang) -> Result<()> {
 
     if !update_info.changelog.is_empty() {
         println!();
-        println!("Changelog:");
+        println!("{}:", t("update.changelog", lang));
         for line in update_info.changelog.lines().take(10) {
             println!("  {line}");
         }
@@ -3281,7 +3362,7 @@ fn interactive_diagnostics(args: &Args, lang: Lang) -> Result<()> {
                                 Err(e) => println!("✗ {e}"),
                             }
                         } else {
-                            println!("✗ DNS resolution failed");
+                            println!("✗ {}", t("diag.dns_failed", lang));
                         }
                     }
                     Err(e) => println!("✗ {e}"),
@@ -3341,7 +3422,10 @@ fn interactive_view_logs(args: &Args, lang: Lang) -> Result<()> {
                 // macOS 'log show --last' uses time duration, not line count
                 // Use a reasonable time window based on requested lines
                 let minutes = (lines / 10).max(5).min(60); // ~10 lines/min estimate
-                println!("(Showing logs from last {} minutes)", minutes);
+                println!(
+                    "{}",
+                    t("logs.showing_minutes", lang).replace("{}", &minutes.to_string())
+                );
                 let _ = std::process::Command::new("log")
                     .args([
                         "show",
@@ -3354,7 +3438,7 @@ fn interactive_view_logs(args: &Args, lang: Lang) -> Result<()> {
             }
             #[cfg(target_os = "windows")]
             {
-                println!("Check Event Viewer for NanoLink Agent logs");
+                println!("{}", t("logs.event_viewer", lang));
             }
         }
         1 => {
@@ -3413,12 +3497,12 @@ fn interactive_export_config(args: &Args, lang: Lang) -> Result<()> {
     if has_tokens {
         use dialoguer::Confirm;
         println!();
-        println!("⚠️  Warning: Configuration contains sensitive tokens!");
-        println!("   Exported file will include authentication tokens in plaintext.");
+        println!("⚠️  {}", t("export.sensitive_warning", lang));
+        println!("   {}", t("export.plaintext_warning", lang));
         println!();
 
         let redact = Confirm::with_theme(&theme)
-            .with_prompt("Redact sensitive tokens? (Recommended)")
+            .with_prompt(t("export.redact_prompt", lang))
             .default(true)
             .interact()?;
 
@@ -3432,9 +3516,9 @@ fn interactive_export_config(args: &Args, lang: Lang) -> Result<()> {
             if config.management.api_token.is_some() {
                 config.management.api_token = Some("[REDACTED]".to_string());
             }
-            println!("   Tokens will be redacted in export.");
+            println!("   {}", t("export.redacted", lang));
         } else {
-            println!("   Tokens will be included in plaintext. Handle with care!");
+            println!("   {}", t("export.included", lang));
         }
         println!();
     }
@@ -3461,7 +3545,11 @@ fn interactive_export_config(args: &Args, lang: Lang) -> Result<()> {
     // Validate output path - prevent path traversal
     let output_path = std::path::Path::new(&output_path);
     if output_path.to_string_lossy().contains("..") {
-        println!("✗ Error: Path traversal not allowed");
+        println!(
+            "✗ {}: {}",
+            t("diag.error", lang),
+            t("export.path_traversal", lang)
+        );
         return Ok(());
     }
 
@@ -3474,7 +3562,11 @@ fn interactive_export_config(args: &Args, lang: Lang) -> Result<()> {
         || path_str.starts_with("C:\\Windows")
         || path_str.starts_with("C:\\Program Files")
     {
-        println!("✗ Error: Cannot write to system directory");
+        println!(
+            "✗ {}: {}",
+            t("diag.error", lang),
+            t("export.system_directory", lang)
+        );
         return Ok(());
     }
 

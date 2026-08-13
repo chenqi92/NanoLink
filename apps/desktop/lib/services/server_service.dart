@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/models.dart';
@@ -614,9 +615,8 @@ class ServerService {
         if (token != null && token.isNotEmpty) {
           return LoginResult.success(token);
         }
-        return const LoginResult.failure(LoginError.serverError,
-            message: 'login succeeded but no token was returned',
-            statusCode: 200);
+        return LoginResult.failure(LoginError.serverError,
+            message: 'errors.loginMissingToken'.tr(), statusCode: 200);
       }
 
       final reason = _errorMessage(response);
@@ -1020,7 +1020,7 @@ class ServerService {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final id = data['commandId'] as String?;
         if (id != null && id.isNotEmpty) return CommandDispatch.success(id);
-        return const CommandDispatch.failure('server returned no commandId');
+        return CommandDispatch.failure('errors.commandMissingId'.tr());
       }
       return CommandDispatch.failure(_errorMessage(response));
     } catch (e) {

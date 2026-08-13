@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.0
 // - protoc             v6.33.2
-// source: sdk/protocol/nanolink.proto
+// source: nanolink.proto
 
 package proto
 
@@ -360,7 +360,7 @@ var NanoLinkService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "sdk/protocol/nanolink.proto",
+	Metadata: "nanolink.proto",
 }
 
 const (
@@ -635,5 +635,5 @@ var DashboardService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "sdk/protocol/nanolink.proto",
+	Metadata: "nanolink.proto",
 }

@@ -21,6 +21,7 @@ class ShellSession(
     private val client: OkHttpClient,
     val url: String,
     private val token: String?,
+    private val connectionFailedMessage: String = "connection failed",
 ) {
     enum class Status { CONNECTING, CONNECTED, ERROR, CLOSED }
     enum class LineKind { SYSTEM, INPUT, OUTPUT, ERROR }
@@ -117,7 +118,7 @@ class ShellSession(
         override fun onFailure(webSocket: WebSocket, throwable: Throwable, response: Response?) {
             if (socket !== webSocket) return
             socket = null
-            emit(LineKind.ERROR, throwable.localizedMessage ?: "connection failed")
+            emit(LineKind.ERROR, throwable.localizedMessage ?: connectionFailedMessage)
             _status.value = Status.ERROR
         }
     }

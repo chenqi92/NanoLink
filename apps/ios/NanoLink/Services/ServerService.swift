@@ -401,11 +401,11 @@ final class ServerService: NSObject {
         guard let (data, resp) = await perform("POST", "/auth/login",
                                                body: ["username": username, "password": password],
                                                headers: headers) else {
-            return .failure(.network, message: "connection failed")
+            return .failure(.network, message: tr("errors.connectionFailed"))
         }
         if resp.statusCode == 200 {
             if let token = JSON.parse(data)?.stringOrNil("token") { return .success(token) }
-            return .failure(.serverError, message: "login succeeded but no token was returned", statusCode: 200)
+            return .failure(.serverError, message: tr("errors.loginMissingToken"), statusCode: 200)
         }
         let reason = errorMessage(data, resp.statusCode)
         switch resp.statusCode {
@@ -434,7 +434,7 @@ final class ServerService: NSObject {
         guard let (data, resp) = await perform("POST", "/auth/device",
                                                body: ["deviceName": deviceName, "deviceType": deviceType, "deviceOs": deviceOs],
                                                headers: headers) else {
-            return DeviceAuthResult(ok: false, error: "connection failed")
+            return DeviceAuthResult(ok: false, error: tr("errors.connectionFailed"))
         }
         if resp.statusCode == 200, let j = JSON.parse(data) {
             let info = j.obj("serverInfo")
@@ -520,7 +520,7 @@ final class ServerService: NSObject {
     }
 
     func ackAlert(_ id: String) async -> String? {
-        guard let (data, resp) = await perform("POST", "/alerts/ack/\(id)") else { return "connection failed" }
+        guard let (data, resp) = await perform("POST", "/alerts/ack/\(id)") else { return tr("errors.connectionFailed") }
         return resp.statusCode == 200 ? nil : errorMessage(data, resp.statusCode)
     }
 
@@ -552,7 +552,7 @@ final class ServerService: NSObject {
     func assistantChat(_ messages: [ChatMessage]) async -> AssistantChatResult {
         let body: [String: Any] = ["messages": messages.map { ["role": $0.role, "content": $0.content] }]
         guard let (data, resp) = await perform("POST", "/assistant/chat", body: body, timeout: 30) else {
-            return .failure(.network, message: "connection failed")
+            return .failure(.network, message: tr("errors.connectionFailed"))
         }
         if resp.statusCode == 200 {
             let reply = JSON.parse(data)?.string("reply") ?? ""
@@ -572,7 +572,7 @@ final class ServerService: NSObject {
     func sendCommand(_ agentId: String, type: String, target: String = "", params: [String: String]? = nil) async -> String? {
         var body: [String: Any] = ["type": type, "target": target]
         if let params = params { body["params"] = params }
-        guard let (data, resp) = await perform("POST", "/agents/\(agentId)/command", body: body) else { return "connection failed" }
+        guard let (data, resp) = await perform("POST", "/agents/\(agentId)/command", body: body) else { return tr("errors.connectionFailed") }
         return resp.statusCode == 200 ? nil : errorMessage(data, resp.statusCode)
     }
 
@@ -580,18 +580,18 @@ final class ServerService: NSObject {
         var body: [String: Any] = ["type": type, "target": target]
         if let params = params { body["params"] = params }
         guard let (data, resp) = await perform("POST", "/agents/\(agentId)/command", body: body) else {
-            return .failure("connection failed")
+            return .failure(tr("errors.connectionFailed"))
         }
         if resp.statusCode == 200 {
             if let id = JSON.parse(data)?.stringOrNil("commandId") { return .success(id) }
-            return .failure("server returned no commandId")
+            return .failure(tr("errors.commandMissingId"))
         }
         return .failure(errorMessage(data, resp.statusCode))
     }
 
     func pollCommandResult(_ agentId: String, _ commandId: String) async -> CommandResult {
         guard let (data, resp) = await perform("GET", "/agents/\(agentId)/command/\(commandId)/result") else {
-            return CommandResult(status: .error, message: "connection failed")
+            return CommandResult(status: .error, message: tr("errors.connectionFailed"))
         }
         switch resp.statusCode {
         case 200:
@@ -605,7 +605,7 @@ final class ServerService: NSObject {
 
     func requestData(_ agentId: String, requestType: String = "full", target: String = "") async -> String? {
         let body: [String: Any] = ["requestType": requestType, "target": target]
-        guard let (data, resp) = await perform("POST", "/agents/\(agentId)/data-request", body: body) else { return "connection failed" }
+        guard let (data, resp) = await perform("POST", "/agents/\(agentId)/data-request", body: body) else { return tr("errors.connectionFailed") }
         return resp.statusCode == 200 ? nil : errorMessage(data, resp.statusCode)
     }
 

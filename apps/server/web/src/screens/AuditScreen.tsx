@@ -117,7 +117,7 @@ export function AuditScreen() {
         }
       />
       <div style={{ padding: "0 24px 24px", overflow: "auto", flex: 1 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1.4fr", gap: 12, marginBottom: 16 }}>
+        <div className="kpi-grid" style={{ gap: 12, marginBottom: 16 }}>
           <KPI icon={I.audit({ size: 13 })} label={t("plat.totalCommands")} value={stats?.totalCommands ?? logs.length} />
           <KPI icon={I.check({ size: 13 })} label={t("plat.successRate")} value={`${successRate.toFixed(0)}%`} sub={`${failed} ${t("plat.failed")}`} tone={successRate < 80 ? "warn" : ""} />
           <div className="card" style={{ padding: 14 }}>
@@ -174,7 +174,7 @@ export function AuditScreen() {
         <div className="card" style={{ overflow: "auto" }}>
           <table className="tbl" style={{ minWidth: 920 }}>
             <thead>
-              <tr><th>{t("plat.time")}</th><th>{t("plat.command")}</th><th>{t("acc.user")}</th><th>{t("dev.agent")}</th><th>{t("plat.params")}</th><th>IP</th><th style={{ textAlign: "right" }}>{t("plat.result")}</th></tr>
+              <tr><th>{t("plat.time")}</th><th>{t("plat.command")}</th><th>{t("acc.user")}</th><th>{t("dev.agent")}</th><th>{t("plat.params")}</th><th>{t("system.ipAddress")}</th><th style={{ textAlign: "right" }}>{t("plat.result")}</th></tr>
             </thead>
             <tbody>
               {loading && logs.length === 0 ? (
@@ -209,7 +209,7 @@ export function AuditScreen() {
         return (
           <>
             <div className="scrim" style={{ background: "var(--scrim)", justifyContent: "flex-end", alignItems: "stretch", padding: 0, backdropFilter: "none" }} onClick={() => setDetail(null)}>
-              <div className="drawer" style={{ width: 480, maxWidth: "100vw" }} onClick={(e) => e.stopPropagation()}>
+              <div className="drawer" style={{ width: 480, maxWidth: "100%" }} onClick={(e) => e.stopPropagation()}>
                 <div className="dialog-hd">
                   <div className="col" style={{ gap: 3, minWidth: 0 }}>
                     <div className="row gap-2" style={{ alignItems: "center" }}>
@@ -231,7 +231,7 @@ export function AuditScreen() {
                       <div className="row" style={{ justifyContent: "space-between" }}><span className="muted" style={{ fontSize: 11.5 }}>{t("plat.relatedAgent")}</span><span className="mono">{detail.agentHostname || detail.agentId || "—"}</span></div>
                     </div>
                     {detail.params && <div className="col gap-1"><span className="upper" style={{ color: "var(--fg-4)" }}>{t("plat.params")}</span><div className="code" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{detail.params}</div></div>}
-                    {detail.error && <div className="col gap-1"><span className="upper" style={{ color: "var(--crit)" }}>Error</span><div className="code" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", color: "var(--crit)" }}>{detail.error}</div></div>}
+                    {detail.error && <div className="col gap-1"><span className="upper" style={{ color: "var(--crit)" }}>{t("common.error")}</span><div className="code" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", color: "var(--crit)" }}>{detail.error}</div></div>}
                     <div className="col gap-1">
                       <span className="upper" style={{ color: "var(--fg-4)" }}>{t("plat.relatedEvents")}</span>
                       {related.length === 0 ? (

@@ -63,9 +63,9 @@ export function UsersScreen() {
                     <td className="mono dim" style={{ fontSize: 11.5 }}>{u.email || "—"}</td>
                     <td>
                       {u.isSuperAdmin ? (
-                        <span className="badge" style={{ color: "var(--crit)", borderColor: "rgba(239,68,68,.3)", background: "rgba(239,68,68,.06)" }}>{I.shield({ size: 11 })} SuperAdmin</span>
+                        <span className="badge" style={{ color: "var(--crit)", borderColor: "rgba(239,68,68,.3)", background: "rgba(239,68,68,.06)" }}>{I.shield({ size: 11 })} {t("acc.roleSuper")}</span>
                       ) : (
-                        <span className="badge">User</span>
+                        <span className="badge">{t("acc.roleUser")}</span>
                       )}
                     </td>
                     <td><div className="row gap-1" style={{ flexWrap: "wrap" }}>{(u.groups ?? []).map((g) => <span key={g.id} className="badge mono" style={{ fontSize: 10 }}>{g.name}</span>)}</div></td>
@@ -124,7 +124,7 @@ function UserDrawer({ user, groups, onClose, onSaved }: { user: UserDetail; grou
 
   return (
     <div className="scrim" onClick={onClose} style={{ justifyContent: "flex-end", padding: 0, alignItems: "stretch" }}>
-      <div className="dialog" style={{ width: 480, maxWidth: "100%", height: "100vh", maxHeight: "100vh", borderRadius: 0 }} onClick={(e) => e.stopPropagation()}>
+      <div className="dialog" style={{ width: 480, maxWidth: "100%", height: "100%", maxHeight: "100%", borderRadius: 0 }} onClick={(e) => e.stopPropagation()}>
         <div className="dialog-hd">
           <div className="row gap-3" style={{ alignItems: "center" }}>
             <Avatar name={user.username} size={36} />
@@ -138,7 +138,7 @@ function UserDrawer({ user, groups, onClose, onSaved }: { user: UserDetail; grou
         <div className="dialog-bd" style={{ flex: 1 }}>
           <div className="col" style={{ gap: 18 }}>
             <FormBlock label={t("acc.role")}>
-              <span className="badge" style={user.isSuperAdmin ? { color: "var(--crit)", borderColor: "rgba(239,68,68,.3)" } : {}}>{user.isSuperAdmin ? "SuperAdmin" : "User"}</span>
+              <span className="badge" style={user.isSuperAdmin ? { color: "var(--crit)", borderColor: "rgba(239,68,68,.3)" } : {}}>{user.isSuperAdmin ? t("acc.roleSuper") : t("acc.roleUser")}</span>
             </FormBlock>
             <FormBlock label={t("acc.email")}>
               <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} type="email" />
@@ -206,7 +206,7 @@ function AddUserModal({ groups, onClose, onDone }: { groups: Group[]; onClose: (
       await usersApi.create({ username, password, email: email || undefined, groupIds: memberIds })
       onDone()
     } catch (e) {
-      setError(typeof e === "object" && e && "error" in e ? String((e as { error: unknown }).error) : "failed")
+      setError(typeof e === "object" && e && "error" in e ? String((e as { error: unknown }).error) : t("common.error"))
     } finally { setBusy(false) }
   }
 

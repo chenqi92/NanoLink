@@ -3,7 +3,12 @@
   "common": {
     "loading": "加载中...", "cancel": "取消", "remove": "删除", "connect": "连接",
     "online": "在线", "offline": "离线", "retry": "重试", "copy": "复制",
-    "add": "添加", "login": "登录", "dismiss": "撤销"
+    "add": "添加", "login": "登录", "dismiss": "撤销", "unknown": "未知"
+  },
+  "errors": {
+    "connectionFailed": "连接失败", "loginMissingToken": "登录成功，但服务器未返回令牌。",
+    "commandMissingId": "服务器未返回命令 ID。", "noActiveServer": "当前没有活动服务器。",
+    "serverNotConnected": "服务器尚未连接。"
   },
   "status": {
     "online": "在线", "offline": "离线", "connecting": "连接中", "connected": "已连接",
@@ -80,7 +85,7 @@
   },
   "agentDetail": {
     "tabRealtime": "实时", "tabHistory": "历史", "tabTerminal": "终端", "tabTerminalLocked": "终端 🔒",
-    "agentVersion": "agent {version}", "heartbeat": "心跳 {ago} 前", "lastHeartbeat": "最后心跳 {ago} 前",
+    "agentVersion": "Agent 版本 {version}", "heartbeat": "心跳 {ago} 前", "lastHeartbeat": "最后心跳 {ago} 前",
     "nodeOffline": "节点离线", "cpu": "CPU", "memory": "内存", "storage": "存储", "networkInterfaces": "网络接口",
     "gpu": "GPU", "gpuCount": "{n} 个", "aiAccelerator": "AI 加速器", "utilization": "利用率", "loginSessions": "登录会话",
     "systemInfo": "系统信息", "memUsed": "已用", "memAvailable": "可用", "vram": "显存", "power": "功耗", "osLabel": "OS",
@@ -91,7 +96,8 @@
   "history": {
     "loadFailed": "无法加载历史数据", "loadFailedSub": "请检查与服务器的连接", "noData": "无可用历史数据",
     "noDataSub": "该时间范围内暂无采集记录", "cpu": "CPU", "memory": "内存", "network": "网络", "diskIo": "磁盘 IO",
-    "gpu": "GPU", "peak": "峰值 {value}{unit}", "anomaly": "近期异常", "anomalyCpu": "· CPU 峰值 {value}%", "anomalyMem": "· 内存峰值 {value}%"
+    "gpu": "GPU", "rx": "接收", "tx": "发送", "read": "读取", "write": "写入", "utilization": "利用率", "temperature": "温度",
+    "peak": "峰值 {value}{unit}", "anomaly": "近期异常", "anomalyCpu": "· CPU 峰值 {value}%", "anomalyMem": "· 内存峰值 {value}%"
   },
   "terminal": {
     "title": "终端", "switchAgent": "切换", "noOnlineAgents": "没有在线的代理", "connected": "已连接到 {}",

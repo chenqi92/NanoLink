@@ -125,12 +125,12 @@ export function AgentsScreen() {
               <thead>
                 <tr>
                   <th>{t("nav.agents")}</th>
-                  <th>OS</th>
+                  <th>{t("system.osName")}</th>
                   <th>{t("status.online")}</th>
-                  <th style={{ width: 130 }}>CPU</th>
-                  <th style={{ width: 130 }}>MEM</th>
+                  <th style={{ width: 130 }}>{t("metrics.cpu")}</th>
+                  <th style={{ width: 130 }}>{t("metrics.memory")}</th>
                   <th>{t("mon.netInterfaces")}</th>
-                  <th>IP</th>
+                  <th>{t("system.ipAddress")}</th>
                   <th>{t("agent.version")}</th>
                   <th>{t("admin.permissions")}</th>
                   <th style={{ width: 28 }} />

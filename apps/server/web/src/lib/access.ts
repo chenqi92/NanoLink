@@ -9,6 +9,7 @@ const SUPER_ADMIN_PAGES = new Set<Page>([
   "alert-config",
   "settings",
   "deployments",
+  "builds",
 ])
 
 export function pageRequiresSuperAdmin(page: Page): boolean {

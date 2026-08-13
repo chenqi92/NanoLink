@@ -1,7 +1,7 @@
 // settings.tsx — UI tweaks (theme / density / font / card / accent) + language.
 // Applies data-* attributes and CSS vars to <html>, persists to localStorage,
 // and keeps i18next language in sync.
-import React, { createContext, useContext, useCallback, useEffect, useState } from "react"
+import React, { createContext, useContext, useCallback, useEffect, useLayoutEffect, useState } from "react"
 import i18n, { setLanguage } from "@/i18n"
 
 export type Theme = "dark" | "light"
@@ -53,6 +53,29 @@ function isLight(hex: string): boolean {
   return (r * 299 + g * 587 + b * 114) / 1000 > 160
 }
 
+function applyVisualTweaks(tweaks: Tweaks) {
+  if (typeof document === "undefined") return
+  const root = document.documentElement
+  root.setAttribute("data-theme", tweaks.theme)
+  root.setAttribute("data-density", tweaks.density)
+  root.setAttribute("data-font", tweaks.font)
+  root.setAttribute("data-card", tweaks.card)
+  root.setAttribute("data-font-weight", tweaks.fontWeight)
+  root.setAttribute("data-font-size", tweaks.fontSize)
+  if (tweaks.accent) {
+    root.style.setProperty("--accent", tweaks.accent)
+    root.style.setProperty("--accent-fg", isLight(tweaks.accent) ? "#0a0a0a" : "#fafafa")
+  } else {
+    root.style.removeProperty("--accent")
+    root.style.removeProperty("--accent-fg")
+  }
+}
+
+// Apply persisted visual settings before React mounts so the first painted
+// frame and every initial component measurement use the selected scale.
+const INITIAL_TWEAKS = loadTweaks()
+applyVisualTweaks(INITIAL_TWEAKS)
+
 interface SettingsContextValue {
   tweaks: Tweaks
   setTweak: <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void
@@ -64,31 +87,11 @@ interface SettingsContextValue {
 const SettingsContext = createContext<SettingsContextValue | undefined>(undefined)
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const [tweaks, setTweaks] = useState<Tweaks>(loadTweaks)
+  const [tweaks, setTweaks] = useState<Tweaks>(INITIAL_TWEAKS)
   const [lang, setLangState] = useState<Lang>((i18n.language as Lang) === "zh" ? "zh" : "en")
 
-  // Apply theme / density / font / card / font weight / font size to <html>
-  useEffect(() => {
-    const root = document.documentElement
-    root.setAttribute("data-theme", tweaks.theme)
-    root.setAttribute("data-density", tweaks.density)
-    root.setAttribute("data-font", tweaks.font)
-    root.setAttribute("data-card", tweaks.card)
-    root.setAttribute("data-font-weight", tweaks.fontWeight)
-    root.setAttribute("data-font-size", tweaks.fontSize)
-  }, [tweaks.theme, tweaks.density, tweaks.font, tweaks.card, tweaks.fontWeight, tweaks.fontSize])
-
-  // Apply accent override (or clear it to use the theme default)
-  useEffect(() => {
-    const root = document.documentElement
-    if (tweaks.accent) {
-      root.style.setProperty("--accent", tweaks.accent)
-      root.style.setProperty("--accent-fg", isLight(tweaks.accent) ? "#0a0a0a" : "#fafafa")
-    } else {
-      root.style.removeProperty("--accent")
-      root.style.removeProperty("--accent-fg")
-    }
-  }, [tweaks.accent])
+  // Keep visual attributes synchronized before the browser paints an update.
+  useLayoutEffect(() => applyVisualTweaks(tweaks), [tweaks])
 
   // Persist
   useEffect(() => {

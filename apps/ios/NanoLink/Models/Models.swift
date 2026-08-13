@@ -202,7 +202,7 @@ struct Agent: Identifiable, Equatable {
         Agent(
             id: j.string("id", "agent_id", "agentId"),
             serverId: serverId,
-            hostname: j.string("hostname", default: "unknown"),
+            hostname: j.string("hostname", default: tr("common.unknown")),
             os: j.string("os", default: ""),
             arch: j.string("arch", default: ""),
             version: j.string("version", default: ""),

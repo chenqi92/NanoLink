@@ -68,138 +68,151 @@ class _AgentsScreenState extends State<AgentsScreen> {
 
         final filters = <List<dynamic>>[
           ['all', 'agents.filterAll'.tr(), all.length],
-          ['online', 'agents.filterOnline'.tr(),
-              all.where((a) => a.isOnline).length],
-          ['warn', 'agents.filterWarn'.tr(),
-              all.where((a) => _warn(provider, a)).length],
-          ['offline', 'agents.filterOffline'.tr(),
-              all.where((a) => !a.isOnline).length],
+          [
+            'online',
+            'agents.filterOnline'.tr(),
+            all.where((a) => a.isOnline).length
+          ],
+          [
+            'warn',
+            'agents.filterWarn'.tr(),
+            all.where((a) => _warn(provider, a)).length
+          ],
+          [
+            'offline',
+            'agents.filterOffline'.tr(),
+            all.where((a) => !a.isOnline).length
+          ],
         ];
 
         return Stack(
           children: [
             SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(16, t.isIOS ? 40 : 8, 16, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              bottom: false,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(16, t.isIOS ? 40 : 8, 16, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (!t.isIOS)
-                          Builder(
-                            builder: (ctx) => Padding(
-                              padding: const EdgeInsets.only(right: 4),
-                              child: IconButton(
-                                icon: Icon(Icons.menu_rounded, color: t.fg),
-                                onPressed: () => Scaffold.of(ctx).openDrawer(),
+                        Row(
+                          children: [
+                            if (!t.isIOS)
+                              Builder(
+                                builder: (ctx) => Padding(
+                                  padding: const EdgeInsets.only(right: 4),
+                                  child: IconButton(
+                                    icon: Icon(Icons.menu_rounded, color: t.fg),
+                                    onPressed: () =>
+                                        Scaffold.of(ctx).openDrawer(),
+                                  ),
+                                ),
                               ),
+                            Text('agents.title'.tr(),
+                                style: TextStyle(
+                                    fontSize: t.isIOS ? 32 : 28,
+                                    fontWeight: t.displayWeight,
+                                    letterSpacing: t.displayTracking,
+                                    color: t.fg)),
+                            const Spacer(),
+                            IconButton(
+                              tooltip: 'agents.searchHint'.tr(),
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(Icons.search_rounded, color: t.fg2),
+                              onPressed: () => _searchFocus.requestFocus(),
                             ),
-                          ),
-                        Text('agents.title'.tr(),
-                            style: TextStyle(
-                                fontSize: t.isIOS ? 32 : 28,
-                                fontWeight: t.displayWeight,
-                                letterSpacing: t.displayTracking,
-                                color: t.fg)),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'agents.searchHint'.tr(),
-                          visualDensity: VisualDensity.compact,
-                          icon: Icon(Icons.search_rounded, color: t.fg2),
-                          onPressed: () => _searchFocus.requestFocus(),
+                            IconButton(
+                              tooltip: 'agents.filter'.tr(),
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(
+                                _filter == 'all'
+                                    ? Icons.filter_list_rounded
+                                    : Icons.filter_list_alt,
+                                color: _filter == 'all' ? t.fg2 : t.accent,
+                              ),
+                              onPressed: () =>
+                                  _showFilterSheet(provider, filters),
+                            ),
+                          ],
                         ),
-                        IconButton(
-                          tooltip: 'agents.filter'.tr(),
-                          visualDensity: VisualDensity.compact,
-                          icon: Icon(
-                            _filter == 'all'
-                                ? Icons.filter_list_rounded
-                                : Icons.filter_list_alt,
-                            color: _filter == 'all' ? t.fg2 : t.accent,
+                        const SizedBox(height: 8),
+                        // search
+                        Container(
+                          decoration: BoxDecoration(
+                            color: t.card2,
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          onPressed: () => _showFilterSheet(provider, filters),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Row(
+                            children: [
+                              Icon(Icons.search_rounded,
+                                  size: 18, color: t.fg4),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: TextField(
+                                  focusNode: _searchFocus,
+                                  style: TextStyle(color: t.fg, fontSize: 15),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    border: InputBorder.none,
+                                    hintText: 'agents.searchHint'.tr(),
+                                    hintStyle: TextStyle(color: t.fg4),
+                                  ),
+                                  onChanged: (v) => setState(() => _query = v),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          height: 30,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            children: [
+                              for (final f in filters)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: _FilterChip(
+                                    label: f[1] as String,
+                                    count: f[2] as int,
+                                    selected: _filter == f[0],
+                                    onTap: () => setState(
+                                        () => _filter = f[0] as String),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    // search
-                    Container(
-                      decoration: BoxDecoration(
-                        color: t.card2,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Row(
-                        children: [
-                          Icon(Icons.search_rounded, size: 18, color: t.fg4),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: TextField(
-                              focusNode: _searchFocus,
-                              style: TextStyle(color: t.fg, fontSize: 15),
-                              decoration: InputDecoration(
-                                isDense: true,
-                                border: InputBorder.none,
-                                hintText: 'agents.searchHint'.tr(),
-                                hintStyle: TextStyle(color: t.fg4),
-                              ),
-                              onChanged: (v) => setState(() => _query = v),
+                  ),
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? Center(
+                            child: Text(
+                              all.isEmpty
+                                  ? 'agents.noNodes'.tr()
+                                  : 'agents.noMatch'.tr(),
+                              style: TextStyle(color: t.fg4, fontSize: 13.5),
+                            ),
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (ctx, i) => _AgentCard(
+                              agent: filtered[i],
+                              metrics: provider.metricsFor(filtered[i].id),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 30,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          for (final f in filters)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: _FilterChip(
-                                label: f[1] as String,
-                                count: f[2] as int,
-                                selected: _filter == f[0],
-                                onTap: () =>
-                                    setState(() => _filter = f[0] as String),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              Expanded(
-                child: filtered.isEmpty
-                    ? Center(
-                        child: Text(
-                          all.isEmpty
-                              ? 'agents.noNodes'.tr()
-                              : 'agents.noMatch'.tr(),
-                          style: TextStyle(color: t.fg4, fontSize: 13.5),
-                        ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (ctx, i) => _AgentCard(
-                          agent: filtered[i],
-                          metrics: provider.metricsFor(filtered[i].id),
-                        ),
-                      ),
-              ),
-            ],
-          ),
-        ),
+            ),
             Positioned(
               right: 16,
               bottom: 16 + MediaQuery.of(context).padding.bottom,
@@ -377,7 +390,9 @@ class _AgentCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     NanoMono(agent.hostname,
-                        size: 14, weight: FontWeight.w600, color: t.fg,
+                        size: 14,
+                        weight: FontWeight.w600,
+                        color: t.fg,
                         overflow: TextOverflow.ellipsis),
                     Text('${agent.os} · ${agent.arch}',
                         maxLines: 1,
@@ -389,7 +404,8 @@ class _AgentCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  NanoStatusLabel(status: agent.isOnline ? 'online' : 'offline'),
+                  NanoStatusLabel(
+                      status: agent.isOnline ? 'online' : 'offline'),
                   const SizedBox(height: 5),
                   NanoPermPill(level: agent.permissionLevel),
                 ],
@@ -397,8 +413,7 @@ class _AgentCard extends StatelessWidget {
               IconButton(
                 visualDensity: VisualDensity.compact,
                 icon: Icon(Icons.more_horiz_rounded, color: t.fg4, size: 20),
-                onPressed: () =>
-                    showAgentActionsSheet(context, agent: agent),
+                onPressed: () => showAgentActionsSheet(context, agent: agent),
               ),
             ],
           ),
@@ -433,7 +448,11 @@ class _AgentCard extends StatelessWidget {
     for (final d in m.disks) {
       if (worst == null || d.usagePercent > worst.usagePercent) worst = d;
     }
-    String tone(double v) => v > 90 ? 'crit' : v > 75 ? 'warn' : '';
+    String tone(double v) => v > 90
+        ? 'crit'
+        : v > 75
+            ? 'warn'
+            : '';
     final temp = m.cpu.temperature;
     final cpuSub = temp > 0
         ? '${m.cpu.coreCount}c · ${temp.toStringAsFixed(0)}°C'
@@ -443,7 +462,7 @@ class _AgentCard extends StatelessWidget {
         const SizedBox(height: 4),
         NanoMetricRow(
           icon: Icons.memory_rounded,
-          label: 'CPU',
+          label: 'history.cpu'.tr(),
           pct: cpu,
           value: '${cpu.toStringAsFixed(0)}%',
           sub: cpuSub,
@@ -452,17 +471,18 @@ class _AgentCard extends StatelessWidget {
         const SizedBox(height: 6),
         NanoMetricRow(
           icon: Icons.sd_storage_outlined,
-          label: 'MEM',
+          label: 'history.memory'.tr(),
           pct: mem,
           value: '${mem.toStringAsFixed(0)}%',
-          sub: '${Fmt.gib(m.memory.used).toStringAsFixed(0)}/${Fmt.gib(m.memory.total).toStringAsFixed(0)}G',
+          sub:
+              '${Fmt.gib(m.memory.used).toStringAsFixed(0)}/${Fmt.gib(m.memory.total).toStringAsFixed(0)}G',
           tone: tone(mem).isEmpty ? null : tone(mem),
         ),
         if (worst != null) ...[
           const SizedBox(height: 6),
           NanoMetricRow(
             icon: Icons.storage_rounded,
-            label: 'DSK',
+            label: 'metrics.disk'.tr(),
             pct: worst.usagePercent,
             value: '${worst.usagePercent.toStringAsFixed(0)}%',
             sub: worst.mountPoint,

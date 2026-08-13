@@ -114,7 +114,7 @@ final class AppStore: ObservableObject {
     var hasReauthNeeded: Bool { !needsReauthIds.isEmpty }
 
     func serverName(_ serverId: String) -> String {
-        servers.first { $0.id == serverId }?.name ?? "Unknown"
+        servers.first { $0.id == serverId }?.name ?? tr("common.unknown")
     }
 
     var totalSummary: ServerSummary {
@@ -166,7 +166,7 @@ final class AppStore: ObservableObject {
 
     // MARK: Add / remove servers
 
-    private var deviceName: String { "iOS device" }
+    private var deviceName: String { tr("device.defaultName") }
     private var deviceType: String { "mobile" }
     private var deviceOs: String { "iOS" }
 
@@ -429,8 +429,8 @@ final class AppStore: ObservableObject {
     }
 
     func acknowledgeAlert(_ alertId: String, serverId: String? = nil) async -> String? {
-        guard let id = serverId ?? activeServerId else { return "no active server" }
-        guard let service = services[id] else { return "server not connected" }
+        guard let id = serverId ?? activeServerId else { return tr("errors.noActiveServer") }
+        guard let service = services[id] else { return tr("errors.serverNotConnected") }
         let err = await service.ackAlert(alertId)
         if err == nil { await fetchServerAlerts(serverId: id) }
         return err

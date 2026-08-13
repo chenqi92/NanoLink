@@ -46,8 +46,8 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
   const hoverOut = (e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.background = "transparent")
 
   return (
-    <div className="scrim" onClick={onClose} style={{ alignItems: "flex-start", paddingTop: "10vh" }}>
-      <div className="dialog" style={{ width: 560, maxHeight: "70vh" }} onClick={(e) => e.stopPropagation()}>
+    <div className="scrim search-palette-scrim" onClick={onClose}>
+      <div className="dialog search-palette-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="row gap-2" style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
           {I.search({ size: 14 })}
           <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("topbar.search")} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "inherit", fontSize: 13, padding: 4 }} />

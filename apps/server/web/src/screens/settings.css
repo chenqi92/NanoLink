@@ -623,7 +623,7 @@
   align-items: center;
 }
 
-@media (max-width: 980px) {
+@container app-viewport (max-width: 980px) {
   .settings-workspace {
     grid-template-columns: 190px minmax(0, 1fr);
   }
@@ -644,7 +644,7 @@
   }
 }
 
-@media (max-width: 760px) {
+@container app-viewport (max-width: 760px) {
   .settings-workspace {
     display: flex;
     flex-direction: column;
@@ -712,7 +712,7 @@
   }
 }
 
-@media (max-width: 520px) {
+@container app-viewport (max-width: 520px) {
   .settings-section-header {
     align-items: flex-start;
   }

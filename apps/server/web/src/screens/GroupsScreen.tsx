@@ -44,7 +44,7 @@ export function GroupsScreen() {
         ) : groups.length === 0 ? (
           <EmptyState icon={I.group({ size: 28 })} title={t("nav.groups")} desc={t("acc.groupsSubtitle")} action={<button className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>{I.plus({ size: 13 })}<span>{t("acc.newGroup")}</span></button>} />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
+          <div className="auto-card-grid-340" style={{ gap: 12 }}>
             {groups.map((g) => {
               const members = membersOf(g.id)
               const count = g.userCount ?? members.length
@@ -119,7 +119,7 @@ function GroupEditor({ group, onClose, onDone }: { group?: Group; onClose: () =>
         <FormBlock label={t("acc.description")}><input className="input" value={desc} onChange={(e) => setDesc(e.target.value)} /></FormBlock>
         <div className="row gap-2">
           <FormBlock label={t("admin.permissions")}><select className="select" value={perm} onChange={(e) => setPerm(Number(e.target.value))}>{[0, 1, 2, 3].map((l) => <option key={l} value={l}>L{l} · {t(`permission.l${l}`)}</option>)}</select></FormBlock>
-          <FormBlock label={t("dev.scope")}><input className="input" value={scope} onChange={(e) => setScope(e.target.value)} placeholder="All prod agents" /></FormBlock>
+          <FormBlock label={t("dev.scope")}><input className="input" value={scope} onChange={(e) => setScope(e.target.value)} placeholder={t("dev.groupScopePlaceholder")} /></FormBlock>
         </div>
       </div>
     </Modal>

@@ -177,14 +177,14 @@ struct AgentsScreen: View {
             }.padding(.top, 4)
         } else if let m = store.metricsFor(agent.id) {
             VStack(spacing: 6) {
-                NanoMetricRow(icon: "cpu", label: "CPU", value: String(format: "%.0f%%", m.cpuPercent),
+                NanoMetricRow(icon: "cpu", label: tr("metrics.cpu"), value: String(format: "%.0f%%", m.cpuPercent),
                               sub: m.cpu.temperature.map { "\(m.cpu.coreCount)c · \(Int($0))°C" } ?? "\(m.cpu.coreCount)c",
                               pct: m.cpuPercent, tone: tone(m.cpuPercent))
-                NanoMetricRow(icon: "memorychip", label: "MEM", value: String(format: "%.0f%%", m.memoryPercent),
+                NanoMetricRow(icon: "memorychip", label: tr("metrics.memory"), value: String(format: "%.0f%%", m.memoryPercent),
                               sub: "\(Int(Fmt.gib(Double(m.memory.used))))/\(Int(Fmt.gib(Double(m.memory.total))))G",
                               pct: m.memoryPercent, tone: tone(m.memoryPercent))
                 if let disk = m.disks.max(by: { $0.usagePercent < $1.usagePercent }) {
-                    NanoMetricRow(icon: "internaldrive", label: "DSK", value: String(format: "%.0f%%", disk.usagePercent),
+                    NanoMetricRow(icon: "internaldrive", label: tr("metrics.disk"), value: String(format: "%.0f%%", disk.usagePercent),
                                   sub: disk.mountPoint, pct: disk.usagePercent, tone: tone(disk.usagePercent))
                 }
             }.padding(.top, 4)

@@ -66,12 +66,12 @@ export const AgentCard = memo(function AgentCard({ agent: a, metrics: m, onClick
         </div>
       ) : (
         <div className="col gap-3" style={{ paddingTop: 4 }}>
-          <MetricRow icon={I.cpu({ size: 11 })} label="CPU" pct={cpuUse} tone={toneFor(cpuUse)} sub={`${m.cpu.coreCount}c · ${(m.cpu.frequencyMhz / 1000).toFixed(1)} GHz${m.cpu.temperature ? ` · ${Math.round(m.cpu.temperature)}°C` : ""}`} />
-          <MetricRow icon={I.mem({ size: 11 })} label="MEM" pct={memUse} tone={toneFor(memUse)} sub={`${formatBytes(m.memory.used)} / ${formatBytes(m.memory.total)}`} />
-          {worstDisk && <MetricRow icon={I.disk({ size: 11 })} label="DSK" pct={worstDisk.usagePercent} tone={toneFor(worstDisk.usagePercent)} sub={`${worstDisk.mountPoint} · ${toGiB(worstDisk.used).toFixed(0)}/${toGiB(worstDisk.total).toFixed(0)} GiB`} />}
+          <MetricRow icon={I.cpu({ size: 11 })} label={t("metrics.cpu")} pct={cpuUse} tone={toneFor(cpuUse)} sub={`${m.cpu.coreCount}c · ${(m.cpu.frequencyMhz / 1000).toFixed(1)} GHz${m.cpu.temperature ? ` · ${Math.round(m.cpu.temperature)}°C` : ""}`} />
+          <MetricRow icon={I.mem({ size: 11 })} label={t("metrics.memory")} pct={memUse} tone={toneFor(memUse)} sub={`${formatBytes(m.memory.used)} / ${formatBytes(m.memory.total)}`} />
+          {worstDisk && <MetricRow icon={I.disk({ size: 11 })} label={t("metrics.disk")} pct={worstDisk.usagePercent} tone={toneFor(worstDisk.usagePercent)} sub={`${worstDisk.mountPoint} · ${toGiB(worstDisk.used).toFixed(0)}/${toGiB(worstDisk.total).toFixed(0)} GiB`} />}
           {net && (
             <div className="row" style={{ alignItems: "center", gap: 8, fontSize: 11.5 }}>
-              <span className="row gap-1 muted" style={{ width: 38, fontSize: 10.5, alignItems: "center" }}>{I.net({ size: 11 })} <span className="mono">NET</span></span>
+              <span className="row gap-1 muted" style={{ width: 38, fontSize: 10.5, alignItems: "center" }}>{I.net({ size: 11 })} <span className="mono">{t("metrics.network")}</span></span>
               <span className="mono num" style={{ flex: 1, color: "var(--fg-3)" }}>
                 <span style={{ color: "var(--fg)" }}>↓ {formatRate(net.rxBytesPerSec)}</span>
                 <span style={{ marginLeft: 10, color: "var(--fg)" }}>↑ {formatRate(net.txBytesPerSec)}</span>
@@ -81,7 +81,7 @@ export const AgentCard = memo(function AgentCard({ agent: a, metrics: m, onClick
           )}
           {gpus.length > 0 && (
             <div className="row" style={{ alignItems: "center", gap: 8, fontSize: 11.5 }}>
-              <span className="row gap-1 muted" style={{ width: 38, fontSize: 10.5, alignItems: "center" }}>{I.gpu({ size: 11 })} <span className="mono">GPU</span></span>
+              <span className="row gap-1 muted" style={{ width: 38, fontSize: 10.5, alignItems: "center" }}>{I.gpu({ size: 11 })} <span className="mono">{t("metrics.gpu")}</span></span>
               <span className="mono num truncate" style={{ flex: 1, color: "var(--fg-2)" }}>
                 {gpus.length}× {gpus[0].name.split(" ").slice(1, 3).join(" ") || gpus[0].name}
                 <span className="dim"> · </span>

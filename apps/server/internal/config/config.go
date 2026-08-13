@@ -26,6 +26,7 @@ type Config struct {
 	MCP        MCPConfig        `mapstructure:"mcp"`
 	LLM        LLMConfig        `mapstructure:"llm"`
 	Deployment DeploymentConfig `mapstructure:"deployment"`
+	Build      BuildConfig      `mapstructure:"build"`
 	Update     UpdateConfig     `mapstructure:"update"`
 }
 
@@ -153,6 +154,18 @@ type DeploymentConfig struct {
 	DownloadTTLMin   int    `mapstructure:"download_ttl_minutes"`
 }
 
+// BuildConfig controls the control-plane source/artifact cache. Project code is
+// never executed by the server process; it is dispatched to an opted-in agent.
+type BuildConfig struct {
+	StoragePath        string   `mapstructure:"storage_path"`
+	AllowedSourceHosts []string `mapstructure:"allowed_source_hosts"`
+	MaxSourceBytes     int64    `mapstructure:"max_source_bytes"`
+	MaxArtifactBytes   int64    `mapstructure:"max_artifact_bytes"`
+	DownloadTTLMin     int      `mapstructure:"download_ttl_minutes"`
+	FetchTimeoutSec    int      `mapstructure:"fetch_timeout_seconds"`
+	MaxLogBytes        int      `mapstructure:"max_log_bytes"`
+}
+
 // UpdateConfig controls server version checking and self-update. The source
 // enum intentionally mirrors the agent's UpdateSource (agent/src/config.rs) so
 // operators configure both sides the same way.
@@ -232,6 +245,14 @@ func Default() *Config {
 			MaxArtifactBytes: 512 * 1024 * 1024,
 			DownloadTTLMin:   30,
 		},
+		Build: BuildConfig{
+			StoragePath:      "./data/builds",
+			MaxSourceBytes:   512 * 1024 * 1024,
+			MaxArtifactBytes: 512 * 1024 * 1024,
+			DownloadTTLMin:   60,
+			FetchTimeoutSec:  300,
+			MaxLogBytes:      2 * 1024 * 1024,
+		},
 		Update: UpdateConfig{
 			Source:            "github",
 			Repo:              "chenqi92/NanoLink",
@@ -271,6 +292,12 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("deployment.storage_path", "./data/artifacts")
 	viper.SetDefault("deployment.max_artifact_bytes", int64(512*1024*1024))
 	viper.SetDefault("deployment.download_ttl_minutes", 30)
+	viper.SetDefault("build.storage_path", "./data/builds")
+	viper.SetDefault("build.max_source_bytes", int64(512*1024*1024))
+	viper.SetDefault("build.max_artifact_bytes", int64(512*1024*1024))
+	viper.SetDefault("build.download_ttl_minutes", 60)
+	viper.SetDefault("build.fetch_timeout_seconds", 300)
+	viper.SetDefault("build.max_log_bytes", 2*1024*1024)
 	viper.SetDefault("update.source", "github")
 	viper.SetDefault("update.repo", "chenqi92/NanoLink")
 	viper.SetDefault("update.auto_check", true)
@@ -314,6 +341,13 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("deployment.storage_path", "NANOLINK_DEPLOYMENT_STORAGE_PATH")
 	_ = viper.BindEnv("deployment.max_artifact_bytes", "NANOLINK_DEPLOYMENT_MAX_ARTIFACT_BYTES")
 	_ = viper.BindEnv("deployment.download_ttl_minutes", "NANOLINK_DEPLOYMENT_DOWNLOAD_TTL_MINUTES")
+	_ = viper.BindEnv("build.storage_path", "NANOLINK_BUILD_STORAGE_PATH")
+	_ = viper.BindEnv("build.allowed_source_hosts", "NANOLINK_BUILD_ALLOWED_SOURCE_HOSTS")
+	_ = viper.BindEnv("build.max_source_bytes", "NANOLINK_BUILD_MAX_SOURCE_BYTES")
+	_ = viper.BindEnv("build.max_artifact_bytes", "NANOLINK_BUILD_MAX_ARTIFACT_BYTES")
+	_ = viper.BindEnv("build.download_ttl_minutes", "NANOLINK_BUILD_DOWNLOAD_TTL_MINUTES")
+	_ = viper.BindEnv("build.fetch_timeout_seconds", "NANOLINK_BUILD_FETCH_TIMEOUT_SECONDS")
+	_ = viper.BindEnv("build.max_log_bytes", "NANOLINK_BUILD_MAX_LOG_BYTES")
 	_ = viper.BindEnv("update.source", "NANOLINK_UPDATE_SOURCE")
 	_ = viper.BindEnv("update.repo", "NANOLINK_UPDATE_REPO")
 	_ = viper.BindEnv("update.custom_url", "NANOLINK_UPDATE_CUSTOM_URL")
@@ -407,6 +441,37 @@ func Load(path string) (*Config, error) {
 			cfg.Deployment.DownloadTTLMin = n
 		}
 	}
+	if v := os.Getenv("NANOLINK_BUILD_STORAGE_PATH"); v != "" {
+		cfg.Build.StoragePath = v
+	}
+	if v := os.Getenv("NANOLINK_BUILD_ALLOWED_SOURCE_HOSTS"); v != "" {
+		cfg.Build.AllowedSourceHosts = splitAndTrim(v)
+	}
+	if raw := os.Getenv("NANOLINK_BUILD_MAX_SOURCE_BYTES"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			cfg.Build.MaxSourceBytes = n
+		}
+	}
+	if raw := os.Getenv("NANOLINK_BUILD_MAX_ARTIFACT_BYTES"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			cfg.Build.MaxArtifactBytes = n
+		}
+	}
+	if raw := os.Getenv("NANOLINK_BUILD_DOWNLOAD_TTL_MINUTES"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			cfg.Build.DownloadTTLMin = n
+		}
+	}
+	if raw := os.Getenv("NANOLINK_BUILD_FETCH_TIMEOUT_SECONDS"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			cfg.Build.FetchTimeoutSec = n
+		}
+	}
+	if raw := os.Getenv("NANOLINK_BUILD_MAX_LOG_BYTES"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			cfg.Build.MaxLogBytes = n
+		}
+	}
 	if v := os.Getenv("NANOLINK_UPDATE_SOURCE"); v != "" {
 		cfg.Update.Source = v
 	}
@@ -471,6 +536,24 @@ func (c *Config) ValidateAndSecure() {
 	}
 	if c.Deployment.DownloadTTLMin <= 0 {
 		c.Deployment.DownloadTTLMin = 30
+	}
+	if strings.TrimSpace(c.Build.StoragePath) == "" {
+		c.Build.StoragePath = "./data/builds"
+	}
+	if c.Build.MaxSourceBytes <= 0 {
+		c.Build.MaxSourceBytes = 512 * 1024 * 1024
+	}
+	if c.Build.MaxArtifactBytes <= 0 {
+		c.Build.MaxArtifactBytes = 512 * 1024 * 1024
+	}
+	if c.Build.DownloadTTLMin <= 0 {
+		c.Build.DownloadTTLMin = 60
+	}
+	if c.Build.FetchTimeoutSec <= 0 {
+		c.Build.FetchTimeoutSec = 300
+	}
+	if c.Build.MaxLogBytes <= 0 {
+		c.Build.MaxLogBytes = 2 * 1024 * 1024
 	}
 	c.validateUpdate()
 

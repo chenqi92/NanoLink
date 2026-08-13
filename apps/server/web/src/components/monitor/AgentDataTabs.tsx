@@ -79,9 +79,9 @@ function StatePanel({ loading, error, empty, emptyMsg, onRetry }: { loading: boo
 }
 
 const SORTS = [
-  { k: "cpu", l: "CPU" },
-  { k: "mem", l: "MEM" },
-  { k: "pid", l: "PID" },
+  { k: "cpu", l: "metrics.cpu" },
+  { k: "mem", l: "metrics.memory" },
+  { k: "pid", l: "mon.pid" },
 ] as const
 type ProcSort = (typeof SORTS)[number]["k"]
 
@@ -113,7 +113,7 @@ export function ProcessesTab({ agentId, permission = 0 }: { agentId: string; per
   const sortToggle = (
     <div className="row gap-1" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 3 }}>
       {SORTS.map((s) => (
-        <button key={s.k} onClick={() => setSort(s.k)} className="btn btn-sm" style={{ background: sort === s.k ? "var(--panel)" : "transparent", border: sort === s.k ? "1px solid var(--border-2)" : "1px solid transparent", color: sort === s.k ? "var(--fg)" : "var(--fg-4)", height: 24, padding: "0 10px", fontFamily: "var(--font-mono)", fontSize: 11 }}>{s.l}</button>
+        <button key={s.k} onClick={() => setSort(s.k)} className="btn btn-sm" style={{ background: sort === s.k ? "var(--panel)" : "transparent", border: sort === s.k ? "1px solid var(--border-2)" : "1px solid transparent", color: sort === s.k ? "var(--fg)" : "var(--fg-4)", height: 24, padding: "0 10px", fontFamily: "var(--font-mono)", fontSize: 11 }}>{t(s.l)}</button>
       ))}
     </div>
   )
@@ -126,7 +126,7 @@ export function ProcessesTab({ agentId, permission = 0 }: { agentId: string; per
       {data && rows.length > 0 && (
         <div className="card" style={{ overflow: "auto" }}>
           <table className="tbl" style={{ minWidth: 760 }}>
-            <thead><tr><th>{t("mon.pid")}</th><th>{t("sessions.user")}</th><th style={{ width: 160 }}>CPU</th><th style={{ textAlign: "right" }}>MEM</th><th>TIME</th><th>{t("mon.state")}</th><th>{t("mon.command")}</th><th style={{ textAlign: "right" }} /></tr></thead>
+            <thead><tr><th>{t("mon.pid")}</th><th>{t("sessions.user")}</th><th style={{ width: 160 }}>{t("metrics.cpu")}</th><th style={{ textAlign: "right" }}>{t("metrics.memory")}</th><th>{t("metrics.time")}</th><th>{t("mon.state")}</th><th>{t("mon.command")}</th><th style={{ textAlign: "right" }} /></tr></thead>
             <tbody>
               {rows.slice(0, 300).map((p) => (
                 <tr key={p.pid}>
@@ -282,7 +282,7 @@ export function DockerTab({ agentId, permission = 0 }: { agentId: string; permis
       {data && rows.length > 0 && (
         <div className="card" style={{ overflow: "auto" }}>
           <table className="tbl" style={{ minWidth: 760 }}>
-            <thead><tr><th>{t("mon.tabDocker")}</th><th>{t("mon.image")}</th><th>{t("mon.state")}</th><th style={{ width: 150 }}>CPU / MEM</th><th>{t("dev.ports")}</th><th>{t("dev.network")}</th><th style={{ textAlign: "right" }}>{t("dev.actions")}</th></tr></thead>
+            <thead><tr><th>{t("mon.tabDocker")}</th><th>{t("mon.image")}</th><th>{t("mon.state")}</th><th style={{ width: 150 }}>{t("metrics.cpu")} / {t("metrics.memory")}</th><th>{t("dev.ports")}</th><th>{t("dev.network")}</th><th style={{ textAlign: "right" }}>{t("dev.actions")}</th></tr></thead>
             <tbody>
               {rows.map((c) => {
                 const running = /run|up/i.test(c.state || c.status)
@@ -297,12 +297,12 @@ export function DockerTab({ agentId, permission = 0 }: { agentId: string; permis
                       {running && (c.cpuPercent != null || c.memoryBytes != null) ? (
                         <div className="col" style={{ gap: 3 }}>
                           <div className="row gap-2" style={{ alignItems: "center" }}>
-                            <span className="dim mono" style={{ fontSize: 10, width: 26 }}>CPU</span>
+                            <span className="dim mono" style={{ fontSize: 10, width: 26 }}>{t("metrics.cpu")}</span>
                             <div className="meter" style={{ flex: 1, height: 3 }}><div className={`meter-fill ${toneFor(c.cpuPercent ?? 0)}`} style={{ width: `${Math.min(100, c.cpuPercent ?? 0)}%` }} /></div>
                             <span className="mono num" style={{ fontSize: 10.5, minWidth: 32, textAlign: "right" }}>{(c.cpuPercent ?? 0).toFixed(1)}%</span>
                           </div>
                           <div className="row gap-2" style={{ alignItems: "center" }}>
-                            <span className="dim mono" style={{ fontSize: 10, width: 26 }}>MEM</span>
+                            <span className="dim mono" style={{ fontSize: 10, width: 26 }}>{t("metrics.memory")}</span>
                             <div className="meter" style={{ flex: 1, height: 3 }}><div className={`meter-fill ${toneFor(memPct)}`} style={{ width: `${Math.min(100, memPct)}%` }} /></div>
                             <span className="mono num dim" style={{ fontSize: 10.5, minWidth: 52, textAlign: "right" }}>{c.memoryBytes ? formatBytes(c.memoryBytes) : "—"}</span>
                           </div>
@@ -355,7 +355,7 @@ function ContainerLogsModal({ agentId, container, onClose }: { agentId: string; 
       ) : error != null ? (
         <RequestState error={error} compact />
       ) : text ? (
-        <pre className="code" style={{ fontSize: 11, maxHeight: "60vh", overflow: "auto" }}>{text}</pre>
+        <pre className="code" style={{ fontSize: 11 }}>{text}</pre>
       ) : (
         <div style={{ padding: 24, textAlign: "center", color: "var(--fg-4)" }}>{t("dev.noLines")}</div>
       )}
@@ -388,7 +388,7 @@ export function FilesTab({ agentId, permission = 0 }: { agentId: string; permiss
     <div className="row" style={{ padding: 20, gap: 14, height: "100%", overflow: "hidden", alignItems: "stretch" }}>
       <div className="card col" style={{ width: 340, overflow: "hidden", flexShrink: 0 }}>
         <div className="row gap-2" style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
-          <button className="btn btn-sm btn-ghost btn-icon" title="Up" onClick={() => go(parentDir(path))}>{I.back({ size: 13 })}</button>
+          <button className="btn btn-sm btn-ghost btn-icon" title={t("dev.goUp")} aria-label={t("dev.goUp")} onClick={() => go(parentDir(path))}>{I.back({ size: 13 })}</button>
           <div className="row gap-2" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0 8px", height: 28, flex: 1, minWidth: 140 }}>
             {I.audit({ size: 12 })}
             <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") go(input) }} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "var(--font-mono)", fontSize: 11.5 }} />
@@ -443,7 +443,7 @@ function FileViewer({ agentId, path, permission }: { agentId: string; path: stri
         <div className="row gap-2" style={{ flexShrink: 0 }}>
           <button onClick={() => { setTailing((v) => !v); reload() }} className="btn btn-sm" style={{ background: tailing ? "var(--panel-2)" : "transparent", borderColor: tailing ? "var(--ok)" : "var(--border-2)", color: tailing ? "var(--ok)" : "var(--fg-3)" }}>
             <span className={`dot ${tailing ? "ok pulse" : ""}`} />
-            <span>{tailing ? t("dev.tail") : "tail"}</span>
+            <span>{t("dev.tail")}</span>
           </button>
           <button className="btn btn-sm btn-ghost" disabled={!!busy || permission < 1} title={permission < 1 ? t("access.permissionLevelDesc", { level: "L1" }) : undefined} onClick={() => run("dl", "FILE_DOWNLOAD", { target: path })}>{busy === "dl" ? <span className="dot pulse ok" /> : I.external({ size: 12 })}<span>{t("dev.download")}</span></button>
           <button className="btn btn-sm btn-ghost btn-icon" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 12 })}</button>

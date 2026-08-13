@@ -232,7 +232,7 @@ export function PermissionsScreen() {
                         <div key={a.id} className="row" style={{ alignItems: "center", justifyContent: "space-between", padding: "8px 10px", background: "var(--panel-2)", borderRadius: 4 }}>
                           <span className="mono truncate" style={{ fontSize: 12 }}>{a.hostname}</span>
                           <div className="row gap-1">
-                            {su ? <span className="perm perm-3">L3 · SuperAdmin</span> : [0, 1, 2, 3].map((l) => (
+                            {su ? <span className="perm perm-3">L3 · {t("acc.roleSuper")}</span> : [0, 1, 2, 3].map((l) => (
                               <button key={l} className="btn btn-sm" onClick={() => setPerm(selectedUser, a.id, lvl === l ? null : l)} style={{ height: 22, padding: "0 8px", fontFamily: "var(--font-mono)", fontSize: 11, background: lvl === l ? "var(--panel)" : "transparent", border: lvl === l ? "1px solid var(--border-strong)" : "1px solid transparent", color: lvl === l ? "var(--fg)" : "var(--fg-4)" }}>L{l}</button>
                             ))}
                           </div>

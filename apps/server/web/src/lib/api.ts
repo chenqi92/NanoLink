@@ -746,6 +746,7 @@ export interface DeploymentRelease {
   projectId: number
   version: string
   artifactName: string
+  keepArtifacts: number
   artifactSize: number
   sha256: string
   notes: string
@@ -800,6 +801,112 @@ export const deploymentsApi = {
   deploy: (projectId: number, releaseId: string) => api.post<DeploymentTask>(`/deployment-projects/${projectId}/releases/${releaseId}/deploy`),
   rollback: (projectId: number, releaseId: string) => api.post<DeploymentTask>(`/deployment-projects/${projectId}/releases/${releaseId}/rollback`),
   task: (taskId: string) => api.get<DeploymentTask>(`/deployment-tasks/${taskId}`),
+}
+
+// Automated build pipelines
+export interface BuildStage {
+  id: string
+  name: string
+  command: string
+  needs: string[]
+  allowFailure: boolean
+  timeoutSeconds: number
+}
+
+export interface BuildVariable {
+  name: string
+  value?: string
+  secret: boolean
+  required: boolean
+}
+
+export interface BuildPipeline {
+  id: number
+  name: string
+  description: string
+  agentId: string
+  sourceType: "git" | "url" | "upload"
+  sourceUrl: string
+  sourceRef: string
+  runnerType: "docker" | "host"
+  containerImage: string
+  stages: BuildStage[]
+  variables: BuildVariable[]
+  artifactPattern: string
+  artifactName: string
+  keepArtifacts: number
+  publishProjectId?: number | null
+  timeoutSeconds: number
+  schedule: string
+  enabled: boolean
+  webhookTokenHint?: string
+  webhookToken?: string
+  lastRunAt?: string
+  createdAt: string
+  updatedAt: string
+  runs?: BuildRun[]
+}
+
+export type BuildPipelineInput = Omit<BuildPipeline, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "runs" | "webhookToken" | "webhookTokenHint">
+
+export interface BuildArtifact {
+  id: string
+  runId: string
+  name: string
+  size: number
+  sha256: string
+  deploymentReleaseId?: string | null
+  createdAt: string
+}
+
+export interface BuildRun {
+  id: string
+  pipelineId: number
+  runNumber: number
+  agentId: string
+  commandId: string
+  status: "queued" | "running" | "success" | "failed" | "canceled"
+  trigger: "manual" | "webhook" | "schedule"
+  version: string
+  sourceType: "git" | "url" | "upload"
+  sourceUrl: string
+  sourceRef: string
+  sourceName: string
+  sourceSize: number
+  sourceSha256: string
+  runnerType: "docker" | "host"
+  containerImage: string
+  artifactPattern: string
+  artifactName: string
+  publishProjectId?: number | null
+  timeoutSeconds: number
+  output: string
+  error: string
+  createdByName: string
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+  artifact?: BuildArtifact
+  pipeline?: BuildPipeline
+}
+
+export const buildsApi = {
+  pipelines: () => api.get<BuildPipeline[]>("/build-pipelines"),
+  pipeline: (id: number) => api.get<BuildPipeline>(`/build-pipelines/${id}`),
+  createPipeline: (body: BuildPipelineInput) => api.post<BuildPipeline>("/build-pipelines", body),
+  updatePipeline: (id: number, body: BuildPipelineInput) => api.put<BuildPipeline>(`/build-pipelines/${id}`, body),
+  rotateWebhookToken: (id: number) => api.post<{ webhookToken: string; webhookTokenHint: string }>(`/build-pipelines/${id}/webhook-token`),
+  run: (id: number, version?: string) => api.post<BuildRun>(`/build-pipelines/${id}/run`, { version }),
+  uploadAndRun: (id: number, version: string, source: File) => {
+    const form = new FormData()
+    form.set("version", version)
+    form.set("source", source)
+    return api.upload<BuildRun>(`/build-pipelines/${id}/upload-run`, form)
+  },
+  runs: (pipelineId?: number, limit = 50) => api.get<BuildRun[]>(`/build-runs?limit=${limit}${pipelineId ? `&pipelineId=${pipelineId}` : ""}`),
+  runDetail: (id: string) => api.get<BuildRun>(`/build-runs/${id}`),
+  cancelRun: (id: string) => api.post<BuildRun>(`/build-runs/${id}/cancel`),
+  artifactDownloadUrl: (artifactId: string) => `/api/build-artifacts/${artifactId}/download`,
 }
 
 // Agent Token types and API

@@ -3,8 +3,14 @@
   "common": {
     "loading": "Loading...", "cancel": "Cancel", "remove": "Remove", "connect": "Connect",
     "online": "Online", "offline": "Offline", "retry": "Retry", "copy": "Copy",
-    "add": "Add", "login": "Sign In", "dismiss": "Dismiss"
+    "add": "Add", "login": "Sign In", "dismiss": "Dismiss", "unknown": "Unknown"
   },
+  "errors": {
+    "connectionFailed": "Connection failed", "loginMissingToken": "Login succeeded, but the server returned no token.",
+    "commandMissingId": "The server returned no command ID.", "noActiveServer": "No active server.",
+    "serverNotConnected": "The server is not connected."
+  },
+  "device": { "defaultName": "iOS device" },
   "status": {
     "online": "Online", "offline": "Offline", "connecting": "Connecting", "connected": "Connected",
     "error": "Connection Error", "closed": "Disconnected", "reconnect": "Reconnect"
@@ -96,7 +102,7 @@
   },
   "agentDetail": {
     "tabRealtime": "Realtime", "tabHistory": "History", "tabTerminal": "Terminal",
-    "tabTerminalLocked": "Terminal 🔒", "agentVersion": "agent {version}", "heartbeat": "heartbeat {ago} ago",
+    "tabTerminalLocked": "Terminal 🔒", "agentVersion": "Agent {version}", "heartbeat": "heartbeat {ago} ago",
     "lastHeartbeat": "Last heartbeat {ago} ago", "nodeOffline": "Node offline", "cpu": "CPU",
     "memory": "Memory", "storage": "Storage", "networkInterfaces": "Network Interfaces", "gpu": "GPU",
     "gpuCount": "{n}", "aiAccelerator": "AI Accelerator", "utilization": "Utilization",
@@ -110,6 +116,7 @@
     "loadFailed": "Failed to load history", "loadFailedSub": "Please check the connection to the server",
     "noData": "No history available", "noDataSub": "No samples collected in this time range",
     "cpu": "CPU", "memory": "Memory", "network": "Network", "diskIo": "Disk IO", "gpu": "GPU",
+    "rx": "RX", "tx": "TX", "read": "Read", "write": "Write", "utilization": "Utilization", "temperature": "Temperature",
     "peak": "Peak {value}{unit}", "anomaly": "Recent anomaly", "anomalyCpu": "· CPU peak {value}%",
     "anomalyMem": "· Memory peak {value}%"
   },

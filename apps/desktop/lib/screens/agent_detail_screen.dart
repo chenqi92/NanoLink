@@ -16,7 +16,8 @@ import '../widgets/agent_actions_sheet.dart';
 class AgentDetailScreen extends StatefulWidget {
   final Agent agent;
   final int initialTab; // 0 realtime, 1 history, 2 terminal
-  const AgentDetailScreen({super.key, required this.agent, this.initialTab = 0});
+  const AgentDetailScreen(
+      {super.key, required this.agent, this.initialTab = 0});
 
   @override
   State<AgentDetailScreen> createState() => _AgentDetailScreenState();
@@ -99,7 +100,9 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       NanoMono(a.hostname,
-                          size: 19, weight: FontWeight.w700, color: t.fg,
+                          size: 19,
+                          weight: FontWeight.w700,
+                          color: t.fg,
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 2),
                       Row(
@@ -192,9 +195,8 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                     style: TextStyle(
                       fontSize: 13.5,
                       fontWeight: _tab == i ? FontWeight.w600 : FontWeight.w500,
-                      color: _tab == i
-                          ? t.fg
-                          : (i == 2 && locked ? t.fg5 : t.fg2),
+                      color:
+                          _tab == i ? t.fg : (i == 2 && locked ? t.fg5 : t.fg2),
                     ),
                   ),
                 ),
@@ -294,12 +296,16 @@ class _RealtimeTab extends StatelessWidget {
                             Expanded(
                                 child: NanoMono(m.npus[i].name,
                                     size: 13.5, weight: FontWeight.w600)),
-                            NanoMono('${m.npus[i].temperature.toStringAsFixed(0)}°C',
-                                size: 11, color: t.fg4),
+                            NanoMono(
+                                '${m.npus[i].temperature.toStringAsFixed(0)}°C',
+                                size: 11,
+                                color: t.fg4),
                           ],
                         ),
                         const SizedBox(height: 6),
-                        _bar(context, 'agentDetail.utilization'.tr(),
+                        _bar(
+                            context,
+                            'agentDetail.utilization'.tr(),
                             m.npus[i].usagePercent,
                             '${m.npus[i].usagePercent.toStringAsFixed(0)}%'),
                       ],
@@ -390,7 +396,9 @@ class _RealtimeTab extends StatelessWidget {
                               FontFeature.tabularFigures()
                             ])),
                     if (_cpuMeta(m.cpu).isNotEmpty)
-                      NanoMono(_cpuMeta(m.cpu), size: 11, color: t.fg4,
+                      NanoMono(_cpuMeta(m.cpu),
+                          size: 11,
+                          color: t.fg4,
                           overflow: TextOverflow.ellipsis),
                   ],
                 ),
@@ -429,7 +437,9 @@ class _RealtimeTab extends StatelessWidget {
             SizedBox(height: m.cpu.loadAverage.isNotEmpty ? 6 : 14),
             NanoCoreMatrix(
               cores: m.cpu.perCoreUsage,
-              cols: m.cpu.perCoreUsage.length > 16 ? 16 : m.cpu.perCoreUsage.length.clamp(1, 16),
+              cols: m.cpu.perCoreUsage.length > 16
+                  ? 16
+                  : m.cpu.perCoreUsage.length.clamp(1, 16),
             ),
           ],
         ],
@@ -529,8 +539,8 @@ class _RealtimeTab extends StatelessWidget {
     final parts = <String>[];
     if (mem.memoryType.isNotEmpty) parts.add(mem.memoryType);
     if (mem.memorySpeedMhz > 0) {
-      parts.add('agentDetail.mtps'.tr(
-          namedArgs: {'value': mem.memorySpeedMhz.toStringAsFixed(0)}));
+      parts.add('agentDetail.mtps'
+          .tr(namedArgs: {'value': mem.memorySpeedMhz.toStringAsFixed(0)}));
     }
     return parts.join(' · ');
   }
@@ -555,10 +565,10 @@ class _RealtimeTab extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    NanoMono(d.mountPoint,
-                        size: 14, weight: FontWeight.w600),
+                    NanoMono(d.mountPoint, size: 14, weight: FontWeight.w600),
                     NanoMono(_diskMeta(d),
-                        size: 11, color: t.fg4,
+                        size: 11,
+                        color: t.fg4,
                         overflow: TextOverflow.ellipsis),
                   ],
                 ),
@@ -585,9 +595,11 @@ class _RealtimeTab extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              NanoMono('R ${Fmt.rate(d.readBytesPerSec)}', size: 11, color: t.fg4),
+              NanoMono('R ${Fmt.rate(d.readBytesPerSec)}',
+                  size: 11, color: t.fg4),
               const SizedBox(width: 12),
-              NanoMono('W ${Fmt.rate(d.writeBytesPerSec)}', size: 11, color: t.fg4),
+              NanoMono('W ${Fmt.rate(d.writeBytesPerSec)}',
+                  size: 11, color: t.fg4),
               if (d.temperature > 0) ...[
                 const SizedBox(width: 12),
                 NanoMono('${d.temperature.toStringAsFixed(0)}°C',
@@ -653,9 +665,11 @@ class _RealtimeTab extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              NanoMono('↓ ${Fmt.rate(n.rxBytesPerSec)}', size: 12, color: t.fg2),
+              NanoMono('↓ ${Fmt.rate(n.rxBytesPerSec)}',
+                  size: 12, color: t.fg2),
               const SizedBox(width: 14),
-              NanoMono('↑ ${Fmt.rate(n.txBytesPerSec)}', size: 12, color: t.fg2),
+              NanoMono('↑ ${Fmt.rate(n.txBytesPerSec)}',
+                  size: 12, color: t.fg2),
             ],
           ),
         ],
@@ -677,17 +691,19 @@ class _RealtimeTab extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     NanoMono(g.name,
-                        size: 13.5, weight: FontWeight.w600,
+                        size: 13.5,
+                        weight: FontWeight.w600,
                         overflow: TextOverflow.ellipsis),
                     if (_gpuMeta(g).isNotEmpty)
-                      NanoMono(_gpuMeta(g), size: 10.5, color: t.fg4,
+                      NanoMono(_gpuMeta(g),
+                          size: 10.5,
+                          color: t.fg4,
                           overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
               NanoMono('${g.temperature.toStringAsFixed(0)}°C',
-                  size: 11,
-                  color: g.temperature > 75 ? t.warn : t.fg3),
+                  size: 11, color: g.temperature > 75 ? t.warn : t.fg3),
             ],
           ),
           const SizedBox(height: 8),
@@ -703,7 +719,9 @@ class _RealtimeTab extends StatelessWidget {
               _bar(
                   context,
                   'agentDetail.power'.tr(),
-                  (g.powerWatts / g.powerLimitWatts * 100).clamp(0, 100).toDouble(),
+                  (g.powerWatts / g.powerLimitWatts * 100)
+                      .clamp(0, 100)
+                      .toDouble(),
                   'agentDetail.powerOf'.tr(namedArgs: {
                     'used': '${g.powerWatts}',
                     'limit': g.powerLimitWatts.toStringAsFixed(0)
@@ -828,7 +846,8 @@ _RangeSpec _rangeSpec(String r) {
     case '7d':
       return const _RangeSpec(Duration(days: 7), '1h', ['-7d', '-3d', 'now']);
     default:
-      return const _RangeSpec(Duration(hours: 1), 'auto', ['-60m', '-30m', 'now']);
+      return const _RangeSpec(
+          Duration(hours: 1), 'auto', ['-60m', '-30m', 'now']);
   }
 }
 
@@ -995,12 +1014,10 @@ class _HistoryTabState extends State<_HistoryTab> {
     double maxOf(List<double> s) =>
         s.isEmpty ? 0.0 : s.reduce((a, b) => a > b ? a : b);
     // Prefer DB-aggregated per-bucket peaks when present, else series max.
-    final cpuPeak = h.hasMaxBands && h.cpuMax.isNotEmpty
-        ? maxOf(h.cpuMax)
-        : maxOf(h.cpu);
-    final memPeak = h.hasMaxBands && h.memMax.isNotEmpty
-        ? maxOf(h.memMax)
-        : maxOf(h.mem);
+    final cpuPeak =
+        h.hasMaxBands && h.cpuMax.isNotEmpty ? maxOf(h.cpuMax) : maxOf(h.cpu);
+    final memPeak =
+        h.hasMaxBands && h.memMax.isNotEmpty ? maxOf(h.memMax) : maxOf(h.mem);
     final m = widget.metrics;
     final times = h.times;
     String f(List<double> s) =>
@@ -1014,7 +1031,8 @@ class _HistoryTabState extends State<_HistoryTab> {
         ],
         _HistoryChartCard(
           title: 'history.cpu'.tr(),
-          stat: '${(m?.cpuPercent ?? (h.cpu.isEmpty ? 0 : h.cpu.last)).toStringAsFixed(0)}%',
+          stat:
+              '${(m?.cpuPercent ?? (h.cpu.isEmpty ? 0 : h.cpu.last)).toStringAsFixed(0)}%',
           peak: cpuPeak,
           unit: '%',
           xLabels: labels,
@@ -1028,7 +1046,8 @@ class _HistoryTabState extends State<_HistoryTab> {
         ),
         _HistoryChartCard(
           title: 'history.memory'.tr(),
-          stat: '${(m?.memoryPercent ?? (h.mem.isEmpty ? 0 : h.mem.last)).toStringAsFixed(0)}%',
+          stat:
+              '${(m?.memoryPercent ?? (h.mem.isEmpty ? 0 : h.mem.last)).toStringAsFixed(0)}%',
           peak: memPeak,
           unit: '%',
           xLabels: labels,
@@ -1047,8 +1066,8 @@ class _HistoryTabState extends State<_HistoryTab> {
           xLabels: labels,
           times: times,
           series: [
-            NanoSeries(h.netRx, t.accent, fill: true, label: 'RX'),
-            NanoSeries(h.netTx, t.warn, dashed: true, label: 'TX'),
+            NanoSeries(h.netRx, t.accent, fill: true, label: 'history.rx'.tr()),
+            NanoSeries(h.netTx, t.warn, dashed: true, label: 'history.tx'.tr()),
           ],
         ),
         _HistoryChartCard(
@@ -1058,22 +1077,27 @@ class _HistoryTabState extends State<_HistoryTab> {
           xLabels: labels,
           times: times,
           series: [
-            NanoSeries(h.diskRead, t.ok, fill: true, label: 'Read'),
-            NanoSeries(h.diskWrite, t.warn, dashed: true, label: 'Write'),
+            NanoSeries(h.diskRead, t.ok,
+                fill: true, label: 'history.read'.tr()),
+            NanoSeries(h.diskWrite, t.warn,
+                dashed: true, label: 'history.write'.tr()),
           ],
         ),
         if (h.hasGpu)
           _HistoryChartCard(
             title: 'history.gpu'.tr(),
-            stat: '${h.gpuUsage.isEmpty ? 0 : h.gpuUsage.last.toStringAsFixed(0)}%',
+            stat:
+                '${h.gpuUsage.isEmpty ? 0 : h.gpuUsage.last.toStringAsFixed(0)}%',
             unit: '%',
             xLabels: labels,
             times: times,
             yMax: 100,
             series: [
-              NanoSeries(h.gpuUsage, t.tertiary, fill: true, label: 'Util'),
+              NanoSeries(h.gpuUsage, t.tertiary,
+                  fill: true, label: 'history.utilization'.tr()),
               if (h.gpuTemp.isNotEmpty)
-                NanoSeries(h.gpuTemp, t.crit, dashed: true, label: 'Temp'),
+                NanoSeries(h.gpuTemp, t.crit,
+                    dashed: true, label: 'history.temperature'.tr()),
             ],
           ),
       ],
@@ -1099,16 +1123,18 @@ class _HistoryTabState extends State<_HistoryTab> {
               children: [
                 Text('history.anomaly'.tr(),
                     style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w500, color: t.fg)),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: t.fg)),
                 if (cpuPeak > 90)
                   Text(
-                      'history.anomalyCpu'.tr(
-                          namedArgs: {'value': cpuPeak.toStringAsFixed(0)}),
+                      'history.anomalyCpu'
+                          .tr(namedArgs: {'value': cpuPeak.toStringAsFixed(0)}),
                       style: TextStyle(fontSize: 11.5, color: t.fg3)),
                 if (memPeak > 90)
                   Text(
-                      'history.anomalyMem'.tr(
-                          namedArgs: {'value': memPeak.toStringAsFixed(0)}),
+                      'history.anomalyMem'
+                          .tr(namedArgs: {'value': memPeak.toStringAsFixed(0)}),
                       style: TextStyle(fontSize: 11.5, color: t.fg3)),
               ],
             ),
@@ -1163,7 +1189,8 @@ class _HistoryChartCard extends StatelessWidget {
                             fontWeight: FontWeight.w500,
                             color: t.fg3)),
                     const SizedBox(height: 1),
-                    NanoMono(stat, size: 16, weight: FontWeight.w600, color: t.fg),
+                    NanoMono(stat,
+                        size: 16, weight: FontWeight.w600, color: t.fg),
                   ],
                 ),
               ),

@@ -58,6 +58,8 @@ export function KPI({
   sub,
   trend,
   spark,
+  sparkLabels,
+  sparkUnit = "%",
   tone = "",
   icon,
 }: {
@@ -66,6 +68,8 @@ export function KPI({
   sub?: ReactNode
   trend?: number
   spark?: number[]
+  sparkLabels?: string[]
+  sparkUnit?: string
   tone?: Tone
   icon?: ReactNode
 }) {
@@ -93,7 +97,7 @@ export function KPI({
       </div>
       {spark && (
         <div style={{ marginTop: 2, color: sparkColor }}>
-          <Sparkline data={spark} h={28} />
+          <Sparkline data={spark} h={28} label={label} unit={sparkUnit} pointLabels={sparkLabels} />
         </div>
       )}
     </div>
@@ -103,13 +107,13 @@ export function KPI({
 // ─── Page header ───────────────────────────────────────────
 export function PageHeader({ title, subtitle, actions, eyebrow }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode }) {
   return (
-    <div className="row gap-3" style={{ padding: "20px 24px 16px", alignItems: "flex-end", justifyContent: "space-between" }}>
-      <div>
+    <div className="page-header">
+      <div className="page-header__copy">
         {eyebrow && <div className="upper" style={{ color: "var(--fg-4)", marginBottom: 4 }}>{eyebrow}</div>}
         <h1 className="display" style={{ margin: 0, fontSize: 22, fontWeight: 500, letterSpacing: "-0.02em" }}>{title}</h1>
         {subtitle && <div style={{ color: "var(--fg-3)", fontSize: 12.5, marginTop: 3 }}>{subtitle}</div>}
       </div>
-      {actions && <div className="row gap-2">{actions}</div>}
+      {actions && <div className="page-header__actions">{actions}</div>}
     </div>
   )
 }

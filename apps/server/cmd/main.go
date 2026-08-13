@@ -186,6 +186,7 @@ func main() {
 	// h is declared at outer scope so it can be wired with grpcServer/auditService
 	// after the gRPC server is constructed below
 	h := handler.NewHandlerWithPermissions(agentService, metricsService, permService, sugar)
+	var buildSecretCodec service.SecretCodec
 	{
 		// Public routes (no auth required)
 		authHandler := handler.NewAuthHandler(authService, sugar)
@@ -291,6 +292,7 @@ func main() {
 			if _, err := llmSettingsManager.Reload(context.Background()); err != nil {
 				sugar.Errorf("load persisted AI provider settings failed; using startup configuration: %v", err)
 			}
+			buildSecretCodec = llmSettingsManager
 			llmSettingHandler := handler.NewLLMSettingHandler(llmSettingsManager, sugar)
 
 			// Saved provider/model profiles, switchable from the assistant.
@@ -456,6 +458,14 @@ func main() {
 	if err != nil {
 		sugar.Fatalf("Failed to initialize deployment service: %v", err)
 	}
+	buildHandler, err := handler.NewBuildHandler(
+		database.GetDB(), grpcServer, deploymentHandler, buildSecretCodec, cfg.Build, cfg.Server.ExternalURL, sugar,
+	)
+	if err != nil {
+		sugar.Fatalf("Failed to initialize build service: %v", err)
+	}
+	buildHandler.StartScheduler()
+	defer buildHandler.StopScheduler()
 	// Agents authenticate artifact downloads with a short-lived task token, not
 	// a browser cookie. All management and upload routes remain super-admin only.
 	router.GET("/api/deployment-artifacts/:taskId", deploymentHandler.DownloadArtifact)
@@ -474,6 +484,31 @@ func main() {
 	deploymentUploadAPI := router.Group("/api")
 	deploymentUploadAPI.Use(handler.AuthMiddlewareWithDevices(authService, deviceService), handler.RequireSuperAdmin())
 	deploymentUploadAPI.POST("/deployment-projects/:id/releases", deploymentHandler.UploadRelease)
+
+	// Build agents use run-scoped, short-lived tokens for source download and
+	// artifact upload. Browser management remains super-admin only.
+	router.GET("/api/build-source-downloads/:runId", buildHandler.DownloadSource)
+	router.PUT("/api/build-artifact-uploads/:runId", buildHandler.UploadArtifact)
+	router.PUT("/api/build-log-updates/:runId", buildHandler.UpdateLogs)
+	router.POST("/api/build-webhooks/:id", buildHandler.Webhook)
+	buildAPI := router.Group("/api")
+	buildAPI.Use(handler.LimitRequestBody(cfg.Server.MaxRequestBodyBytes))
+	buildAPI.Use(handler.AuthMiddlewareWithDevices(authService, deviceService), handler.RequireSuperAdmin())
+	{
+		buildAPI.GET("/build-pipelines", buildHandler.ListPipelines)
+		buildAPI.GET("/build-pipelines/:id", buildHandler.GetPipeline)
+		buildAPI.POST("/build-pipelines", buildHandler.CreatePipeline)
+		buildAPI.PUT("/build-pipelines/:id", buildHandler.UpdatePipeline)
+		buildAPI.POST("/build-pipelines/:id/run", buildHandler.RunPipeline)
+		buildAPI.POST("/build-pipelines/:id/webhook-token", buildHandler.RotateWebhookToken)
+		buildAPI.GET("/build-runs", buildHandler.ListRuns)
+		buildAPI.GET("/build-runs/:runId", buildHandler.GetRun)
+		buildAPI.POST("/build-runs/:runId/cancel", buildHandler.CancelRun)
+		buildAPI.GET("/build-artifacts/:artifactId/download", buildHandler.DownloadArtifact)
+	}
+	buildUploadAPI := router.Group("/api")
+	buildUploadAPI.Use(handler.AuthMiddlewareWithDevices(authService, deviceService), handler.RequireSuperAdmin())
+	buildUploadAPI.POST("/build-pipelines/:id/upload-run", buildHandler.UploadAndRun)
 
 	// Register protected dashboard and shell WebSocket handlers (after gRPC server is available)
 	dashboardWSHandler := handler.NewDashboardWSHandler(sugar, permService, agentService, metricsService, cfg.Server.AllowedOrigins)
@@ -540,6 +575,7 @@ func main() {
 	grpcServer.SetCommandResultHandler(func(agentID, commandID, output string, success bool) {
 		shellHandler.SendOutputToSession(agentID, commandID, output, success)
 		deploymentHandler.HandleCommandResult(agentID, commandID, output, success)
+		buildHandler.HandleCommandResult(agentID, commandID, output, success)
 	})
 
 	// Set broadcast callback in metrics service for real-time push
@@ -552,11 +588,14 @@ func main() {
 		Addr:              fmt.Sprintf(":%d", cfg.Server.HTTPPort),
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      90 * time.Second,
-		IdleTimeout:       2 * time.Minute,
-		MaxHeaderBytes:    1 << 20,
-		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
+		// Build uploads and URL pulls can legitimately take several minutes.
+		// Header parsing remains tightly bounded above, and each body handler
+		// applies an explicit byte limit.
+		ReadTimeout:    10 * time.Minute,
+		WriteTimeout:   10 * time.Minute,
+		IdleTimeout:    2 * time.Minute,
+		MaxHeaderBytes: 1 << 20,
+		TLSConfig:      &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 
 	go func() {

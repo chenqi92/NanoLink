@@ -427,6 +427,10 @@ enum CommandType {
   // Application deployment (SYSTEM_ADMIN; structured, audited operations)
   DEPLOY_EXECUTE = 120;       // Download, verify, activate, restart/reload, health-check
   DEPLOY_ROLLBACK = 121;      // Atomically activate an existing release
+
+  // Automated build pipeline (SYSTEM_ADMIN; isolated workspace/container)
+  BUILD_EXECUTE = 130;        // Fetch source, execute validated DAG, upload verified artifact
+  BUILD_CANCEL = 131;         // Stop an active build and clean its disposable workspace
 }
 
 message CommandResult {

@@ -56,7 +56,10 @@ export function VirtualAgentGrid({
     getScrollElement: () => scrollRef.current,
     estimateSize: () => EST_ROW + GAP,
     overscan: 4,
-    measureElement: (el) => el.getBoundingClientRect().height,
+    // offsetHeight stays in layout pixels under CSS zoom. Using the visual
+    // bounding rect here would feed an already-scaled height back into the
+    // virtualizer and effectively apply the selected component scale twice.
+    measureElement: (el) => el instanceof HTMLElement ? el.offsetHeight : el.getBoundingClientRect().height,
   })
 
   // Column count changes invalidate every measured row height.

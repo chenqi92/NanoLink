@@ -38,6 +38,10 @@ services:
       # Example: https://nanolink.example.com
       - NANOLINK_EXTERNAL_URL=${NANOLINK_EXTERNAL_URL:-}
       - NANOLINK_DEPLOYMENT_STORAGE_PATH=/app/data/artifacts
+      - NANOLINK_BUILD_STORAGE_PATH=/app/data/builds
+      # Comma-separated exact hostnames allowed to serve source archives from
+      # private IPs. Leave empty to enforce public-address-only URL pulls.
+      - NANOLINK_BUILD_ALLOWED_SOURCE_HOSTS=${NANOLINK_BUILD_ALLOWED_SOURCE_HOSTS:-}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
       interval: 30s

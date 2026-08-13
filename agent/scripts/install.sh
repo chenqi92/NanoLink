@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 #
 # NanoLink Agent Interactive Installation Script
 # Supports: Linux (systemd), macOS (launchd)
@@ -70,6 +70,7 @@ msg() {
         # General
         ["banner_subtitle"]="Lightweight Server Monitoring Agent"
         ["detected"]="Detected"
+        ["version"]="Version"
         
         # Status messages
         ["info"]="INFO"
@@ -283,7 +284,12 @@ msg() {
         ["url_option"]="Server address (host:port)"
         ["token_option"]="Authentication token"
         ["permission_option"]="Permission level (0-3)"
-        ["no_tls_option"]="Disable TLS verification"
+        ["no_tls_option"]="Use plaintext gRPC (trusted private transport only)"
+        ["tls_ca_option"]="PEM CA for an internal/private PKI"
+        ["tls_server_name_option"]="Certificate DNS name when connecting through a tunnel"
+        ["tls_client_cert_option"]="PEM Agent certificate for mutual TLS"
+        ["tls_client_key_option"]="PEM Agent private key for mutual TLS"
+        ["no_tls_verify_option"]="Rejected (use a trusted CA or tls_ca_cert)"
         ["hostname_option"]="Override hostname"
         ["shell_enabled_option"]="Enable shell commands"
         ["shell_token_option"]="Shell super token"
@@ -301,6 +307,42 @@ msg() {
         ["add_server_example"]="Add additional server to existing agent"
         ["open_manage"]="Open management menu"
         ["fetch_config_example"]="Fetch config from server and install"
+
+        # Runtime validation and maintenance
+        ["unsupported_os"]="Unsupported operating system"
+        ["unsupported_arch"]="Unsupported architecture"
+        ["root_required"]="Please run as root (sudo)"
+        ["run_command"]="Run"
+        ["missing_dependencies"]="Missing dependencies"
+        ["interactive_terminal_required"]="Interactive mode requires a terminal. Use --silent mode with parameters:"
+        ["tls_verification_required"]="TLS certificate verification is required. Use tls_ca_cert for a private CA."
+        ["enable_tls_transport"]="Enable TLS?"
+        ["cannot_test_connection"]="Cannot test connection (nc/curl not available)"
+        ["unknown_option"]="Unknown option"
+        ["silent_requires_credentials"]="Silent mode requires --url and --token"
+        ["tls_options_conflict"]="TLS certificate options cannot be combined with --no-tls"
+        ["tls_client_pair_required"]="--tls-client-cert and --tls-client-key must be provided together"
+        ["tls_file_not_found"]="TLS file not found"
+        ["tls_path_invalid"]="TLS file paths cannot contain quotes or newlines"
+        ["tls_server_name_invalid"]="TLS server name cannot contain quotes or newlines"
+        ["no_tls_verify_rejected"]="--no-tls-verify is no longer supported; use a trusted CA or tls_ca_cert"
+        ["fresh_install_first"]="Please run a fresh installation first"
+        ["agent_binary_not_found"]="Agent binary not found or not executable"
+        ["server_add_failed"]="Failed to add server"
+        ["server_removed_hot_reload"]="Server removed via management API (hot-reload)"
+        ["fetching_config"]="Fetching configuration from"
+        ["fetch_config_failed"]="Failed to fetch configuration from server"
+        ["invalid_config_response"]="Invalid configuration response from server"
+        ["config_fetched"]="Configuration fetched successfully"
+        ["no_collector_config"]="No collector configuration found"
+        ["curl_unavailable_restart"]="curl is unavailable; restarting service..."
+        ["stopping_service_now"]="Stopping Service"
+        ["cancelled_plain"]="Cancelled"
+        ["add_mode_requires"]="Add server mode requires --url and --token"
+        ["remove_mode_requires"]="Remove server mode requires --url"
+        ["unknown_init_system"]="Unknown init system; skipping service installation"
+        ["start_manually"]="You need to start the agent manually"
+        ["service_may_not_start"]="Service may not have started correctly"
     )
     
     # Chinese messages
@@ -308,6 +350,7 @@ msg() {
         # General
         ["banner_subtitle"]="轻量级服务器监控代理"
         ["detected"]="检测到"
+        ["version"]="版本"
         
         # Status messages
         ["info"]="信息"
@@ -521,7 +564,12 @@ msg() {
         ["url_option"]="服务器地址（host:port）"
         ["token_option"]="认证令牌"
         ["permission_option"]="权限级别（0-3）"
-        ["no_tls_option"]="禁用 TLS 验证"
+        ["no_tls_option"]="使用明文 gRPC（仅限受信任的私有传输）"
+        ["tls_ca_option"]="内部或私有 PKI 的 PEM CA"
+        ["tls_server_name_option"]="通过隧道连接时要验证的证书 DNS 名称"
+        ["tls_client_cert_option"]="用于双向 TLS 的 Agent PEM 证书"
+        ["tls_client_key_option"]="用于双向 TLS 的 Agent PEM 私钥"
+        ["no_tls_verify_option"]="不再支持（请使用受信任的 CA 或 tls_ca_cert）"
         ["hostname_option"]="覆盖主机名"
         ["shell_enabled_option"]="启用 Shell 命令"
         ["shell_token_option"]="Shell 超级令牌"
@@ -539,6 +587,42 @@ msg() {
         ["add_server_example"]="添加额外服务器到现有 Agent"
         ["open_manage"]="打开管理菜单"
         ["fetch_config_example"]="从服务器获取配置并安装"
+
+        # 运行时校验和维护
+        ["unsupported_os"]="不支持的操作系统"
+        ["unsupported_arch"]="不支持的系统架构"
+        ["root_required"]="请以 root 权限运行（sudo）"
+        ["run_command"]="请运行"
+        ["missing_dependencies"]="缺少依赖"
+        ["interactive_terminal_required"]="交互模式需要终端。请使用 --silent 模式并提供参数："
+        ["tls_verification_required"]="必须验证 TLS 证书；私有 CA 请配置 tls_ca_cert。"
+        ["enable_tls_transport"]="启用 TLS？"
+        ["cannot_test_connection"]="无法测试连接（nc/curl 不可用）"
+        ["unknown_option"]="未知选项"
+        ["silent_requires_credentials"]="静默模式需要 --url 和 --token"
+        ["tls_options_conflict"]="TLS 证书选项不能与 --no-tls 同时使用"
+        ["tls_client_pair_required"]="--tls-client-cert 和 --tls-client-key 必须同时提供"
+        ["tls_file_not_found"]="未找到 TLS 文件"
+        ["tls_path_invalid"]="TLS 文件路径不能包含引号或换行符"
+        ["tls_server_name_invalid"]="TLS 服务器名称不能包含引号或换行符"
+        ["no_tls_verify_rejected"]="不再支持 --no-tls-verify；请使用受信任的 CA 或 tls_ca_cert"
+        ["fresh_install_first"]="请先执行全新安装"
+        ["agent_binary_not_found"]="未找到 Agent 程序或文件不可执行"
+        ["server_add_failed"]="添加服务器失败"
+        ["server_removed_hot_reload"]="已通过管理 API 删除服务器（热重载）"
+        ["fetching_config"]="正在获取配置"
+        ["fetch_config_failed"]="从服务器获取配置失败"
+        ["invalid_config_response"]="服务器返回的配置无效"
+        ["config_fetched"]="配置获取成功"
+        ["no_collector_config"]="未找到采集器配置"
+        ["curl_unavailable_restart"]="curl 不可用，正在重启服务..."
+        ["stopping_service_now"]="停止服务"
+        ["cancelled_plain"]="已取消"
+        ["add_mode_requires"]="添加服务器模式需要 --url 和 --token"
+        ["remove_mode_requires"]="删除服务器模式需要 --url"
+        ["unknown_init_system"]="未知的初始化系统，跳过服务安装"
+        ["start_manually"]="需要手动启动 Agent"
+        ["service_may_not_start"]="服务可能未正确启动"
     )
     
     # Return appropriate message
@@ -564,16 +648,16 @@ print_banner() {
     echo "║     ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝    ║"
     echo "║                                                               ║"
     printf "║              %-43s ║\n" "$(msg banner_subtitle)"
-    echo "║                        Version ${VERSION}                          ║"
+    printf "║                        %s %-31s ║\n" "$(msg version)" "$VERSION"
     echo "║                                                               ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
 
-info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; }
+info() { echo -e "${BLUE}[$(msg info)]${NC} $1"; }
+success() { echo -e "${GREEN}[$(msg success)]${NC} $1"; }
+warn() { echo -e "${YELLOW}[$(msg warn)]${NC} $1"; }
+error() { echo -e "${RED}[$(msg error)]${NC} $1"; }
 step() { echo -e "\n${BOLD}${CYAN}▶ $1${NC}"; }
 
 # Spinner for long operations
@@ -606,7 +690,7 @@ detect_os() {
         OS="macos"
         INIT_SYSTEM="launchd"
     else
-        error "Unsupported operating system: $OSTYPE"
+        error "$(msg unsupported_os): $OSTYPE"
         exit 1
     fi
 }
@@ -624,7 +708,7 @@ detect_arch() {
             ARCH="armv7"
             ;;
         *)
-            error "Unsupported architecture: $ARCH"
+            error "$(msg unsupported_arch): $ARCH"
             exit 1
             ;;
     esac
@@ -632,8 +716,8 @@ detect_arch() {
 
 check_root() {
     if [ "$EUID" -ne 0 ]; then
-        error "Please run as root (sudo)"
-        echo -e "  Run: ${YELLOW}sudo $0${NC}"
+        error "$(msg root_required)"
+        echo -e "  $(msg run_command): ${YELLOW}sudo $0${NC}"
         exit 1
     fi
 }
@@ -646,7 +730,7 @@ check_dependencies() {
     fi
 
     if [ ${#missing[@]} -ne 0 ]; then
-        error "Missing dependencies: ${missing[*]}"
+        error "$(msg missing_dependencies): ${missing[*]}"
         exit 1
     fi
 }
@@ -660,7 +744,7 @@ check_interactive() {
     if [ ! -t 0 ] && [ "$SILENT_MODE" != "true" ]; then
         # stdin is not a terminal (piped), try to use /dev/tty
         if [ ! -e /dev/tty ]; then
-            error "Interactive mode requires a terminal. Use --silent mode with parameters:"
+            error "$(msg interactive_terminal_required)"
             echo ""
             echo "  curl -fsSL URL | sudo bash -s -- --silent --host \"server.example.com\" --port 39100 --token \"your_token\""
             echo ""
@@ -725,13 +809,13 @@ prompt_choice() {
 
     local choice
     while true; do
-        echo -en "${BOLD}Select [1-${#options[@]}]${NC}: " >/dev/tty
+        echo -en "${BOLD}$(msg select_option) [1-${#options[@]}]${NC}: " >/dev/tty
         read -e choice </dev/tty
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#options[@]}" ]; then
             echo "$((choice-1))"
             return
         fi
-        warn "Invalid choice, please try again"
+        warn "$(msg invalid_option)"
     done
 }
 
@@ -773,9 +857,9 @@ interactive_config() {
     echo ""
     TLS_ENABLED="false"
     TLS_VERIFY="true"
-    if prompt_yes_no "Enable TLS?" "n"; then
+    if prompt_yes_no "$(msg enable_tls_transport)" "n"; then
         TLS_ENABLED="true"
-        info "TLS certificate verification is required. Use tls_ca_cert for a private CA."
+        info "$(msg tls_verification_required)"
     fi
 
     # Test connection
@@ -811,7 +895,7 @@ interactive_config() {
 }
 
 test_connection() {
-    step "Testing Connection"
+    step "$(msg testing_connection)"
 
     # Extract host and port from URL
     local host_port=$(echo "$SERVER_URL" | sed -E 's|^wss?://||' | cut -d'/' -f1)
@@ -819,15 +903,15 @@ test_connection() {
     local port=$(echo "$host_port" | cut -d':' -f2)
     [ "$port" = "$host" ] && port="9100"
 
-    info "Testing connection to $host:$port..."
+    info "$(msg testing_server) $host:$port..."
 
     # Test TCP connection
     if command -v nc &> /dev/null; then
         if nc -z -w5 "$host" "$port" 2>/dev/null; then
-            success "Server is reachable!"
+            success "$(msg server_reachable)"
         else
-            warn "Cannot reach server at $host:$port"
-            if ! prompt_yes_no "Continue anyway?" "n"; then
+            warn "$(msg cannot_reach) $host:$port"
+            if ! prompt_yes_no "$(msg continue_anyway)" "n"; then
                 exit 1
             fi
         fi
@@ -835,15 +919,15 @@ test_connection() {
         local test_url="${SERVER_URL/wss:/https:}"
         test_url="${test_url/ws:/http:}"
         if curl -s --connect-timeout 5 "$test_url" &>/dev/null; then
-            success "Server is reachable!"
+            success "$(msg server_reachable)"
         else
-            warn "Cannot reach server"
-            if ! prompt_yes_no "Continue anyway?" "n"; then
+            warn "$(msg cannot_reach)"
+            if ! prompt_yes_no "$(msg continue_anyway)" "n"; then
                 exit 1
             fi
         fi
     else
-        warn "Cannot test connection (nc/curl not available)"
+        warn "$(msg cannot_test_connection)"
     fi
 }
 
@@ -993,12 +1077,12 @@ check_existing_agent() {
     fi
 }
 download_binary() {
-    step "Downloading NanoLink Agent"
+    step "$(msg downloading)"
 
     local download_url="https://github.com/${GITHUB_REPO}/releases/latest/download/${BINARY_NAME}-${OS}-${ARCH}"
     local tmp_file="/tmp/${BINARY_NAME}"
 
-    info "URL: $download_url"
+    info "$(msg download_url): $download_url"
 
     if command -v curl &> /dev/null; then
         curl -fsSL "$download_url" -o "$tmp_file" &
@@ -1009,23 +1093,23 @@ download_binary() {
     fi
 
     if [ ! -f "$tmp_file" ]; then
-        error "Download failed"
+        error "$(msg download_failed)"
         exit 1
     fi
 
     chmod +x "$tmp_file"
-    success "Downloaded successfully"
+    success "$(msg download_success)"
 }
 
 install_binary() {
-    step "Installing Binary"
+    step "$(msg installing_binary)"
 
     mv "/tmp/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-    success "Installed to ${INSTALL_DIR}/${BINARY_NAME}"
+    success "$(msg installed_to) ${INSTALL_DIR}/${BINARY_NAME}"
 }
 
 create_directories() {
-    step "Creating Directories"
+    step "$(msg creating_dirs)"
 
     mkdir -p "$CONFIG_DIR"
     mkdir -p "$LOG_DIR"
@@ -1040,11 +1124,11 @@ create_directories() {
     chmod 755 "$APP_DEPLOY_DIR"
     chmod 755 "$STATIC_DEPLOY_DIR"
 
-    success "Directories created"
+    success "$(msg dirs_created)"
 }
 
 generate_config() {
-    step "Generating Configuration"
+    step "$(msg generating_config)"
 
     local config_file="${CONFIG_DIR}/nanolink.yaml"
     local tls_extra_config=""
@@ -1058,7 +1142,7 @@ generate_config() {
     if [ -f "$config_file" ]; then
         local backup="${config_file}.backup.$(date +%Y%m%d%H%M%S)"
         cp "$config_file" "$backup"
-        warn "Existing config backed up to: $backup"
+        warn "$(msg config_backed_up): $backup"
     fi
 
     # Generate new config
@@ -1141,11 +1225,11 @@ EOF
     # Secure the config file (contains tokens)
     chmod 600 "$config_file"
 
-    success "Configuration saved to $config_file"
+    success "$(msg config_saved) $config_file"
 }
 
 install_systemd_service() {
-    step "Installing systemd Service"
+    step "$(msg installing_systemd)"
 
     cat > /etc/systemd/system/nanolink-agent.service << 'EOF'
 [Unit]
@@ -1192,11 +1276,11 @@ EOF
     systemctl daemon-reload
     systemctl enable nanolink-agent
 
-    success "systemd service installed and enabled"
+    success "$(msg systemd_installed)"
 }
 
 install_launchd_service() {
-    step "Installing launchd Service"
+    step "$(msg installing_launchd)"
 
     cat > /Library/LaunchDaemons/com.nanolink.agent.plist << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1259,22 +1343,22 @@ EOF
     # Load the service
     launchctl load /Library/LaunchDaemons/com.nanolink.agent.plist 2>/dev/null || true
 
-    success "launchd service installed and loaded"
+    success "$(msg launchd_installed)"
 }
 
 start_service() {
-    step "Starting Service"
+    step "$(msg starting_service)"
 
     if [ "$OS" = "linux" ] && [ "$INIT_SYSTEM" = "systemd" ]; then
         systemctl start nanolink-agent
         sleep 2
 
         if systemctl is-active --quiet nanolink-agent; then
-            success "Service started successfully!"
+            success "$(msg service_started)"
         else
-            error "Service failed to start"
+            error "$(msg start_failed)"
             echo ""
-            echo "Check logs with:"
+            echo "$(msg check_logs):"
             echo -e "  ${YELLOW}journalctl -u nanolink-agent -f${NC}"
             exit 1
         fi
@@ -1283,16 +1367,16 @@ start_service() {
         sleep 2
 
         if launchctl list | grep -q "com.nanolink.agent"; then
-            success "Service started successfully!"
+            success "$(msg service_started)"
         else
-            warn "Service may not have started correctly"
-            echo "Check logs at: /var/log/nanolink/"
+            warn "$(msg service_may_not_start)"
+            echo "$(msg check_logs): /var/log/nanolink/"
         fi
     fi
 }
 
 verify_installation() {
-    step "Verifying Installation"
+    step "$(msg verifying)"
 
     local checks_passed=0
     local checks_total=4
@@ -1338,9 +1422,9 @@ verify_installation() {
 
     echo ""
     if [ $checks_passed -eq $checks_total ]; then
-        success "All checks passed!"
+        success "$(msg all_passed)"
     else
-        warn "$checks_passed/$checks_total checks passed"
+        warn "$checks_passed/$checks_total $(msg checks_passed)"
     fi
 }
 
@@ -1377,6 +1461,24 @@ print_summary() {
 # Silent Mode (for scripted installations)
 # =============================================================================
 parse_args() {
+    local arg
+    local expect_lang="false"
+    for arg in "$@"; do
+        if [ "$expect_lang" = "true" ]; then
+            SCRIPT_LANG="$arg"
+            expect_lang="false"
+            continue
+        fi
+        case "$arg" in
+            --lang) expect_lang="true" ;;
+            --lang=*) SCRIPT_LANG="${arg#*=}" ;;
+        esac
+    done
+    if [ "$SCRIPT_LANG" != "en" ] && [ "$SCRIPT_LANG" != "zh" ]; then
+        SCRIPT_LANG=""
+    fi
+    detect_language
+
     SILENT_MODE=false
 
     while [[ $# -gt 0 ]]; do
@@ -1422,7 +1524,7 @@ parse_args() {
                 shift 2
                 ;;
             --no-tls-verify)
-                error "--no-tls-verify is no longer supported; use a trusted CA or tls_ca_cert"
+                error "$(msg no_tls_verify_rejected)"
                 exit 1
                 ;;
             --hostname)
@@ -1457,58 +1559,62 @@ parse_args() {
                 SCRIPT_LANG="$2"
                 shift 2
                 ;;
+            --lang=*)
+                SCRIPT_LANG="${1#*=}"
+                shift
+                ;;
             --help|-h)
-                echo "NanoLink Agent Installer"
+                echo "$(msg help_title)"
                 echo ""
-                echo "Usage: $0 [options]"
+                echo "$(msg usage): $0 [options]"
                 echo ""
-                echo "Installation Options:"
-                echo "  --silent, -s        Silent mode (no prompts)"
-                echo "  --url URL           Server address (host:port)"
-                echo "  --token TOKEN       Authentication token"
-                echo "  --permission N      Permission level (0-3)"
-                echo "  --no-tls            Use plaintext gRPC (trusted private transport only)"
-                echo "  --tls-ca-cert PATH  PEM CA for an internal/private PKI"
-                echo "  --tls-server-name N Certificate DNS name when connecting through a tunnel"
-                echo "  --tls-client-cert P PEM Agent certificate for mutual TLS"
-                echo "  --tls-client-key P  PEM Agent private key for mutual TLS"
-                echo "  --no-tls-verify     Rejected (use a trusted CA or tls_ca_cert)"
-                echo "  --hostname NAME     Override hostname"
-                echo "  --shell-enabled     Enable shell commands"
-                echo "  --shell-token TOKEN Shell super token"
+                echo "$(msg install_options):"
+                echo "  --silent, -s        $(msg silent_mode)"
+                echo "  --url URL           $(msg url_option)"
+                echo "  --token TOKEN       $(msg token_option)"
+                echo "  --permission N      $(msg permission_option)"
+                echo "  --no-tls            $(msg no_tls_option)"
+                echo "  --tls-ca-cert PATH  $(msg tls_ca_option)"
+                echo "  --tls-server-name N $(msg tls_server_name_option)"
+                echo "  --tls-client-cert P $(msg tls_client_cert_option)"
+                echo "  --tls-client-key P  $(msg tls_client_key_option)"
+                echo "  --no-tls-verify     $(msg no_tls_verify_option)"
+                echo "  --hostname NAME     $(msg hostname_option)"
+                echo "  --shell-enabled     $(msg shell_enabled_option)"
+                echo "  --shell-token TOKEN $(msg shell_token_option)"
                 echo ""
-                echo "Server Management:"
-                echo "  --add-server        Add server to existing installation"
-                echo "  --remove-server     Remove server from existing installation"
-                echo "  --fetch-config URL  Fetch configuration from server API"
+                echo "$(msg server_mgmt):"
+                echo "  --add-server        $(msg add_server_option)"
+                echo "  --remove-server     $(msg remove_server_option)"
+                echo "  --fetch-config URL  $(msg fetch_config_option)"
                 echo ""
-                echo "Management:"
-                echo "  --manage            Interactive management menu"
-                echo "  --lang LANG         Set language (en/zh)"
+                echo "$(msg management):"
+                echo "  --manage            $(msg manage_option)"
+                echo "  --lang LANG         $(msg lang_option)"
                 echo ""
-                echo "  --help, -h          Show this help"
+                echo "  --help, -h          $(msg help_option)"
                 echo ""
-                echo "Examples:"
-                echo "  # Fresh install (interactive)"
+                echo "$(msg examples):"
+                echo "  # $(msg fresh_install_interactive)"
                 echo "  curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash"
                 echo ""
-                echo "  # Fresh install (silent)"
+                echo "  # $(msg fresh_install_silent)"
                 echo "  curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash -s -- \\"
                 echo "    --silent --url monitor.example.com:39100 --token xxx"
                 echo ""
-                echo "  # Add additional server to existing agent"
+                echo "  # $(msg add_server_example)"
                 echo "  sudo $0 --add-server --url second.example.com:39100 --token yyy"
                 echo ""
-                echo "  # Open management menu"
+                echo "  # $(msg open_manage)"
                 echo "  sudo $0 --manage"
                 echo ""
-                echo "  # Fetch config from server and install"
+                echo "  # $(msg fetch_config_example)"
                 echo "  curl -fsSL https://raw.githubusercontent.com/chenqi92/NanoLink/main/agent/scripts/install.sh | sudo bash -s -- \\"
                 echo "    --fetch-config http://monitor.example.com:8080/api/config/generate"
                 exit 0
                 ;;
             *)
-                error "Unknown option: $1"
+                error "$(msg unknown_option): $1"
                 exit 1
                 ;;
         esac
@@ -1517,7 +1623,7 @@ parse_args() {
     # Validate silent mode requirements
     if [ "$SILENT_MODE" = "true" ]; then
         if [ -z "$SERVER_URL" ] || [ -z "$TOKEN" ]; then
-            error "Silent mode requires --url and --token"
+            error "$(msg silent_requires_credentials)"
             exit 1
         fi
         PERMISSION="${PERMISSION:-0}"
@@ -1527,25 +1633,25 @@ parse_args() {
     fi
 
     if [ "$TLS_ENABLED" != "true" ] && { [ -n "$TLS_CA_CERT" ] || [ -n "$TLS_SERVER_NAME" ] || [ -n "$TLS_CLIENT_CERT" ] || [ -n "$TLS_CLIENT_KEY" ]; }; then
-        error "TLS certificate options cannot be combined with --no-tls"
+        error "$(msg tls_options_conflict)"
         exit 1
     fi
     if { [ -n "$TLS_CLIENT_CERT" ] && [ -z "$TLS_CLIENT_KEY" ]; } || { [ -z "$TLS_CLIENT_CERT" ] && [ -n "$TLS_CLIENT_KEY" ]; }; then
-        error "--tls-client-cert and --tls-client-key must be provided together"
+        error "$(msg tls_client_pair_required)"
         exit 1
     fi
     for tls_file in "$TLS_CA_CERT" "$TLS_CLIENT_CERT" "$TLS_CLIENT_KEY"; do
         if [ -n "$tls_file" ] && [ ! -f "$tls_file" ]; then
-            error "TLS file not found: $tls_file"
+            error "$(msg tls_file_not_found): $tls_file"
             exit 1
         fi
         if [[ "$tls_file" == *'"'* ]] || [[ "$tls_file" == *$'\n'* ]]; then
-            error "TLS file paths cannot contain quotes or newlines"
+            error "$(msg tls_path_invalid)"
             exit 1
         fi
     done
     if [[ "$TLS_SERVER_NAME" == *'"'* ]] || [[ "$TLS_SERVER_NAME" == *$'\n'* ]]; then
-        error "TLS server name cannot contain quotes or newlines"
+        error "$(msg tls_server_name_invalid)"
         exit 1
     fi
 }
@@ -1558,13 +1664,13 @@ add_server_to_config() {
     local agent_binary="${INSTALL_DIR}/${BINARY_NAME}"
 
     if [ ! -f "$config_file" ]; then
-        error "Configuration file not found: $config_file"
-        error "Please run a fresh installation first"
+        error "$(msg config_not_found): $config_file"
+        error "$(msg fresh_install_first)"
         exit 1
     fi
 
     if [ ! -x "$agent_binary" ]; then
-        error "Agent binary not found or not executable: $agent_binary"
+        error "$(msg agent_binary_not_found): $agent_binary"
         exit 1
     fi
 
@@ -1582,25 +1688,25 @@ add_server_to_config() {
     [ -n "$TLS_CLIENT_KEY" ] && add_args+=(--tls-client-key "$TLS_CLIENT_KEY")
 
     if ! "$agent_binary" "${add_args[@]}"; then
-        error "Failed to add server ${SERVER_URL}"
+        error "$(msg server_add_failed): ${SERVER_URL}"
         exit 1
     fi
 
-    success "Server ${SERVER_URL} added to configuration"
-    info "Restart the agent to apply changes: sudo systemctl restart nanolink-agent"
+    success "$(msg server_added): ${SERVER_URL}"
+    info "$(msg restart_to_apply): sudo systemctl restart nanolink-agent"
 }
 
 remove_server_from_config() {
     local config_file="${CONFIG_DIR}/nanolink.yaml"
 
     if [ ! -f "$config_file" ]; then
-        error "Configuration file not found: $config_file"
+        error "$(msg config_not_found): $config_file"
         exit 1
     fi
 
     # Check if server exists
     if ! grep -q "url: \"${SERVER_URL}\"" "$config_file" 2>/dev/null; then
-        error "Server ${SERVER_URL} not found in configuration"
+        error "$(msg server_not_found): ${SERVER_URL}"
         exit 1
     fi
 
@@ -1611,7 +1717,7 @@ remove_server_from_config() {
     # For production, consider using yq or a proper YAML parser
     sed -i "/url: \"${SERVER_URL}\"/,+3d" "$config_file"
 
-    success "Server ${SERVER_URL} removed from configuration"
+    success "$(msg server_removed): ${SERVER_URL}"
 
     # Notify via management API if available
     if command -v curl &> /dev/null; then
@@ -1619,24 +1725,24 @@ remove_server_from_config() {
         local mgmt_response=$(curl -s -X DELETE "http://localhost:9101/api/servers?url=${encoded_url}" 2>/dev/null)
 
         if echo "$mgmt_response" | grep -q '"success":true'; then
-            success "Server removed via management API (hot-reload)"
+            success "$(msg server_removed_hot_reload)"
         else
-            info "Restart the agent to apply changes: sudo systemctl restart nanolink-agent"
+            info "$(msg restart_to_apply): sudo systemctl restart nanolink-agent"
         fi
     else
-        info "Restart the agent to apply changes: sudo systemctl restart nanolink-agent"
+        info "$(msg restart_to_apply): sudo systemctl restart nanolink-agent"
     fi
 }
 
 fetch_and_apply_config() {
     local api_url="$1"
 
-    info "Fetching configuration from: $api_url"
+    info "$(msg fetching_config): $api_url"
 
     local response=$(curl -s "$api_url")
 
     if [ -z "$response" ]; then
-        error "Failed to fetch configuration from server"
+        error "$(msg fetch_config_failed)"
         exit 1
     fi
 
@@ -1657,7 +1763,7 @@ fetch_and_apply_config() {
     fi
 
     if [ -z "$SERVER_URL" ] || [ -z "$TOKEN" ]; then
-        error "Invalid configuration response from server"
+        error "$(msg invalid_config_response)"
         exit 1
     fi
 
@@ -1666,9 +1772,9 @@ fetch_and_apply_config() {
     TLS_VERIFY="true"
     SILENT_MODE=true
 
-    success "Configuration fetched successfully"
-    info "  URL: $SERVER_URL"
-    info "  Permission: $PERMISSION"
+    success "$(msg config_fetched)"
+    info "  $(msg download_url): $SERVER_URL"
+    info "  $(msg permission): $PERMISSION"
 }
 
 # =============================================================================
@@ -1718,7 +1824,7 @@ list_servers() {
     # Parse servers from YAML (simplified approach)
     grep -A 5 "^  - host:\|^  - url:" "$config_file" 2>/dev/null | \
         grep -E "host:|url:|port:|token:|permission:" | \
-        sed 's/^[ -]*/  /' || echo "  No servers configured"
+        sed 's/^[ -]*/  /' || echo "  $(msg no_servers)"
     echo ""
 }
 
@@ -1727,21 +1833,21 @@ manage_metrics() {
     local config_file="${CONFIG_DIR}/nanolink.yaml"
     
     if [ ! -f "$config_file" ]; then
-        error "Configuration file not found"
+        error "$(msg config_not_found)"
         return
     fi
     
     step "$(msg metrics_config)"
     echo ""
     echo "$(msg current_settings):"
-    grep -A 10 "^collector:" "$config_file" 2>/dev/null | head -11 || echo "  No collector config found"
+    grep -A 10 "^collector:" "$config_file" 2>/dev/null | head -11 || echo "  $(msg no_collector_config)"
     echo ""
     
-    if prompt_yes_no "Modify collector intervals?" "n"; then
+    if prompt_yes_no "$(msg modify_intervals)" "n"; then
         echo ""
-        local cpu_interval=$(prompt_value "CPU interval (ms)" "1000")
-        local disk_interval=$(prompt_value "Disk interval (ms)" "3000")
-        local network_interval=$(prompt_value "Network interval (ms)" "1000")
+        local cpu_interval=$(prompt_value "$(msg cpu_interval)" "1000")
+        local disk_interval=$(prompt_value "$(msg disk_interval)" "3000")
+        local network_interval=$(prompt_value "$(msg network_interval)" "1000")
         
         # Backup config
         cp "$config_file" "${config_file}.backup.$(date +%Y%m%d%H%M%S)"
@@ -1752,10 +1858,10 @@ manage_metrics() {
         sed -i.tmp "s/network_interval_ms:.*/network_interval_ms: ${network_interval}/" "$config_file"
         rm -f "${config_file}.tmp"
         
-        success "Collector intervals updated"
+        success "$(msg intervals_updated)"
         echo ""
         
-        if prompt_yes_no "Reload configuration now?" "y"; then
+        if prompt_yes_no "$(msg reload_now)" "y"; then
             reload_config
         fi
     fi
@@ -1763,101 +1869,101 @@ manage_metrics() {
 
 # Reload configuration via management API
 reload_config() {
-    step "Reloading Configuration"
+    step "$(msg reloading_config)"
     
     if command -v curl &> /dev/null; then
         local response=$(curl -s -X POST "http://localhost:9101/api/reload" 2>/dev/null)
         
         if echo "$response" | grep -q '"success":true'; then
-            success "Configuration reloaded successfully!"
+            success "$(msg reload_success)"
         else
-            warn "Hot reload failed. Restarting service..."
+            warn "$(msg reload_failed)"
             restart_service
         fi
     else
-        warn "curl not available, restarting service..."
+        warn "$(msg curl_unavailable_restart)"
         restart_service
     fi
 }
 
 # Restart service
 restart_service() {
-    step "Restarting Service"
+    step "$(msg restarting_service)"
     
     if [ "$OS" = "linux" ]; then
         systemctl restart nanolink-agent
-        success "Service restarted"
+        success "$(msg service_restarted)"
     elif [ "$OS" = "macos" ]; then
         launchctl stop com.nanolink.agent 2>/dev/null || true
         sleep 1
         launchctl start com.nanolink.agent
-        success "Service restarted"
+        success "$(msg service_restarted)"
     fi
 }
 
 # Stop service
 stop_service_manage() {
-    step "Stopping Service"
+    step "$(msg stopping_service_now)"
     
     if [ "$OS" = "linux" ]; then
         systemctl stop nanolink-agent
-        success "Service stopped"
+        success "$(msg service_stopped_ok)"
     elif [ "$OS" = "macos" ]; then
         launchctl stop com.nanolink.agent 2>/dev/null
-        success "Service stopped"
+        success "$(msg service_stopped_ok)"
     fi
 }
 
 # Start service (for manage menu)
 start_service_manage() {
-    step "Starting Service"
+    step "$(msg starting_service)"
     
     if [ "$OS" = "linux" ]; then
         systemctl start nanolink-agent
-        success "Service started"
+        success "$(msg service_started)"
     elif [ "$OS" = "macos" ]; then
         launchctl start com.nanolink.agent
-        success "Service started"
+        success "$(msg service_started)"
     fi
 }
 
 # Interactive add server
 interactive_add_server() {
-    step "Add New Server"
+    step "$(msg add_new_server)"
     echo ""
     
     while true; do
-        SERVER_URL=$(prompt_value "Server address (e.g., server.example.com:39100)" "")
+        SERVER_URL=$(prompt_value "$(msg server_url_prompt)" "")
         if [ -z "$SERVER_URL" ]; then
-            warn "Server address is required"
+            warn "$(msg server_url_required)"
             continue
         fi
         # Validate host:port format
         if [[ ! "$SERVER_URL" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?(:[0-9]+)?$ ]]; then
-            warn "Invalid format. Use host:port (e.g., server.example.com:39100)"
+            warn "$(msg url_invalid)"
             continue
         fi
         break
     done
     
-    TOKEN=$(prompt_value "Authentication Token" "")
+    TOKEN=$(prompt_value "$(msg token_prompt)" "")
     if [ -z "$TOKEN" ]; then
-        error "Token is required"
+        error "$(msg token_required)"
         return
     fi
     
     echo ""
-    PERMISSION=$(prompt_choice "Permission Level" \
-        "Read Only (monitoring only)" \
-        "Read + Process Control" \
-        "Read + Process + Limited Shell" \
-        "Full Access (all operations)")
+    PERMISSION=$(prompt_choice "$(msg permission_level)" \
+        "$(msg perm_readonly)" \
+        "$(msg perm_basic)" \
+        "$(msg perm_shell)" \
+        "$(msg perm_full)")
     
     TLS_ENABLED="false"
     TLS_VERIFY="true"
-    if prompt_yes_no "Enable TLS?" "n"; then
+    if prompt_yes_no "$(msg enable_tls_transport)" "n"; then
         TLS_ENABLED="true"
-        info "TLS certificate verification is required. Use tls_ca_cert for a private CA."
+        info "$(msg tls_verification_required)"
     fi
     
     add_server_to_config
@@ -1865,15 +1971,15 @@ interactive_add_server() {
 
 # Interactive modify server
 interactive_modify_server() {
-    step "Modify Server Configuration"
+    step "$(msg modify_server_title)"
     echo ""
     
     list_servers
     
     echo ""
-    SERVER_URL=$(prompt_value "Enter server URL to modify" "")
+    SERVER_URL=$(prompt_value "$(msg enter_url_modify)" "")
     if [ -z "$SERVER_URL" ]; then
-        error "Server URL is required"
+        error "$(msg server_url_required)"
         return
     fi
     
@@ -1883,47 +1989,47 @@ interactive_modify_server() {
         # Try extracting host from URL
         local host=$(echo "$SERVER_URL" | sed -E 's|^wss?://||' | cut -d':' -f1)
         if ! grep -q "host: \"${host}\"" "$config_file" 2>/dev/null; then
-            error "Server not found in configuration"
+            error "$(msg server_not_found)"
             return
         fi
     fi
     
     echo ""
-    echo "What do you want to modify?"
-    local modify_choice=$(prompt_choice "Select option" \
-        "Token" \
-        "Permission level" \
-        "TLS verification")
+    echo "$(msg what_to_modify)"
+    local modify_choice=$(prompt_choice "$(msg select_option)" \
+        "$(msg token)" \
+        "$(msg permission)" \
+        "$(msg tls_verify)")
     
     case $modify_choice in
         0)
-            local new_token=$(prompt_value "New Token" "")
+            local new_token=$(prompt_value "$(msg new_token)" "")
             if [ -n "$new_token" ]; then
                 # This is simplified - for complex YAML, a proper parser would be better
-                warn "Manual token update recommended. Edit: $config_file"
+                warn "$(msg manual_edit): $config_file"
             fi
             ;;
         1)
-            local new_perm=$(prompt_choice "New Permission Level" \
-                "Read Only (0)" \
-                "Read + Process Control (1)" \
-                "Read + Process + Limited Shell (2)" \
-                "Full Access (3)")
-            warn "Manual permission update recommended. Edit: $config_file"
+            local new_perm=$(prompt_choice "$(msg new_permission)" \
+                "$(msg perm_readonly) (0)" \
+                "$(msg perm_basic) (1)" \
+                "$(msg perm_shell) (2)" \
+                "$(msg perm_full) (3)")
+            warn "$(msg manual_edit): $config_file"
             ;;
         2)
-            local new_tls=$(prompt_yes_no "Enable TLS verification?" "y")
-            warn "Manual TLS setting update recommended. Edit: $config_file"
+            local new_tls=$(prompt_yes_no "$(msg enable_tls)" "y")
+            warn "$(msg manual_edit): $config_file"
             ;;
     esac
     
     echo ""
-    info "Configuration file: $config_file"
+    info "$(msg configuration): $config_file"
     
-    if prompt_yes_no "Open config file in editor?" "n"; then
+    if prompt_yes_no "$(msg open_editor)" "n"; then
         ${EDITOR:-vi} "$config_file"
         
-        if prompt_yes_no "Reload configuration?" "y"; then
+        if prompt_yes_no "$(msg reload_now)" "y"; then
             reload_config
         fi
     fi
@@ -1931,35 +2037,35 @@ interactive_modify_server() {
 
 # Interactive remove server
 interactive_remove_server() {
-    step "Remove Server"
+    step "$(msg remove_server_title)"
     echo ""
     
     list_servers
     
     echo ""
-    SERVER_URL=$(prompt_value "Enter server URL to remove" "")
+    SERVER_URL=$(prompt_value "$(msg enter_url_remove)" "")
     if [ -z "$SERVER_URL" ]; then
-        error "Server URL is required"
+        error "$(msg server_url_required)"
         return
     fi
     
-    if prompt_yes_no "Are you sure you want to remove this server?" "n"; then
+    if prompt_yes_no "$(msg confirm_remove)" "n"; then
         remove_server_from_config
     else
-        info "Cancelled"
+        info "$(msg cancelled_plain)"
     fi
 }
 
 # Uninstall agent
 uninstall_agent() {
-    step "Uninstall NanoLink Agent"
+    step "$(msg uninstall_title)"
     echo ""
     
-    warn "This will remove the NanoLink Agent from your system."
+    warn "$(msg uninstall_warn)"
     echo ""
     
-    if ! prompt_yes_no "Are you sure you want to uninstall?" "n"; then
-        info "Uninstall cancelled"
+    if ! prompt_yes_no "$(msg confirm_uninstall)" "n"; then
+        info "$(msg uninstall_cancelled)"
         return
     fi
     
@@ -1977,43 +2083,43 @@ uninstall_agent() {
     
     # Remove binary
     rm -f "${INSTALL_DIR}/${BINARY_NAME}"
-    success "Binary removed"
+    success "$(msg binary_removed)"
     
     # Ask about data
     echo ""
-    if prompt_yes_no "Remove configuration and data?" "n"; then
+    if prompt_yes_no "$(msg remove_data)" "n"; then
         rm -rf "$CONFIG_DIR"
         rm -rf "$LOG_DIR"
         rm -rf "$DATA_DIR"
-        success "Configuration and data removed"
+        success "$(msg data_removed)"
     else
-        info "Configuration and data preserved at: $CONFIG_DIR"
+        info "$(msg data_preserved): $CONFIG_DIR"
     fi
     
     echo ""
-    success "NanoLink Agent has been uninstalled"
+    success "$(msg uninstall_complete)"
 }
 
 # View logs
 view_logs() {
-    step "View Logs"
+    step "$(msg view_logs)"
     
     local log_file="${LOG_DIR}/agent.log"
     
     if [ ! -f "$log_file" ]; then
-        warn "Log file not found: $log_file"
+        warn "$(msg log_file_not_found): $log_file"
         return
     fi
     
     echo ""
-    echo "Last 30 lines of agent log:"
+    echo "$(msg last_lines):"
     echo "────────────────────────────────────────"
     tail -30 "$log_file"
     echo "────────────────────────────────────────"
     echo ""
     
-    if prompt_yes_no "Follow logs in real-time?" "n"; then
-        echo "Press Ctrl+C to stop..."
+    if prompt_yes_no "$(msg follow_logs)" "n"; then
+        echo "$(msg press_ctrl_c)"
         tail -f "$log_file"
     fi
 }
@@ -2100,7 +2206,7 @@ main() {
     if [ "$ADD_SERVER_MODE" = "true" ]; then
         check_root
         if [ -z "$SERVER_URL" ] || [ -z "$TOKEN" ]; then
-            error "Add server mode requires --url and --token"
+            error "$(msg add_mode_requires)"
             exit 1
         fi
         add_server_to_config
@@ -2111,7 +2217,7 @@ main() {
     if [ "$REMOVE_SERVER_MODE" = "true" ]; then
         check_root
         if [ -z "$SERVER_URL" ]; then
-            error "Remove server mode requires --url"
+            error "$(msg remove_mode_requires)"
             exit 1
         fi
         remove_server_from_config
@@ -2134,7 +2240,7 @@ main() {
     check_root
     check_dependencies
 
-    info "Detected: $OS ($ARCH) with $INIT_SYSTEM"
+    info "$(msg detected): $OS ($ARCH) / $INIT_SYSTEM"
 
     # Check for existing installation (only in interactive mode)
     UPDATE_MODE=false
@@ -2178,8 +2284,8 @@ main() {
     elif [ "$INIT_SYSTEM" = "launchd" ]; then
         install_launchd_service
     else
-        warn "Unknown init system, skipping service installation"
-        warn "You'll need to start the agent manually"
+        warn "$(msg unknown_init_system)"
+        warn "$(msg start_manually)"
     fi
 
     # Start and verify
@@ -2187,7 +2293,7 @@ main() {
     verify_installation
     
     if [ "$UPDATE_MODE" = "true" ]; then
-        success "Agent updated successfully!"
+        success "$(msg update_success)"
     fi
     print_summary
 }

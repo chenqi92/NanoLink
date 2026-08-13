@@ -1,15 +1,16 @@
 //! Configuration wizard for NanoLink Agent
 
 use crate::config::{Config, ServerConfig};
+use crate::i18n::{Lang, detect_language, t};
 use eframe::egui;
 use std::path::PathBuf;
 
 /// Permission levels for server connections
 const PERMISSION_LEVELS: &[(&str, u8)] = &[
-    ("READ_ONLY (0) - View metrics only", 0),
-    ("BASIC_WRITE (1) - Basic operations", 1),
-    ("SERVICE_CONTROL (2) - Manage services", 2),
-    ("SYSTEM_ADMIN (3) - Full control", 3),
+    ("permission.read_only", 0),
+    ("permission.basic_write", 1),
+    ("permission.service_control", 2),
+    ("permission.system_admin", 3),
 ];
 
 /// Wizard state
@@ -27,6 +28,7 @@ struct WizardState {
     current_step: usize,
     error_message: Option<String>,
     show_token: bool,
+    lang: Lang,
 
     // Result
     config_saved: bool,
@@ -34,37 +36,38 @@ struct WizardState {
 }
 
 impl WizardState {
-    fn new() -> Self {
+    fn new(lang: Lang) -> Self {
         Self {
             host: String::new(),
             port: "39100".to_string(),
             permission: 0,
             tls_verify: true,
+            lang,
             ..Default::default()
         }
     }
 
     fn validate_server_config(&self) -> Result<(), String> {
         if self.host.trim().is_empty() {
-            return Err("Server host is required".to_string());
+            return Err(t("gui.error.host_required", self.lang).to_string());
         }
 
         if self.port.trim().is_empty() {
-            return Err("Port is required".to_string());
+            return Err(t("gui.error.port_required", self.lang).to_string());
         }
 
         let port: u16 = self
             .port
             .trim()
             .parse()
-            .map_err(|_| "Port must be a valid number (1-65535)".to_string())?;
+            .map_err(|_| t("gui.error.port_invalid", self.lang).to_string())?;
 
         if port == 0 {
-            return Err("Port must be greater than 0".to_string());
+            return Err(t("gui.error.port_zero", self.lang).to_string());
         }
 
         if self.token.trim().is_empty() {
-            return Err("Authentication token is required".to_string());
+            return Err(t("gui.error.token_required", self.lang).to_string());
         }
 
         Ok(())
@@ -81,7 +84,7 @@ impl WizardState {
             .port
             .trim()
             .parse()
-            .map_err(|_| "Port must be a valid number (1-65535)".to_string())?;
+            .map_err(|_| t("gui.error.port_invalid", self.lang).to_string())?;
 
         let server = ServerConfig {
             host: self.host.trim().to_string(),
@@ -113,10 +116,10 @@ impl WizardState {
 
         // Save configuration
         let yaml = serde_yaml::to_string(&config)
-            .map_err(|e| format!("Failed to serialize config: {e}"))?;
+            .map_err(|e| format!("{}: {e}", t("gui.error.serialize_failed", self.lang)))?;
 
         std::fs::write(&config_path, yaml)
-            .map_err(|e| format!("Failed to write config file: {e}"))?;
+            .map_err(|e| format!("{}: {e}", t("gui.error.write_failed", self.lang)))?;
 
         Ok(config_path)
     }
@@ -128,9 +131,9 @@ struct WizardApp {
 }
 
 impl WizardApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(_cc: &eframe::CreationContext<'_>, lang: Lang) -> Self {
         Self {
-            state: WizardState::new(),
+            state: WizardState::new(lang),
         }
     }
 }
@@ -141,20 +144,28 @@ impl eframe::App for WizardApp {
         ctx.set_visuals(egui::Visuals::dark());
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.state.lang, Lang::En, "English");
+                ui.selectable_value(&mut self.state.lang, Lang::Zh, "中文");
+            });
             ui.vertical_centered(|ui| {
                 ui.add_space(20.0);
 
                 // Title
                 ui.heading(
-                    egui::RichText::new("NanoLink Agent Configuration")
+                    egui::RichText::new(t("gui.title", self.state.lang))
                         .size(24.0)
                         .strong(),
                 );
 
                 ui.add_space(10.0);
                 ui.label(
-                    egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
-                        .color(egui::Color32::GRAY),
+                    egui::RichText::new(format!(
+                        "{} {}",
+                        t("gui.version", self.state.lang),
+                        env!("CARGO_PKG_VERSION")
+                    ))
+                    .color(egui::Color32::GRAY),
                 );
 
                 ui.add_space(30.0);
@@ -178,17 +189,20 @@ impl WizardApp {
         ui.vertical_centered(|ui| {
             ui.add_space(20.0);
 
-            ui.label(egui::RichText::new("Welcome to NanoLink Agent!").size(18.0));
+            ui.label(egui::RichText::new(t("gui.welcome", self.state.lang)).size(18.0));
 
             ui.add_space(20.0);
 
-            ui.label("No configuration file was found.");
-            ui.label("This wizard will help you set up the agent.");
+            ui.label(t("gui.no_config", self.state.lang));
+            ui.label(t("gui.help", self.state.lang));
 
             ui.add_space(40.0);
 
             if ui
-                .button(egui::RichText::new("  Start Configuration  ").size(16.0))
+                .button(
+                    egui::RichText::new(format!("  {}  ", t("gui.start_config", self.state.lang)))
+                        .size(16.0),
+                )
                 .clicked()
             {
                 self.state.current_step = 1;
@@ -196,7 +210,7 @@ impl WizardApp {
 
             ui.add_space(20.0);
 
-            if ui.small_button("Exit").clicked() {
+            if ui.small_button(t("menu.exit", self.state.lang)).clicked() {
                 std::process::exit(0);
             }
         });
@@ -205,12 +219,12 @@ impl WizardApp {
     fn show_server_config_page(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             ui.label(
-                egui::RichText::new("Server Configuration")
+                egui::RichText::new(t("gui.server_config", self.state.lang))
                     .size(18.0)
                     .strong(),
             );
             ui.add_space(10.0);
-            ui.label("Enter the NanoLink server details:");
+            ui.label(t("gui.enter_details", self.state.lang));
         });
 
         ui.add_space(20.0);
@@ -221,16 +235,16 @@ impl WizardApp {
             .spacing([20.0, 10.0])
             .show(ui, |ui| {
                 // Host
-                ui.label("Server Host:");
+                ui.label(t("gui.server_host", self.state.lang));
                 ui.add(
                     egui::TextEdit::singleline(&mut self.state.host)
-                        .hint_text("e.g., 192.168.1.100 or server.example.com")
+                        .hint_text(t("gui.server_host_hint", self.state.lang))
                         .desired_width(300.0),
                 );
                 ui.end_row();
 
                 // Port
-                ui.label("Port:");
+                ui.label(t("gui.port", self.state.lang));
                 ui.add(
                     egui::TextEdit::singleline(&mut self.state.port)
                         .hint_text("39100")
@@ -239,27 +253,27 @@ impl WizardApp {
                 ui.end_row();
 
                 // Token
-                ui.label("Auth Token:");
+                ui.label(t("gui.auth_token", self.state.lang));
                 ui.horizontal(|ui| {
                     if self.state.show_token {
                         ui.add(
                             egui::TextEdit::singleline(&mut self.state.token)
-                                .hint_text("Enter your authentication token")
+                                .hint_text(t("gui.auth_token_hint", self.state.lang))
                                 .desired_width(260.0),
                         );
                     } else {
                         ui.add(
                             egui::TextEdit::singleline(&mut self.state.token)
-                                .hint_text("Enter your authentication token")
+                                .hint_text(t("gui.auth_token_hint", self.state.lang))
                                 .password(true)
                                 .desired_width(260.0),
                         );
                     }
                     if ui
                         .small_button(if self.state.show_token {
-                            "Hide"
+                            t("gui.hide", self.state.lang)
                         } else {
-                            "Show"
+                            t("gui.show", self.state.lang)
                         })
                         .clicked()
                     {
@@ -269,24 +283,34 @@ impl WizardApp {
                 ui.end_row();
 
                 // Permission
-                ui.label("Permission Level:");
+                ui.label(t("gui.permission", self.state.lang));
                 egui::ComboBox::from_id_salt("permission_combo")
-                    .selected_text(PERMISSION_LEVELS[self.state.permission].0)
+                    .selected_text(t(
+                        PERMISSION_LEVELS[self.state.permission].0,
+                        self.state.lang,
+                    ))
                     .width(300.0)
                     .show_ui(ui, |ui| {
-                        for (i, (label, _)) in PERMISSION_LEVELS.iter().enumerate() {
-                            ui.selectable_value(&mut self.state.permission, i, *label);
+                        for (i, (key, _)) in PERMISSION_LEVELS.iter().enumerate() {
+                            ui.selectable_value(
+                                &mut self.state.permission,
+                                i,
+                                t(key, self.state.lang),
+                            );
                         }
                     });
                 ui.end_row();
 
                 // TLS Options
-                ui.label("TLS:");
+                ui.label(t("gui.tls", self.state.lang));
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.state.tls_enabled, "Enable TLS");
+                    ui.checkbox(
+                        &mut self.state.tls_enabled,
+                        t("gui.enable_tls", self.state.lang),
+                    );
                     if self.state.tls_enabled {
                         self.state.tls_verify = true;
-                        ui.label("Certificate verification is required");
+                        ui.label(t("gui.tls_required", self.state.lang));
                     }
                 });
                 ui.end_row();
@@ -304,7 +328,10 @@ impl WizardApp {
         ui.horizontal(|ui| {
             ui.add_space(ui.available_width() / 2.0 - 100.0);
 
-            if ui.button("  Back  ").clicked() {
+            if ui
+                .button(format!("  {}  ", t("server.back", self.state.lang)))
+                .clicked()
+            {
                 self.state.current_step = 0;
                 self.state.error_message = None;
             }
@@ -312,7 +339,10 @@ impl WizardApp {
             ui.add_space(20.0);
 
             if ui
-                .button(egui::RichText::new("  Save & Start Agent  ").strong())
+                .button(
+                    egui::RichText::new(format!("  {}  ", t("gui.save_start", self.state.lang)))
+                        .strong(),
+                )
                 .clicked()
             {
                 match self.state.save_config() {
@@ -334,7 +364,7 @@ impl WizardApp {
             ui.add_space(20.0);
 
             ui.label(
-                egui::RichText::new("Configuration Saved!")
+                egui::RichText::new(t("gui.saved", self.state.lang))
                     .size(20.0)
                     .color(egui::Color32::GREEN)
                     .strong(),
@@ -343,26 +373,33 @@ impl WizardApp {
             ui.add_space(20.0);
 
             if let Some(path) = &self.state.config_path {
-                ui.label(format!("Config file: {}", path.display()));
+                ui.label(format!(
+                    "{}: {}",
+                    t("gui.config_file", self.state.lang),
+                    path.display()
+                ));
             }
 
             ui.add_space(20.0);
 
-            ui.label("You can now start the agent by running:");
+            ui.label(t("gui.start_hint", self.state.lang));
             ui.add_space(10.0);
 
             ui.code("nanolink-agent");
 
             ui.add_space(10.0);
 
-            ui.label("Or install as a Windows Service:");
+            ui.label(t("gui.service_hint", self.state.lang));
             ui.code("nanolink-agent service install");
             ui.code("nanolink-agent service start");
 
             ui.add_space(30.0);
 
             if ui
-                .button(egui::RichText::new("  Close  ").size(14.0))
+                .button(
+                    egui::RichText::new(format!("  {}  ", t("gui.close", self.state.lang)))
+                        .size(14.0),
+                )
                 .clicked()
             {
                 std::process::exit(0);
@@ -373,21 +410,22 @@ impl WizardApp {
 
 /// Run the configuration wizard
 pub fn run_wizard() -> anyhow::Result<()> {
+    let lang = detect_language();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([500.0, 450.0])
             .with_min_inner_size([400.0, 350.0])
-            .with_title("NanoLink Agent - Configuration Wizard"),
+            .with_title(t("gui.window_title", lang)),
         centered: true,
         ..Default::default()
     };
 
     eframe::run_native(
-        "NanoLink Agent Configuration",
+        t("gui.title", lang),
         options,
-        Box::new(|cc| Ok(Box::new(WizardApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(WizardApp::new(cc, lang)))),
     )
-    .map_err(|e| anyhow::anyhow!("Failed to run wizard: {e}"))?;
+    .map_err(|e| anyhow::anyhow!("{}: {e}", t("gui.error.run_failed", lang)))?;
 
     Ok(())
 }

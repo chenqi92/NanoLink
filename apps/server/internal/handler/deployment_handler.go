@@ -475,6 +475,57 @@ func (h *DeploymentHandler) safeStoredArtifact(raw string) (string, error) {
 	return abs, nil
 }
 
+// ImportBuildArtifact promotes a verified build output into Deployment Center.
+// It creates an immutable copy (or same-filesystem hard link) below the
+// deployment storage root, so the existing short-lived download-token boundary
+// and path-containment checks continue to apply unchanged.
+func (h *DeploymentHandler) ImportBuildArtifact(projectID uint, version, notes, sourcePath, artifactName string, size int64, digest string, userID uint) (*database.DeploymentRelease, error) {
+	var project database.DeploymentProject
+	if err := h.db.First(&project, projectID).Error; err != nil {
+		return nil, fmt.Errorf("load deployment project: %w", err)
+	}
+	suffix, err := deploymentArtifactSuffix(project.Type, artifactName)
+	if err != nil {
+		return nil, err
+	}
+	if !releaseVersionPattern.MatchString(version) {
+		return nil, errors.New("build version is not a valid deployment version")
+	}
+	input, err := os.Open(sourcePath)
+	if err != nil {
+		return nil, fmt.Errorf("open build artifact: %w", err)
+	}
+	defer input.Close()
+	id := uuid.NewString()
+	projectDir := filepath.Join(h.storageRoot, strconv.FormatUint(uint64(projectID), 10))
+	if err := os.MkdirAll(projectDir, 0o750); err != nil {
+		return nil, fmt.Errorf("prepare deployment artifact storage: %w", err)
+	}
+	finalPath := filepath.Join(projectDir, id+suffix)
+	if err := os.Link(sourcePath, finalPath); err != nil {
+		output, openErr := os.OpenFile(finalPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
+		if openErr != nil {
+			return nil, fmt.Errorf("create deployment artifact: %w", openErr)
+		}
+		written, copyErr := io.Copy(output, input)
+		closeErr := output.Close()
+		if copyErr != nil || closeErr != nil || written != size {
+			_ = os.Remove(finalPath)
+			return nil, errors.New("copy build artifact into deployment storage failed")
+		}
+	}
+	release := database.DeploymentRelease{
+		ID: id, ProjectID: projectID, Version: version, ArtifactName: artifactName,
+		ArtifactPath: finalPath, ArtifactSize: size, SHA256: digest,
+		Notes: strings.TrimSpace(notes), CreatedBy: userID,
+	}
+	if err := h.db.Create(&release).Error; err != nil {
+		_ = os.Remove(finalPath)
+		return nil, errors.New("deployment version already exists or could not be created")
+	}
+	return &release, nil
+}
+
 func validateDeploymentProjectRequest(req *deploymentProjectRequest) error {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Type = strings.ToLower(strings.TrimSpace(req.Type))

@@ -72,12 +72,29 @@ deployment:
   storage_path: ./data/artifacts
   max_artifact_bytes: 536870912
   download_ttl_minutes: 30
+
+build:
+  storage_path: ./data/builds
+  # Exact hosts allowed to resolve to private IPs, for internal artifact stores.
+  allowed_source_hosts: []
+  max_source_bytes: 536870912
+  max_artifact_bytes: 536870912
+  download_ttl_minutes: 60
+  fetch_timeout_seconds: 300
+  max_log_bytes: 2097152
 ```
 
 Set `server.external_url` (or `NANOLINK_EXTERNAL_URL`) to the HTTPS URL that
 agents can reach before using the deployment center. Artifacts are stored under
 `deployment.storage_path`; Docker deployments should keep `/app/data` on a
 persistent volume.
+
+The build center supports Git sources, server-fetched source archives, and
+run-time uploads. Set `builds.enabled: true` on each Agent that may execute
+pipelines; Docker is the default runner and direct host execution requires the
+separate `builds.allow_host_runner: true` opt-in. URL sources reject private and
+reserved addresses unless their exact hostname is listed in
+`build.allowed_source_hosts` (or `NANOLINK_BUILD_ALLOWED_SOURCE_HOSTS`).
 
 `tls_cert` and `tls_key` enable native TLS on the HTTP, WebSocket, and gRPC
 listeners. `grpc_client_ca` additionally enables mutual TLS on gRPC: Agents
@@ -106,6 +123,11 @@ the Server certificate. TLS verification cannot be disabled.
 | POST | /api/deployment-projects/:id/releases | Upload an immutable release artifact |
 | POST | /api/deployment-projects/:id/releases/:releaseId/deploy | Deploy a release |
 | POST | /api/deployment-projects/:id/releases/:releaseId/rollback | Activate an earlier release |
+| GET/POST | /api/build-pipelines | List or create automated build pipelines |
+| POST | /api/build-pipelines/:id/run | Start a Git or URL-source build |
+| POST | /api/build-pipelines/:id/upload-run | Upload source and start a build |
+| POST | /api/build-runs/:runId/cancel | Cancel an active build |
+| GET | /api/build-runs/:runId | Read live logs and artifact metadata |
 
 ## WebSocket Protocol
 

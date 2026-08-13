@@ -97,7 +97,10 @@ impl PermissionChecker {
             CommandType::ConnectivityTest => 0, // All levels
 
             // Application deployment is a privileged filesystem + service action.
-            CommandType::DeployExecute | CommandType::DeployRollback => 3,
+            CommandType::DeployExecute
+            | CommandType::DeployRollback
+            | CommandType::BuildExecute
+            | CommandType::BuildCancel => 3,
 
             // Unknown commands require highest level
             _ => 3,

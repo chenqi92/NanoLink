@@ -69,14 +69,14 @@ export function LoginScreen() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "1fr 1fr", background: "var(--bg)", color: "var(--fg)" }}>
+    <div className="login-screen">
       {/* visual side */}
-      <div style={{ background: "var(--bg-2)", borderRight: "1px solid var(--border)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", padding: 40 }}>
+      <div className="login-visual">
         <div className="row gap-3" style={{ alignItems: "center" }}>
           {I.brand({ size: 26 })}
           <div className="col" style={{ lineHeight: 1.1, gap: 0 }}>
             <div className="display" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.02em" }}>NanoOps</div>
-            <div className="mono dim" style={{ fontSize: 10.5, letterSpacing: "0.04em" }}>monitoring · control · audit</div>
+            <div className="mono dim" style={{ fontSize: 10.5, letterSpacing: "0.04em" }}>{t("auth.brandTagline")}</div>
           </div>
         </div>
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -89,20 +89,20 @@ export function LoginScreen() {
       </div>
 
       {/* form side */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+      <div className="login-form-pane">
         <div style={{ position: "absolute", top: 20, right: 20, display: "flex", gap: 8 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
             {I.globe({ size: 13 })} <span className="mono">{lang === "zh" ? "中" : "EN"}</span>
           </button>
         </div>
-        <form onSubmit={submit} style={{ width: 320 }}>
+        <form className="login-form" onSubmit={submit}>
           <div className="col" style={{ gap: 24 }}>
             <div className="col" style={{ gap: 6 }}>
               <div className="upper" style={{ color: "var(--fg-4)" }}>{mode === "login" ? t("auth.signIn") : t("auth.signUp")}</div>
               <h1 className="display" style={{ margin: 0, fontSize: 26, fontWeight: 500, letterSpacing: "-0.02em" }}>
-                {mode === "login" ? (lang === "zh" ? "欢迎回来" : "Welcome back") : lang === "zh" ? "创建账户" : "Create account"}
+                {mode === "login" ? t("auth.welcomeBack") : t("auth.createAccountTitle")}
               </h1>
-              <div className="muted" style={{ fontSize: 12 }}>{lang === "zh" ? "继续监控你的基础设施" : "Pick up monitoring where you left off."}</div>
+              <div className="muted" style={{ fontSize: 12 }}>{t("auth.continueMonitoring")}</div>
             </div>
 
             <FormBlock label={t("auth.username")}>
@@ -133,11 +133,11 @@ export function LoginScreen() {
             <button type="submit" className="btn btn-primary" style={{ height: 36, justifyContent: "center" }} disabled={loading || !username || !password}>
               {loading ? (
                 <>
-                  <span className="dot pulse ok" /> <span>{lang === "zh" ? "正在登录…" : "Signing in…"}</span>
+                  <span className="dot pulse ok" /> <span>{t("auth.signingIn")}</span>
                 </>
               ) : (
                 <>
-                  <span>{mode === "login" ? (lang === "zh" ? "继续" : "Continue") : t("auth.signUp")}</span> {I.arrow({ size: 13 })}
+                  <span>{mode === "login" ? t("auth.continue") : t("auth.signUp")}</span> {I.arrow({ size: 13 })}
                 </>
               )}
             </button>

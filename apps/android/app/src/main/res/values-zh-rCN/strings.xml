@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NanoLink</string>
+    <string name="notification_channel_alerts">NanoLink 告警</string>
+    <string name="notification_channel_alerts_description">节点可用性与资源告警</string>
+</resources>

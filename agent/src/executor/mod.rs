@@ -1,3 +1,4 @@
+mod build;
 mod config_mgr;
 mod deployment;
 mod docker_ops;
@@ -11,6 +12,7 @@ mod service_mgr;
 mod shell;
 mod update;
 
+pub use build::BuildExecutor;
 pub use config_mgr::ConfigManager;
 pub use deployment::DeploymentExecutor;
 pub use docker_ops::DockerExecutor;

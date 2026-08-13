@@ -38,7 +38,7 @@ export function DevicesScreen() {
         {loading && devices.length === 0 ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{t("common.loading")}</div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+          <div className="auto-card-grid-280" style={{ gap: 12 }}>
             {devices.map((d) => (
               <div key={d.id} className="card" style={{ padding: 14, opacity: d.isActive ? 1 : 0.55 }}>
                 <div className="row" style={{ justifyContent: "space-between", marginBottom: 10 }}>

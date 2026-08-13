@@ -564,7 +564,7 @@ export function SettingsScreen() {
                       <input className="input mono" value={profileForm.baseUrl} onChange={(e) => setProfileForm({ ...profileForm, baseUrl: e.target.value })} placeholder={providers.find((p) => p.id === profileForm.provider)?.defaultBaseUrl} />
                     </FormBlock>
                   </div>
-                  <FormBlock label="API Key" hint={editingProfile.id ? t("plat.apiKeyUpdateHint") : undefined}>
+                  <FormBlock label={t("plat.apiKey")} hint={editingProfile.id ? t("plat.apiKeyUpdateHint") : undefined}>
                     <input className="input mono" type="password" autoComplete="new-password" value={profileForm.apiKey} onChange={(e) => setProfileForm({ ...profileForm, apiKey: e.target.value })} placeholder={editingProfile.id ? t("plat.apiKeyKeepExisting") : t("plat.apiKeyPlaceholder")} />
                   </FormBlock>
                   <FormBlock label={t("plat.aiMaxTokens")}>
@@ -646,7 +646,7 @@ export function SettingsScreen() {
                           <dl className="provider-profile-meta">
                             <div><dt>{t("plat.aiModel")}</dt><dd className="mono">{profile.model}</dd></div>
                             <div><dt>{t("plat.aiMaxTokens")}</dt><dd className="mono num">{profile.maxTokens.toLocaleString()}</dd></div>
-                            <div><dt>API Key</dt><dd className={profile.apiKeyConfigured ? "status-ok" : "status-warn"}>{profile.apiKeyConfigured ? t("plat.configured") : t("plat.notConfigured")}</dd></div>
+                            <div><dt>{t("plat.apiKey")}</dt><dd className={profile.apiKeyConfigured ? "status-ok" : "status-warn"}>{profile.apiKeyConfigured ? t("plat.configured") : t("plat.notConfigured")}</dd></div>
                           </dl>
                           <div className="provider-profile-actions">
                             {!profile.isActive && <button className="btn btn-ghost" onClick={() => activateProfile(profile.id)} disabled={profileStatus === "busy"}>{I.check({ size: 13 })}{t("plat.activate")}</button>}
@@ -706,7 +706,7 @@ export function SettingsScreen() {
                   />
                   <div className="hint" style={{ marginTop: 6 }}>{t("plat.aiBaseUrlHint")}</div>
                 </FormBlock>
-                <FormBlock label="API Key">
+                <FormBlock label={t("plat.apiKey")}>
                   <input
                     className="input mono"
                     type="password"

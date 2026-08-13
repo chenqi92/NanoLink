@@ -6,8 +6,8 @@ use tracing::{info, warn};
 use crate::buffer::RingBuffer;
 use crate::config::Config;
 use crate::executor::{
-    ConfigManager, DeploymentExecutor, DockerExecutor, FileExecutor, HealthExecutor, LogExecutor,
-    PackageManager, ProcessExecutor, ScriptExecutor, ServiceExecutor, ShellExecutor,
+    BuildExecutor, ConfigManager, DeploymentExecutor, DockerExecutor, FileExecutor, HealthExecutor,
+    LogExecutor, PackageManager, ProcessExecutor, ScriptExecutor, ServiceExecutor, ShellExecutor,
     UpdateExecutor,
 };
 use crate::management::audit::{AuditState, CommandAuditEntry};
@@ -44,6 +44,7 @@ pub struct MessageHandler {
     package_manager: PackageManager,
     health_executor: HealthExecutor,
     deployment_executor: DeploymentExecutor,
+    build_executor: BuildExecutor,
     audit: Arc<AuditState>,
 }
 
@@ -67,6 +68,7 @@ impl MessageHandler {
             package_manager: PackageManager::new(config.clone()),
             health_executor: HealthExecutor::new(),
             deployment_executor: DeploymentExecutor::new(config.clone()),
+            build_executor: BuildExecutor::new(config.clone()),
             // Structured, rotating, flushed audit trail for privileged commands
             // (separate file from the HTTP management API audit to avoid two
             // writers contending for one file). Gated by config.audit.enabled.
@@ -279,6 +281,8 @@ impl MessageHandler {
             // Structured application deployment
             CommandType::DeployExecute => self.deployment_executor.deploy(&command.params).await,
             CommandType::DeployRollback => self.deployment_executor.rollback(&command.params).await,
+            CommandType::BuildExecute => self.build_executor.execute(&command.params).await,
+            CommandType::BuildCancel => self.build_executor.cancel(&command.target),
 
             _ => CommandResult {
                 command_id: command.command_id.clone(),

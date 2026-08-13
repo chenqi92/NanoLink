@@ -93,6 +93,21 @@ deployments:
   max_artifact_size: 536870912 # 512 MiB
   timeout_seconds: 600
 
+# Automated packaging runner (requires permission level 3). Container mode is
+# recommended; host mode remains disabled unless explicitly allowed.
+builds:
+  enabled: false
+  workspace_root: /var/lib/nanolink/builds
+  allow_host_runner: false
+  allowed_images:
+    - node:22-alpine
+    - maven:3.9-eclipse-temurin-21
+    - golang:1.24-alpine
+  max_source_size: 536870912
+  max_artifact_size: 536870912
+  timeout_seconds: 1800
+  max_output_size: 2097152
+
 # Logging settings
 logging:
   level: info          # debug, info, warn, error

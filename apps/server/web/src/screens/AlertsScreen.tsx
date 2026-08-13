@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
+import type { TFunction } from "i18next"
 import { I } from "@/lib/icons"
 import { useRouter } from "@/store/router"
 import { PageHeader, FormBlock } from "@/components/shell/primitives"
@@ -13,13 +14,16 @@ type Tab = "active" | "rules" | "channels" | "silences"
 const OP_SYMBOL: Record<string, string> = { gt: ">", lt: "<", ge: "≥", le: "≤", eq: "=" }
 
 /** Build a human expression for a rule, e.g. "cpu > 90% for 5m". */
-function ruleExpression(r: AlertRuleModel): string {
-  if (r.metric === "offline") return "offline"
+function ruleExpression(r: AlertRuleModel, t: TFunction): string {
+  if (r.metric === "offline") return t("status.offline")
   const op = OP_SYMBOL[r.operator] ?? r.operator
-  const base = `${r.metric} ${op} ${r.threshold}%`
+  const metricKey = r.metric === "cpu" ? "metrics.cpu" : r.metric === "memory" ? "metrics.memory" : r.metric === "disk" ? "metrics.disk" : r.metric
+  const base = `${t(metricKey)} ${op} ${r.threshold}%`
   if (r.durationSec && r.durationSec > 0) {
     const m = Math.round(r.durationSec / 60)
-    return m >= 1 ? `${base} for ${m}m` : `${base} for ${r.durationSec}s`
+    return m >= 1
+      ? t("plat.ruleForMinutes", { expression: base, count: m })
+      : t("plat.ruleForSeconds", { expression: base, count: r.durationSec })
   }
   return base
 }
@@ -188,7 +192,7 @@ export function AlertsScreen() {
           <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{t("common.loading")}</div>
         ) : tab === "active" ? (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+            <div className="kpi-grid" style={{ gap: 12, marginBottom: 16 }}>
               <MiniStat label={t("plat.critical")} value={crit} color="var(--crit)" />
               <MiniStat label={t("plat.warning")} value={warn} color="var(--warn)" />
               <MiniStat label={t("plat.info")} value={info} color="var(--info)" />
@@ -210,7 +214,7 @@ export function AlertsScreen() {
                 {rules.map((r) => (
                   <tr key={r.id}>
                     <td style={{ fontWeight: 500 }}>{r.name}</td>
-                    <td><code className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>{ruleExpression(r)}</code></td>
+                    <td><code className="mono" style={{ fontSize: 11.5, color: "var(--fg-2)" }}>{ruleExpression(r, t)}</code></td>
                     <td><span className={`badge ${r.severity === "crit" ? "crit" : r.severity === "warn" ? "warn" : "info"}`}>{r.severity}</span></td>
                     <td className="mono dim" style={{ fontSize: 11 }}>{r.scope}</td>
                     <td className="mono dim" style={{ fontSize: 11 }}>{r.lastFiredAt ? new Date(r.lastFiredAt).toLocaleString() : "—"}</td>
@@ -224,7 +228,7 @@ export function AlertsScreen() {
             </table>
           </div>
         ) : tab === "channels" ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
+          <div className="auto-card-grid-320" style={{ gap: 12 }}>
             {channels.map((c) => (
               <div key={c.id} className="card" style={{ padding: 14 }}>
                 <div className="row gap-2" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -307,7 +311,7 @@ function RuleModal({ onClose, onDone, onError }: { onClose: () => void; onDone: 
         <FormBlock label={t("plat.name")}><input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus /></FormBlock>
         <FormBlock label={t("plat.metric")}>
           <select className="select" value={metric} onChange={(e) => setMetric(e.target.value)}>
-            <option value="cpu">CPU</option><option value="memory">Memory</option><option value="disk">Disk</option><option value="offline">Offline</option>
+            <option value="cpu">{t("metrics.cpu")}</option><option value="memory">{t("metrics.memory")}</option><option value="disk">{t("metrics.disk")}</option><option value="offline">{t("status.offline")}</option>
           </select>
         </FormBlock>
         {metric !== "offline" && (
@@ -317,7 +321,7 @@ function RuleModal({ onClose, onDone, onError }: { onClose: () => void; onDone: 
           </div>
         )}
         <FormBlock label={t("plat.severity")}>
-          <select className="select" value={severity} onChange={(e) => setSeverity(e.target.value)}><option value="crit">crit</option><option value="warn">warn</option><option value="info">info</option></select>
+          <select className="select" value={severity} onChange={(e) => setSeverity(e.target.value)}><option value="crit">{t("plat.critical")}</option><option value="warn">{t("plat.warning")}</option><option value="info">{t("plat.info")}</option></select>
         </FormBlock>
       </div>
     </Modal>
@@ -343,10 +347,10 @@ function ChannelModal({ onClose, onDone, onError }: { onClose: () => void; onDon
     <Modal title={t("plat.addChannel")} onClose={onClose} footer={<><button className="btn btn-sm" onClick={onClose}>{t("common.cancel")}</button><button className="btn btn-sm btn-primary" onClick={submit} disabled={busy || !name.trim()}>{busy && <span className="dot pulse ok" />}{t("common.create")}</button></>}>
       <div className="col gap-4">
         <FormBlock label={t("plat.kind")}>
-          <select className="select" value={kind} onChange={(e) => setKind(e.target.value)}><option value="slack">Slack</option><option value="email">Email</option><option value="webhook">Webhook</option><option value="pagerduty">PagerDuty</option><option value="sms">SMS</option></select>
+          <select className="select" value={kind} onChange={(e) => setKind(e.target.value)}><option value="slack">{t("plat.channelKinds.slack")}</option><option value="email">{t("plat.channelKinds.email")}</option><option value="webhook">{t("plat.channelKinds.webhook")}</option><option value="pagerduty">{t("plat.channelKinds.pagerduty")}</option><option value="sms">{t("plat.channelKinds.sms")}</option></select>
         </FormBlock>
         <FormBlock label={t("plat.name")}><input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus /></FormBlock>
-        <FormBlock label={t("plat.target")}><input className="input" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="webhook url / email / ..." /></FormBlock>
+        <FormBlock label={t("plat.target")}><input className="input" value={target} onChange={(e) => setTarget(e.target.value)} placeholder={t("plat.channelTargetPlaceholder")} /></FormBlock>
       </div>
     </Modal>
   )
@@ -370,9 +374,9 @@ function SilenceModal({ onClose, onDone, onError }: { onClose: () => void; onDon
   return (
     <Modal title={t("plat.newSilence")} onClose={onClose} footer={<><button className="btn btn-sm" onClick={onClose}>{t("common.cancel")}</button><button className="btn btn-sm btn-primary" onClick={submit} disabled={busy || durationMin < 1}>{busy && <span className="dot pulse ok" />}{t("common.create")}</button></>}>
       <div className="col gap-4">
-        <FormBlock label={t("plat.matcher")}><input className="input" value={matcher} onChange={(e) => setMatcher(e.target.value)} placeholder="all / hostname" autoFocus /></FormBlock>
-        <FormBlock label={t("plat.reason")}><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="maintenance window" /></FormBlock>
-        <FormBlock label={`${t("plat.duration")} (min)`}><input className="input" type="number" min={1} value={durationMin} onChange={(e) => setDurationMin(Number(e.target.value))} /></FormBlock>
+        <FormBlock label={t("plat.matcher")}><input className="input" value={matcher} onChange={(e) => setMatcher(e.target.value)} placeholder={t("plat.silenceMatcherPlaceholder")} autoFocus /></FormBlock>
+        <FormBlock label={t("plat.reason")}><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("plat.silenceReasonPlaceholder")} /></FormBlock>
+        <FormBlock label={`${t("plat.duration")} (${t("plat.minutesShort")})`}><input className="input" type="number" min={1} value={durationMin} onChange={(e) => setDurationMin(Number(e.target.value))} /></FormBlock>
       </div>
     </Modal>
   )

@@ -13,7 +13,7 @@ import { useAuth } from "@/contexts/AuthContext"
 const MAX_PULSE = 80
 
 export function DashboardScreen() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { agents, metrics, summary, refresh } = useData()
   const { navigate } = useRouter()
   const { user } = useAuth()
@@ -40,7 +40,7 @@ export function DashboardScreen() {
   }).length
 
   // Live fleet pulse (rolling avg cpu / mem)
-  const [pulse, setPulse] = useState<{ cpu: number[]; mem: number[] }>({ cpu: [], mem: [] })
+  const [pulse, setPulse] = useState<{ cpu: number[]; mem: number[]; timestamps: number[] }>({ cpu: [], mem: [], timestamps: [] })
   const lastSample = useRef(0)
   useEffect(() => {
     const now = Date.now()
@@ -49,11 +49,23 @@ export function DashboardScreen() {
     setPulse((p) => ({
       cpu: [...p.cpu, avgCpu].slice(-MAX_PULSE),
       mem: [...p.mem, avgMem].slice(-MAX_PULSE),
+      timestamps: [...p.timestamps, now].slice(-MAX_PULSE),
     }))
   }, [avgCpu, avgMem])
 
   const cpuSeries = pulse.cpu.length > 1 ? pulse.cpu : [avgCpu, avgCpu]
   const memSeries = pulse.mem.length > 1 ? pulse.mem : [avgMem, avgMem]
+  const pulseLabels = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    })
+    const labels = pulse.timestamps.map((timestamp) => formatter.format(new Date(timestamp)))
+    return labels.length === 1 ? [labels[0], labels[0]] : labels
+  }, [i18n.language, i18n.resolvedLanguage, pulse.timestamps])
+  const pulseAxisLabels = [pulseLabels[0] ?? "", "", "", "", pulseLabels[pulseLabels.length - 1] ?? ""]
 
   return (
     <div className="col" style={{ flex: 1, overflow: "hidden" }}>
@@ -78,7 +90,7 @@ export function DashboardScreen() {
       />
       <div ref={scrollRef} style={{ padding: "0 24px 24px", overflow: "auto", flex: 1 }}>
         {/* KPI strip */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "var(--gap)" }}>
+        <div className="kpi-grid" style={{ gap: "var(--gap)" }}>
           <KPI
             icon={I.agents({ size: 13 })}
             label={t("mon.agentsOnline")}
@@ -90,9 +102,10 @@ export function DashboardScreen() {
             }
             sub={t("mon.offlineCount", { count: agents.length - onlineAgents.length })}
             spark={cpuSeries.map(() => (agents.length ? (onlineAgents.length / agents.length) * 100 : 0))}
+            sparkLabels={pulseLabels}
           />
-          <KPI icon={I.cpu({ size: 13 })} label={t("mon.avgCpu")} value={`${avgCpu}%`} sub={t("mon.acrossOnline")} spark={cpuSeries} tone={toneFor(avgCpu)} />
-          <KPI icon={I.mem({ size: 13 })} label={t("mon.avgMemory")} value={`${avgMem}%`} sub={t("mon.memUsedGiB", { value: formatBytes(usedMem) })} spark={memSeries} tone={toneFor(avgMem)} />
+          <KPI icon={I.cpu({ size: 13 })} label={t("mon.avgCpu")} value={`${avgCpu}%`} sub={t("mon.acrossOnline")} spark={cpuSeries} sparkLabels={pulseLabels} tone={toneFor(avgCpu)} />
+          <KPI icon={I.mem({ size: 13 })} label={t("mon.avgMemory")} value={`${avgMem}%`} sub={t("mon.memUsedGiB", { value: formatBytes(usedMem) })} spark={memSeries} sparkLabels={pulseLabels} tone={toneFor(avgMem)} />
           <KPI icon={I.warn({ size: 13 })} label={t("mon.alerts")} value={alerts} sub={t("mon.needsAttention")} tone={alerts > 0 ? "warn" : ""} />
         </div>
 
@@ -108,9 +121,11 @@ export function DashboardScreen() {
             height={140}
             yMax={100}
             unit="%"
+            xLabels={pulseAxisLabels}
+            pointLabels={pulseLabels}
             series={[
-              { data: cpuSeries, label: "CPU avg", color: "var(--fg)", fill: true, fillOpacity: 0.08 },
-              { data: memSeries, label: "Mem avg", color: "var(--fg-3)", dashed: true },
+              { data: cpuSeries, label: t("mon.avgCpu"), color: "var(--fg)", fill: true, fillOpacity: 0.08 },
+              { data: memSeries, label: t("mon.avgMemory"), color: "var(--fg-3)", dashed: true },
             ]}
             thresholds={[{ v: 90, label: "90%" }]}
           />

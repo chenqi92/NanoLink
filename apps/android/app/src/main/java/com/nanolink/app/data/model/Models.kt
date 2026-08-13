@@ -120,10 +120,10 @@ data class Agent(
         get() = lastHeartbeatMillis?.let { System.currentTimeMillis() - it < 60_000 } == true
 
     companion object {
-        fun from(json: JsonObject, serverId: String) = Agent(
+        fun from(json: JsonObject, serverId: String, unknownHostname: String = "Unknown") = Agent(
             id = json.string("id", "agent_id", "agentId"),
             serverId = serverId,
-            hostname = json.string("hostname", default = "unknown"),
+            hostname = json.string("hostname", default = unknownHostname),
             os = json.string("os"),
             arch = json.string("arch"),
             version = json.string("version"),

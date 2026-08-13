@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Terminal as XTerm } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
@@ -22,6 +23,7 @@ const fontFamilies: Record<string, string> = {
 }
 
 export function Terminal({ agentId, settings: propSettings, onDisconnect }: TerminalProps) {
+  const { t } = useTranslation()
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -38,7 +40,7 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
     wsRef.current = ws
 
     ws.onopen = () => {
-      xtermRef.current?.writeln("\x1b[32mConnected to agent shell\x1b[0m")
+      xtermRef.current?.writeln(`\x1b[32m${t("shell.connectedToAgent")}\x1b[0m`)
       xtermRef.current?.writeln("")
     }
 
@@ -48,7 +50,7 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
         if (data.type === "output") {
           xtermRef.current?.write(data.data)
         } else if (data.type === "error") {
-          xtermRef.current?.writeln(`\x1b[31mError: ${data.data}\x1b[0m`)
+          xtermRef.current?.writeln(`\x1b[31m${t("shell.errorPrefix", { message: data.data })}\x1b[0m`)
         }
       } catch {
         // Raw output
@@ -58,14 +60,14 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
 
     ws.onclose = () => {
       xtermRef.current?.writeln("")
-      xtermRef.current?.writeln("\x1b[33mDisconnected from agent shell\x1b[0m")
+      xtermRef.current?.writeln(`\x1b[33m${t("shell.disconnectedFromAgent")}\x1b[0m`)
       onDisconnect?.()
     }
 
     ws.onerror = () => {
-      xtermRef.current?.writeln("\x1b[31mConnection error\x1b[0m")
+      xtermRef.current?.writeln(`\x1b[31m${t("shell.connectionFailed")}\x1b[0m`)
     }
-  }, [agentId, onDisconnect])
+  }, [agentId, onDisconnect, t])
 
   useEffect(() => {
     if (!terminalRef.current) return
@@ -117,8 +119,8 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
     resizeObserver.observe(terminalRef.current)
 
     // Connect to shell
-    term.writeln("\x1b[36mNanoOps Web Shell\x1b[0m")
-    term.writeln(`\x1b[90mConnecting to agent: ${agentId}\x1b[0m`)
+    term.writeln(`\x1b[36m${t("shell.webShell")}\x1b[0m`)
+    term.writeln(`\x1b[90m${t("shell.connectingToAgent", { agentId })}\x1b[0m`)
     term.writeln("")
     connect()
 
@@ -128,7 +130,7 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
       wsRef.current?.close()
       term.dispose()
     }
-  }, [agentId, settings, theme, connect])
+  }, [agentId, settings, theme, connect, t])
 
   // Update terminal options when settings change
   useEffect(() => {

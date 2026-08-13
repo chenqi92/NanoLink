@@ -9,7 +9,7 @@ function EmptyRow({ msg }: { msg: string }) {
   return <div style={{ padding: 20, textAlign: "center", color: "var(--fg-4)", fontSize: 12 }}>{msg}</div>
 }
 
-export function CpuPanel({ cpu, load, history }: { cpu: CpuMetrics; load?: number[]; history?: number[] }) {
+export function CpuPanel({ cpu, load, history, historyLabels }: { cpu: CpuMetrics; load?: number[]; history?: number[]; historyLabels?: string[] }) {
   const { t } = useTranslation()
   const cores = cpu.perCoreUsage?.length ? cpu.perCoreUsage : Array.from({ length: cpu.coreCount || 0 }, () => cpu.usagePercent)
   const loadStr = (load ?? cpu.loadAverage ?? []).map((v) => v.toFixed(2)).join(" ")
@@ -17,26 +17,26 @@ export function CpuPanel({ cpu, load, history }: { cpu: CpuMetrics; load?: numbe
     <div className="card" style={{ padding: 16 }}>
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 14 }}>
         <div className="row gap-2" style={{ alignItems: "center", color: "var(--fg-2)" }}>
-          {I.cpu({ size: 13 })} <span style={{ fontWeight: 500, fontSize: 12 }}>CPU</span>
+          {I.cpu({ size: 13 })} <span style={{ fontWeight: 500, fontSize: 12 }}>{t("metrics.cpu")}</span>
           <span className="dim mono" style={{ fontSize: 10.5 }}>{cpu.coreCount}c / {cpu.logicalCores || cpu.coreCount}t</span>
         </div>
         <div className="row gap-3 mono" style={{ fontSize: 11, color: "var(--fg-4)" }}>
-          {loadStr && <span>load <span style={{ color: "var(--fg-3)" }}>{loadStr}</span></span>}
+          {loadStr && <span>{t("metrics.load")} <span style={{ color: "var(--fg-3)" }}>{loadStr}</span></span>}
           {cpu.temperature > 0 && <span style={{ color: tempTone(cpu.temperature) ? `var(--${tempTone(cpu.temperature)})` : "var(--fg-4)" }}>{Math.round(cpu.temperature)}°C</span>}
         </div>
       </div>
       <div className="row gap-4" style={{ alignItems: "center" }}>
-        <Donut value={cpu.usagePercent} size={96} thickness={7} label={`${Math.round(cpu.usagePercent)}%`} sub={cpu.frequencyMhz ? `${(cpu.frequencyMhz / 1000).toFixed(1)} GHz` : undefined} />
+        <Donut name={t("metrics.cpu")} value={cpu.usagePercent} size={96} thickness={7} label={`${Math.round(cpu.usagePercent)}%`} sub={cpu.frequencyMhz ? `${(cpu.frequencyMhz / 1000).toFixed(1)} GHz` : undefined} />
         <div className="col flex-1 gap-3">
           <div className="col" style={{ gap: 2 }}>
             <div className="dim" style={{ fontSize: 10.5 }}>{t("mon.model")}</div>
             <div className="mono" style={{ fontSize: 12, color: "var(--fg)" }}>{cpu.model || "—"}</div>
-            <div className="dim mono" style={{ fontSize: 10.5 }}>{[cpu.vendor, cpu.architecture, cpu.frequencyMaxMhz ? `max ${(cpu.frequencyMaxMhz / 1000).toFixed(2)} GHz` : ""].filter(Boolean).join(" · ")}</div>
+            <div className="dim mono" style={{ fontSize: 10.5 }}>{[cpu.vendor, cpu.architecture, cpu.frequencyMaxMhz ? `${t("metrics.max")} ${(cpu.frequencyMaxMhz / 1000).toFixed(2)} GHz` : ""].filter(Boolean).join(" · ")}</div>
           </div>
           {history && history.length > 1 && (
             <div style={{ color: "var(--fg-2)" }}>
               <div className="dim upper" style={{ marginBottom: 4 }}>{t("mon.lastHour")}</div>
-              <Sparkline data={history} h={28} />
+              <Sparkline data={history} h={28} label={t("metrics.cpu")} unit="%" pointLabels={historyLabels} />
             </div>
           )}
         </div>
@@ -49,7 +49,7 @@ export function CpuPanel({ cpu, load, history }: { cpu: CpuMetrics; load?: numbe
               <span className="dim upper">{t("mon.perCore")}</span>
               <span className="mono dim" style={{ fontSize: 10.5 }}>{cores.length} {t("mon.cores")}</span>
             </div>
-            <CoreMatrix cores={cores} />
+            <CoreMatrix cores={cores} label={t("metrics.core")} />
           </div>
         </>
       )}
@@ -57,7 +57,7 @@ export function CpuPanel({ cpu, load, history }: { cpu: CpuMetrics; load?: numbe
   )
 }
 
-export function MemPanel({ mem, history }: { mem: MemoryMetrics; history?: number[] }) {
+export function MemPanel({ mem, history, historyLabels }: { mem: MemoryMetrics; history?: number[]; historyLabels?: string[] }) {
   const { t } = useTranslation()
   const pct = mem.total ? (mem.used / mem.total) * 100 : 0
   const swapPct = mem.swapTotal > 0 ? (mem.swapUsed / mem.swapTotal) * 100 : 0
@@ -70,17 +70,17 @@ export function MemPanel({ mem, history }: { mem: MemoryMetrics; history?: numbe
         {mem.memoryType && <span className="dim mono" style={{ fontSize: 10.5 }}>{mem.memoryType}{mem.memorySpeedMhz ? ` · ${mem.memorySpeedMhz} MT/s` : ""}</span>}
       </div>
       <div className="row gap-4" style={{ alignItems: "center" }}>
-        <Donut value={pct} size={96} thickness={7} label={`${Math.round(pct)}%`} sub={`${formatBytes(mem.used)} / ${formatBytes(mem.total)}`} />
+        <Donut name={t("metrics.memory")} value={pct} size={96} thickness={7} label={`${Math.round(pct)}%`} sub={`${formatBytes(mem.used)} / ${formatBytes(mem.total)}`} />
         <div className="col flex-1 gap-3">
           <div className="col" style={{ gap: 6 }}>
             <KVRow label={t("metrics.used")} value={formatBytes(mem.used)} />
             <KVRow label={t("metrics.available")} value={formatBytes(mem.available)} />
-            {mem.cached > 0 && <KVRow label="Cache" value={formatBytes(mem.cached)} />}
-            <KVRow label="Swap" value={`${formatBytes(mem.swapUsed)} / ${formatBytes(mem.swapTotal)}`} />
+            {mem.cached > 0 && <KVRow label={t("metrics.cache")} value={formatBytes(mem.cached)} />}
+            <KVRow label={t("metrics.swap")} value={`${formatBytes(mem.swapUsed)} / ${formatBytes(mem.swapTotal)}`} />
           </div>
           {history && history.length > 1 && (
             <div style={{ color: "var(--fg-2)" }}>
-              <Sparkline data={history} h={28} />
+              <Sparkline data={history} h={28} label={t("metrics.memory")} unit="%" pointLabels={historyLabels} />
             </div>
           )}
         </div>
@@ -122,7 +122,7 @@ export function GpuCard({ gpu }: { gpu: GpuMetrics }) {
         </div>
         <div className="row gap-3 mono num" style={{ fontSize: 11, color: "var(--fg-4)", alignItems: "center" }}>
           {gpu.temperature > 0 && <span style={{ color: tempTone(gpu.temperature) ? `var(--${tempTone(gpu.temperature)})` : "var(--fg-3)" }}>{Math.round(gpu.temperature)}°C</span>}
-          {gpu.fanSpeedPercent > 0 && <span>fan {gpu.fanSpeedPercent}%</span>}
+          {gpu.fanSpeedPercent > 0 && <span>{t("metrics.fan")} {gpu.fanSpeedPercent}%</span>}
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginBottom: 8 }}>
@@ -131,16 +131,17 @@ export function GpuCard({ gpu }: { gpu: GpuMetrics }) {
         {gpu.powerLimitWatts > 0 && <GpuMetric label={t("metrics.power")} pct={pwrPct} val={`${gpu.powerWatts} / ${gpu.powerLimitWatts} W`} tone={pwrPct > 90 ? "warn" : ""} />}
       </div>
       <div className="row gap-3" style={{ fontSize: 10.5, color: "var(--fg-4)", fontFamily: "var(--font-mono)", flexWrap: "wrap" }}>
-        {gpu.clockCoreMhz > 0 && <span>core {gpu.clockCoreMhz} MHz</span>}
-        {gpu.clockMemoryMhz > 0 && <span>mem {gpu.clockMemoryMhz} MHz</span>}
-        {gpu.encoderUsage > 0 && <span>enc {Math.round(gpu.encoderUsage)}%</span>}
-        {gpu.decoderUsage > 0 && <span>dec {Math.round(gpu.decoderUsage)}%</span>}
+        {gpu.clockCoreMhz > 0 && <span>{t("metrics.core")} {gpu.clockCoreMhz} MHz</span>}
+        {gpu.clockMemoryMhz > 0 && <span>{t("metrics.memoryClock")} {gpu.clockMemoryMhz} MHz</span>}
+        {gpu.encoderUsage > 0 && <span>{t("metrics.encode")} {Math.round(gpu.encoderUsage)}%</span>}
+        {gpu.decoderUsage > 0 && <span>{t("metrics.decode")} {Math.round(gpu.decoderUsage)}%</span>}
       </div>
     </div>
   )
 }
 
 export function NpuCard({ npu }: { npu: NpuMetrics }) {
+  const { t } = useTranslation()
   const memPct = npu.memoryTotal ? (npu.memoryUsed / npu.memoryTotal) * 100 : 0
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 12, background: "var(--panel-2)" }}>
@@ -152,27 +153,33 @@ export function NpuCard({ npu }: { npu: NpuMetrics }) {
         <span className="mono dim" style={{ fontSize: 10.5 }}>{npu.temperature > 0 ? `${Math.round(npu.temperature)}°C` : ""}{npu.powerWatts ? ` · ${npu.powerWatts}W` : ""}</span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
-        <GpuMetric label="Util" pct={npu.usagePercent} val={`${Math.round(npu.usagePercent)}%`} tone={toneFor(npu.usagePercent)} />
-        {npu.memoryTotal > 0 && <GpuMetric label="Memory" pct={memPct} val={`${formatBytes(npu.memoryUsed)} / ${formatBytes(npu.memoryTotal)}`} />}
+        <GpuMetric label={t("metrics.utilization")} pct={npu.usagePercent} val={`${Math.round(npu.usagePercent)}%`} tone={toneFor(npu.usagePercent)} />
+        {npu.memoryTotal > 0 && <GpuMetric label={t("metrics.memory")} pct={memPct} val={`${formatBytes(npu.memoryUsed)} / ${formatBytes(npu.memoryTotal)}`} />}
       </div>
     </div>
   )
 }
 
-export function RealtimeTab({ m, history }: { m: Metrics; history?: { cpu: number[]; mem: number[] } }) {
-  const { t } = useTranslation()
+export function RealtimeTab({ m, history }: { m: Metrics; history?: { cpu: number[]; mem: number[]; timestamps: string[] } }) {
+  const { t, i18n } = useTranslation()
   const disks = m.disks ?? []
   const nets = (m.networks ?? []).filter((n) => !n.interface.startsWith("lo"))
   const gpus = m.gpus ?? []
   const npus = m.npus ?? []
   const sessions = m.userSessions ?? []
   const sys = m.systemInfo
+  const historyLabels = (history?.timestamps ?? []).map((timestamp) => {
+    const date = new Date(timestamp)
+    return Number.isNaN(date.getTime())
+      ? timestamp
+      : date.toLocaleTimeString(i18n.resolvedLanguage || i18n.language, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+  })
 
   return (
     <div className="col" style={{ padding: 20, gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
-        <CpuPanel cpu={m.cpu} load={m.loadAverage} history={history?.cpu} />
-        <MemPanel mem={m.memory} history={history?.mem} />
+      <div className="responsive-split-grid" style={{ gap: 16 }}>
+        <CpuPanel cpu={m.cpu} load={m.loadAverage} history={history?.cpu} historyLabels={historyLabels} />
+        <MemPanel mem={m.memory} history={history?.mem} historyLabels={historyLabels} />
       </div>
 
       <SectionPanel title={t("mon.storage")} icon={I.disk({ size: 13 })} count={disks.length} bodyStyle={{ padding: 0 }}>
@@ -184,7 +191,7 @@ export function RealtimeTab({ m, history }: { m: Metrics; history?: { cpu: numbe
               <tr>
                 <th>{t("mon.mount")}</th>
                 <th>{t("mon.device")}</th>
-                <th>FS</th>
+                <th>{t("metrics.fileSystem")}</th>
                 <th style={{ width: 200 }}>{t("mon.usage")}</th>
                 <th style={{ textAlign: "right" }}>{t("metrics.read")}</th>
                 <th style={{ textAlign: "right" }}>{t("metrics.write")}</th>
@@ -228,8 +235,8 @@ export function RealtimeTab({ m, history }: { m: Metrics; history?: { cpu: numbe
                 <th>{t("mon.iface")}</th>
                 <th>{t("mon.link")}</th>
                 <th>{t("mon.address")}</th>
-                <th style={{ textAlign: "right" }}>RX</th>
-                <th style={{ textAlign: "right" }}>TX</th>
+                <th style={{ textAlign: "right" }}>{t("metrics.rx")}</th>
+                <th style={{ textAlign: "right" }}>{t("metrics.tx")}</th>
                 <th style={{ textAlign: "right" }}>{t("mon.speed")}</th>
               </tr>
             </thead>
@@ -252,7 +259,7 @@ export function RealtimeTab({ m, history }: { m: Metrics; history?: { cpu: numbe
       </SectionPanel>
 
       {(gpus.length > 0 || npus.length > 0) && (
-        <div style={{ display: "grid", gridTemplateColumns: gpus.length && npus.length ? "1.4fr 1fr" : "1fr", gap: 16 }}>
+        <div className={gpus.length && npus.length ? "responsive-split-grid" : ""} style={{ display: "grid", gridTemplateColumns: gpus.length && npus.length ? undefined : "1fr", gap: 16 }}>
           {gpus.length > 0 && (
             <SectionPanel title={t("mon.gpus")} icon={I.gpu({ size: 13 })} count={gpus.length}>
               <div className="col gap-3">{gpus.map((g, i) => <GpuCard key={i} gpu={g} />)}</div>
@@ -266,7 +273,7 @@ export function RealtimeTab({ m, history }: { m: Metrics; history?: { cpu: numbe
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 16 }}>
+      <div className="responsive-split-grid responsive-split-grid--balanced" style={{ gap: 16 }}>
         <SectionPanel title={t("mon.userSessions")} icon={I.user({ size: 13 })} count={sessions.length} bodyStyle={{ padding: 0 }}>
           {sessions.length === 0 ? (
             <EmptyRow msg={t("mon.noSessions")} />
@@ -290,13 +297,13 @@ export function RealtimeTab({ m, history }: { m: Metrics; history?: { cpu: numbe
 
         <SectionPanel title={t("system.info")} icon={I.info({ size: 13 })}>
           <div className="col" style={{ gap: 6, fontSize: 12 }}>
-            <KVRow label="OS" value={sys ? `${sys.osName} ${sys.osVersion}` : "—"} />
+            <KVRow label={t("system.osName")} value={sys ? `${sys.osName} ${sys.osVersion}` : "—"} />
             <KVRow label={t("system.kernel")} value={sys?.kernelVersion || "—"} />
             <KVRow label={t("system.uptime")} value={sys ? formatUptime(sys.uptimeSeconds) : "—"} />
             <KVRow label={t("system.hostname")} value={sys?.hostname || "—"} />
             {sys?.systemModel && <KVRow label={t("system.systemModel")} value={`${sys.systemVendor} ${sys.systemModel}`} />}
             {sys?.motherboardModel && <KVRow label={t("mon.board")} value={`${sys.motherboardVendor} ${sys.motherboardModel}`} />}
-            {sys?.biosVersion && <KVRow label="BIOS" value={sys.biosVersion} />}
+            {sys?.biosVersion && <KVRow label={t("system.bios")} value={sys.biosVersion} />}
           </div>
         </SectionPanel>
       </div>

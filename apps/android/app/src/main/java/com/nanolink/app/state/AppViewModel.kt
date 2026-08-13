@@ -175,7 +175,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun serviceForServer(serverId: String): ServerService? = services[serverId]
     fun serviceForAgent(agentId: String): ServerService? = agentById(agentId)?.let { services[it.serverId] }
     fun connectionMode(serverId: String): ConnectionMode = _connectionModes.value[serverId] ?: ConnectionMode.DISCONNECTED
-    fun serverName(serverId: String): String = _servers.value.firstOrNull { it.id == serverId }?.name ?: "Unknown"
+    fun serverName(serverId: String): String = _servers.value.firstOrNull { it.id == serverId }?.name ?: l10n.text("common.unknown")
     fun serverAlerts(serverId: String? = activeServerId.value): List<AlertInstance> = serverId?.let { _alerts.value[it] }.orEmpty()
     fun recentActivity(serverId: String? = activeServerId.value): List<AuditEntry> = serverId?.let { _activity.value[it] }.orEmpty()
     fun unackedAlertCount(serverId: String? = activeServerId.value): Int = serverAlerts(serverId).count { !it.acked }
@@ -204,7 +204,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     ): Boolean {
         if (token.isNullOrBlank()) return false
         var server = ServerConnection(name = name, url = url, token = token, forceTls = forceTls, ignoreCert = ignoreCert)
-        val service = ServerService(server)
+        val service = ServerService(server, l10n)
         val valid = service.validateDeviceToken(token, name.ifEmpty { "Android device" }).ok
         service.dispose()
         if (!valid) return false
@@ -231,7 +231,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             forceTls = forceTls,
             ignoreCert = ignoreCert,
         )
-        val service = ServerService(pending)
+        val service = ServerService(pending, l10n)
         val token = service.login(username, password)
         service.dispose()
         if (token == null) return false
@@ -252,7 +252,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         ignoreCert: Boolean = false,
     ): Boolean {
         val pending = ServerConnection(name = name, url = url, forceTls = forceTls, ignoreCert = ignoreCert)
-        val service = ServerService(pending)
+        val service = ServerService(pending, l10n)
         val token = service.redeemPairingCode(pairingCode)
         service.dispose()
         if (token == null) return false
@@ -290,7 +290,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun reauthenticate(serverId: String, username: String, password: String): Boolean {
         val old = _servers.value.firstOrNull { it.id == serverId } ?: return false
-        val service = services[serverId] ?: ServerService(old)
+        val service = services[serverId] ?: ServerService(old, l10n)
         val result = service.loginDetailed(username, password)
         if (!result.ok || result.token == null) return false
         sessionPasswords[serverId] = password
@@ -320,8 +320,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun acknowledgeAlert(alertId: String, serverId: String? = activeServerId.value): String? {
-        val id = serverId ?: return "no active server"
-        val service = services[id] ?: return "server not connected"
+        val id = serverId ?: return l10n.text("errors.noActiveServer")
+        val service = services[id] ?: return l10n.text("errors.serverNotConnected")
         val error = service.acknowledgeAlert(alertId)
         if (error == null) fetchServerAlerts(id)
         return error
@@ -336,7 +336,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun connectToServer(server: ServerConnection) {
         services[server.id]?.dispose()
-        val service = ServerService(server)
+        val service = ServerService(server, l10n)
         services[server.id] = service
         viewModelScope.launch {
             service.agents.collect { incoming ->

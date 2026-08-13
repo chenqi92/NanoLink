@@ -85,7 +85,7 @@ function PackagesPanel({ agentId, permission }: { agentId: string; permission: n
       <State loading={loading && !data} error={error} empty={!!data && pkgs.length === 0} onRetry={reload} />
       {data && pkgs.length > 0 && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+          <div className="responsive-two-grid" style={{ gap: 12 }}>
             <MiniStat label={t("dev.updates")} value={updates.length} color="var(--warn)" />
             <MiniStat label={t("dev.installed")} value={pkgs.length} color="var(--fg-3)" />
           </div>
@@ -146,7 +146,7 @@ function ScriptsPanel({ agentId, permission }: { agentId: string; permission: nu
       </div>
       <State loading={loading && !data} error={error} empty={!!data && scripts.length === 0} onRetry={reload} />
       {data && scripts.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
+        <div className="auto-card-grid-340" style={{ gap: 12 }}>
           {scripts.map((s) => (
             <div key={s.name} className="card" style={{ padding: 14 }}>
               <div className="row gap-2" style={{ alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
@@ -163,7 +163,7 @@ function ScriptsPanel({ agentId, permission }: { agentId: string; permission: nu
               )}
               <div className="hr" />
               <div className="row" style={{ justifyContent: "space-between", fontSize: 11 }}>
-                {s.signatureVerified ? <span className="badge ok" style={{ fontSize: 9.5 }}>{I.check({ size: 10 })} signed</span> : <span />}
+                {s.signatureVerified ? <span className="badge ok" style={{ fontSize: 9.5 }}>{I.check({ size: 10 })} {t("dev.signed")}</span> : <span />}
                 <button className="btn btn-sm btn-ghost" disabled={busy === s.name || permission < Math.max(2, s.requiredPermission ?? 0)} title={permission < Math.max(2, s.requiredPermission ?? 0) ? t("access.permissionLevelDesc", { level: `L${Math.max(2, s.requiredPermission ?? 0)}` }) : undefined} onClick={() => setConfirm(s.name)}>{busy === s.name ? <span className="dot pulse ok" /> : I.bolt({ size: 12 })}<span>{t("dev.run")}</span></button>
               </div>
             </div>
@@ -346,7 +346,7 @@ function ConfigsPanel({ agentId, permission }: { agentId: string; permission: nu
       )}
       {viewing && (
         <Modal title={viewing.path} onClose={() => setViewing(null)} width={680} footer={<button className="btn btn-sm" onClick={() => setViewing(null)}>{t("common.cancel")}</button>}>
-          <div className="code" style={{ maxHeight: "60vh", whiteSpace: "pre-wrap", overflow: "auto" }}>{viewing.result.content || t("common.noData")}</div>
+          <div className="code" style={{ whiteSpace: "pre-wrap" }}>{viewing.result.content || t("common.noData")}</div>
         </Modal>
       )}
       {backupsFor && (

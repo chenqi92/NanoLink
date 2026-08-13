@@ -309,7 +309,7 @@ impl GrpcClient {
     ) -> Result<()>
     where
         F: Fn(Command) -> Fut + Send + Sync + 'static,
-        Fut: std::future::Future<Output = CommandResult> + Send,
+        Fut: std::future::Future<Output = CommandResult> + Send + 'static,
     {
         // Create channel for sending requests
         let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(100);
@@ -332,6 +332,7 @@ impl GrpcClient {
 
         // Use cleanup guard to ensure task is aborted on any exit (including ? early returns)
         let mut cleanup_guard = TaskCleanupGuard::new();
+        let command_handler = Arc::new(command_handler);
 
         let sender_handle = tokio::spawn(async move {
             let mut interval =
@@ -375,15 +376,21 @@ impl GrpcClient {
             match response.response {
                 Some(metrics_stream_response::Response::Command(cmd)) => {
                     info!("Received command: {:?}", cmd.r#type);
-                    let result = command_handler(cmd).await;
-
-                    // Send command result back
-                    let request = MetricsStreamRequest {
-                        request: Some(metrics_stream_request::Request::CommandResult(result)),
-                    };
-                    if tx.send(request).await.is_err() {
-                        break;
-                    }
+                    // Long-running builds must not pause metrics, heartbeats, or
+                    // a later BUILD_CANCEL command on the same stream.
+                    let handler = command_handler.clone();
+                    let result_tx = tx.clone();
+                    // Detach command work from stream cleanup: spawn_blocking
+                    // build work cannot be aborted safely. It keeps its own
+                    // timeout/cancellation boundary and releases its active-run
+                    // registration even if this transport reconnects.
+                    let _command_task = tokio::spawn(async move {
+                        let result = handler(cmd).await;
+                        let request = MetricsStreamRequest {
+                            request: Some(metrics_stream_request::Request::CommandResult(result)),
+                        };
+                        let _ = result_tx.send(request).await;
+                    });
                 }
                 Some(metrics_stream_response::Response::HeartbeatAck(ack)) => {
                     debug!("Heartbeat acknowledged: {}", ack.timestamp);
@@ -516,7 +523,7 @@ impl GrpcClient {
     pub async fn stream_layered_metrics<F, Fut>(&mut self, command_handler: F) -> Result<()>
     where
         F: Fn(Command) -> Fut + Send + Sync + 'static,
-        Fut: std::future::Future<Output = CommandResult> + Send,
+        Fut: std::future::Future<Output = CommandResult> + Send + 'static,
     {
         // Create channel for sending requests
         let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(100);
@@ -561,6 +568,7 @@ impl GrpcClient {
 
         // Use cleanup guard to ensure tasks are aborted on any exit (including ? early returns)
         let mut cleanup_guard = TaskCleanupGuard::new();
+        let command_handler = Arc::new(command_handler);
 
         // Spawn the layered collector
         let collector_handle = tokio::spawn(async move {
@@ -633,15 +641,15 @@ impl GrpcClient {
             match response.response {
                 Some(metrics_stream_response::Response::Command(cmd)) => {
                     info!("Received command: {:?}", cmd.r#type);
-                    let result = command_handler(cmd).await;
-
-                    // Send command result back
-                    let request = MetricsStreamRequest {
-                        request: Some(metrics_stream_request::Request::CommandResult(result)),
-                    };
-                    if tx.send(request).await.is_err() {
-                        break;
-                    }
+                    let handler = command_handler.clone();
+                    let result_tx = tx.clone();
+                    let _command_task = tokio::spawn(async move {
+                        let result = handler(cmd).await;
+                        let request = MetricsStreamRequest {
+                            request: Some(metrics_stream_request::Request::CommandResult(result)),
+                        };
+                        let _ = result_tx.send(request).await;
+                    });
                 }
                 Some(metrics_stream_response::Response::HeartbeatAck(ack)) => {
                     debug!("Heartbeat acknowledged: {}", ack.timestamp);

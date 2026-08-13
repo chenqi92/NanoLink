@@ -1,5 +1,48 @@
 # NanoLink Scripts
 
+## One-click Server deployment
+
+Copy `.env.deploy.example` to `.env.deploy`, fill in the target host, and keep
+the resulting file local. It is ignored by Git. SSH authentication continues
+to use the normal OpenSSH agent/default private key; no SSH password is stored
+in the deployment configuration.
+
+On Windows, double-click `deploy-server.bat` or run:
+
+```powershell
+.\deploy-server.bat
+```
+
+On Linux/macOS, make the script executable once and run:
+
+```bash
+chmod +x deploy-server.sh
+./deploy-server.sh
+```
+
+The deployment script runs Server/Web checks, packages the exact Git commit,
+uploads it over SSH, builds an isolated Docker image, performs a smoke test,
+backs up the production Compose file, rolls out the container, and verifies
+health/public assets. A failed production health check automatically restores
+the previous Compose file and container image.
+
+The example configuration requires a clean working tree. To deliberately deploy
+the current uncommitted Server/Web state, either set `DEPLOY_ALLOW_DIRTY=true`
+in the ignored local `.env.deploy`, or use:
+
+```powershell
+.\deploy-server.bat -AllowDirty
+```
+
+Useful options:
+
+- `-SkipChecks`: skip local Go and Web checks when they already ran in CI.
+- `-DryRun`: validate configuration and create the archive without connecting.
+- `-ConfigPath path`: use a different local deployment `.env` file.
+
+The Bash equivalents are `--skip-checks`, `--dry-run`, `--allow-dirty`, and
+`--config path`.
+
 Utility scripts for NanoLink project management.
 
 ## Version Bump Script

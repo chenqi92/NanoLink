@@ -61,6 +61,10 @@ pub struct Config {
     /// Application deployment settings
     #[serde(default)]
     pub deployments: DeploymentsConfig,
+
+    /// Automated build runner settings
+    #[serde(default)]
+    pub builds: BuildsConfig,
 }
 
 fn default_config_version() -> u32 {
@@ -239,6 +243,76 @@ impl Default for DeploymentsConfig {
             timeout_seconds: default_deployment_timeout(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildsConfig {
+    /// Build execution is opt-in because pipeline stages execute project code.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Private root used for disposable workspaces and temporary downloads.
+    #[serde(default = "default_build_workspace_root")]
+    pub workspace_root: String,
+
+    /// Permit commands to run directly on the host. Container execution is the
+    /// safer default and remains available when this is false.
+    #[serde(default)]
+    pub allow_host_runner: bool,
+
+    /// Optional allow-list for container images. Empty accepts any image name.
+    #[serde(default)]
+    pub allowed_images: Vec<String>,
+
+    #[serde(default = "default_build_max_source_size")]
+    pub max_source_size: u64,
+
+    #[serde(default = "default_build_max_artifact_size")]
+    pub max_artifact_size: u64,
+
+    #[serde(default = "default_build_timeout")]
+    pub timeout_seconds: u64,
+
+    #[serde(default = "default_build_max_output_size")]
+    pub max_output_size: usize,
+}
+
+impl Default for BuildsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            workspace_root: default_build_workspace_root(),
+            allow_host_runner: false,
+            allowed_images: Vec::new(),
+            max_source_size: default_build_max_source_size(),
+            max_artifact_size: default_build_max_artifact_size(),
+            timeout_seconds: default_build_timeout(),
+            max_output_size: default_build_max_output_size(),
+        }
+    }
+}
+
+fn default_build_workspace_root() -> String {
+    #[cfg(unix)]
+    return "/var/lib/nanolink/builds".to_string();
+    #[cfg(windows)]
+    return "C:\\ProgramData\\NanoLink\\builds".to_string();
+}
+
+fn default_build_max_source_size() -> u64 {
+    512 * 1024 * 1024
+}
+
+fn default_build_max_artifact_size() -> u64 {
+    512 * 1024 * 1024
+}
+
+fn default_build_timeout() -> u64 {
+    1800
+}
+
+fn default_build_max_output_size() -> usize {
+    2 * 1024 * 1024
 }
 
 fn default_deployment_roots() -> Vec<String> {
@@ -1194,6 +1268,7 @@ impl Config {
             config_management: ConfigManagementConfig::default(),
             package_management: PackageManagementConfig::default(),
             deployments: DeploymentsConfig::default(),
+            builds: BuildsConfig::default(),
         }
     }
 
@@ -1236,6 +1311,18 @@ impl Config {
             }
             if self.deployments.timeout_seconds == 0 {
                 anyhow::bail!("Deployment timeout_seconds must be greater than zero");
+            }
+        }
+
+        if self.builds.enabled {
+            if !std::path::Path::new(&self.builds.workspace_root).is_absolute() {
+                anyhow::bail!("Build workspace_root must be absolute");
+            }
+            if self.builds.max_source_size == 0 || self.builds.max_artifact_size == 0 {
+                anyhow::bail!("Build source and artifact limits must be greater than zero");
+            }
+            if self.builds.timeout_seconds == 0 || self.builds.max_output_size == 0 {
+                anyhow::bail!("Build timeout and output limit must be greater than zero");
             }
         }
 

@@ -154,7 +154,7 @@ export function DeploymentsScreen() {
                   <div className="col flex-1" style={{ gap: 4 }}>
                     <div className="row gap-2" style={{ flexWrap: "wrap" }}>
                       <h2>{detail.name}</h2>
-                      <span className="badge">{detail.type === "java" ? "Java / systemd" : "Static / Nginx"}</span>
+                      <span className="badge">{detail.type === "java" ? t("deploy.typeJava") : t("deploy.typeStatic")}</span>
                       <span className={`badge ${currentRelease ? "ok" : "warn"}`}>{currentRelease ? `v${currentRelease.version}` : t("deploy.notDeployed")}</span>
                     </div>
                     <div className="deploy-meta mono">
@@ -195,7 +195,7 @@ export function DeploymentsScreen() {
                           const action: "deploy" | "rollback" = wasDeployed ? "rollback" : "deploy"
                           return (
                             <tr key={release.id}>
-                              <td><div className="row gap-2"><span className={`dot ${isCurrent ? "ok" : "off"}`} /><strong className="mono">{release.version}</strong>{isCurrent && <span className="badge ok">current</span>}</div></td>
+                              <td><div className="row gap-2"><span className={`dot ${isCurrent ? "ok" : "off"}`} /><strong className="mono">{release.version}</strong>{isCurrent && <span className="badge ok">{t("deploy.currentRelease")}</span>}</div></td>
                               <td><div className="col" style={{ gap: 2 }}><span className="mono">{release.artifactName}</span><span className="dim mono" style={{ fontSize: 10 }}>{formatBytes(release.artifactSize)}</span></div></td>
                               <td><span className="mono dim" title={release.sha256}>{release.sha256.slice(0, 10)}…</span></td>
                               <td><span className="mono dim">{formatDate(release.createdAt)}</span></td>
@@ -314,7 +314,7 @@ function ProjectModal({ agents, project, onClose, onSaved }: { agents: Agent[]; 
     <Modal title={project ? t("deploy.editProject") : t("deploy.newProject")} subtitle={t("deploy.projectFormDesc")} onClose={onClose} width={660} footer={<><button className="btn btn-sm" onClick={onClose}>{t("common.cancel")}</button><button className="btn btn-primary btn-sm" disabled={busy || !form.name || !form.agentId || !form.deployPath} onClick={save}>{busy && <span className="dot pulse ok" />}{t("common.save")}</button></>}>
       <div className="deploy-form-grid">
         <FormBlock label={t("deploy.projectName")}><input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="orders-api" /></FormBlock>
-        <FormBlock label={t("deploy.projectType")}><select className="select" value={form.type} onChange={(e) => { const type = e.target.value as "java" | "static"; setForm({ ...form, type, serviceName: type === "static" && !form.serviceName ? "nginx" : form.serviceName }) }}><option value="java">Java / systemd</option><option value="static">Static / Nginx</option></select></FormBlock>
+        <FormBlock label={t("deploy.projectType")}><select className="select" value={form.type} onChange={(e) => { const type = e.target.value as "java" | "static"; setForm({ ...form, type, serviceName: type === "static" && !form.serviceName ? "nginx" : form.serviceName }) }}><option value="java">{t("deploy.typeJava")}</option><option value="static">{t("deploy.typeStatic")}</option></select></FormBlock>
         <FormBlock label={t("deploy.targetAgent")}><select className="select" value={form.agentId} onChange={(e) => set("agentId", e.target.value)}>{agents.map((a) => <option key={a.id} value={a.id}>{a.hostname} · {a.id.slice(0, 8)}</option>)}</select></FormBlock>
         <FormBlock label={t("deploy.keepReleases")}><input className="input" type="number" min={2} max={50} value={form.keepReleases} onChange={(e) => set("keepReleases", Number(e.target.value))} /></FormBlock>
         <div className="deploy-form-wide"><FormBlock label={t("deploy.deployPath")} hint={t("deploy.deployPathHint")}><input className="input mono" value={form.deployPath} onChange={(e) => set("deployPath", e.target.value)} placeholder={form.type === "java" ? "/opt/nanolink/apps/orders" : "/var/www/nanolink/portal"} /></FormBlock></div>

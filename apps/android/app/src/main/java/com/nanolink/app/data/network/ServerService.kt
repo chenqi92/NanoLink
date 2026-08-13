@@ -28,6 +28,7 @@ import com.nanolink.app.data.model.long
 import com.nanolink.app.data.model.obj
 import com.nanolink.app.data.model.string
 import com.nanolink.app.data.model.stringOrNull
+import com.nanolink.app.localization.L10n
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
@@ -78,7 +79,10 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.io.IOException
 
-class ServerService(val connection: ServerConnection) {
+class ServerService(
+    val connection: ServerConnection,
+    private val l10n: L10n? = null,
+) {
     internal data class Payload(val status: Int, val body: String)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -107,6 +111,9 @@ class ServerService(val connection: ServerConnection) {
     val connectionMode: ConnectionMode get() = _connectionStatus.value.mode
     val isCompatibleServer: Boolean get() = _serverInfo.value?.isCompatible() ?: true
 
+    private fun localized(key: String, fallback: String): String =
+        l10n?.text(key)?.takeUnless { it == key } ?: fallback
+
     private fun httpBaseUrl(): String {
         var base = connection.url.trim().trimEnd('/')
         if (connection.forceTls && base.startsWith("http://")) {
@@ -129,7 +136,12 @@ class ServerService(val connection: ServerConnection) {
 
     fun openShell(agentId: String): ShellSession {
         val encoded = URLEncoder.encode(agentId, StandardCharsets.UTF_8.toString()).replace("+", "%20")
-        return ShellSession(client, "${wsBaseUrl()}/ws/shell/$encoded", connection.authToken)
+        return ShellSession(
+            client,
+            "${wsBaseUrl()}/ws/shell/$encoded",
+            connection.authToken,
+            localized("errors.connectionFailed", "connection failed"),
+        )
     }
 
     private suspend fun perform(
@@ -176,11 +188,11 @@ class ServerService(val connection: ServerConnection) {
             "/auth/login",
             body,
             mapOf("Content-Type" to "application/json", "X-NanoLink-Client" to "native"),
-        ) ?: return LoginResult(error = LoginError.NETWORK, message = "connection failed")
+        ) ?: return LoginResult(error = LoginError.NETWORK, message = localized("errors.connectionFailed", "connection failed"))
         if (response.status == 200) {
             val token = runCatching { NanoJson.parseToJsonElement(response.body).jsonObject.stringOrNull("token") }.getOrNull()
             return if (token != null) LoginResult(token = token, statusCode = 200)
-            else LoginResult(error = LoginError.SERVER_ERROR, message = "login succeeded but no token was returned", statusCode = 200)
+            else LoginResult(error = LoginError.SERVER_ERROR, message = localized("errors.loginMissingToken", "login succeeded but no token was returned"), statusCode = 200)
         }
         val error = when (response.status) {
             400 -> LoginError.BAD_REQUEST
@@ -219,7 +231,7 @@ class ServerService(val connection: ServerConnection) {
                 put("deviceOs", deviceOs)
             },
             mapOf("Content-Type" to "application/json", "X-Device-Token" to token),
-        ) ?: return DeviceAuthResult(ok = false, error = "connection failed")
+        ) ?: return DeviceAuthResult(ok = false, error = localized("errors.connectionFailed", "connection failed"))
         if (response.status == 200) {
             val info = runCatching { NanoJson.parseToJsonElement(response.body).jsonObject.obj("serverInfo") }.getOrNull()
             return DeviceAuthResult(
@@ -252,7 +264,7 @@ class ServerService(val connection: ServerConnection) {
         if (response.status != 200) return emptyList()
         return runCatching {
             NanoJson.parseToJsonElement(response.body).jsonArray.mapNotNull { it as? JsonObject }
-                .map { Agent.from(it, connection.id) }
+                .map { Agent.from(it, connection.id, localized("common.unknown", "Unknown")) }
         }.getOrDefault(emptyList())
     }
 
@@ -305,7 +317,7 @@ class ServerService(val connection: ServerConnection) {
     }
 
     suspend fun acknowledgeAlert(id: String): String? {
-        val response = perform("POST", "/alerts/ack/$id") ?: return "connection failed"
+        val response = perform("POST", "/alerts/ack/$id") ?: return localized("errors.connectionFailed", "connection failed")
         return if (response.status == 200) null else errorMessage(response)
     }
 
@@ -349,7 +361,7 @@ class ServerService(val connection: ServerConnection) {
             }
         }
         val response = perform("POST", "/assistant/chat", body) ?:
-            return AssistantChatResult(error = AssistantChatError.NETWORK, message = "connection failed")
+            return AssistantChatResult(error = AssistantChatError.NETWORK, message = localized("errors.connectionFailed", "connection failed"))
         if (response.status == 200) {
             val reply = runCatching { NanoJson.parseToJsonElement(response.body).jsonObject.string("reply") }.getOrDefault("")
             return AssistantChatResult(reply = ChatMessage(role = "assistant", content = reply), statusCode = 200)
@@ -370,7 +382,7 @@ class ServerService(val connection: ServerConnection) {
         params: Map<String, String>? = null,
     ): String? {
         val response = perform("POST", "/agents/$agentId/command", commandBody(type, target, params))
-            ?: return "connection failed"
+            ?: return localized("errors.connectionFailed", "connection failed")
         return if (response.status == 200) null else errorMessage(response)
     }
 
@@ -381,10 +393,11 @@ class ServerService(val connection: ServerConnection) {
         params: Map<String, String>? = null,
     ): CommandDispatch {
         val response = perform("POST", "/agents/$agentId/command", commandBody(type, target, params))
-            ?: return CommandDispatch(error = "connection failed")
+            ?: return CommandDispatch(error = localized("errors.connectionFailed", "connection failed"))
         if (response.status != 200) return CommandDispatch(error = errorMessage(response))
         val id = runCatching { NanoJson.parseToJsonElement(response.body).jsonObject.stringOrNull("commandId") }.getOrNull()
-        return if (id != null) CommandDispatch(commandId = id) else CommandDispatch(error = "server returned no commandId")
+        return if (id != null) CommandDispatch(commandId = id)
+        else CommandDispatch(error = localized("errors.commandMissingId", "server returned no commandId"))
     }
 
     private fun commandBody(type: String, target: String, params: Map<String, String>?) = buildJsonObject {
@@ -395,7 +408,7 @@ class ServerService(val connection: ServerConnection) {
 
     suspend fun pollCommandResult(agentId: String, commandId: String): CommandResult {
         val response = perform("GET", "/agents/$agentId/command/$commandId/result")
-            ?: return CommandResult(CommandResultStatus.ERROR, message = "connection failed")
+            ?: return CommandResult(CommandResultStatus.ERROR, message = localized("errors.connectionFailed", "connection failed"))
         return when (response.status) {
             200 -> CommandResult(
                 CommandResultStatus.READY,
@@ -411,7 +424,7 @@ class ServerService(val connection: ServerConnection) {
         val response = perform("POST", "/agents/$agentId/data-request", buildJsonObject {
             put("requestType", requestType)
             put("target", target)
-        }) ?: return "connection failed"
+        }) ?: return localized("errors.connectionFailed", "connection failed")
         return if (response.status == 200) null else errorMessage(response)
     }
 
@@ -466,11 +479,11 @@ class ServerService(val connection: ServerConnection) {
         when (type) {
             "welcome" -> (data as? JsonObject)?.let { _serverInfo.value = ServerInfo.from(it) }
             "agents" -> (data as? JsonArray)?.let { array ->
-                cachedAgents = array.mapNotNull { it as? JsonObject }.map { Agent.from(it, connection.id) }
+                cachedAgents = array.mapNotNull { it as? JsonObject }.map { Agent.from(it, connection.id, localized("common.unknown", "Unknown")) }
                 _agents.value = cachedAgents
             }
             "agent_update" -> (data as? JsonObject)?.let { payload ->
-                val agent = Agent.from(payload, connection.id)
+                val agent = Agent.from(payload, connection.id, localized("common.unknown", "Unknown"))
                 cachedAgents = cachedAgents.filterNot { it.id == agent.id } + agent
                 _agents.value = cachedAgents
             }

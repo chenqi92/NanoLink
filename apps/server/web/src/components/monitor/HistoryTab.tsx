@@ -27,6 +27,7 @@ const RANGE_INTERVAL: Record<Range, string> = {
 const RANGES: Range[] = ["5m", "30m", "1h", "6h", "1d", "7d", "30d"]
 
 function ChartHead({ title, sub, stat, peak }: { title: string; sub?: string; stat?: string; peak?: string }) {
+  const { t } = useTranslation()
   return (
     <div className="row" style={{ justifyContent: "space-between", marginBottom: 8, alignItems: "baseline" }}>
       <div className="row gap-2" style={{ alignItems: "baseline" }}>
@@ -34,7 +35,7 @@ function ChartHead({ title, sub, stat, peak }: { title: string; sub?: string; st
         {sub && <span className="dim" style={{ fontSize: 11 }}>{sub}</span>}
       </div>
       <div className="row gap-3" style={{ alignItems: "baseline" }}>
-        {peak && <span className="mono dim" style={{ fontSize: 10.5 }}>peak {peak}</span>}
+        {peak && <span className="mono dim" style={{ fontSize: 10.5 }}>{t("metrics.peak")} {peak}</span>}
         {stat && <span className="mono num" style={{ fontSize: 13, fontWeight: 500 }}>{stat}</span>}
       </div>
     </div>
@@ -45,7 +46,7 @@ const toMB = (b: number) => +(b / 1e6).toFixed(2)
 const peakOf = (arr: number[]) => (arr.length ? Math.max(...arr) : 0)
 
 export function HistoryTab({ agentId }: { agentId: string }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [range, setRange] = useState<Range>("1h")
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [history, setHistory] = useState<Metrics[]>([])
@@ -94,6 +95,20 @@ export function HistoryTab({ agentId }: { agentId: string }) {
   }, [history])
 
   const xLabels = [`-${range}`, "", "", "", "now"]
+  const pointLabels = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language, {
+      month: RANGE_MS[range] >= 24 * 60 * 60e3 ? "2-digit" : undefined,
+      day: RANGE_MS[range] >= 24 * 60 * 60e3 ? "2-digit" : undefined,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: RANGE_MS[range] <= 60 * 60e3 ? "2-digit" : undefined,
+      hour12: false,
+    })
+    return history.map((metric) => {
+      const date = new Date(metric.timestamp)
+      return Number.isNaN(date.getTime()) ? metric.timestamp : formatter.format(date)
+    })
+  }, [history, i18n.language, i18n.resolvedLanguage, range])
   const cur = history.length ? history[history.length - 1] : undefined
   const cpuMax = peakOf(series.cpu)
   const memMax = peakOf(series.mem)
@@ -147,38 +162,38 @@ export function HistoryTab({ agentId }: { agentId: string }) {
               <div className="col" style={{ gap: 4, flex: 1 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 500 }}>{t("metrics.anomalyDetected")}</div>
                 <ul className="col" style={{ margin: 0, padding: 0, gap: 3, listStyle: "none", fontSize: 11.5, color: "var(--fg-3)" }}>
-                  {cpuMax > 90 && <li>· CPU peak {Math.round(cpuMax)}%</li>}
-                  {memMax > 90 && <li>· Memory peak {Math.round(memMax)}%</li>}
+                  {cpuMax > 90 && <li>· {t("metrics.cpuPeak", { value: Math.round(cpuMax) })}</li>}
+                  {memMax > 90 && <li>· {t("metrics.memoryPeak", { value: Math.round(memMax) })}</li>}
                 </ul>
               </div>
             </div>
           )}
 
           <div className="card" style={{ padding: 16 }}>
-            <ChartHead title="CPU" sub={t("metrics.usage")} stat={cur ? `${Math.round(cur.cpu?.usagePercent ?? 0)}%` : undefined} peak={`${Math.round(cpuMax)}%`} />
-            <LineChart height={200} yMax={100} unit="%" xLabels={xLabels} series={[{ data: series.cpu, label: "CPU", color: "var(--fg)", fill: true, fillOpacity: 0.08 }]} thresholds={[{ v: 90, label: "90%", color: "var(--crit)" }]} />
+            <ChartHead title={t("metrics.cpu")} sub={t("metrics.usage")} stat={cur ? `${Math.round(cur.cpu?.usagePercent ?? 0)}%` : undefined} peak={`${Math.round(cpuMax)}%`} />
+            <LineChart height={200} yMax={100} unit="%" xLabels={xLabels} pointLabels={pointLabels} series={[{ data: series.cpu, label: t("metrics.cpu"), color: "var(--fg)", fill: true, fillOpacity: 0.08 }]} thresholds={[{ v: 90, label: "90%", color: "var(--crit)" }]} />
           </div>
 
           <div className="card" style={{ padding: 16 }}>
             <ChartHead title={t("metrics.memory")} sub={t("metrics.usage")} stat={cur && cur.memory?.total ? `${Math.round((cur.memory.used / cur.memory.total) * 100)}%` : undefined} peak={`${Math.round(memMax)}%`} />
-            <LineChart height={200} yMax={100} unit="%" xLabels={xLabels} series={[{ data: series.mem, label: "Mem", color: "var(--fg-2)", fill: true, fillOpacity: 0.05 }]} thresholds={[{ v: 90, label: "90%", color: "var(--crit)" }]} />
+            <LineChart height={200} yMax={100} unit="%" xLabels={xLabels} pointLabels={pointLabels} series={[{ data: series.mem, label: t("metrics.memory"), color: "var(--fg-2)", fill: true, fillOpacity: 0.05 }]} thresholds={[{ v: 90, label: "90%", color: "var(--crit)" }]} />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="responsive-two-grid" style={{ gap: 16 }}>
             <div className="card" style={{ padding: 16 }}>
-              <ChartHead title={t("metrics.network")} sub="RX / TX" />
-              <LineChart height={160} unit=" MB/s" xLabels={xLabels} series={[{ data: series.netRx, label: "RX", color: "var(--fg)", fill: true, fillOpacity: 0.06 }, { data: series.netTx, label: "TX", color: "var(--info)", dashed: true, strokeWidth: 1.25 }]} />
+              <ChartHead title={t("metrics.network")} sub={`${t("metrics.rx")} / ${t("metrics.tx")}`} />
+              <LineChart height={160} unit=" MB/s" xLabels={xLabels} pointLabels={pointLabels} series={[{ data: series.netRx, label: t("metrics.rx"), color: "var(--fg)", fill: true, fillOpacity: 0.06 }, { data: series.netTx, label: t("metrics.tx"), color: "var(--info)", dashed: true, strokeWidth: 1.25 }]} />
             </div>
             <div className="card" style={{ padding: 16 }}>
-              <ChartHead title={t("metrics.diskIO")} sub="Read / Write" />
-              <LineChart height={160} unit=" MB/s" xLabels={xLabels} series={[{ data: series.diskR, label: "Read", color: "var(--fg)", fill: true, fillOpacity: 0.06 }, { data: series.diskW, label: "Write", color: "var(--warn)", dashed: true, strokeWidth: 1.25 }]} />
+              <ChartHead title={t("metrics.diskIO")} sub={`${t("metrics.read")} / ${t("metrics.write")}`} />
+              <LineChart height={160} unit=" MB/s" xLabels={xLabels} pointLabels={pointLabels} series={[{ data: series.diskR, label: t("metrics.read"), color: "var(--fg)", fill: true, fillOpacity: 0.06 }, { data: series.diskW, label: t("metrics.write"), color: "var(--warn)", dashed: true, strokeWidth: 1.25 }]} />
             </div>
           </div>
 
           {series.gpuUse && series.gpuTemp && (
             <div className="card" style={{ padding: 16 }}>
-              <ChartHead title="GPU" sub={`${t("mon.util")} + ${t("metrics.temperature")}`} />
-              <LineChart height={180} yMax={100} unit="%" xLabels={xLabels} series={[{ data: series.gpuUse, label: "GPU util", color: "var(--fg)", fill: true, fillOpacity: 0.06 }, { data: series.gpuTemp, label: "Temp °C", color: "var(--crit)", dashed: true, strokeWidth: 1.25 }]} thresholds={[{ v: 90, label: "90%", color: "var(--crit)" }]} />
+              <ChartHead title={t("metrics.gpu")} sub={`${t("metrics.utilization")} + ${t("metrics.temperature")}`} />
+              <LineChart height={180} yMax={100} unit="%" xLabels={xLabels} pointLabels={pointLabels} series={[{ data: series.gpuUse, label: `${t("metrics.gpu")} ${t("metrics.utilization")}`, color: "var(--fg)", fill: true, fillOpacity: 0.06 }, { data: series.gpuTemp, label: t("metrics.temperature"), unit: "°C", color: "var(--crit)", dashed: true, strokeWidth: 1.25 }]} thresholds={[{ v: 90, label: "90%", color: "var(--crit)" }]} />
             </div>
           )}
         </>

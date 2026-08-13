@@ -65,7 +65,7 @@ function App() {
 
   if (authLoading) {
     return (
-      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: "var(--fg-3)" }}>
+      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: "var(--fg-3)" }}>
         <div className="col gap-3" style={{ alignItems: "center" }}>
           <span style={{ color: "var(--fg-dim)" }}>{I.brand({ size: 32 })}</span>
           <div className="row gap-2">

@@ -104,7 +104,7 @@ struct AgentActionsSheet: View {
             let dispatch = await service.sendCommandReturningId(agent.id, type: "SYSTEM_REBOOT")
             guard dispatch.ok, let commandId = dispatch.commandId else {
                 busyMessage = nil
-                showResult(tr("actions.rebootFailed", ["error": dispatch.error ?? "unknown"]), error: true)
+                showResult(tr("actions.rebootFailed", ["error": dispatch.error ?? tr("common.unknown")]), error: true)
                 return
             }
             for _ in 0..<6 {
@@ -116,7 +116,7 @@ struct AgentActionsSheet: View {
                 case .denied:
                     busyMessage = nil; showResult(tr("actions.commandDenied"), error: true); return
                 case .error:
-                    busyMessage = nil; showResult(tr("actions.rebootFailed", ["error": result.message ?? "unknown"]), error: true); return
+                    busyMessage = nil; showResult(tr("actions.rebootFailed", ["error": result.message ?? tr("common.unknown")]), error: true); return
                 case .pending: continue
                 }
             }

@@ -84,7 +84,7 @@ export function Drawer({
       <div
         ref={panelRef}
         className={`drawer drawer-${side} ${className}`.trim()}
-        style={{ width: `min(${width}px, calc(100vw - 24px))` }}
+        style={{ width: `min(${width}px, calc(100% - 24px))` }}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

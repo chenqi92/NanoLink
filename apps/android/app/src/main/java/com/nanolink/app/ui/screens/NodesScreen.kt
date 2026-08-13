@@ -276,9 +276,9 @@ private fun AgentCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    MetricPill("CPU", cpu, modifier = Modifier.weight(1f))
-                    MetricPill("MEM", memory, modifier = Modifier.weight(1f))
-                    MetricPill("DISK", disk, modifier = Modifier.weight(1f))
+                    MetricPill(tr("metrics.cpu"), cpu, modifier = Modifier.weight(1f))
+                    MetricPill(tr("metrics.memory"), memory, modifier = Modifier.weight(1f))
+                    MetricPill(tr("metrics.disk"), disk, modifier = Modifier.weight(1f))
                 }
             }
         }
