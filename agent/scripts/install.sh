@@ -1262,7 +1262,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/log/nanolink /var/lib/nanolink -/opt/nanolink/apps -/var/www/nanolink
+ReadWritePaths=/var/log/nanolink /var/lib/nanolink /usr/local/bin -/opt/nanolink/apps -/var/www/nanolink
 ReadOnlyPaths=/etc/nanolink
 
 # Resource limits

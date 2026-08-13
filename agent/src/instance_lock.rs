@@ -21,6 +21,17 @@ pub struct InstanceLock {
     path: PathBuf,
 }
 
+#[cfg(unix)]
+impl Drop for InstanceLock {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+
+        // Explicit unlock keeps reacquisition deterministic on platforms whose
+        // flock lifetime semantics differ for multiple descriptors in one process.
+        let _ = unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+
 enum TryLockError {
     AlreadyRunning,
     Io(std::io::Error),

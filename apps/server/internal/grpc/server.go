@@ -40,9 +40,16 @@ type GrpcAgent struct {
 	ConnectedAt     time.Time
 	LastMetricsAt   time.Time
 	stream          pb.NanoLinkService_StreamMetricsServer
+	streamSendMu    sync.Mutex
 	commandChan     chan *pb.Command
 	mu              sync.Mutex
 	closed          bool // guarded by mu; true once commandChan is closed on disconnect
+}
+
+func (a *GrpcAgent) sendResponse(response *pb.MetricsStreamResponse) error {
+	a.streamSendMu.Lock()
+	defer a.streamSendMu.Unlock()
+	return a.stream.Send(response)
 }
 
 // sendCommand delivers cmd to the agent's command channel without racing the
@@ -535,7 +542,7 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 					Command: cmd,
 				},
 			}
-			if err := stream.Send(resp); err != nil {
+			if err := agent.sendResponse(resp); err != nil {
 				hostname, _ := agent.identity()
 				s.logger.Errorf("Failed to send command to %s: %v", hostname, err)
 				return
@@ -643,7 +650,7 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 				},
 			},
 		}
-		if err := agent.stream.Send(ack); err != nil {
+		if err := agent.sendResponse(ack); err != nil {
 			s.logger.Errorf("Failed to send heartbeat ack to %s: %v", agent.Hostname, err)
 		}
 
@@ -660,7 +667,8 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 		// exit status, since the proto CommandResult has no dedicated exit-code
 		// field) so the terminal shows both. The success flag is forwarded
 		// separately so the UI can style failures distinctly.
-		if s.commandResultHandler != nil {
+		duplicate := s.commandResultAlreadyStored(agent.AgentID, req.CommandResult.CommandId)
+		if !duplicate && s.commandResultHandler != nil {
 			output := req.CommandResult.Output
 			if req.CommandResult.Error != "" {
 				if output != "" {
@@ -672,7 +680,28 @@ func (s *Server) processStreamMessage(agent *GrpcAgent, msg *pb.MetricsStreamReq
 		}
 		// Cache the full structured result for dashboard polling
 		s.storeCommandResult(agent.AgentID, req.CommandResult)
+		ack := &pb.MetricsStreamResponse{
+			Response: &pb.MetricsStreamResponse_CommandResultAck{
+				CommandResultAck: &pb.CommandResultAck{CommandId: req.CommandResult.CommandId},
+			},
+		}
+		if err := agent.sendResponse(ack); err != nil {
+			s.logger.Warnf("Failed to acknowledge command result %s from %s: %v",
+				req.CommandResult.CommandId, agent.Hostname, err)
+		}
 	}
+}
+
+func (s *Server) commandResultAlreadyStored(agentID, commandID string) bool {
+	if commandID == "" {
+		return false
+	}
+	value, ok := s.commandResults.Load(commandID)
+	if !ok {
+		return false
+	}
+	entry := value.(*commandResultEntry)
+	return entry.agentID == agentID && time.Since(entry.at) <= commandResultTTL
 }
 
 // RegisterDispatchedCommand records ownership metadata before a command is sent
@@ -1243,8 +1272,10 @@ func requiredPermissionForCommand(cmdType pb.CommandType) int {
 	switch cmdType {
 	case pb.CommandType_PROCESS_LIST,
 		pb.CommandType_SERVICE_STATUS,
+		pb.CommandType_SERVICE_LIST,
 		pb.CommandType_DOCKER_LIST,
 		pb.CommandType_FILE_TAIL,
+		pb.CommandType_FILE_LIST,
 		pb.CommandType_AGENT_GET_VERSION,
 		pb.CommandType_SERVICE_LOGS,
 		pb.CommandType_PACKAGE_LIST,
@@ -1269,12 +1300,13 @@ func requiredPermissionForCommand(cmdType pb.CommandType) int {
 		pb.CommandType_DOCKER_START,
 		pb.CommandType_DOCKER_STOP,
 		pb.CommandType_DOCKER_RESTART,
-		pb.CommandType_FILE_UPLOAD,
 		pb.CommandType_AUDIT_LOGS,
 		pb.CommandType_SCRIPT_EXECUTE,
 		pb.CommandType_CONFIG_WRITE,
 		pb.CommandType_CONFIG_ROLLBACK:
 		return database.PermissionServiceControl
+	case pb.CommandType_FILE_UPLOAD:
+		return database.PermissionSystemAdmin
 	default:
 		return database.PermissionSystemAdmin
 	}
@@ -1346,7 +1378,7 @@ func (s *Server) RequestDataFromAgent(agentID string, requestType pb.DataRequest
 		return fmt.Errorf("agent stream not available: %s", agentID)
 	}
 
-	if err := agent.stream.Send(resp); err != nil {
+	if err := agent.sendResponse(resp); err != nil {
 		s.logger.Errorf("Failed to send data request to %s: %v", agent.Hostname, err)
 		return err
 	}

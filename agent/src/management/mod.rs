@@ -820,6 +820,19 @@ async fn update_server(
         tls_client_key: req.tls_client_key.clone(),
     }));
 
+    // Interrupt active streams as well as backoff waits. The connection manager
+    // rebuilds the selected server from shared config on the next attempt, so a
+    // rotated token or TLS material takes effect immediately without restarting
+    // the whole agent process.
+    if let Some(tx) = &state.connection_signal_tx {
+        if let Err(error) = tx.send(ConnectionSignal::ImmediateReconnect) {
+            warn!(
+                "Updated server {}:{} but could not trigger reconnect: {}",
+                req.host, req.port, error
+            );
+        }
+    }
+
     info!("Updated server: {}:{}", req.host, req.port);
 
     (

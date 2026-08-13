@@ -1,6 +1,8 @@
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use chrono::Utc;
+use regex::Regex;
 use tracing::{info, warn};
 
 use crate::buffer::RingBuffer;
@@ -22,6 +24,21 @@ fn truncate_for_audit(s: &str, max: usize) -> String {
     } else {
         s.chars().take(max).collect()
     }
+}
+
+fn redact_shell_secrets(command: &str) -> String {
+    static SECRET_FLAGS: OnceLock<Regex> = OnceLock::new();
+    static SECRET_ENV: OnceLock<Regex> = OnceLock::new();
+    let flags = SECRET_FLAGS.get_or_init(|| {
+        Regex::new(r"(?i)(--(?:password|token|secret|api[-_]?key)(?:=|\s+))\S+")
+            .expect("BUG: invalid secret flag regex")
+    });
+    let env = SECRET_ENV.get_or_init(|| {
+        Regex::new(r"(?i)\b([A-Z0-9_]*(?:PASSWORD|TOKEN|SECRET|API_KEY))=\S+")
+            .expect("BUG: invalid secret env regex")
+    });
+    let redacted = flags.replace_all(command, "$1[REDACTED]");
+    env.replace_all(&redacted, "$1=[REDACTED]").into_owned()
 }
 
 /// Handles incoming commands from the server
@@ -51,6 +68,8 @@ pub struct MessageHandler {
 impl MessageHandler {
     /// Create a new message handler
     pub fn new(config: Arc<Config>, buffer: Arc<RingBuffer>, permission_level: u8) -> Self {
+        let mut command_audit_config = config.management.audit.clone();
+        command_audit_config.enabled |= config.logging.audit_enabled;
         Self {
             config: config.clone(),
             buffer,
@@ -72,10 +91,7 @@ impl MessageHandler {
             // Structured, rotating, flushed audit trail for privileged commands
             // (separate file from the HTTP management API audit to avoid two
             // writers contending for one file). Gated by config.audit.enabled.
-            audit: Arc::new(AuditState::new(
-                config.management.audit.clone(),
-                "command-audit.log",
-            )),
+            audit: Arc::new(AuditState::new(command_audit_config, "command-audit.log")),
         }
     }
 
@@ -87,12 +103,17 @@ impl MessageHandler {
         success: bool,
         error: Option<String>,
     ) {
+        let audit_target = if command_type == CommandType::ShellExecute {
+            redact_shell_secrets(target)
+        } else {
+            target.to_string()
+        };
         self.audit
             .write_command_entry(&CommandAuditEntry {
                 ts: Utc::now().to_rfc3339(),
                 event: "command",
                 command: format!("{command_type:?}"),
-                target: truncate_for_audit(target, 256),
+                target: truncate_for_audit(&audit_target, 256),
                 permission: self.permission_level,
                 success,
                 error: error.map(|e| truncate_for_audit(&e, 256)),
@@ -105,10 +126,18 @@ impl MessageHandler {
         let command_type =
             CommandType::try_from(command.r#type).unwrap_or(CommandType::Unspecified);
 
-        info!(
-            "Received command: {:?} (target: {}, id: {})",
-            command_type, command.target, command.command_id
-        );
+        if command_type == CommandType::ShellExecute {
+            info!(
+                "Received shell command (bytes: {}, id: {})",
+                command.target.len(),
+                command.command_id
+            );
+        } else {
+            info!(
+                "Received command: {:?} (target: {}, id: {})",
+                command_type, command.target, command.command_id
+            );
+        }
 
         let required_level = self.permission_checker.required_level(command_type);
 
@@ -306,6 +335,10 @@ impl MessageHandler {
                 .await;
         }
 
+        if command_type == CommandType::AgentApplyUpdate && result.success {
+            Self::schedule_soft_restart();
+        }
+
         CommandResult {
             command_id: command.command_id,
             ..result
@@ -385,13 +418,7 @@ impl MessageHandler {
     /// is heavier than a self re-exec. The host is never rebooted.
     async fn execute_agent_process_restart(&self) -> CommandResult {
         info!("[AUDIT] AgentProcessRestart requested - scheduling soft self-restart");
-
-        // Schedule the restart slightly in the future so the success result below
-        // is sent back to the server before this process exits.
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-            Self::soft_restart_process();
-        });
+        Self::schedule_soft_restart();
 
         CommandResult {
             command_id: String::new(),
@@ -400,6 +427,16 @@ impl MessageHandler {
             error: String::new(),
             ..Default::default()
         }
+    }
+
+    fn schedule_soft_restart() {
+        // Give the gRPC sender enough time to flush the successful command result
+        // before the process exits and systemd (or the standalone fallback)
+        // starts the replacement binary.
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+            Self::soft_restart_process();
+        });
     }
 
     /// Best-effort detection of whether this process runs under a service
@@ -490,5 +527,20 @@ impl MessageHandler {
 
         info!("Exiting current agent process for soft restart");
         std::process::exit(0);
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    fn shell_audit_redacts_common_secret_forms() {
+        let command = "TOKEN=abc curl --api-key xyz --password=hidden https://example.com";
+        let redacted = redact_shell_secrets(command);
+        assert!(!redacted.contains("abc"));
+        assert!(!redacted.contains("xyz"));
+        assert!(!redacted.contains("hidden"));
+        assert!(redacted.contains("TOKEN=[REDACTED]"));
     }
 }

@@ -2,12 +2,13 @@
 //!
 //! Provides high-performance bidirectional streaming for metrics and commands.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio::sync::{Mutex, RwLock, broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time;
 use tokio_stream::wrappers::ReceiverStream;
@@ -33,6 +34,51 @@ use crate::proto::{
 /// clean. Once captured, the same instant is reused for every heartbeat across
 /// reconnects.
 static AGENT_START: OnceLock<Instant> = OnceLock::new();
+const MAX_PENDING_COMMAND_RESULTS: usize = 128;
+
+pub type PendingCommandResults = Arc<Mutex<HashMap<String, CommandResult>>>;
+
+async fn remember_command_result(pending: &PendingCommandResults, result: &CommandResult) {
+    if result.command_id.is_empty() {
+        return;
+    }
+    let mut pending = pending.lock().await;
+    if pending.len() >= MAX_PENDING_COMMAND_RESULTS
+        && !pending.contains_key(&result.command_id)
+        && let Some(oldest_key) = pending.keys().next().cloned()
+    {
+        pending.remove(&oldest_key);
+        warn!("Pending command-result buffer was full; evicted one unacknowledged result");
+    }
+    pending.insert(result.command_id.clone(), result.clone());
+}
+
+async fn acknowledge_command_result(pending: &PendingCommandResults, command_id: &str) {
+    if !command_id.is_empty() {
+        pending.lock().await.remove(command_id);
+    }
+}
+
+async fn replay_pending_command_results(
+    tx: &mpsc::Sender<MetricsStreamRequest>,
+    pending: &PendingCommandResults,
+) -> Result<()> {
+    let results = pending.lock().await.values().cloned().collect::<Vec<_>>();
+    if !results.is_empty() {
+        info!(
+            "Replaying {} unacknowledged command result(s)",
+            results.len()
+        );
+    }
+    for result in results {
+        tx.send(MetricsStreamRequest {
+            request: Some(metrics_stream_request::Request::CommandResult(result)),
+        })
+        .await
+        .context("Failed to replay pending command result")?;
+    }
+    Ok(())
+}
 
 fn agent_uptime_seconds() -> u64 {
     AGENT_START.get_or_init(Instant::now).elapsed().as_secs()
@@ -305,6 +351,7 @@ impl GrpcClient {
     pub async fn stream_metrics<F, Fut>(
         &mut self,
         buffer: Arc<RingBuffer>,
+        pending_results: PendingCommandResults,
         command_handler: F,
     ) -> Result<()>
     where
@@ -324,6 +371,7 @@ impl GrpcClient {
             .context("Failed to start metrics stream")?;
 
         let mut response_stream: Streaming<MetricsStreamResponse> = response.into_inner();
+        replay_pending_command_results(&tx, &pending_results).await?;
 
         // Spawn task to send metrics with cleanup guard
         let tx_clone = tx.clone();
@@ -380,12 +428,14 @@ impl GrpcClient {
                     // a later BUILD_CANCEL command on the same stream.
                     let handler = command_handler.clone();
                     let result_tx = tx.clone();
+                    let pending_results = pending_results.clone();
                     // Detach command work from stream cleanup: spawn_blocking
                     // build work cannot be aborted safely. It keeps its own
                     // timeout/cancellation boundary and releases its active-run
                     // registration even if this transport reconnects.
                     let _command_task = tokio::spawn(async move {
                         let result = handler(cmd).await;
+                        remember_command_result(&pending_results, &result).await;
                         let request = MetricsStreamRequest {
                             request: Some(metrics_stream_request::Request::CommandResult(result)),
                         };
@@ -415,6 +465,9 @@ impl GrpcClient {
                     info!("Received data request: {:?}", req.request_type);
                     // In legacy stream_metrics, we don't have layered support
                     // Just log the request for now
+                }
+                Some(metrics_stream_response::Response::CommandResultAck(ack)) => {
+                    acknowledge_command_result(&pending_results, &ack.command_id).await;
                 }
                 None => {}
             }
@@ -520,7 +573,11 @@ impl GrpcClient {
     ///
     /// This method uses the LayeredCollector to send different types of metrics
     /// at different intervals (realtime, periodic, static).
-    pub async fn stream_layered_metrics<F, Fut>(&mut self, command_handler: F) -> Result<()>
+    pub async fn stream_layered_metrics<F, Fut>(
+        &mut self,
+        pending_results: PendingCommandResults,
+        command_handler: F,
+    ) -> Result<()>
     where
         F: Fn(Command) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = CommandResult> + Send + 'static,
@@ -558,6 +615,7 @@ impl GrpcClient {
             .context("Failed to start metrics stream")?;
 
         let mut response_stream: Streaming<MetricsStreamResponse> = response.into_inner();
+        replay_pending_command_results(&tx, &pending_results).await?;
 
         // Create layered collector with cleanup guard
         let (metrics_tx, mut metrics_rx) = mpsc::channel::<LayeredMetricsMessage>(100);
@@ -643,8 +701,10 @@ impl GrpcClient {
                     info!("Received command: {:?}", cmd.r#type);
                     let handler = command_handler.clone();
                     let result_tx = tx.clone();
+                    let pending_results = pending_results.clone();
                     let _command_task = tokio::spawn(async move {
                         let result = handler(cmd).await;
+                        remember_command_result(&pending_results, &result).await;
                         let request = MetricsStreamRequest {
                             request: Some(metrics_stream_request::Request::CommandResult(result)),
                         };
@@ -675,6 +735,9 @@ impl GrpcClient {
                         .unwrap_or(DataRequestType::DataRequestFull);
                     let _ = request_tx.send(DataRequest::from(request_type)).await;
                 }
+                Some(metrics_stream_response::Response::CommandResultAck(ack)) => {
+                    acknowledge_command_result(&pending_results, &ack.command_id).await;
+                }
                 None => {}
             }
         }
@@ -682,5 +745,48 @@ impl GrpcClient {
         // cleanup_guard is dropped here and aborts both tasks
         debug!("Layered metrics stream ended, cleanup guard will abort tasks");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod pending_result_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn pending_results_survive_until_acknowledged() {
+        let pending = Arc::new(Mutex::new(HashMap::new()));
+        let result = CommandResult {
+            command_id: "command-1".to_string(),
+            success: true,
+            ..Default::default()
+        };
+        remember_command_result(&pending, &result).await;
+        assert!(pending.lock().await.contains_key("command-1"));
+
+        acknowledge_command_result(&pending, "command-1").await;
+        assert!(pending.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn replay_sends_buffered_results_without_dropping_them() {
+        let pending = Arc::new(Mutex::new(HashMap::new()));
+        remember_command_result(
+            &pending,
+            &CommandResult {
+                command_id: "command-2".to_string(),
+                ..Default::default()
+            },
+        )
+        .await;
+        let (tx, mut rx) = mpsc::channel(2);
+
+        replay_pending_command_results(&tx, &pending).await.unwrap();
+        let replayed = rx.recv().await.unwrap();
+        assert!(matches!(
+            replayed.request,
+            Some(metrics_stream_request::Request::CommandResult(result))
+                if result.command_id == "command-2"
+        ));
+        assert!(pending.lock().await.contains_key("command-2"));
     }
 }

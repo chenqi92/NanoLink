@@ -51,6 +51,30 @@ pub struct ConnectionManager {
     status: Arc<RwLock<Vec<ConnectionStatus>>>,
 }
 
+#[derive(Debug, Clone)]
+struct ServerIdentity {
+    host: String,
+    port: u16,
+}
+
+impl ServerIdentity {
+    fn matches(&self, server: &ServerConfig) -> bool {
+        self.host == server.host && self.port == server.port
+    }
+}
+
+fn connection_snapshot(
+    config: &Config,
+    identity: &ServerIdentity,
+) -> Option<(Arc<Config>, ServerConfig)> {
+    let server = config
+        .servers
+        .iter()
+        .find(|server| identity.matches(server))?
+        .clone();
+    Some((Arc::new(config.clone()), server))
+}
+
 impl ConnectionManager {
     /// Create a new connection manager
     ///
@@ -110,24 +134,28 @@ impl ConnectionManager {
         let mut handles = Vec::new();
 
         for (idx, server_config) in self.config.servers.iter().enumerate() {
-            let config = self.config.clone();
             let shared_config = self.shared_config.clone();
             let config_path = self.config_path.clone();
             let buffer = self.buffer.clone();
-            let server = server_config.clone();
+            let server_identity = ServerIdentity {
+                host: server_config.host.clone(),
+                port: server_config.port,
+            };
             let signal_rx = self.signal_tx.subscribe();
             let signal_tx = self.signal_tx.clone();
             let status = self.status.clone();
 
-            info!("Connecting to gRPC server: {}:{}", server.host, server.port);
+            info!(
+                "Connecting to gRPC server: {}:{}",
+                server_identity.host, server_identity.port
+            );
 
             let handle = tokio::spawn(async move {
                 Self::manage_grpc_connection(
-                    config,
                     shared_config,
                     config_path,
                     buffer,
-                    server,
+                    server_identity,
                     signal_rx,
                     signal_tx,
                     status,
@@ -148,25 +176,45 @@ impl ConnectionManager {
     /// Manage a gRPC connection with reconnection logic
     #[allow(clippy::too_many_arguments)]
     async fn manage_grpc_connection(
-        config: Arc<Config>,
         shared_config: Arc<RwLock<Config>>,
         config_path: PathBuf,
         buffer: Arc<RingBuffer>,
-        server: ServerConfig,
+        server_identity: ServerIdentity,
         mut signal_rx: broadcast::Receiver<ConnectionSignal>,
         signal_tx: broadcast::Sender<ConnectionSignal>,
         status: Arc<RwLock<Vec<ConnectionStatus>>>,
         status_idx: usize,
     ) {
-        let initial_delay = config.agent.reconnect_delay;
-        let max_delay = config.agent.max_reconnect_delay;
-        let grpc_url = server.get_grpc_url();
+        let mut initial_delay: u64;
+        let mut max_delay: u64;
+        let mut grpc_url: String;
         let mut connection_attempts: u32 = 0;
         let mut total_connected_time: u64 = 0;
         let mut was_previously_connected = false;
-        let mut reconnect_delay = initial_delay;
+        let mut reconnect_delay = 1;
+        let pending_results: grpc::PendingCommandResults =
+            Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
         loop {
+            // Always rebuild the connection from the latest shared configuration.
+            // Management API token/TLS updates and server-pushed collector changes
+            // are persisted there; reusing the startup snapshot would otherwise
+            // make every reconnect retry stale credentials forever.
+            let (config, server) = {
+                let config = shared_config.read().await;
+                let Some(snapshot) = connection_snapshot(&config, &server_identity) else {
+                    info!(
+                        "Server {}:{} was removed from configuration; stopping its connection task",
+                        server_identity.host, server_identity.port
+                    );
+                    return;
+                };
+                snapshot
+            };
+            initial_delay = config.agent.reconnect_delay.max(1);
+            max_delay = config.agent.max_reconnect_delay.max(initial_delay);
+            reconnect_delay = reconnect_delay.clamp(initial_delay, max_delay);
+            grpc_url = server.get_grpc_url();
             connection_attempts += 1;
 
             // Update status
@@ -206,24 +254,24 @@ impl ConnectionManager {
                         grpc_url, connect_elapsed
                     );
 
-                    // Reset reconnect delay and attempts on successful connection
-                    reconnect_delay = initial_delay;
-                    connection_attempts = 0;
-                    was_previously_connected = true;
-
-                    // Update status - connected
-                    {
-                        let mut s = status.write().await;
-                        if let Some(st) = s.get_mut(status_idx) {
-                            st.connected = true;
-                            st.last_error = None;
-                            st.connection_attempts = 0;
-                        }
-                    }
-
                     // Authenticate
                     match client.authenticate().await {
                         Ok(auth) if auth.success => {
+                            // A TCP handshake alone is not a healthy connection.
+                            // Reset backoff only after credentials are accepted;
+                            // otherwise an expired token retries forever at the
+                            // minimum delay and can hammer the server.
+                            reconnect_delay = initial_delay;
+                            connection_attempts = 0;
+                            was_previously_connected = true;
+                            {
+                                let mut s = status.write().await;
+                                if let Some(st) = s.get_mut(status_idx) {
+                                    st.connected = true;
+                                    st.last_error = None;
+                                    st.connection_attempts = 0;
+                                }
+                            }
                             info!(
                                 "gRPC authenticated with permission level: {}",
                                 auth.permission_level
@@ -235,49 +283,75 @@ impl ConnectionManager {
                             }
 
                             // Start streaming metrics based on config
-                            let stream_result = if config.collector.enable_layered_metrics {
-                                info!("Using layered metrics stream");
-                                // Create MessageHandler with all executors and permission checker
-                                let message_handler = std::sync::Arc::new(MessageHandler::new(
-                                    config.clone(),
-                                    buffer.clone(),
-                                    auth.permission_level as u8,
-                                ));
+                            let use_layered_metrics = config.collector.enable_layered_metrics;
+                            let message_handler = std::sync::Arc::new(MessageHandler::new(
+                                config.clone(),
+                                buffer.clone(),
+                                auth.permission_level as u8,
+                            ));
+                            let stream_future = async {
+                                if use_layered_metrics {
+                                    info!("Using layered metrics stream");
+                                    client
+                                        .stream_layered_metrics(
+                                            pending_results.clone(),
+                                            move |cmd| {
+                                                let handler = message_handler.clone();
+                                                async move { handler.handle_command(cmd).await }
+                                            },
+                                        )
+                                        .await
+                                } else {
+                                    info!("Using legacy metrics stream");
+                                    client
+                                        .stream_metrics(
+                                            buffer.clone(),
+                                            pending_results.clone(),
+                                            move |cmd| {
+                                                let handler = message_handler.clone();
+                                                async move { handler.handle_command(cmd).await }
+                                            },
+                                        )
+                                        .await
+                                }
+                            };
+                            tokio::pin!(stream_future);
 
-                                client
-                                    .stream_layered_metrics(move |cmd| {
-                                        let handler = message_handler.clone();
-                                        async move { handler.handle_command(cmd).await }
-                                    })
-                                    .await
-                            } else {
-                                info!("Using legacy metrics stream");
-                                // Create MessageHandler with all executors and permission checker
-                                let message_handler = std::sync::Arc::new(MessageHandler::new(
-                                    config.clone(),
-                                    buffer.clone(),
-                                    auth.permission_level as u8,
-                                ));
-
-                                client
-                                    .stream_metrics(buffer.clone(), move |cmd| {
-                                        let handler = message_handler.clone();
-                                        async move { handler.handle_command(cmd).await }
-                                    })
-                                    .await
+                            // A runtime token/TLS update must also interrupt a
+                            // healthy stream. Previously signals were only polled
+                            // after disconnection, so an online agent kept the old
+                            // credential until the transport happened to fail.
+                            let (stream_result, reconnect_now) = tokio::select! {
+                                result = &mut stream_future => (Some(result), false),
+                                signal = signal_rx.recv() => {
+                                    match signal {
+                                        Ok(ConnectionSignal::ImmediateReconnect) => {
+                                            info!("Received immediate reconnect signal for {}", grpc_url);
+                                            (None, true)
+                                        }
+                                        Ok(ConnectionSignal::Shutdown) => {
+                                            info!("Received shutdown signal, stopping connection manager");
+                                            return;
+                                        }
+                                        Err(error) => {
+                                            warn!("Connection signal channel error: {}", error);
+                                            (None, false)
+                                        }
+                                    }
+                                }
                             };
 
                             let connection_duration = connection_start.elapsed();
                             total_connected_time += connection_duration.as_secs();
 
                             match &stream_result {
-                                Ok(_) => {
+                                Some(Ok(_)) => {
                                     warn!(
                                         "gRPC stream ended normally for {} after {:?} (server may have closed the connection)",
                                         grpc_url, connection_duration
                                     );
                                 }
-                                Err(e) => {
+                                Some(Err(e)) => {
                                     error!(
                                         "gRPC stream error for {} after {:?}: {:?}",
                                         grpc_url, connection_duration, e
@@ -288,6 +362,16 @@ impl ConnectionManager {
                                         st.last_error = Some(e.to_string());
                                     }
                                 }
+                                None => {}
+                            }
+
+                            if reconnect_now {
+                                let mut s = status.write().await;
+                                if let Some(st) = s.get_mut(status_idx) {
+                                    st.connected = false;
+                                    st.reconnect_delay_secs = initial_delay;
+                                }
+                                continue;
                             }
                         }
                         Ok(auth) => {
@@ -442,6 +526,38 @@ impl ConnectionManager {
             "Data compensation completed: sent {}/{} metrics",
             sent, count
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconnect_snapshot_uses_updated_token_and_runtime_config() {
+        let mut config = Config::sample();
+        let identity = ServerIdentity {
+            host: config.servers[0].host.clone(),
+            port: config.servers[0].port,
+        };
+        config.servers[0].token = "rotated-token".to_string();
+        config.agent.heartbeat_interval = 7;
+
+        let (snapshot, server) = connection_snapshot(&config, &identity).unwrap();
+        assert_eq!(server.token, "rotated-token");
+        assert_eq!(snapshot.agent.heartbeat_interval, 7);
+    }
+
+    #[test]
+    fn reconnect_snapshot_stops_removed_server() {
+        let mut config = Config::sample();
+        let identity = ServerIdentity {
+            host: config.servers[0].host.clone(),
+            port: config.servers[0].port,
+        };
+        config.servers.clear();
+
+        assert!(connection_snapshot(&config, &identity).is_none());
     }
 }
 

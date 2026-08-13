@@ -9,6 +9,10 @@ use crate::config::{UpdateConfig, UpdateSource};
 use crate::proto::{CommandResult, UpdateInfo};
 
 const CLOUDFLARE_UPDATE_BASE_URL: &str = "https://agent.download.kkape.com/newest";
+const UPDATE_CONNECT_TIMEOUT_SECONDS: &str = "15";
+const UPDATE_DOWNLOAD_TIMEOUT_SECONDS: &str = "300";
+const UPDATE_METADATA_TIMEOUT_SECONDS: &str = "30";
+const MAX_UPDATE_METADATA_BYTES: &str = "1048576";
 
 /// Validate URL to prevent command injection
 fn is_safe_url(url: &str) -> bool {
@@ -109,7 +113,7 @@ pub const AGENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Upper bound on a downloaded update artifact. Generous for an agent binary
 /// while preventing a malicious/buggy server from filling the temp dir (DoS).
-const MAX_UPDATE_DOWNLOAD_BYTES: u64 = 200 * 1024 * 1024;
+const MAX_UPDATE_DOWNLOAD_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Update executor for agent self-upgrade operations
 pub struct UpdateExecutor {
@@ -263,7 +267,20 @@ impl UpdateExecutor {
             use std::process::Command;
 
             let output = Command::new("curl")
-                .args(["-sL", "-H", "User-Agent: NanoLink-Agent", url])
+                .args([
+                    "-fL",
+                    "--silent",
+                    "--show-error",
+                    "--connect-timeout",
+                    UPDATE_CONNECT_TIMEOUT_SECONDS,
+                    "--max-time",
+                    UPDATE_METADATA_TIMEOUT_SECONDS,
+                    "--max-filesize",
+                    MAX_UPDATE_METADATA_BYTES,
+                    "-H",
+                    "User-Agent: NanoLink-Agent",
+                    url,
+                ])
                 .output()
                 .map_err(|e| format!("Failed to execute curl: {e}"))?;
 
@@ -477,38 +494,41 @@ impl UpdateExecutor {
         use std::fs;
         use std::os::unix::fs::PermissionsExt;
 
-        // Backup current binary
+        let parent = match current_exe.parent() {
+            Some(parent) => parent,
+            None => return Self::error_result("Current executable has no parent directory".into()),
+        };
+        let staged_path = parent.join(format!(".nanolink-agent.update-{}", uuid::Uuid::new_v4()));
+
+        // Prepare the replacement beside the target so the final rename is an
+        // atomic same-filesystem operation. Never unlink the running binary
+        // before a complete, executable replacement is ready.
+        if let Err(e) = fs::copy(update_path, &staged_path) {
+            return Self::error_result(format!("Failed to stage update: {e}"));
+        }
+        if let Err(e) = fs::set_permissions(&staged_path, fs::Permissions::from_mode(0o755)) {
+            let _ = fs::remove_file(&staged_path);
+            return Self::error_result(format!("Failed to set staged update permissions: {e}"));
+        }
+        if let Err(e) = fs::File::open(&staged_path).and_then(|file| file.sync_all()) {
+            let _ = fs::remove_file(&staged_path);
+            return Self::error_result(format!("Failed to flush staged update: {e}"));
+        }
+
+        // Keep one known-good binary for manual recovery if the new process
+        // cannot start. It is intentionally retained after a successful swap.
         if let Err(e) = fs::copy(current_exe, backup_path) {
+            let _ = fs::remove_file(&staged_path);
             return Self::error_result(format!("Failed to create backup: {e}"));
         }
-
-        // On Linux, a running binary cannot be written to (ETXTBSY / "Text file busy").
-        // However, we CAN unlink (remove) it — the kernel keeps the inode alive for the
-        // running process. Then we copy the new binary to the same path as a new file.
-        if let Err(e) = fs::remove_file(current_exe) {
-            warn!("Failed to unlink current binary: {e}");
-            // Fallback: try rename instead of unlink
-            let renamed = current_exe.with_extension("old");
-            if let Err(e2) = fs::rename(current_exe, &renamed) {
-                return Self::error_result(format!(
-                    "Failed to replace binary: cannot unlink ({e}) or rename ({e2}). \
-                     The binary is likely in use."
-                ));
-            }
+        if let Err(e) = fs::rename(&staged_path, current_exe) {
+            let _ = fs::remove_file(&staged_path);
+            return Self::error_result(format!("Failed to atomically replace binary: {e}"));
         }
-
-        // Copy new binary to the (now free) path
-        if let Err(e) = fs::copy(update_path, current_exe) {
-            // Restore from backup
-            if let Err(restore_err) = fs::copy(backup_path, current_exe) {
-                warn!("Failed to restore backup after update failure: {restore_err}");
+        if let Ok(directory) = fs::File::open(parent) {
+            if let Err(e) = directory.sync_all() {
+                warn!("Failed to flush executable directory after update: {e}");
             }
-            return Self::error_result(format!("Failed to copy new binary: {e}"));
-        }
-
-        // Set executable permissions
-        if let Err(e) = fs::set_permissions(current_exe, fs::Permissions::from_mode(0o755)) {
-            warn!("Failed to set permissions: {e}");
         }
 
         // Clean up downloaded file
@@ -516,23 +536,13 @@ impl UpdateExecutor {
             warn!("Failed to clean up downloaded file: {e}");
         }
 
-        // Clean up backup file after successful update
-        if let Err(e) = fs::remove_file(backup_path) {
-            warn!("Failed to clean up backup file: {e}");
-        }
-
-        // Clean up .old file if rename fallback was used
-        let old_path = current_exe.with_extension("old");
-        if old_path.exists() {
-            if let Err(e) = fs::remove_file(&old_path) {
-                warn!("Failed to clean up old binary: {e}");
-            }
-        }
-
         CommandResult {
             command_id: String::new(),
             success: true,
-            output: "Update applied successfully. Agent will restart.".to_string(),
+            output: format!(
+                "Update applied atomically. Agent restart scheduled; backup retained at {}.",
+                backup_path.display()
+            ),
             error: String::new(),
             ..Default::default()
         }
@@ -623,7 +633,20 @@ del /F "%~f0"
             use std::process::Command;
 
             let output = Command::new("curl")
-                .args(["-sL", "-H", "User-Agent: NanoLink-Agent", api_url])
+                .args([
+                    "-fL",
+                    "--silent",
+                    "--show-error",
+                    "--connect-timeout",
+                    UPDATE_CONNECT_TIMEOUT_SECONDS,
+                    "--max-time",
+                    UPDATE_METADATA_TIMEOUT_SECONDS,
+                    "--max-filesize",
+                    MAX_UPDATE_METADATA_BYTES,
+                    "-H",
+                    "User-Agent: NanoLink-Agent",
+                    api_url,
+                ])
                 .output()
                 .map_err(|e| format!("Failed to execute curl: {}", e))?;
 
@@ -671,12 +694,12 @@ del /F "%~f0"
             return Err("Invalid or unsafe URL".to_string());
         }
 
-        // Validate destination path
-        let dest_str = escape_path(dest)?;
-
         // Consumed only by the unix curl --max-filesize path below.
         #[cfg_attr(not(unix), allow(unused_variables))]
         let max_bytes_str = MAX_UPDATE_DOWNLOAD_BYTES.to_string();
+
+        let partial_dest = dest.with_extension(format!("part-{}", uuid::Uuid::new_v4()));
+        let partial_dest_str = escape_path(&partial_dest)?;
 
         #[cfg(unix)]
         {
@@ -687,23 +710,33 @@ del /F "%~f0"
             let output = Command::new("curl")
                 .args([
                     "-sL",
+                    "--fail",
+                    "--show-error",
+                    "--connect-timeout",
+                    UPDATE_CONNECT_TIMEOUT_SECONDS,
+                    "--max-time",
+                    UPDATE_DOWNLOAD_TIMEOUT_SECONDS,
                     "--max-filesize",
                     &max_bytes_str,
                     "-o",
-                    &dest_str,
+                    &partial_dest_str,
                     url,
                 ])
                 .output()
                 .map_err(|e| format!("Failed to execute curl: {e}"))?;
 
             if !output.status.success() {
+                let _ = std::fs::remove_file(&partial_dest);
                 return Err(format!(
                     "curl failed: {}",
                     String::from_utf8_lossy(&output.stderr)
                 ));
             }
 
-            Self::checked_download_size(dest)
+            let size = Self::checked_download_size(&partial_dest)?;
+            std::fs::rename(&partial_dest, dest)
+                .map_err(|e| format!("Failed to finalize update download: {e}"))?;
+            Ok(size)
         }
 
         #[cfg(windows)]
@@ -714,18 +747,22 @@ del /F "%~f0"
             let script = "$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri $args[0] -OutFile $args[1]";
 
             let output = Command::new("powershell")
-                .args(["-Command", script, url, &dest_str])
+                .args(["-Command", script, url, &partial_dest_str])
                 .output()
                 .map_err(|e| format!("Failed to execute PowerShell: {e}"))?;
 
             if !output.status.success() {
+                let _ = std::fs::remove_file(&partial_dest);
                 return Err(format!(
                     "PowerShell failed: {}",
                     String::from_utf8_lossy(&output.stderr)
                 ));
             }
 
-            Self::checked_download_size(dest)
+            let size = Self::checked_download_size(&partial_dest)?;
+            std::fs::rename(&partial_dest, dest)
+                .map_err(|e| format!("Failed to finalize update download: {e}"))?;
+            Ok(size)
         }
     }
 
@@ -735,7 +772,7 @@ del /F "%~f0"
         let size = std::fs::metadata(dest)
             .map(|m| m.len())
             .map_err(|e| format!("Failed to get file size: {e}"))?;
-        if size > MAX_UPDATE_DOWNLOAD_BYTES {
+        if size == 0 || size > MAX_UPDATE_DOWNLOAD_BYTES {
             let _ = std::fs::remove_file(dest);
             return Err(format!(
                 "Downloaded update is too large ({size} bytes, max {MAX_UPDATE_DOWNLOAD_BYTES})"
@@ -1016,5 +1053,34 @@ mod tests {
                 .unwrap();
         let other_pub = hex_encode(other.public_key().as_ref());
         assert!(verify_ed25519(data, &other_pub, &sig_hex).is_err());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unix_update_replaces_atomically_and_retains_backup() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root =
+            std::env::temp_dir().join(format!("nanolink-update-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let current = root.join("nanolink-agent");
+        let update = root.join("downloaded-update");
+        let backup = root.join("nanolink-agent.bak");
+        std::fs::write(&current, b"old-binary").unwrap();
+        std::fs::write(&update, b"new-binary").unwrap();
+
+        let result = UpdateExecutor::default()
+            .apply_update_unix(&update, &current, &backup)
+            .await;
+
+        assert!(result.success, "{}", result.error);
+        assert_eq!(std::fs::read(&current).unwrap(), b"new-binary");
+        assert_eq!(std::fs::read(&backup).unwrap(), b"old-binary");
+        assert_eq!(
+            std::fs::metadata(&current).unwrap().permissions().mode() & 0o111,
+            0o111
+        );
+        assert!(!update.exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

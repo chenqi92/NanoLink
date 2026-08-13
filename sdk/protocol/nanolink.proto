@@ -661,6 +661,7 @@ message MetricsStreamResponse {
     HeartbeatAck heartbeat_ack = 2;    // Heartbeat acknowledgment
     ServerConfig config_update = 3;    // Configuration update from server
     DataRequest data_request = 4;      // Request for specific data from agent
+    CommandResultAck command_result_ack = 5; // Allows reliable result replay after reconnect
   }
 }
 
@@ -787,4 +788,10 @@ message DashboardCommandRequest {
   string agent_id = 1;
   Command command = 2;
   string dashboard_user = 3;  // For audit logging
+}
+
+// CommandResultAck confirms that the server accepted a command result.
+// Agents retain and replay unacknowledged results across stream reconnects.
+message CommandResultAck {
+  string command_id = 1;
 }

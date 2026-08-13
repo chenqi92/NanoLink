@@ -18,7 +18,7 @@ const READ_CHUNK: usize = 16 * 1024;
 /// (e.g. `cat /dev/zero`, `yes`) can produce unbounded output; without a cap the
 /// agent would grow until OOM. Output beyond this is dropped and a truncation
 /// notice is appended.
-const MAX_CAPTURE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_CAPTURE_BYTES: usize = 1024 * 1024;
 
 /// Drain an async reader into a byte buffer in bounded chunks, stopping once the
 /// capture cap is reached. Returns the collected bytes and whether truncation
@@ -91,7 +91,10 @@ impl ShellExecutor {
             };
         }
 
-        info!("Executing shell command: {}", command);
+        info!(
+            "Executing validated shell command ({} bytes)",
+            command.len()
+        );
 
         let timeout_secs = self.config.shell.timeout_seconds;
         let result = self.run(command, timeout_secs, cols, rows).await;
@@ -143,6 +146,12 @@ impl ShellExecutor {
             cmd.env("LINES", rows.to_string());
         }
 
+        // Put the shell in its own process group on Unix. Killing only the shell
+        // on timeout leaves grandchildren (for example `sleep 600 & wait`)
+        // running as orphaned root processes.
+        #[cfg(unix)]
+        cmd.process_group(0);
+
         let mut child = match cmd
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -180,8 +189,8 @@ impl ShellExecutor {
         let timeout = Duration::from_secs(timeout_secs);
         let wait_result = tokio::time::timeout(timeout, child.wait()).await;
 
-        let status = match wait_result {
-            Ok(Ok(status)) => status,
+        let (status, timed_out) = match wait_result {
+            Ok(Ok(status)) => (status, false),
             Ok(Err(e)) => {
                 stdout_task.abort();
                 stderr_task.abort();
@@ -194,24 +203,30 @@ impl ShellExecutor {
                 };
             }
             Err(_) => {
-                let _ = child.start_kill();
-                let _ = child.wait().await;
-                stdout_task.abort();
-                stderr_task.abort();
-                return CommandResult {
-                    command_id: String::new(),
-                    success: false,
-                    output: String::new(),
-                    error: format!("Command timed out after {timeout_secs} seconds"),
-                    ..Default::default()
-                };
+                terminate_process_group(&mut child);
+                match child.wait().await {
+                    Ok(status) => (status, true),
+                    Err(e) => {
+                        stdout_task.abort();
+                        stderr_task.abort();
+                        return CommandResult {
+                            command_id: String::new(),
+                            success: false,
+                            output: String::new(),
+                            error: format!(
+                                "Command timed out after {timeout_secs} seconds and could not be reaped: {e}"
+                            ),
+                            ..Default::default()
+                        };
+                    }
+                }
             }
         };
 
         let (stdout_buf, stdout_truncated) = stdout_task.await.unwrap_or_default();
         let (stderr_buf, stderr_truncated) = stderr_task.await.unwrap_or_default();
 
-        let success = status.success();
+        let success = !timed_out && status.success();
         let mut error = String::from_utf8_lossy(&stderr_buf).into_owned();
         let mut output = String::from_utf8_lossy(&stdout_buf).into_owned();
 
@@ -233,7 +248,14 @@ impl ShellExecutor {
         // the error text on failure (e.g. a grep with no matches exits 1 but may
         // print nothing to stderr). When/if the proto gains an `exit_code` field,
         // move this to a structured field and forward it via shell_ws.go.
-        if !success {
+        if timed_out {
+            let timeout_message = format!("Command timed out after {timeout_secs} seconds");
+            if error.is_empty() {
+                error = timeout_message;
+            } else {
+                error = format!("{error}\n{timeout_message}");
+            }
+        } else if !success {
             let code = exit_code_string(&status);
             if error.is_empty() {
                 error = format!("Command exited with status {code}");
@@ -252,6 +274,19 @@ impl ShellExecutor {
     }
 }
 
+fn terminate_process_group(child: &mut tokio::process::Child) {
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        use nix::sys::signal::{Signal, killpg};
+        use nix::unistd::Pid;
+
+        if let Ok(pid) = i32::try_from(pid) {
+            let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
+        }
+    }
+    let _ = child.start_kill();
+}
+
 /// Render a process exit status as a stable string: the numeric exit code if the
 /// process exited normally, or a `signal:N` marker on Unix when it was killed by
 /// a signal (where `code()` is `None`).
@@ -267,4 +302,49 @@ fn exit_code_string(status: &std::process::ExitStatus) -> String {
         }
     }
     "unknown".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn executor() -> ShellExecutor {
+        ShellExecutor::new(Arc::new(Config::sample()))
+    }
+
+    #[tokio::test]
+    async fn captures_stdout_stderr_and_exit_status() {
+        let result = executor()
+            .run("printf out; printf err >&2; exit 7", 5, 0, 0)
+            .await;
+
+        assert!(!result.success);
+        assert_eq!(result.output, "out");
+        assert!(result.error.contains("err"));
+        assert!(result.error.contains("exit status 7"));
+    }
+
+    #[tokio::test]
+    async fn timeout_preserves_partial_output() {
+        let result = executor()
+            .run("printf before-timeout; sleep 5", 1, 0, 0)
+            .await;
+
+        assert!(!result.success);
+        assert_eq!(result.output, "before-timeout");
+        assert!(result.error.contains("timed out after 1 seconds"));
+    }
+
+    #[tokio::test]
+    async fn caps_runaway_output() {
+        let result = executor().run("yes x | head -c 1100000", 5, 0, 0).await;
+
+        assert!(result.success);
+        assert!(
+            result
+                .output
+                .contains("[output truncated at 1048576 bytes]")
+        );
+        assert!(result.output.len() < 1_049_000);
+    }
 }

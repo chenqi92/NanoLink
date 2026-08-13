@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 use tracing::{info, warn};
@@ -15,6 +15,102 @@ use uuid::Uuid;
 use crate::config::{Config, DeploymentsConfig};
 use crate::proto::CommandResult;
 use crate::security::validation::validate_service_name;
+
+const MAX_EXTRACTED_ENTRIES: usize = 100_000;
+const MAX_EXTRACTED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_TOOL_OUTPUT_BYTES: u64 = 1024 * 1024;
+const ARCHIVE_TOOL_TIMEOUT: Duration = Duration::from_secs(120);
+const SERVICE_TOOL_TIMEOUT: Duration = Duration::from_secs(60);
+
+struct ToolOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+fn run_tool(command: &mut Command, timeout: Duration) -> Result<ToolOutput, String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Failed to start deployment tool: {e}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Deployment tool stdout was not captured".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Deployment tool stderr was not captured".to_string())?;
+    let stdout_task = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stdout
+            .take(MAX_TOOL_OUTPUT_BYTES + 1)
+            .read_to_end(&mut bytes);
+        bytes.truncate(MAX_TOOL_OUTPUT_BYTES as usize);
+        bytes
+    });
+    let stderr_task = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stderr
+            .take(MAX_TOOL_OUTPUT_BYTES + 1)
+            .read_to_end(&mut bytes);
+        bytes.truncate(MAX_TOOL_OUTPUT_BYTES as usize);
+        bytes
+    });
+
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(25)),
+            Ok(None) => {
+                terminate_tool_process_group(&mut child);
+                let _ = child.wait();
+                let _ = stdout_task.join();
+                let stderr = stderr_task.join().unwrap_or_default();
+                let detail = String::from_utf8_lossy(&stderr);
+                return Err(format!(
+                    "Deployment tool timed out after {} seconds{}{}",
+                    timeout.as_secs(),
+                    if detail.trim().is_empty() { "" } else { ": " },
+                    detail.trim()
+                ));
+            }
+            Err(e) => {
+                terminate_tool_process_group(&mut child);
+                let _ = child.wait();
+                let _ = stdout_task.join();
+                let _ = stderr_task.join();
+                return Err(format!("Failed to wait for deployment tool: {e}"));
+            }
+        }
+    };
+    let stdout = stdout_task.join().unwrap_or_default();
+    let stderr = stderr_task.join().unwrap_or_default();
+    Ok(ToolOutput {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn terminate_tool_process_group(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        use nix::sys::signal::{Signal, killpg};
+        use nix::unistd::Pid;
+
+        if let Ok(pid) = i32::try_from(child.id()) {
+            let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
+        }
+    }
+    let _ = child.kill();
+}
 
 pub struct DeploymentExecutor {
     config: Arc<Config>,
@@ -32,7 +128,7 @@ struct DeploymentRequest {
     artifact_sha256: Option<String>,
     artifact_size: Option<u64>,
     artifact_name: Option<String>,
-    extract: bool,
+    extract_artifact: bool,
     strip_top_level: bool,
 }
 
@@ -99,6 +195,11 @@ fn deploy_sync(
     if let Err(e) = fs::create_dir_all(&releases) {
         return fail(logs, format!("Failed to create releases directory: {e}"));
     }
+    if let Err(error) = validate_deploy_path(cfg, &req.deploy_path)
+        .and_then(|_| validate_directory_without_links(&releases))
+    {
+        return fail(logs, error);
+    }
     let release_path = releases.join(&req.version);
     if release_path.exists() {
         return fail(logs, format!("Release {} already exists", req.version));
@@ -130,18 +231,19 @@ fn deploy_sync(
         if req.project_type == "java" {
             fs::rename(&artifact_path, stage.join("app.jar"))
                 .map_err(|e| format!("Failed to stage JAR: {e}"))?;
-        } else if req.extract {
-            validate_archive_entries(&artifact_path, artifact_name)?;
-            extract_archive(&artifact_path, artifact_name, &stage)?;
-            reject_extracted_links(&stage)?;
-            if req.strip_top_level {
-                strip_single_top_level(&stage)?;
-            }
-            fs::remove_file(&artifact_path)
-                .map_err(|e| format!("Failed to remove staged archive: {e}"))?;
-        } else {
+        } else if !req.extract_artifact {
             fs::rename(&artifact_path, stage.join(artifact_name))
                 .map_err(|e| format!("Failed to stage static artifact: {e}"))?;
+        } else {
+            validate_archive_entries(&artifact_path, artifact_name)?;
+            extract_archive(&artifact_path, artifact_name, &stage)?;
+            validate_extracted_tree(&stage, cfg.max_artifact_size)?;
+            fs::remove_file(&artifact_path)
+                .map_err(|e| format!("Failed to remove staged archive: {e}"))?;
+            if req.strip_top_level {
+                strip_single_top_level(&stage)?;
+                validate_extracted_tree(&stage, cfg.max_artifact_size)?;
+            }
         }
         fs::rename(&stage, &release_path)
             .map_err(|e| format!("Failed to finalize release: {e}"))?;
@@ -204,7 +306,10 @@ fn rollback_sync(
     let req = parse_request(cfg, params, false).map_err(|e| (logs.clone(), e))?;
     logs.push(format!("[done] preflight rollback {}", req.version));
     let release_path = req.deploy_path.join("releases").join(&req.version);
-    if !release_path.is_dir() {
+    if !release_path.is_dir()
+        || fs::symlink_metadata(&release_path)
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
         return fail(
             logs,
             format!("Release {} is not present on this agent", req.version),
@@ -278,30 +383,16 @@ fn parse_request(
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(5)
         .clamp(2, 50);
-    let extract = params
-        .get("extract_artifact")
-        .or_else(|| params.get("extract"))
-        .map(|value| {
-            value
-                .parse::<bool>()
-                .map_err(|_| "Invalid extract flag".to_string())
-        })
-        .transpose()?
-        .unwrap_or(project_type == "static");
-    let strip_top_level = params
-        .get("strip_top_level")
-        .map(|value| {
-            value
-                .parse::<bool>()
-                .map_err(|_| "Invalid strip_top_level flag".to_string())
-        })
-        .transpose()?
-        .unwrap_or(false);
-    if project_type == "java" && (extract || strip_top_level) {
-        return Err("Java deployments cannot extract artifacts".to_string());
+    let extract_artifact = extract_artifact_flag(params)?;
+    let strip_top_level = optional_bool(params, "strip_top_level", false)?;
+    if project_type == "java" && (!extract_artifact || strip_top_level) {
+        return Err(
+            "extract_artifact/strip_top_level are only configurable for static deployments"
+                .to_string(),
+        );
     }
-    if strip_top_level && !extract {
-        return Err("strip_top_level requires archive extraction".to_string());
+    if strip_top_level && !extract_artifact {
+        return Err("strip_top_level requires extract_artifact=true".to_string());
     }
 
     let (artifact_url, artifact_sha256, artifact_size, artifact_name) = if require_artifact {
@@ -335,7 +426,7 @@ fn parse_request(
         artifact_sha256,
         artifact_size,
         artifact_name,
-        extract,
+        extract_artifact,
         strip_top_level,
     })
 }
@@ -348,6 +439,33 @@ fn required(params: &HashMap<String, String>, name: &str) -> Result<String, Stri
         .ok_or_else(|| format!("Missing deployment parameter: {name}"))
 }
 
+fn optional_bool(
+    params: &HashMap<String, String>,
+    name: &str,
+    default: bool,
+) -> Result<bool, String> {
+    match params
+        .get(name)
+        .map(|value| value.trim().to_ascii_lowercase())
+    {
+        None => Ok(default),
+        Some(value) if matches!(value.as_str(), "true" | "1" | "yes") => Ok(true),
+        Some(value) if matches!(value.as_str(), "false" | "0" | "no") => Ok(false),
+        Some(_) => Err(format!("Invalid boolean deployment parameter: {name}")),
+    }
+}
+
+fn extract_artifact_flag(params: &HashMap<String, String>) -> Result<bool, String> {
+    if params.contains_key("extract_artifact") {
+        optional_bool(params, "extract_artifact", true)
+    } else {
+        // `extract` was used briefly by an earlier server implementation. Keep
+        // accepting it for rolling upgrades, while the canonical key wins when
+        // both are present.
+        optional_bool(params, "extract", true)
+    }
+}
+
 fn validate_deploy_path(cfg: &DeploymentsConfig, target: &Path) -> Result<(), String> {
     if !target.is_absolute()
         || target
@@ -358,11 +476,59 @@ fn validate_deploy_path(cfg: &DeploymentsConfig, target: &Path) -> Result<(), St
     }
     for raw_root in &cfg.allowed_roots {
         let root = Path::new(raw_root);
-        if root.is_absolute() && target.starts_with(root) && target != root {
-            return Ok(());
+        if !root.is_absolute() || !target.starts_with(root) || target == root {
+            continue;
         }
+        validate_directory_without_links(root).map_err(|error| {
+            format!(
+                "Deployment allowed root {} is unsafe: {error}",
+                root.display()
+            )
+        })?;
+
+        let mut current = root.to_path_buf();
+        if let Ok(relative) = target.strip_prefix(root) {
+            for component in relative.components() {
+                current.push(component.as_os_str());
+                match fs::symlink_metadata(&current) {
+                    Ok(metadata) if metadata.file_type().is_symlink() => {
+                        return Err(format!(
+                            "Deployment path contains a symbolic link: {}",
+                            current.display()
+                        ));
+                    }
+                    Ok(metadata) if !metadata.is_dir() => {
+                        return Err(format!(
+                            "Deployment path component is not a directory: {}",
+                            current.display()
+                        ));
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                    Err(error) => {
+                        return Err(format!(
+                            "Failed to inspect deployment path {}: {error}",
+                            current.display()
+                        ));
+                    }
+                }
+            }
+        }
+        return Ok(());
     }
     Err("Deployment path is outside deployments.allowed_roots".to_string())
+}
+
+fn validate_directory_without_links(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|e| format!("Failed to inspect directory {}: {e}", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(format!(
+            "Directory must exist and must not be a symbolic link: {}",
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 fn validate_http_url(raw: &str) -> Result<(), String> {
@@ -405,8 +571,8 @@ fn download_artifact(cfg: &DeploymentsConfig, url: &str, dest: &Path) -> Result<
         .to_str()
         .ok_or_else(|| "Artifact path is not valid UTF-8".to_string())?;
     #[cfg(unix)]
-    let status = Command::new("curl")
-        .args([
+    let output = run_tool(
+        Command::new("curl").args([
             "-fL",
             "--silent",
             "--show-error",
@@ -419,25 +585,28 @@ fn download_artifact(cfg: &DeploymentsConfig, url: &str, dest: &Path) -> Result<
             "-o",
             dest,
             url,
-        ])
-        .status()
-        .map_err(|e| format!("Failed to run curl: {e}"))?;
+        ]),
+        Duration::from_secs(cfg.timeout_seconds),
+    )?;
 
     #[cfg(windows)]
-    let status = Command::new("powershell")
-        .args([
+    let output = run_tool(
+        Command::new("powershell").args([
             "-NoProfile",
             "-NonInteractive",
             "-Command",
             "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri $args[0] -OutFile $args[1]",
             url,
             dest,
-        ])
-        .status()
-        .map_err(|e| format!("Failed to download artifact: {e}"))?;
+        ]),
+        Duration::from_secs(cfg.timeout_seconds),
+    )?;
 
-    if !status.success() {
-        return Err("Artifact download failed".to_string());
+    if !output.status.success() {
+        return Err(format!(
+            "Artifact download failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
     }
     let size = fs::metadata(dest)
         .map_err(|e| format!("Failed to inspect downloaded artifact: {e}"))?
@@ -487,11 +656,20 @@ fn validate_archive_entries(artifact: &Path, name: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         let output = if name.to_lowercase().ends_with(".zip") {
-            Command::new("unzip").args(["-Z1"]).arg(artifact).output()
+            run_tool(
+                Command::new("unzip").args(["-Z1"]).arg(artifact),
+                ARCHIVE_TOOL_TIMEOUT,
+            )
         } else if name.to_lowercase().ends_with(".tar") {
-            Command::new("tar").args(["-tf"]).arg(artifact).output()
+            run_tool(
+                Command::new("tar").args(["-tf"]).arg(artifact),
+                ARCHIVE_TOOL_TIMEOUT,
+            )
         } else {
-            Command::new("tar").args(["-tzf"]).arg(artifact).output()
+            run_tool(
+                Command::new("tar").args(["-tzf"]).arg(artifact),
+                ARCHIVE_TOOL_TIMEOUT,
+            )
         }
         .map_err(|e| format!("Failed to inspect archive: {e}"))?;
         if !output.status.success() {
@@ -525,74 +703,54 @@ fn extract_archive(artifact: &Path, name: &str, stage: &Path) -> Result<(), Stri
     }
     #[cfg(unix)]
     {
-        let status = if name.to_lowercase().ends_with(".zip") {
-            Command::new("unzip")
-                .arg("-q")
-                .arg(artifact)
-                .arg("-d")
-                .arg(stage)
-                .status()
+        let output = if name.to_lowercase().ends_with(".zip") {
+            run_tool(
+                Command::new("unzip")
+                    .arg("-q")
+                    .arg(artifact)
+                    .arg("-d")
+                    .arg(stage),
+                ARCHIVE_TOOL_TIMEOUT,
+            )
         } else if name.to_lowercase().ends_with(".tar") {
-            Command::new("tar")
-                .arg("-xf")
-                .arg("--no-same-owner")
-                .arg("--no-same-permissions")
-                .arg(artifact)
-                .arg("-C")
-                .arg(stage)
-                .status()
+            run_tool(
+                Command::new("tar")
+                    .arg("-xf")
+                    .arg("--no-same-owner")
+                    .arg("--no-same-permissions")
+                    .arg(artifact)
+                    .arg("-C")
+                    .arg(stage),
+                ARCHIVE_TOOL_TIMEOUT,
+            )
         } else {
-            Command::new("tar")
-                .arg("-xzf")
-                .arg("--no-same-owner")
-                .arg("--no-same-permissions")
-                .arg(artifact)
-                .arg("-C")
-                .arg(stage)
-                .status()
+            run_tool(
+                Command::new("tar")
+                    .arg("-xzf")
+                    .arg("--no-same-owner")
+                    .arg("--no-same-permissions")
+                    .arg(artifact)
+                    .arg("-C")
+                    .arg(stage),
+                ARCHIVE_TOOL_TIMEOUT,
+            )
         }
         .map_err(|e| format!("Failed to extract archive: {e}"))?;
-        if !status.success() {
-            return Err("Artifact extraction failed".to_string());
+        if !output.status.success() {
+            return Err(format!(
+                "Artifact extraction failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
         }
         Ok(())
     }
 }
 
-fn strip_single_top_level(stage: &Path) -> Result<(), String> {
-    let mut entries = fs::read_dir(stage)
-        .map_err(|e| format!("Failed to inspect extracted top level: {e}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to inspect extracted top level: {e}"))?;
-    if entries.len() != 1 {
-        return Err("strip_top_level requires exactly one top-level directory".to_string());
-    }
-    let root = entries.pop().expect("one entry").path();
-    if !root.is_dir()
-        || fs::symlink_metadata(&root)
-            .map(|meta| meta.file_type().is_symlink())
-            .unwrap_or(true)
-    {
-        return Err("strip_top_level requires exactly one top-level directory".to_string());
-    }
-    let parent = stage
-        .parent()
-        .ok_or_else(|| "Invalid staging directory".to_string())?;
-    let flattened = parent.join(format!(".flatten-{}", Uuid::new_v4()));
-    fs::rename(&root, &flattened).map_err(|e| format!("Failed to flatten archive root: {e}"))?;
-    fs::remove_dir(stage).map_err(|e| format!("Failed to replace staging root: {e}"))?;
-    if let Err(error) = fs::rename(&flattened, stage) {
-        let _ = fs::create_dir(stage);
-        let _ = fs::rename(&flattened, stage.join("content"));
-        return Err(format!(
-            "Failed to activate flattened archive root: {error}"
-        ));
-    }
-    Ok(())
-}
-
-fn reject_extracted_links(root: &Path) -> Result<(), String> {
+fn validate_extracted_tree(root: &Path, compressed_limit: u64) -> Result<(), String> {
     let mut pending = vec![root.to_path_buf()];
+    let mut entries = 0usize;
+    let mut total_bytes = 0u64;
+    let byte_limit = compressed_limit.saturating_mul(10).min(MAX_EXTRACTED_BYTES);
     while let Some(directory) = pending.pop() {
         for entry in fs::read_dir(&directory)
             .map_err(|e| format!("Failed to validate extracted content: {e}"))?
@@ -600,6 +758,12 @@ fn reject_extracted_links(root: &Path) -> Result<(), String> {
             let entry = entry.map_err(|e| format!("Failed to validate extracted content: {e}"))?;
             let metadata = fs::symlink_metadata(entry.path())
                 .map_err(|e| format!("Failed to validate extracted content: {e}"))?;
+            entries = entries.saturating_add(1);
+            if entries > MAX_EXTRACTED_ENTRIES {
+                return Err(format!(
+                    "Archive expands to more than {MAX_EXTRACTED_ENTRIES} entries"
+                ));
+            }
             if metadata.file_type().is_symlink() {
                 return Err(format!(
                     "Archive links are not allowed: {}",
@@ -608,9 +772,58 @@ fn reject_extracted_links(root: &Path) -> Result<(), String> {
             }
             if metadata.is_dir() {
                 pending.push(entry.path());
+            } else if metadata.is_file() {
+                total_bytes = total_bytes.saturating_add(metadata.len());
+                if total_bytes > byte_limit {
+                    return Err(format!(
+                        "Archive expands beyond the configured limit ({byte_limit} bytes)"
+                    ));
+                }
+            } else {
+                return Err(format!(
+                    "Archive contains a special file: {}",
+                    entry.path().display()
+                ));
             }
         }
     }
+    Ok(())
+}
+
+fn strip_single_top_level(stage: &Path) -> Result<(), String> {
+    let entries = fs::read_dir(stage)
+        .map_err(|e| format!("Failed to inspect extracted top-level directory: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to inspect extracted top-level directory: {e}"))?;
+    if entries.len() != 1 {
+        return Err(
+            "strip_top_level requires the archive to contain exactly one top-level directory"
+                .to_string(),
+        );
+    }
+    let top = entries[0].path();
+    let metadata = fs::symlink_metadata(&top)
+        .map_err(|e| format!("Failed to inspect extracted top-level entry: {e}"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(
+            "strip_top_level requires the archive to contain exactly one top-level directory"
+                .to_string(),
+        );
+    }
+    let children = fs::read_dir(&top)
+        .map_err(|e| format!("Failed to read extracted top-level directory: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read extracted top-level directory: {e}"))?;
+    for child in children {
+        let destination = stage.join(child.file_name());
+        fs::rename(child.path(), &destination).map_err(|e| {
+            format!(
+                "Failed to strip top-level directory into {}: {e}",
+                destination.display()
+            )
+        })?;
+    }
+    fs::remove_dir(&top).map_err(|e| format!("Failed to remove top-level directory: {e}"))?;
     Ok(())
 }
 
@@ -618,10 +831,39 @@ fn reject_extracted_links(root: &Path) -> Result<(), String> {
 fn activate_release(deploy_path: &Path, release_path: &Path) -> Result<Option<PathBuf>, String> {
     use std::os::unix::fs::symlink;
 
+    validate_directory_without_links(release_path)?;
+    let releases = deploy_path.join("releases");
+    let releases = fs::canonicalize(&releases)
+        .map_err(|e| format!("Failed to resolve releases directory: {e}"))?;
+    let release = fs::canonicalize(release_path)
+        .map_err(|e| format!("Failed to resolve release directory: {e}"))?;
+    if !release.starts_with(&releases) || release == releases {
+        return Err("Release path escapes the deployment releases directory".to_string());
+    }
+
     let current = deploy_path.join("current");
     let previous = fs::read_link(&current).ok();
-    if current.exists() && previous.is_none() {
-        return Err("Deployment current path exists but is not a symbolic link".to_string());
+    match fs::symlink_metadata(&current) {
+        Ok(metadata) if !metadata.file_type().is_symlink() => {
+            return Err("Deployment current path exists but is not a symbolic link".to_string());
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("Failed to inspect current release link: {error}")),
+    }
+    if let Some(previous_path) = previous.as_deref() {
+        let candidate = if previous_path.is_absolute() {
+            previous_path.to_path_buf()
+        } else {
+            deploy_path.join(previous_path)
+        };
+        let resolved = fs::canonicalize(&candidate)
+            .map_err(|e| format!("Current release link is invalid: {e}"))?;
+        if !resolved.starts_with(&releases) || resolved == releases {
+            return Err(
+                "Current release link escapes the deployment releases directory".to_string(),
+            );
+        }
     }
     let next = deploy_path.join(format!(".current-{}", Uuid::new_v4()));
     symlink(release_path, &next).map_err(|e| format!("Failed to create release link: {e}"))?;
@@ -646,9 +888,7 @@ fn restart_or_reload(req: &DeploymentRequest) -> Result<(), String> {
     #[cfg(unix)]
     {
         if req.project_type == "static" && req.service_name.to_lowercase().starts_with("nginx") {
-            let test = Command::new("nginx")
-                .arg("-t")
-                .output()
+            let test = run_tool(Command::new("nginx").arg("-t"), SERVICE_TOOL_TIMEOUT)
                 .map_err(|e| format!("Failed to validate nginx config: {e}"))?;
             if !test.status.success() {
                 return Err(format!(
@@ -662,10 +902,11 @@ fn restart_or_reload(req: &DeploymentRequest) -> Result<(), String> {
         } else {
             "restart"
         };
-        let output = Command::new("systemctl")
-            .args([action, "--", &req.service_name])
-            .output()
-            .map_err(|e| format!("Failed to run systemctl: {e}"))?;
+        let output = run_tool(
+            Command::new("systemctl").args([action, "--", &req.service_name]),
+            SERVICE_TOOL_TIMEOUT,
+        )
+        .map_err(|e| format!("Failed to run systemctl: {e}"))?;
         if !output.status.success() {
             return Err(format!(
                 "systemctl {action} failed: {}",
@@ -691,12 +932,11 @@ fn check_health(url: &str) -> Result<(), String> {
         return Ok(());
     }
     for attempt in 1..=10 {
-        let status = Command::new("curl")
-            .args(["-fsS", "--connect-timeout", "3", "--max-time", "10", url])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-        if status.is_ok_and(|s| s.success()) {
+        let status = run_tool(
+            Command::new("curl").args(["-fsS", "--connect-timeout", "3", "--max-time", "10", url]),
+            Duration::from_secs(12),
+        );
+        if status.is_ok_and(|output| output.status.success()) {
             return Ok(());
         }
         if attempt < 10 {
@@ -792,27 +1032,90 @@ mod tests {
 
     #[test]
     fn deploy_path_must_be_below_an_allowed_root() {
-        #[cfg(unix)]
-        let (root, target, sibling) = (
-            "/opt/nanolink/apps",
-            "/opt/nanolink/apps/demo",
-            "/opt/nanolink/apps2/demo",
-        );
-        #[cfg(windows)]
-        let (root, target, sibling) = (
-            r"C:\opt\nanolink\apps",
-            r"C:\opt\nanolink\apps\demo",
-            r"C:\opt\nanolink\apps2\demo",
-        );
+        let base = std::env::temp_dir().join(format!("nanolink-deploy-test-{}", Uuid::new_v4()));
+        let root = base.join("apps");
+        let target = root.join("demo");
+        let sibling = base.join("apps2").join("demo");
+        fs::create_dir_all(&root).unwrap();
         let cfg = DeploymentsConfig {
             enabled: true,
-            allowed_roots: vec![root.to_string()],
+            allowed_roots: vec![root.to_string_lossy().into_owned()],
             max_artifact_size: 1024,
             timeout_seconds: 30,
         };
-        assert!(validate_deploy_path(&cfg, Path::new(target)).is_ok());
-        assert!(validate_deploy_path(&cfg, Path::new(sibling)).is_err());
-        assert!(validate_deploy_path(&cfg, Path::new(root)).is_err());
+        assert!(validate_deploy_path(&cfg, &target).is_ok());
+        assert!(validate_deploy_path(&cfg, &sibling).is_err());
+        assert!(validate_deploy_path(&cfg, &root).is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deploy_path_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join(format!("nanolink-deploy-link-{}", Uuid::new_v4()));
+        let root = base.join("apps");
+        let outside = base.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        symlink(&outside, root.join("linked")).unwrap();
+        let cfg = DeploymentsConfig {
+            enabled: true,
+            allowed_roots: vec![root.to_string_lossy().into_owned()],
+            max_artifact_size: 1024,
+            timeout_seconds: 30,
+        };
+
+        let error = validate_deploy_path(&cfg, &root.join("linked/app")).unwrap_err();
+        assert!(error.contains("symbolic link"));
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn extracted_tree_enforces_expanded_size_limit() {
+        let root = std::env::temp_dir().join(format!("nanolink-expand-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("large.bin"), vec![0u8; 32]).unwrap();
+
+        assert!(validate_extracted_tree(&root, 4).is_ok());
+        assert!(validate_extracted_tree(&root, 3).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn deployment_extract_flags_are_backward_compatible() {
+        let params = HashMap::new();
+        assert!(extract_artifact_flag(&params).unwrap());
+        assert!(!optional_bool(&params, "strip_top_level", false).unwrap());
+
+        let legacy = HashMap::from([("extract".to_string(), "false".to_string())]);
+        assert!(!extract_artifact_flag(&legacy).unwrap());
+
+        let conflicting = HashMap::from([
+            ("extract".to_string(), "false".to_string()),
+            ("extract_artifact".to_string(), "true".to_string()),
+        ]);
+        assert!(extract_artifact_flag(&conflicting).unwrap());
+
+        let invalid_canonical = HashMap::from([
+            ("extract".to_string(), "true".to_string()),
+            ("extract_artifact".to_string(), "invalid".to_string()),
+        ]);
+        assert!(extract_artifact_flag(&invalid_canonical).is_err());
+    }
+
+    #[test]
+    fn strips_exactly_one_top_level_directory() {
+        let stage = std::env::temp_dir().join(format!("nanolink-strip-test-{}", Uuid::new_v4()));
+        let top = stage.join("dist");
+        fs::create_dir_all(&top).unwrap();
+        fs::write(top.join("index.html"), b"ok").unwrap();
+
+        strip_single_top_level(&stage).unwrap();
+        assert_eq!(fs::read(stage.join("index.html")).unwrap(), b"ok");
+        assert!(!top.exists());
+        fs::remove_dir_all(stage).unwrap();
     }
 
     #[test]

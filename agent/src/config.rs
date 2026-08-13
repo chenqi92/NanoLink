@@ -118,7 +118,7 @@ pub struct UpdateConfig {
     #[serde(default)]
     pub custom_url: Option<String>,
 
-    /// Ed25519 public key (hex or base64, 32 bytes) used to verify the signature
+    /// Ed25519 public key (hex, 32 bytes) used to verify the signature
     /// of a downloaded binary before it replaces the running agent. When set,
     /// applying an update REQUIRES a valid detached signature over the binary;
     /// this is the only integrity root a malicious/compromised server cannot
@@ -1293,8 +1293,23 @@ impl Config {
             }
         }
 
-        if self.shell.enabled && self.shell.super_token.is_none() {
-            anyhow::bail!("Shell is enabled but super_token is not set");
+        if self.shell.enabled {
+            if self
+                .shell
+                .super_token
+                .as_deref()
+                .is_none_or(|token| token.trim().is_empty())
+            {
+                anyhow::bail!("Shell is enabled but super_token is not set");
+            }
+            if !(1..=3600).contains(&self.shell.timeout_seconds) {
+                anyhow::bail!("Shell timeout_seconds must be between 1 and 3600");
+            }
+            if self.shell.whitelist.is_empty() {
+                anyhow::bail!(
+                    "Shell is enabled but whitelist is empty; configure explicit L3 command patterns"
+                );
+            }
         }
 
         if self.deployments.enabled {

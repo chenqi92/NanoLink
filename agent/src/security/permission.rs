@@ -132,10 +132,7 @@ impl PermissionChecker {
 
         // P0-2: 检测危险模式 (正则表达式)
         if let Some(pattern) = Self::contains_dangerous_pattern(&normalized) {
-            warn!(
-                "[SECURITY] Dangerous pattern detected in command: {}",
-                command
-            );
+            warn!("[SECURITY] Dangerous shell pattern detected: {}", pattern);
             return Err(format!(
                 "Command blocked: dangerous pattern detected ({pattern})"
             ));
@@ -143,7 +140,7 @@ impl PermissionChecker {
 
         // P0-2: 检测命令注入
         if Self::detect_command_injection(command) {
-            warn!("[SECURITY] Command injection attempt: {}", command);
+            warn!("[SECURITY] Shell command injection pattern detected");
             return Err("Command blocked: potential command injection detected".to_string());
         }
 

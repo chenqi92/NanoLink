@@ -3,6 +3,7 @@ package grpc
 import (
 	"errors"
 	"testing"
+	"time"
 
 	pb "github.com/chenqi92/NanoLink/apps/server/internal/proto"
 	"go.uber.org/zap"
@@ -34,6 +35,22 @@ func TestCommandResultRequiresOwningUser(t *testing.T) {
 	_, ok, err = s.GetCommandResultForUser("cmd-1", "agent-2", 7, false)
 	if !ok || !errors.Is(err, ErrCommandResultAccessDenied) {
 		t.Fatalf("wrong agent should be denied: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestCommandResultReplayIsDetectedPerAgent(t *testing.T) {
+	s := NewServer(nil, nil, nil, nil, zap.NewNop().Sugar())
+	s.commandResults.Store("cmd-replay", &commandResultEntry{
+		result:  &pb.CommandResult{CommandId: "cmd-replay", Success: true},
+		at:      time.Now(),
+		agentID: "agent-a",
+	})
+
+	if !s.commandResultAlreadyStored("agent-a", "cmd-replay") {
+		t.Fatal("same-agent replay should be detected")
+	}
+	if s.commandResultAlreadyStored("agent-b", "cmd-replay") {
+		t.Fatal("result from another agent must not be treated as a replay")
 	}
 }
 
