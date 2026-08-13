@@ -157,5 +157,5 @@ temp/
 website/
 
 *.db
-design
+/design/
 docs
