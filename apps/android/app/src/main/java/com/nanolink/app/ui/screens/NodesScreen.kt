@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.FilterList
@@ -32,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,14 +52,19 @@ import kotlin.math.roundToInt
 @Composable
 fun NodesScreen(viewModel: AppViewModel, onNavigateToDetail: (Agent) -> Unit, modifier: Modifier = Modifier) {
     val t = nano
-    val agents by viewModel.agents.collectAsStateWithLifecycle()
+    val allAgents by viewModel.agents.collectAsStateWithLifecycle()
     val metrics by viewModel.metrics.collectAsStateWithLifecycle()
+    val activeServerId by viewModel.activeServerId.collectAsStateWithLifecycle()
+    val agents = allAgents.filter { it.serverId == activeServerId }
 
     var searchQuery by remember { mutableStateOf("") }
+    var showSearch by remember { mutableStateOf(false) }
     var filterOnline by remember { mutableStateOf(false) }
 
     val filtered = agents.filter { agent ->
-        (searchQuery.isEmpty() || agent.hostname.contains(searchQuery, ignoreCase = true)) &&
+        (searchQuery.isBlank() || listOf(agent.hostname, agent.os, agent.arch, agent.id).any {
+            it.contains(searchQuery.trim(), ignoreCase = true)
+        }) &&
         (!filterOnline || agent.isOnline)
     }.sortedWith(compareByDescending<Agent> { it.isOnline }.thenBy { it.hostname })
 
@@ -65,8 +72,8 @@ fun NodesScreen(viewModel: AppViewModel, onNavigateToDetail: (Agent) -> Unit, mo
         Box(modifier = modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
             NanoEmptyState(
                 icon = Icons.Outlined.Computer,
-                title = tr("nodes.noNodesYet"),
-                detail = tr("nodes.addFirstNode"),
+                title = tr("agents.noNodes"),
+                detail = tr("home.noAgentsDesc"),
             )
         }
         return
@@ -81,7 +88,7 @@ fun NodesScreen(viewModel: AppViewModel, onNavigateToDetail: (Agent) -> Unit, mo
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                tr("nodes.title"),
+                tr("agents.title"),
                 fontSize = if (t.isIOS) 32.sp else 28.sp,
                 fontWeight = if (t.isIOS) FontWeight.Bold else FontWeight.SemiBold,
                 letterSpacing = if (t.isIOS) (-0.6).sp else 0.sp,
@@ -98,7 +105,7 @@ fun NodesScreen(viewModel: AppViewModel, onNavigateToDetail: (Agent) -> Unit, mo
             ) {
                 Icon(
                     Icons.Outlined.FilterList,
-                    contentDescription = null,
+                    contentDescription = tr("agents.filter"),
                     tint = if (filterOnline) t.accent else t.fg3,
                     modifier = Modifier.size(16.dp),
                 )
@@ -108,12 +115,44 @@ fun NodesScreen(viewModel: AppViewModel, onNavigateToDetail: (Agent) -> Unit, mo
                 modifier = Modifier
                     .size(34.dp)
                     .clip(CircleShape)
-                    .background(t.card)
-                    .clickable { /* Search */ },
+                    .background(if (showSearch) t.accent.copy(alpha = 0.15f) else t.card)
+                    .clickable {
+                        showSearch = !showSearch
+                        if (!showSearch) searchQuery = ""
+                    },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Outlined.Search, contentDescription = null, tint = t.fg3, modifier = Modifier.size(16.dp))
+                Icon(
+                    Icons.Outlined.Search,
+                    contentDescription = tr("agents.searchHint"),
+                    tint = if (showSearch) t.accent else t.fg3,
+                    modifier = Modifier.size(16.dp),
+                )
             }
+        }
+
+        if (showSearch) {
+            BasicTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, color = t.fg),
+                cursorBrush = SolidColor(t.accent),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(t.cardRadius))
+                    .background(t.card)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (searchQuery.isEmpty()) {
+                            Text(tr("agents.searchHint"), fontSize = 14.sp, color = t.fg4)
+                        }
+                        innerTextField()
+                    }
+                },
+            )
         }
 
         // Stats summary
@@ -122,19 +161,19 @@ fun NodesScreen(viewModel: AppViewModel, onNavigateToDetail: (Agent) -> Unit, mo
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             StatChip(
-                label = tr("nodes.online"),
+                label = tr("common.online"),
                 value = agents.count { it.isOnline }.toString(),
                 tone = "ok",
                 modifier = Modifier.weight(1f),
             )
             StatChip(
-                label = tr("nodes.offline"),
+                label = tr("common.offline"),
                 value = agents.count { !it.isOnline }.toString(),
                 tone = if (agents.any { !it.isOnline }) "warn" else null,
                 modifier = Modifier.weight(1f),
             )
             StatChip(
-                label = tr("nodes.total"),
+                label = tr("agents.total"),
                 value = agents.size.toString(),
                 tone = null,
                 modifier = Modifier.weight(1f),
@@ -154,7 +193,7 @@ fun NodesScreen(viewModel: AppViewModel, onNavigateToDetail: (Agent) -> Unit, mo
                             modifier = Modifier.fillMaxWidth().padding(vertical = 22.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(tr("nodes.noResults"), fontSize = 13.sp, color = t.fg4)
+                            Text(tr("agents.noMatch"), fontSize = 13.sp, color = t.fg4)
                         }
                     }
                 }

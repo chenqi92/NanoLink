@@ -206,12 +206,12 @@ func main() {
 
 		// Protected routes (require authentication)
 		protected := api.Group("")
-		protected.Use(handler.AuthMiddleware(authService))
+		protected.Use(handler.AuthMiddlewareWithDevices(authService, deviceService))
 		{
 			// Current user
 			protected.GET("/auth/me", authHandler.GetMe)
-			protected.POST("/auth/logout", authHandler.Logout)
-			protected.PUT("/auth/password", authHandler.UpdatePassword)
+			protected.POST("/auth/logout", handler.RequireAccountSession(), authHandler.Logout)
+			protected.PUT("/auth/password", handler.RequireAccountSession(), authHandler.UpdatePassword)
 
 			// Agent routes (with permission filtering)
 			protected.GET("/agents", h.GetAgents)
@@ -246,11 +246,11 @@ func main() {
 
 			// Device management routes (logged-in users can manage their own devices)
 			deviceHandler := handler.NewDeviceHandler(deviceService, sugar, "NanoOps")
-			protected.POST("/devices/token", deviceHandler.GenerateToken)
-			protected.GET("/devices", deviceHandler.ListDevices)
-			protected.GET("/devices/:id", deviceHandler.GetDevice)
-			protected.PATCH("/devices/:id", deviceHandler.UpdateDevice)
-			protected.DELETE("/devices/:id", deviceHandler.DeleteDevice)
+			protected.POST("/devices/token", handler.RequireAccountSession(), deviceHandler.GenerateToken)
+			protected.GET("/devices", handler.RequireAccountSession(), deviceHandler.ListDevices)
+			protected.GET("/devices/:id", handler.RequireAccountSession(), deviceHandler.GetDevice)
+			protected.PATCH("/devices/:id", handler.RequireAccountSession(), deviceHandler.UpdateDevice)
+			protected.DELETE("/devices/:id", handler.RequireAccountSession(), deviceHandler.DeleteDevice)
 
 			// Configuration generator routes are registered under the super-admin group below.
 			configGen := handler.NewConfigGenHandler(cfg, sugar, agentTokenService)
@@ -259,8 +259,8 @@ func main() {
 			// channel and silence configuration is super-admin-only below.
 			alertHandler := handler.NewAlertHandler(alertService, permService, sugar)
 			protected.GET("/alerts", alertHandler.ListAlerts)
-			protected.POST("/alerts/ack/:id", alertHandler.AckAlert)
-			protected.POST("/alerts/ack-all", alertHandler.AckAll)
+			protected.POST("/alerts/ack/:id", handler.RequireSessionPermission(database.PermissionBasicWrite), alertHandler.AckAlert)
+			protected.POST("/alerts/ack-all", handler.RequireSessionPermission(database.PermissionBasicWrite), alertHandler.AckAll)
 
 			// Audit log (read-only) for authenticated users. Mobile device
 			// sessions need the recent activity feed without super-admin rights;
@@ -442,7 +442,7 @@ func main() {
 	}
 	mcpServer := mcp.NewServer(agentService, metricsService, sugar, mcpOptions...)
 	mcpOverviewAPI := router.Group("/api")
-	mcpOverviewAPI.Use(handler.LimitRequestBody(cfg.Server.MaxRequestBodyBytes), handler.AuthMiddleware(authService))
+	mcpOverviewAPI.Use(handler.LimitRequestBody(cfg.Server.MaxRequestBodyBytes), handler.AuthMiddlewareWithDevices(authService, deviceService))
 	mcpOverviewAPI.GET("/mcp/overview", handler.NewMCPStatusHandler(mcpServer).Overview)
 
 	// Wire gRPC server and audit service into the main handler so /api/agents/:id/command
@@ -461,7 +461,7 @@ func main() {
 	router.GET("/api/deployment-artifacts/:taskId", deploymentHandler.DownloadArtifact)
 	deploymentAPI := router.Group("/api")
 	deploymentAPI.Use(handler.LimitRequestBody(cfg.Server.MaxRequestBodyBytes))
-	deploymentAPI.Use(handler.AuthMiddleware(authService), handler.RequireSuperAdmin())
+	deploymentAPI.Use(handler.AuthMiddlewareWithDevices(authService, deviceService), handler.RequireSuperAdmin())
 	{
 		deploymentAPI.GET("/deployment-projects", deploymentHandler.ListProjects)
 		deploymentAPI.GET("/deployment-projects/:id", deploymentHandler.GetProject)
@@ -472,7 +472,7 @@ func main() {
 		deploymentAPI.GET("/deployment-tasks/:taskId", deploymentHandler.GetTask)
 	}
 	deploymentUploadAPI := router.Group("/api")
-	deploymentUploadAPI.Use(handler.AuthMiddleware(authService), handler.RequireSuperAdmin())
+	deploymentUploadAPI.Use(handler.AuthMiddlewareWithDevices(authService, deviceService), handler.RequireSuperAdmin())
 	deploymentUploadAPI.POST("/deployment-projects/:id/releases", deploymentHandler.UploadRelease)
 
 	// Register protected dashboard and shell WebSocket handlers (after gRPC server is available)
@@ -493,7 +493,7 @@ func main() {
 		return len(instances)
 	})
 	wsProtected := router.Group("/ws")
-	wsProtected.Use(handler.AuthMiddleware(authService))
+	wsProtected.Use(handler.AuthMiddlewareWithDevices(authService, deviceService))
 	{
 		wsProtected.GET("/dashboard", dashboardWSHandler.HandleDashboardWS)
 		wsProtected.GET("/shell/:id",
@@ -504,7 +504,7 @@ func main() {
 	// Register data request API (after gRPC server is available)
 	dataRequestHandler := handler.NewDataRequestHandler(grpcServer, sugar)
 	dataRequestApi := router.Group("/api")
-	dataRequestApi.Use(handler.AuthMiddleware(authService))
+	dataRequestApi.Use(handler.AuthMiddlewareWithDevices(authService, deviceService))
 	{
 		// Data request endpoints - request specific data from agents on demand
 		dataRequestApi.POST("/agents/:id/data-request",
@@ -518,7 +518,7 @@ func main() {
 	// Register log query API (after gRPC server is available)
 	logQueryHandler := handler.NewLogQueryHandler(grpcServer, auditService, sugar)
 	logQueryApi := router.Group("/api")
-	logQueryApi.Use(handler.AuthMiddleware(authService))
+	logQueryApi.Use(handler.AuthMiddlewareWithDevices(authService, deviceService))
 	{
 		// Log query endpoints - query logs from agents
 		// SERVICE_LOGS: Level 0+ (all users can query, output sanitized)

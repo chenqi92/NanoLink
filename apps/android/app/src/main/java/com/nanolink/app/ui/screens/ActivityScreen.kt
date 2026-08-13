@@ -1,6 +1,7 @@
 package com.nanolink.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -62,14 +64,21 @@ fun ActivityScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     val t = nano
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     val activity by viewModel.activity.collectAsStateWithLifecycle()
+    val activeServerId by viewModel.activeServerId.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    val allAlerts = alerts.values.flatten().sortedByDescending {
+    val allAlerts = activeServerId?.let { alerts[it] }.orEmpty().sortedByDescending {
         runCatching { SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).parse(it.since)?.time }.getOrNull() ?: 0L
     }
     val unackedAlerts = allAlerts.filter { !it.acked }
-    val allActivity = activity.values.flatten().sortedByDescending { it.atMillis }
+    val allActivity = activeServerId?.let { activity[it] }.orEmpty().sortedByDescending { it.atMillis }
+
+    LaunchedEffect(activeServerId) {
+        val serverId = activeServerId ?: return@LaunchedEffect
+        viewModel.fetchServerAlerts(serverId)
+        viewModel.fetchRecentActivity(serverId)
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         // Header
@@ -222,6 +231,7 @@ private fun AlertCard(alert: AlertInstance, onAcknowledge: () -> Unit) {
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(t.accent.copy(alpha = 0.12f))
+                            .clickable(onClick = onAcknowledge)
                             .padding(horizontal = 10.dp, vertical = 4.dp),
                     ) {
                         Text(

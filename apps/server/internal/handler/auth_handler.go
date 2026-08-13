@@ -173,7 +173,7 @@ func (h *AuthHandler) GetMe(c *gin.Context) {
 		ID:           user.ID,
 		Username:     user.Username,
 		Email:        user.Email,
-		IsSuperAdmin: user.IsSuperAdmin,
+		IsSuperAdmin: user.IsSuperAdmin && !IsDeviceSession(c),
 	})
 }
 

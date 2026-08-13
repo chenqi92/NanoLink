@@ -26,10 +26,12 @@ import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,11 +44,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavHostController
 import com.nanolink.app.data.model.ServerConnection
-import com.nanolink.app.data.storage.PreferencesStore
+import com.nanolink.app.state.AppThemeMode
 import com.nanolink.app.state.AppViewModel
-import com.nanolink.app.state.ThemeViewModel
 import com.nanolink.app.ui.design.NanoCard
 import com.nanolink.app.ui.design.NanoListRow
 import com.nanolink.app.ui.design.NanoMonoFamily
@@ -57,14 +57,14 @@ import com.nanolink.app.ui.tr
 @Composable
 fun SettingsScreen(
     viewModel: AppViewModel,
-    preferences: PreferencesStore,
-    navController: NavHostController,
-    modifier: Modifier = Modifier
+    onAddServer: () -> Unit,
+    onOpenServer: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val t = nano
     val servers by viewModel.servers.collectAsStateWithLifecycle()
-    val themeViewModel = remember { ThemeViewModel(preferences) }
-    val themeState by themeViewModel.state.collectAsStateWithLifecycle()
+    val themeState by viewModel.themeState.collectAsStateWithLifecycle()
+    val currentLanguage by viewModel.currentLanguage.collectAsStateWithLifecycle()
 
     var showThemePicker by remember { mutableStateOf(false) }
     var showLanguagePicker by remember { mutableStateOf(false) }
@@ -90,7 +90,7 @@ fun SettingsScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    tr("settings.servers"),
+                    tr("settings.servers", "n" to servers.size),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = t.fg4,
@@ -99,19 +99,23 @@ fun SettingsScreen(
                 NanoCard {
                     Column {
                         servers.forEachIndexed { index, server ->
-                            ServerRow(server, divider = index < servers.size)
+                            ServerRow(
+                                server = server,
+                                divider = index < servers.size,
+                                onClick = { onOpenServer(server.id) },
+                            )
                         }
                         NanoListRow(divider = false) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { /* Navigate to add server */ }
+                                    .clickable(onClick = onAddServer)
                                     .padding(vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Icon(Icons.Outlined.Add, contentDescription = null, tint = t.accent, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(12.dp))
-                                Text(tr("settings.addServer"), fontSize = 15.sp, color = t.accent)
+                                Text(tr("settings.addNewServer"), fontSize = 15.sp, color = t.accent)
                             }
                         }
                     }
@@ -145,9 +149,9 @@ fun SettingsScreen(
                                     Text(tr("settings.theme"), fontSize = 15.sp, color = t.fg)
                                     Text(
                                         when (themeState.mode) {
-                                            com.nanolink.app.state.AppThemeMode.LIGHT -> tr("settings.light")
-                                            com.nanolink.app.state.AppThemeMode.DARK -> tr("settings.dark")
-                                            else -> tr("settings.system")
+                                            AppThemeMode.LIGHT -> tr("theme.light")
+                                            AppThemeMode.DARK -> tr("theme.dark")
+                                            else -> tr("theme.system")
                                         },
                                         fontSize = 12.sp,
                                         color = t.fg4,
@@ -169,7 +173,7 @@ fun SettingsScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(tr("settings.language"), fontSize = 15.sp, color = t.fg)
                                     Text(
-                                        "English",
+                                        if (currentLanguage == "zh") tr("language.chinese") else tr("language.english"),
                                         fontSize = 12.sp,
                                         color = t.fg4,
                                     )
@@ -188,7 +192,7 @@ fun SettingsScreen(
                                 }
                                 Switch(
                                     checked = themeState.compact,
-                                    onCheckedChange = { themeViewModel.setCompact(it) },
+                                    onCheckedChange = viewModel::setCompactMode,
                                     colors = SwitchDefaults.colors(
                                         checkedThumbColor = t.bg,
                                         checkedTrackColor = t.accent,
@@ -229,7 +233,7 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(tr("settings.source"), fontSize = 15.sp, color = t.fg, modifier = Modifier.weight(1f))
+                                Text(tr("settings.sourceCodeLabel"), fontSize = 15.sp, color = t.fg, modifier = Modifier.weight(1f))
                                 Text("github.com/chenqi92/NanoLink", fontSize = 11.sp, fontFamily = NanoMonoFamily, color = t.accent)
                             }
                         }
@@ -240,16 +244,81 @@ fun SettingsScreen(
 
         item { Spacer(Modifier.height(32.dp)) }
     }
+
+    if (showThemePicker) {
+        AlertDialog(
+            onDismissRequest = { showThemePicker = false },
+            title = { Text(tr("settings.theme")) },
+            text = {
+                Column {
+                    ThemeChoice(tr("theme.light"), themeState.mode == AppThemeMode.LIGHT) {
+                        viewModel.setThemeMode(AppThemeMode.LIGHT)
+                        showThemePicker = false
+                    }
+                    ThemeChoice(tr("theme.dark"), themeState.mode == AppThemeMode.DARK) {
+                        viewModel.setThemeMode(AppThemeMode.DARK)
+                        showThemePicker = false
+                    }
+                    ThemeChoice(tr("theme.system"), themeState.mode == AppThemeMode.SYSTEM) {
+                        viewModel.setThemeMode(AppThemeMode.SYSTEM)
+                        showThemePicker = false
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showThemePicker = false }) { Text(tr("common.cancel")) }
+            },
+        )
+    }
+
+    if (showLanguagePicker) {
+        AlertDialog(
+            onDismissRequest = { showLanguagePicker = false },
+            title = { Text(tr("settings.language")) },
+            text = {
+                Column {
+                    ThemeChoice(tr("language.english"), currentLanguage == "en") {
+                        viewModel.setLanguage("en")
+                        showLanguagePicker = false
+                    }
+                    ThemeChoice(tr("language.chinese"), currentLanguage == "zh") {
+                        viewModel.setLanguage("zh")
+                        showLanguagePicker = false
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showLanguagePicker = false }) { Text(tr("common.cancel")) }
+            },
+        )
+    }
 }
 
 @Composable
-private fun ServerRow(server: ServerConnection, divider: Boolean) {
+private fun ThemeChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    val t = nano
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f), color = t.fg)
+        if (selected) Icon(Icons.Outlined.Check, contentDescription = null, tint = t.accent)
+    }
+}
+
+@Composable
+private fun ServerRow(server: ServerConnection, divider: Boolean, onClick: () -> Unit) {
     val t = nano
     NanoListRow(divider = divider) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { /* Navigate to server detail */ }
+                .clickable(onClick = onClick)
                 .padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

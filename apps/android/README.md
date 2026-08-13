@@ -6,8 +6,8 @@ Native Android client for NanoLink, built with Jetpack Compose.
 
 - Android Studio Ladybug or later
 - Android SDK 26+ (API level 26, Android 8.0)
-- Kotlin 2.1+
-- Gradle 8.11+
+- Kotlin 2.2+
+- Gradle 8.14+
 
 ## Project Structure
 
@@ -28,7 +28,7 @@ app/src/main/
 │   └── ui/
 │       ├── NanoShell.kt             # Five-tab navigation shell
 │       ├── design/                  # Design system (tokens, components, charts)
-│       └── screens/                 # Dashboard, Nodes, Terminal, Activity, Settings
+│       └── screens/                 # Dashboard, server setup/detail, nodes/detail, terminal, activity, settings
 ├── res/
 │   ├── values/
 │   │   ├── strings.xml              # App name and minimal static strings
@@ -47,7 +47,7 @@ app/src/main/
 - **MVVM**: `AppViewModel` holds all application state and orchestrates services
 - **StateFlow**: Reactive state updates via Kotlin Flow
 - **Jetpack Compose**: Declarative UI with Material 3 components
-- **Retrofit + OkHttp**: REST API and WebSocket communication
+- **OkHttp**: REST API and WebSocket communication
 - **EncryptedSharedPreferences**: Secure token storage
 - **AndroidX DataStore**: User preferences
 - **Navigation Compose**: Type-safe screen navigation
@@ -89,24 +89,22 @@ The app connects to NanoLink servers via HTTP/HTTPS + WebSocket. Network securit
 - ✅ Material 3 NavigationBar + iOS-style custom tab bar (theme-aware)
 
 ### Screens
-- 🚧 Dashboard (skeleton)
-- 🚧 Nodes (skeleton)
-- 🚧 Terminal (skeleton)
-- 🚧 Activity (skeleton)
-- 🚧 Settings (skeleton)
+- ✅ Dashboard with active-server filtering, KPI tiles, node status, and activity
+- ✅ Account, device-token, and pairing-code server setup
+- ✅ Server switching, details, and removal
+- ✅ Node search, filtering, details, metrics, storage, and network data
+- ✅ Permission-aware live WebSocket terminal
+- ✅ Alerts, audit activity, and acknowledgment
+- ✅ Theme, language, compact mode, and server settings
 
 ## Next Steps
 
-1. Implement Dashboard screen (KPI tiles, sparklines, agent summary)
-2. Implement Nodes screen (agent list, detail view, command actions)
-3. Implement Terminal screen (WebSocket shell, command history, themes)
-4. Implement Activity screen (alerts list, audit log, acknowledgment)
-5. Implement Settings screen (server management, theme/language, preferences)
-6. Add QR scanning (CameraX + ML Kit Barcode)
-7. Add QR generation (ZXing)
-8. Add authentication screens (add server, pairing, reauth)
-9. Add permission-aware UI (hide/disable features based on agent level)
-10. Add pull-to-refresh and empty states
+1. Add QR scanning (CameraX + ML Kit Barcode)
+2. Add QR generation (ZXing)
+3. Add metrics history charts and pull-to-refresh
+4. Add re-authentication UI for expired account sessions
+5. Add terminal command history, themes, and responsive resize measurement
+6. Add biometric app lock and broader Compose UI tests
 
 ## License
 

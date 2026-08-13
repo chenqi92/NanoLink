@@ -14,17 +14,15 @@ class NotificationService(private val context: Context) {
     private val manager = context.getSystemService(NotificationManager::class.java)
 
     init {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ALERTS,
-                    context.getString(R.string.notification_channel_alerts),
-                    NotificationManager.IMPORTANCE_DEFAULT,
-                ).apply {
-                    description = context.getString(R.string.notification_channel_alerts_description)
-                },
-            )
-        }
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ALERTS,
+                context.getString(R.string.notification_channel_alerts),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = context.getString(R.string.notification_channel_alerts_description)
+            },
+        )
     }
 
     fun show(key: String, title: String, body: String) {

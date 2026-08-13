@@ -40,3 +40,19 @@ func TestCapPermissionLevelUsesLowerBoundary(t *testing.T) {
 		})
 	}
 }
+
+func TestDashboardDevicePermissionCapsSuperAdminOwner(t *testing.T) {
+	handler := &DashboardWSHandler{}
+	client := &dashboardClient{
+		isSuperAdmin:  true,
+		permissionCap: 0,
+	}
+	payload := handler.agentToMapForClient(client, &service.Agent{
+		ID:              "agent-l3",
+		PermissionLevel: 3,
+	})
+
+	if got := payload["permissionLevel"]; got != 0 {
+		t.Fatalf("permissionLevel = %#v, want device cap 0", got)
+	}
+}

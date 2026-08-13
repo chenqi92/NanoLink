@@ -71,13 +71,21 @@ import com.nanolink.app.ui.tr
 import kotlin.math.roundToInt
 
 @Composable
-fun DashboardScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
+fun DashboardScreen(
+    viewModel: AppViewModel,
+    onAddServer: () -> Unit,
+    onNavigateToNodes: () -> Unit,
+    onNavigateToSettings: () -> Unit,
+    onOpenServer: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val t = nano
     val servers by viewModel.servers.collectAsStateWithLifecycle()
-    val agents by viewModel.agents.collectAsStateWithLifecycle()
+    val allAgents by viewModel.agents.collectAsStateWithLifecycle()
     val metrics by viewModel.metrics.collectAsStateWithLifecycle()
     val activity by viewModel.activity.collectAsStateWithLifecycle()
     val activeServerId by viewModel.activeServerId.collectAsStateWithLifecycle()
+    val agents = allAgents.filter { it.serverId == activeServerId }
 
     val online = agents.filter { it.isOnline }
     val offline = agents.filter { !it.isOnline }
@@ -94,7 +102,11 @@ fun DashboardScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         metrics[agent.id]?.disks?.any { it.usagePercent > 85 } == true
     }
     val topCpu = online.sortedByDescending { metrics[it.id]?.cpuPercent ?: 0.0 }.take(4)
-    val recentActivity = activity.values.flatten().sortedByDescending { it.atMillis }.take(5)
+    val recentActivity = activeServerId
+        ?.let { activity[it] }
+        .orEmpty()
+        .sortedByDescending { it.atMillis }
+        .take(5)
 
     var cpuSpark by remember { mutableStateOf<List<Double>>(emptyList()) }
     var memSpark by remember { mutableStateOf<List<Double>>(emptyList()) }
@@ -123,13 +135,21 @@ fun DashboardScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             item {
-                DashboardHeader(servers.size, activeServerId)
+                DashboardHeader(
+                    onNavigateToSettings = onNavigateToSettings,
+                    onNavigateToNodes = onNavigateToNodes,
+                    onOpenServer = activeServerId?.let { id -> { onOpenServer(id) } },
+                )
                 Spacer(Modifier.height(12.dp))
             }
 
             if (servers.size > 1) {
                 item {
-                    ServerChips(servers.map { it.name }, activeServerId ?: "")
+                    ServerChips(
+                        servers = servers.map { it.id to it.name.ifBlank { it.url } },
+                        activeId = activeServerId,
+                        onSelect = viewModel::setActiveServer,
+                    )
                     Spacer(Modifier.height(12.dp))
                 }
             }
@@ -213,7 +233,7 @@ fun DashboardScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
         // Floating action button with gradient and shadow.
         FloatingActionButton(
-            onClick = { /* Navigate to add server */ },
+            onClick = onAddServer,
             containerColor = t.accent,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -226,7 +246,7 @@ fun DashboardScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             ) {
                 Icon(Icons.Outlined.Add, contentDescription = null, tint = t.onAccent)
                 Text(
-                    tr("dashboard.newNode"),
+                    tr("settings.addNewServer"),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = t.onAccent,
@@ -237,7 +257,11 @@ fun DashboardScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun DashboardHeader(serverCount: Int, activeServerId: String?) {
+private fun DashboardHeader(
+    onNavigateToSettings: () -> Unit,
+    onNavigateToNodes: () -> Unit,
+    onOpenServer: (() -> Unit)?,
+) {
     val t = nano
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = if (t.isIOS) 32.dp else 4.dp),
@@ -252,14 +276,34 @@ private fun DashboardHeader(serverCount: Int, activeServerId: String?) {
             color = t.fg,
         )
         Spacer(Modifier.weight(1f))
-        CircleButton(icon = Icons.Outlined.Settings, gradient = true) { /* Assistant */ }
-        CircleButton(icon = Icons.AutoMirrored.Outlined.List) { /* Agents */ }
-        CircleButton(icon = Icons.Outlined.Computer) { /* Server switch */ }
+        CircleButton(
+            icon = Icons.Outlined.Settings,
+            contentDescription = tr("settings.title"),
+            gradient = true,
+            onClick = onNavigateToSettings,
+        )
+        CircleButton(
+            icon = Icons.AutoMirrored.Outlined.List,
+            contentDescription = tr("agents.title"),
+            onClick = onNavigateToNodes,
+        )
+        if (onOpenServer != null) {
+            CircleButton(
+                icon = Icons.Outlined.Computer,
+                contentDescription = tr("serverSwitch.title"),
+                onClick = onOpenServer,
+            )
+        }
     }
 }
 
 @Composable
-private fun CircleButton(icon: ImageVector, gradient: Boolean = false, onClick: () -> Unit) {
+private fun CircleButton(
+    icon: ImageVector,
+    contentDescription: String,
+    gradient: Boolean = false,
+    onClick: () -> Unit,
+) {
     val t = nano
     Box(
         modifier = Modifier
@@ -277,7 +321,7 @@ private fun CircleButton(icon: ImageVector, gradient: Boolean = false, onClick: 
     ) {
         Icon(
             icon,
-            contentDescription = null,
+            contentDescription = contentDescription,
             tint = if (gradient) t.onAccent else t.accent,
             modifier = Modifier.size(16.dp),
         )
@@ -285,16 +329,20 @@ private fun CircleButton(icon: ImageVector, gradient: Boolean = false, onClick: 
 }
 
 @Composable
-private fun ServerChips(names: List<String>, activeId: String) {
+private fun ServerChips(
+    servers: List<Pair<String, String>>,
+    activeId: String?,
+    onSelect: (String) -> Unit,
+) {
     val t = nano
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(names) { name ->
-            val active = name.hashCode().toString() == activeId
+        items(servers, key = { it.first }) { (id, name) ->
+            val active = id == activeId
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(16.dp))
                     .background(if (active) t.accent.copy(alpha = 0.15f) else t.card2)
-                    .clickable { /* Switch server */ }
+                    .clickable { onSelect(id) }
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
                 Text(

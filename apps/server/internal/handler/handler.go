@@ -81,13 +81,14 @@ func (h *Handler) GetAgents(c *gin.Context) {
 	if h.permService == nil || (user != nil && user.IsSuperAdmin) {
 		result := make([]gin.H, 0, len(agents))
 		for _, agent := range agents {
+			effectivePermission := capPermissionForRequest(c, agent.PermissionLevel)
 			result = append(result, gin.H{
 				"id":              agent.ID,
 				"hostname":        agent.Hostname,
 				"os":              agent.OS,
 				"arch":            agent.Arch,
 				"version":         agent.Version,
-				"permissionLevel": agent.PermissionLevel,
+				"permissionLevel": effectivePermission,
 				"connectedAt":     agent.ConnectedAt,
 				"lastHeartbeat":   agent.LastHeartbeat,
 			})
@@ -132,13 +133,15 @@ func (h *Handler) GetAgents(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve agent permissions"})
 				return
 			}
+			effectivePermission := capPermissionLevel(permissionLevel, agent.PermissionLevel)
+			effectivePermission = capPermissionForRequest(c, effectivePermission)
 			result = append(result, gin.H{
 				"id":              agent.ID,
 				"hostname":        agent.Hostname,
 				"os":              agent.OS,
 				"arch":            agent.Arch,
 				"version":         agent.Version,
-				"permissionLevel": capPermissionLevel(permissionLevel, agent.PermissionLevel),
+				"permissionLevel": effectivePermission,
 				"connectedAt":     agent.ConnectedAt,
 				"lastHeartbeat":   agent.LastHeartbeat,
 			})
@@ -181,6 +184,7 @@ func (h *Handler) GetAgent(c *gin.Context) {
 	} else {
 		permissionLevel = capPermissionLevel(permissionLevel, agent.PermissionLevel)
 	}
+	permissionLevel = capPermissionForRequest(c, permissionLevel)
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":              agent.ID,
@@ -526,6 +530,13 @@ func (h *Handler) SendCommand(c *gin.Context) {
 	user := GetCurrentUser(c)
 	if user == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if deviceLevel, isDevice := GetCurrentDevicePermission(c); isDevice && deviceLevel < requiredLevel {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":         "insufficient device permissions",
+			"requiredLevel": database.PermissionLevelName(requiredLevel),
+		})
 		return
 	}
 	if !user.IsSuperAdmin {

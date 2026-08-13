@@ -1,25 +1,38 @@
 package com.nanolink.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,124 +43,249 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nanolink.app.data.model.Agent
+import com.nanolink.app.data.network.ShellSession
 import com.nanolink.app.state.AppViewModel
 import com.nanolink.app.ui.design.NanoEmptyState
 import com.nanolink.app.ui.design.NanoMonoFamily
+import com.nanolink.app.ui.design.NanoStatusDot
 import com.nanolink.app.ui.design.nano
 import com.nanolink.app.ui.tr
 
-data class ShellLine(val kind: ShellLineKind, val text: String)
-enum class ShellLineKind { SYS, INPUT, OUTPUT, ERROR }
-
 @Composable
-fun TerminalScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
+fun TerminalScreen(
+    viewModel: AppViewModel,
+    modifier: Modifier = Modifier,
+    initialAgentId: String? = null,
+    onBack: (() -> Unit)? = null,
+) {
     val t = nano
-    val agents by viewModel.agents.collectAsStateWithLifecycle()
+    val allAgents by viewModel.agents.collectAsStateWithLifecycle()
     val activeServerId by viewModel.activeServerId.collectAsStateWithLifecycle()
+    val activeAgents = allAgents.filter { it.serverId == activeServerId && it.isOnline }
+    val terminalAgents = activeAgents.filter { it.permissionLevel >= 3 }
+    val requestedAgent = initialAgentId?.let { id -> activeAgents.firstOrNull { it.id == id } }
 
-    val onlineAgents = agents.filter { it.isOnline }
-
-    if (activeServerId == null || onlineAgents.isEmpty()) {
-        Box(modifier = modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-            NanoEmptyState(
-                icon = Icons.Outlined.Terminal,
-                title = tr("terminal.noAgents"),
-                detail = tr("terminal.noAgentsDetail"),
-            )
-        }
-        return
+    var selectedAgentId by remember(activeServerId, initialAgentId) {
+        mutableStateOf(initialAgentId)
     }
-
-    val selectedAgent = remember(onlineAgents) { onlineAgents.firstOrNull() }
-    var lines by remember { mutableStateOf<List<ShellLine>>(emptyList()) }
-    var input by remember { mutableStateOf("") }
-    var status by remember { mutableStateOf("connecting") }
-
-    val listState = rememberLazyListState()
-
-    LaunchedEffect(selectedAgent) {
-        if (selectedAgent != null) {
-            lines = listOf(
-                ShellLine(ShellLineKind.SYS, "→ Connecting to ${selectedAgent.hostname}..."),
-                ShellLine(ShellLineKind.SYS, "✓ Console authenticated (level ${selectedAgent.permissionLevel})"),
-            )
-            status = "connected"
-        }
-    }
-
-    LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) {
-            listState.animateScrollToItem(lines.size - 1)
+    LaunchedEffect(terminalAgents, initialAgentId) {
+        selectedAgentId = when {
+            initialAgentId != null && terminalAgents.any { it.id == initialAgentId } -> initialAgentId
+            terminalAgents.any { it.id == selectedAgentId } -> selectedAgentId
+            else -> terminalAgents.firstOrNull()?.id
         }
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = if (t.isIOS) 32.dp else 4.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                tr("terminal.title"),
-                fontSize = if (t.isIOS) 32.sp else 28.sp,
-                fontWeight = if (t.isIOS) FontWeight.Bold else FontWeight.SemiBold,
-                letterSpacing = if (t.isIOS) (-0.6).sp else 0.sp,
-                color = t.fg,
-            )
-        }
+        TerminalHeader(onBack)
 
-        // Agent selector (simplified)
-        if (selectedAgent != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(t.cardRadius))
-                    .background(t.card)
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(selectedAgent.hostname, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = t.fg)
-                    Text(
-                        "${selectedAgent.os} ${selectedAgent.arch}",
-                        fontSize = 11.sp,
-                        fontFamily = NanoMonoFamily,
-                        color = t.fg4,
+        when {
+            requestedAgent != null && requestedAgent.permissionLevel < 3 -> {
+                Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                    NanoEmptyState(
+                        icon = Icons.Outlined.Terminal,
+                        title = tr("terminal.lockedTitle"),
+                        detail = tr("terminal.lockedDesc"),
                     )
                 }
-                Text(
-                    status,
-                    fontSize = 11.sp,
-                    fontFamily = NanoMonoFamily,
-                    color = if (status == "connected") t.ok else t.fg4,
+            }
+
+            activeServerId == null || terminalAgents.isEmpty() -> {
+                Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                    NanoEmptyState(
+                        icon = Icons.Outlined.Terminal,
+                        title = tr("terminal.noAvailableNodes"),
+                        detail = tr("terminal.noAvailableNodesSub"),
+                    )
+                }
+            }
+
+            else -> {
+                val selectedAgent = terminalAgents.firstOrNull { it.id == selectedAgentId }
+                    ?: terminalAgents.first()
+                AgentSelector(
+                    agents = terminalAgents,
+                    selected = selectedAgent,
+                    onSelect = { selectedAgentId = it.id },
+                )
+                LiveTerminal(viewModel, selectedAgent, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TerminalHeader(onBack: (() -> Unit)?) {
+    val t = nano
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, end = 16.dp, top = if (t.isIOS) 28.dp else 4.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onBack != null) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = tr("common.cancel"),
+                    tint = t.fg,
                 )
             }
         }
+        Text(
+            tr("terminal.title"),
+            fontSize = if (t.isIOS) 32.sp else 28.sp,
+            fontWeight = if (t.isIOS) FontWeight.Bold else FontWeight.SemiBold,
+            color = t.fg,
+        )
+    }
+}
 
-        // Console output
+@Composable
+private fun AgentSelector(agents: List<Agent>, selected: Agent, onSelect: (Agent) -> Unit) {
+    val t = nano
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(t.cardRadius))
+                .background(t.card)
+                .clickable { expanded = true }
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NanoStatusDot(color = t.ok, pulse = true)
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(selected.hostname, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = t.fg)
+                Text(
+                    "${selected.os} ${selected.arch} · L${selected.permissionLevel}",
+                    fontSize = 11.sp,
+                    fontFamily = NanoMonoFamily,
+                    color = t.fg4,
+                )
+            }
+            if (agents.size > 1) {
+                Icon(Icons.Outlined.ExpandMore, contentDescription = tr("terminal.switchAgent"), tint = t.fg3)
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            agents.forEach { agent ->
+                DropdownMenuItem(
+                    text = { Text("${agent.hostname} · L${agent.permissionLevel}") },
+                    onClick = {
+                        onSelect(agent)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveTerminal(viewModel: AppViewModel, agent: Agent, modifier: Modifier = Modifier) {
+    val t = nano
+    val service = viewModel.serviceForAgent(agent.id)
+    val connectingMessage = tr("terminal.consoleConnecting", "url" to (service?.connection?.url ?: "—"))
+    var session by remember(agent.id) { mutableStateOf<ShellSession?>(null) }
+
+    DisposableEffect(agent.id, service) {
+        val created = service?.openShell(agent.id)
+        session = created
+        created?.system(connectingMessage)
+        created?.connect()
+        onDispose {
+            created?.close()
+            if (session === created) session = null
+        }
+    }
+
+    val activeSession = session
+    if (activeSession == null) {
+        Box(modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+            NanoEmptyState(
+                icon = Icons.Outlined.Terminal,
+                title = tr("status.error"),
+                detail = tr("terminal.consoleNoServer"),
+            )
+        }
+    } else {
+        TerminalConsole(agent, activeSession, modifier)
+    }
+}
+
+@Composable
+private fun TerminalConsole(agent: Agent, session: ShellSession, modifier: Modifier = Modifier) {
+    val t = nano
+    val lines by session.lines.collectAsStateWithLifecycle()
+    val status by session.status.collectAsStateWithLifecycle()
+    var input by remember(session) { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val authenticatedMessage = tr("terminal.consoleAuthenticated", "level" to agent.permissionLevel)
+
+    LaunchedEffect(status) {
+        if (status == ShellSession.Status.CONNECTED) {
+            session.system(authenticatedMessage)
+            session.resize(cols = 120, rows = 40)
+        }
+    }
+    LaunchedEffect(lines.size) {
+        if (lines.isNotEmpty()) listState.animateScrollToItem(lines.lastIndex)
+    }
+
+    fun submit() {
+        val command = input.trim()
+        if (command.isEmpty() || status != ShellSession.Status.CONNECTED) return
+        session.echoInput("$ $command")
+        session.sendInput(command)
+        input = ""
+    }
+
+    Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(topStart = t.cardRadius, topEnd = t.cardRadius))
+                .background(t.card)
+                .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NanoStatusDot(color = terminalStatusColor(status), pulse = status == ShellSession.Status.CONNECTED)
+            Spacer(Modifier.width(8.dp))
+            Text(terminalStatusLabel(status), fontSize = 11.sp, fontFamily = NanoMonoFamily, color = t.fg3)
+            Spacer(Modifier.weight(1f))
+            if (status == ShellSession.Status.ERROR || status == ShellSession.Status.CLOSED) {
+                IconButton(onClick = session::connect) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = tr("status.reconnect"), tint = t.accent)
+                }
+            }
+            IconButton(onClick = session::clearLines) {
+                Icon(Icons.Outlined.Delete, contentDescription = tr("terminal.clear"), tint = t.fg3)
+            }
+        }
+
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(t.cardRadius))
-                .background(t.bg.copy(alpha = 0.5f))
+                .background(t.bg.copy(alpha = 0.55f))
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            items(lines) { line ->
+            items(lines, key = { it.id }) { line ->
                 val color = when (line.kind) {
-                    ShellLineKind.SYS -> t.fg4
-                    ShellLineKind.INPUT -> t.accent
-                    ShellLineKind.OUTPUT -> t.fg2
-                    ShellLineKind.ERROR -> t.crit
+                    ShellSession.LineKind.SYSTEM -> t.fg4
+                    ShellSession.LineKind.INPUT -> t.accent
+                    ShellSession.LineKind.OUTPUT -> t.fg2
+                    ShellSession.LineKind.ERROR -> t.crit
                 }
                 Text(
                     line.text,
@@ -159,17 +297,16 @@ fun TerminalScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        // Input bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
-                .clip(RoundedCornerShape(t.cardRadius))
+                .clip(RoundedCornerShape(bottomStart = t.cardRadius, bottomEnd = t.cardRadius))
                 .background(t.card)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Text("$", fontSize = 15.sp, fontFamily = NanoMonoFamily, fontWeight = FontWeight.Bold, color = t.accent)
             BasicTextField(
                 value = input,
                 onValueChange = { input = it },
@@ -180,12 +317,16 @@ fun TerminalScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     color = t.fg,
                 ),
                 cursorBrush = SolidColor(t.accent),
-                enabled = status == "connected",
+                enabled = status == ShellSession.Status.CONNECTED,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { submit() }),
                 decorationBox = { innerTextField ->
                     Box {
                         if (input.isEmpty()) {
                             Text(
-                                "Enter command...",
+                                if (status == ShellSession.Status.CONNECTED) tr("terminal.inputHint")
+                                else tr("terminal.inputHintWaiting"),
                                 fontSize = 14.sp,
                                 fontFamily = NanoMonoFamily,
                                 color = t.fg4,
@@ -195,22 +336,29 @@ fun TerminalScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     }
                 },
             )
-            IconButton(
-                onClick = {
-                    if (input.isNotEmpty()) {
-                        lines = lines + ShellLine(ShellLineKind.INPUT, "$ $input")
-                        lines = lines + ShellLine(ShellLineKind.OUTPUT, "Command sent: $input")
-                        input = ""
-                    }
-                },
-                enabled = input.isNotEmpty() && status == "connected",
-            ) {
+            IconButton(onClick = ::submit, enabled = input.isNotBlank() && status == ShellSession.Status.CONNECTED) {
                 Icon(
-                    Icons.Outlined.Send,
-                    contentDescription = null,
-                    tint = if (input.isNotEmpty()) t.accent else t.fg4,
+                    Icons.AutoMirrored.Outlined.Send,
+                    contentDescription = tr("terminal.inputHint"),
+                    tint = if (input.isNotBlank() && status == ShellSession.Status.CONNECTED) t.accent else t.fg4,
                 )
             }
         }
     }
+}
+
+@Composable
+private fun terminalStatusLabel(status: ShellSession.Status): String = when (status) {
+    ShellSession.Status.CONNECTING -> tr("status.connecting")
+    ShellSession.Status.CONNECTED -> tr("status.connected")
+    ShellSession.Status.ERROR -> tr("status.error")
+    ShellSession.Status.CLOSED -> tr("status.closed")
+}
+
+@Composable
+private fun terminalStatusColor(status: ShellSession.Status) = when (status) {
+    ShellSession.Status.CONNECTING -> nano.warn
+    ShellSession.Status.CONNECTED -> nano.ok
+    ShellSession.Status.ERROR -> nano.crit
+    ShellSession.Status.CLOSED -> nano.fg4
 }

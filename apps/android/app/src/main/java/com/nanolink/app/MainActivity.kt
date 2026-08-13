@@ -1,6 +1,9 @@
 package com.nanolink.app
 
+import android.Manifest
 import android.os.Bundle
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -18,10 +21,18 @@ import com.nanolink.app.ui.design.NanoThemeProvider
 
 class MainActivity : ComponentActivity() {
     private val appViewModel: AppViewModel by viewModels()
+    private val notificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* NotificationService checks the resulting permission before posting. */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             val themeState by appViewModel.themeState.collectAsStateWithLifecycle()
             val language by appViewModel.currentLanguage.collectAsStateWithLifecycle()
@@ -30,7 +41,7 @@ class MainActivity : ComponentActivity() {
                 LocalLanguage provides language,
             ) {
                 NanoThemeProvider(state = themeState) {
-                    NanoShell(viewModel = appViewModel, preferences = appViewModel.getPreferences(), modifier = Modifier.fillMaxSize())
+                    NanoShell(viewModel = appViewModel, modifier = Modifier.fillMaxSize())
                 }
             }
         }

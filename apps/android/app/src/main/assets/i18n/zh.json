@@ -58,7 +58,12 @@
     "onlineNodes": "在线节点", "nodesOffline": "{n} 离线", "avgCpuLast60s": "过去 60s", "avgMemNodes": "{n} 节点",
     "diskAlerts": "磁盘告警", "diskAlertsSub": "≥ 85% 使用率", "topCpu": "CPU 最高", "recentActivity": "最近活动",
     "noActivity": "暂无活动记录", "noServersYet": "尚未添加服务器", "noOnlineNodes": "暂无在线节点", "add": "添加",
-    "offlineBanner": "{n} 节点离线", "avgMemUsed": "{gib} GiB 已用", "newNode": "新节点", "view": "查看"
+    "offlineBanner": "{n} 节点离线", "avgMemUsed": "{gib} GiB 已用", "newNode": "新节点", "view": "查看",
+    "addFirstServer": "添加服务器后即可开始监控节点", "offlineNodes": "{n} 个离线",
+    "kpi": {
+      "cpu": "CPU", "memory": "内存", "nodes": "节点", "diskAlerts": "磁盘告警",
+      "avgAll": "集群平均", "used": "已用", "online": "在线", "over85": "超过 85%"
+    }
   },
   "welcome": {
     "subtitle": "连接服务器以开始监控", "chooseMethodHint": "扫描二维码、输入配对码或手动连接",
@@ -71,7 +76,7 @@
   "agents": {
     "title": "节点", "searchHint": "搜索节点、主机名、OS", "filterAll": "全部", "filterOnline": "在线",
     "filterWarn": "告警", "filterOffline": "离线", "noNodes": "该服务器暂无节点", "noMatch": "没有匹配的节点",
-    "offlineNoData": "离线 · 无实时数据", "switchServer": "切换服务器", "filter": "筛选"
+    "offlineNoData": "离线 · 无实时数据", "switchServer": "切换服务器", "filter": "筛选", "total": "总计"
   },
   "agentDetail": {
     "tabRealtime": "实时", "tabHistory": "历史", "tabTerminal": "终端", "tabTerminalLocked": "终端 🔒",
@@ -92,11 +97,16 @@
     "title": "终端", "switchAgent": "切换", "noOnlineAgents": "没有在线的代理", "connected": "已连接到 {}",
     "enterCommand": "输入命令...", "notImplemented": "远程命令执行功能尚未实现", "navTitle": "远程终端",
     "navDesc": "选择要打开终端的节点。L0 只读节点不可用，会话需要 L3 系统管理权限。", "noAvailableNodes": "暂无可用节点",
-    "noAvailableNodesSub": "需要至少一个在线且非只读 (L1+) 的节点", "consoleNoServer": "找不到该节点所属的服务器连接。",
+    "noAvailableNodesSub": "需要至少一个在线且具有 L3 系统管理权限的节点", "consoleNoServer": "找不到该节点所属的服务器连接。",
     "consoleConnecting": "[nano] 正在连接 {url}", "consoleAuthenticated": "[nano] 已认证 · L{level}",
     "inputHint": "输入命令…", "inputHintWaiting": "等待连接…", "lockedTitle": "权限不足",
     "lockedDesc": "该节点为只读 (L0)。需管理员提升至 L3 系统管理权限才能打开远程终端。", "recentSessions": "最近会话", "sessionFailed": "失败",
-    "connectError": "连接错误：{err}", "sessionEnded": "[nano] 会话已结束"
+    "connectError": "连接错误：{err}", "sessionEnded": "[nano] 会话已结束", "clear": "清空终端"
+  },
+  "activity": {
+    "title": "活动", "alerts": "告警", "audit": "审计日志", "acknowledge": "确认",
+    "noAlerts": "暂无告警", "noAlertsDetail": "此服务器当前没有需要关注的告警",
+    "noAudit": "暂无审计活动", "noAuditDetail": "命令活动将显示在这里"
   },
   "alerts": {
     "title": "活动 & 告警", "critical": "严重", "warning": "警告", "info": "信息", "current": "当前告警",
@@ -127,7 +137,8 @@
     "themeLight": "浅色", "themeDark": "深色", "themeSystem": "跟随系统", "langChinese": "中文（简体）", "langEnglish": "English",
     "notifications": "通知", "notifyOffline": "离线告警", "notifyHigh": "高 CPU / 内存", "notifyDisk": "磁盘空间",
     "sourceCodeLabel": "源码", "pairNeedsLogin": "生成配对码需要先用账号登录一个服务器", "footer": "NanoOps Mobile · v0.5.0",
-    "nodeCount": "{n} 节点", "compactMode": "紧凑模式", "terminal": "终端", "termTheme": "主题",
+    "nodeCount": "{n} 节点", "compactMode": "紧凑模式", "compactModeDetail": "在整个应用中使用更紧凑的间距",
+    "terminal": "终端", "termTheme": "主题",
     "termTheme_phosphor": "Phosphor (绿色)", "termTheme_amber": "Amber (琥珀)", "termTheme_mono": "Mono (单色)",
     "termTheme_solarized": "Solarized", "termFontSize": "字号", "ptValue": "{n} pt", "termCursor": "光标样式",
     "termCursor_block": "块状", "termCursor_bar": "竖线", "termCursor_underline": "下划线", "termBlink": "光标闪烁",
@@ -159,11 +170,14 @@
     "pairingCode": "配对码", "pairingCodeHint": "000000", "pairingCodeRequired": "请输入配对码", "pairingCodeInvalid": "配对码必须为 6 位数字",
     "pairingFailed": "配对失败，配对码可能无效或已过期", "qrUnsupported": "当前平台不支持扫码", "useManualInstead": "改用手动输入",
     "qrHint": "将二维码置于取景框内，从 Web 后台「设备配对」生成", "serverName": "服务器名称", "serverNameHint": "生产环境",
-    "nameRequired": "请输入名称", "serverUrl": "服务器地址", "deviceTokenOptional": "设备令牌（可选）", "deviceTokenHint": "只读访问可留空",
+    "nameRequired": "请输入名称", "serverUrl": "服务器地址", "deviceTokenOptional": "设备令牌",
+    "deviceTokenHint": "粘贴 Web 后台生成的设备令牌", "deviceTokenRequired": "请输入设备令牌",
     "connect": "连接", "accountNotice": "账号登录获得与该用户一致的完整权限。", "username": "用户名", "usernameRequired": "请输入用户名",
     "password": "密码", "passwordRequired": "请输入密码", "login": "登录", "urlRequired": "请输入服务器地址",
     "urlInvalid": "地址格式无效（需含 http(s)://）", "advanced": "高级", "deviceName": "设备名称", "deviceNameHint": "例如：Alice 的 iPhone",
-    "forceTls": "强制 TLS", "ignoreCert": "忽略证书错误", "forgotPassword": "忘记密码？", "forgotPasswordHint": "请在 Web 后台重置密码。",
+    "forceTls": "强制 TLS", "ignoreCert": "忽略证书错误",
+    "ignoreCertWarning": "将停用此服务器的证书与主机名校验，请仅在可信网络中使用。",
+    "forgotPassword": "忘记密码？", "forgotPasswordHint": "请在 Web 后台重置密码。",
     "ssoLogin": "SSO 登录 →", "ssoHint": "单点登录需在服务器端配置。", "qrSaving": "正在保存并连接…",
     "pairingEnterHint": "在 Web 后台生成配对码后，输入下方 6 位。", "pairingVerifying": "正在验证…", "pairingPaired": "✓ 已配对",
     "pairingInvalid": "无效配对码", "pairingValid60s": "有效 60s", "pairingNeedsServer": "请先填写服务器名称和地址"

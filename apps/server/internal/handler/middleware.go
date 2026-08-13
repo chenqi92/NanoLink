@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
@@ -15,10 +16,21 @@ const (
 	ContextKeyUserID       = "userID"
 	ContextKeyUsername     = "username"
 	ContextKeyIsSuperAdmin = "isSuperAdmin"
+	ContextKeyDeviceID     = "deviceID"
+	ContextKeyDeviceLevel  = "devicePermissionLevel"
 )
 
 // AuthMiddleware creates a JWT authentication middleware
 func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
+	return AuthMiddlewareWithDevices(authService, nil)
+}
+
+// AuthMiddlewareWithDevices accepts both account JWTs and persistent device
+// tokens. Device tokens are mapped to their creator for visibility checks, but
+// their own permission level is stored in the request context and must cap every
+// agent operation. Account-only/admin middleware below explicitly rejects device
+// sessions, even when the token was created by a super admin.
+func AuthMiddlewareWithDevices(authService *service.AuthService, deviceService *service.DeviceService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, ok := ExtractRequestToken(c)
 		if !ok {
@@ -27,45 +39,70 @@ func AuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 			return
 		}
 
-		// Verify token
+		// Prefer an account JWT. A raw device token is deliberately opaque and will
+		// fail JWT verification before being checked against its hashed DB record.
 		claims, err := authService.VerifyToken(tokenString)
-		if err != nil {
-			statusCode := http.StatusUnauthorized
-			errMsg := "invalid token"
-			if err == service.ErrTokenExpired {
-				errMsg = "token expired"
+		if err == nil {
+			user, userErr := authService.GetUserByID(claims.UserID)
+			if userErr != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+				c.Abort()
+				return
 			}
-			c.JSON(statusCode, gin.H{"error": errMsg})
-			c.Abort()
+
+			// Reject tokens whose version is older than the user's current version.
+			if claims.TokenVersion != user.TokenVersion {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "token revoked, please log in again"})
+				c.Abort()
+				return
+			}
+
+			setAuthenticatedUser(c, user, claims)
+			c.Next()
 			return
 		}
 
-		// Get user from database
-		user, err := authService.GetUserByID(claims.UserID)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
-			c.Abort()
-			return
+		if deviceService != nil {
+			device, deviceErr := deviceService.ValidateDeviceToken(tokenString)
+			if deviceErr == nil {
+				user, userErr := authService.GetUserByID(device.CreatedBy)
+				if userErr != nil {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "device owner not found"})
+					c.Abort()
+					return
+				}
+				setAuthenticatedUser(c, user, nil)
+				c.Set(ContextKeyDeviceID, device.ID)
+				c.Set(ContextKeyDeviceLevel, device.PermissionLevel)
+				// A device session is never itself a super-admin session.
+				c.Set(ContextKeyIsSuperAdmin, false)
+				c.Next()
+				return
+			}
+			if errors.Is(deviceErr, service.ErrDeviceDisabled) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "device is disabled"})
+				c.Abort()
+				return
+			}
 		}
 
-		// Reject tokens whose version is older than the user's current version.
-		// UpdatePassword bumps token_version to invalidate previously issued JWTs;
-		// without this check a stolen/lost token remains valid until natural expiry
-		// even after the password is changed.
-		if claims.TokenVersion != user.TokenVersion {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "token revoked, please log in again"})
-			c.Abort()
-			return
+		errMsg := "invalid token"
+		if errors.Is(err, service.ErrTokenExpired) {
+			errMsg = "token expired"
 		}
-
-		// Store user and claims in context
-		c.Set(ContextKeyUser, user)
-		c.Set(ContextKeyClaims, claims)
-		c.Set(ContextKeyUserID, user.ID)
-		c.Set(ContextKeyUsername, user.Username)
-		c.Set(ContextKeyIsSuperAdmin, user.IsSuperAdmin)
-		c.Next()
+		c.JSON(http.StatusUnauthorized, gin.H{"error": errMsg})
+		c.Abort()
 	}
+}
+
+func setAuthenticatedUser(c *gin.Context, user *database.User, claims *service.JWTClaims) {
+	c.Set(ContextKeyUser, user)
+	if claims != nil {
+		c.Set(ContextKeyClaims, claims)
+	}
+	c.Set(ContextKeyUserID, user.ID)
+	c.Set(ContextKeyUsername, user.Username)
+	c.Set(ContextKeyIsSuperAdmin, user.IsSuperAdmin)
 }
 
 // OptionalAuthMiddleware creates an optional JWT authentication middleware
@@ -109,6 +146,11 @@ func OptionalAuthMiddleware(authService *service.AuthService) gin.HandlerFunc {
 // RequireSuperAdmin creates a middleware that requires super admin access
 func RequireSuperAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if IsDeviceSession(c) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "account session required"})
+			c.Abort()
+			return
+		}
 		user, exists := c.Get(ContextKeyUser)
 		if !exists {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
@@ -140,6 +182,15 @@ func RequireAgentPermission(permService *service.PermissionService, minLevel int
 		u, ok := user.(*database.User)
 		if !ok {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user context"})
+			c.Abort()
+			return
+		}
+
+		if level, isDevice := GetCurrentDevicePermission(c); isDevice && level < minLevel {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":         "insufficient device permissions",
+				"requiredLevel": database.PermissionLevelName(minLevel),
+			})
 			c.Abort()
 			return
 		}
@@ -177,6 +228,57 @@ func RequireAgentPermission(permService *service.PermissionService, minLevel int
 
 		c.Next()
 	}
+}
+
+// RequireAccountSession blocks persistent device credentials from account and
+// credential-management endpoints. Normal JWT sessions pass through unchanged.
+func RequireAccountSession() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if IsDeviceSession(c) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "account session required"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// RequireSessionPermission applies only to device sessions. Account sessions
+// retain their existing route authorization, while device sessions must meet
+// the configured device-level cap.
+func RequireSessionPermission(minLevel int) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if level, isDevice := GetCurrentDevicePermission(c); isDevice && level < minLevel {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":         "insufficient device permissions",
+				"requiredLevel": database.PermissionLevelName(minLevel),
+			})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+func IsDeviceSession(c *gin.Context) bool {
+	_, exists := c.Get(ContextKeyDeviceID)
+	return exists
+}
+
+func GetCurrentDevicePermission(c *gin.Context) (int, bool) {
+	level, exists := c.Get(ContextKeyDeviceLevel)
+	if !exists {
+		return 0, false
+	}
+	value, ok := level.(int)
+	return value, ok
+}
+
+func capPermissionForRequest(c *gin.Context, permission int) int {
+	if deviceLevel, isDevice := GetCurrentDevicePermission(c); isDevice && permission > deviceLevel {
+		return deviceLevel
+	}
+	return permission
 }
 
 // GetCurrentUser returns the current authenticated user from context

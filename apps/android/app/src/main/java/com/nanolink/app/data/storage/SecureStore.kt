@@ -1,6 +1,7 @@
 package com.nanolink.app.data.storage
 
 import android.content.Context
+import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
@@ -18,12 +19,12 @@ class SecureStore(context: Context) {
     fun get(key: String): String? = preferences.getString(key, null)
 
     fun set(key: String, value: String?) {
-        preferences.edit().apply {
+        preferences.edit {
             if (value.isNullOrEmpty()) remove(key) else putString(key, value)
-        }.apply()
+        }
     }
 
     fun remove(key: String) {
-        preferences.edit().remove(key).apply()
+        preferences.edit { remove(key) }
     }
 }

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -58,6 +59,7 @@ type dashboardClient struct {
 	userID        uint
 	username      string
 	isSuperAdmin  bool
+	permissionCap int
 	visibleAgents map[string]struct{}
 	send          chan []byte
 	done          chan struct{}
@@ -162,10 +164,14 @@ func (h *DashboardWSHandler) HandleDashboardWS(c *gin.Context) {
 		userID:        user.ID,
 		username:      user.Username,
 		isSuperAdmin:  user.IsSuperAdmin,
+		permissionCap: database.PermissionSystemAdmin,
 		visibleAgents: visibleAgents,
 		send:          make(chan []byte, 256),
 		done:          make(chan struct{}),
 		subscriptions: make(map[string]bool),
+	}
+	if deviceLevel, isDevice := GetCurrentDevicePermission(c); isDevice {
+		client.permissionCap = deviceLevel
 	}
 
 	h.registerClient(client)
@@ -467,19 +473,17 @@ func capPermissionLevel(granted, agentMaximum int) int {
 
 func (h *DashboardWSHandler) agentToMapForClient(client *dashboardClient, agent *service.Agent) gin.H {
 	result := agentToMap(agent)
-	if h.permService == nil || client.isSuperAdmin {
-		return result
-	}
-
-	granted, err := h.permService.GetUserAgentPermission(client.userID, agent.ID)
-	if err != nil {
-		h.logger.Warnf("Dashboard permission lookup failed for user %d on agent %s: %v", client.userID, agent.ID, err)
-		result["permissionLevel"] = 0
-		return result
-	}
-
 	maximum, _ := result["permissionLevel"].(int)
-	result["permissionLevel"] = capPermissionLevel(granted, maximum)
+	if h.permService != nil && !client.isSuperAdmin {
+		granted, err := h.permService.GetUserAgentPermission(client.userID, agent.ID)
+		if err != nil {
+			h.logger.Warnf("Dashboard permission lookup failed for user %d on agent %s: %v", client.userID, agent.ID, err)
+			result["permissionLevel"] = 0
+			return result
+		}
+		maximum = capPermissionLevel(granted, maximum)
+	}
+	result["permissionLevel"] = capPermissionLevel(client.permissionCap, maximum)
 	return result
 }
 

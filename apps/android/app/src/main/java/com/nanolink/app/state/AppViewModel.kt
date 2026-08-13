@@ -22,8 +22,12 @@ import com.nanolink.app.data.storage.StorageService
 import com.nanolink.app.localization.L10n
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 enum class AppThemeMode { LIGHT, DARK, SYSTEM }
@@ -90,11 +94,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /// Current language code for recomposition triggers.
     val currentLanguage: StateFlow<String> = l10n.currentLanguageFlow
 
-    private val _themeState = MutableStateFlow(ThemeState())
-    val themeState: StateFlow<ThemeState> = _themeState.asStateFlow()
+    val themeState: StateFlow<ThemeState> = combine(
+        preferences.flow(PreferenceKeys.ThemeMode, AppThemeMode.SYSTEM.ordinal),
+        preferences.flow(PreferenceKeys.ThemeStyle, ThemeStyle.MD.name.lowercase()),
+        preferences.flow(PreferenceKeys.Compact, false),
+    ) { mode, style, compact ->
+        ThemeState(
+            mode = AppThemeMode.entries.getOrElse(mode.coerceIn(0, AppThemeMode.entries.lastIndex)) {
+                AppThemeMode.SYSTEM
+            },
+            style = if (style == ThemeStyle.IOS.name.lowercase()) ThemeStyle.IOS else ThemeStyle.MD,
+            compact = compact,
+        )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeState())
 
     /// Count of unacknowledged alerts across all servers.
-    val unackedAlertCount: StateFlow<Int> = MutableStateFlow(0)
+    val unackedAlertCount: StateFlow<Int> = _alerts
+        .map { alertsByServer -> alertsByServer.values.sumOf { alerts -> alerts.count { !it.acked } } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     val activeServer: ServerConnection?
         get() = _servers.value.firstOrNull { it.id == activeServerId.value } ?: _servers.value.firstOrNull()
@@ -119,7 +136,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _notifyDisk.value = preferences.get(PreferenceKeys.NotifyDisk, true)
         val saved = storage.getServers()
         _servers.value = saved
-        val savedActiveId = preferences.get(PreferenceKeys.ActiveServer, "").takeIf { it.isNotEmpty() }
+        val savedActiveId = preferences.get(PreferenceKeys.ActiveServer, "").takeIf { savedId ->
+            saved.any { it.id == savedId }
+        }
         _activeServerId.value = savedActiveId ?: saved.firstOrNull()?.id
         saved.forEach(::connectToServer)
         _isLoading.value = false
@@ -130,6 +149,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _activeServerId.value = serverId
             viewModelScope.launch { preferences.set(PreferenceKeys.ActiveServer, serverId) }
         }
+    }
+
+    fun setThemeMode(mode: AppThemeMode) {
+        viewModelScope.launch { preferences.set(PreferenceKeys.ThemeMode, mode.ordinal) }
+    }
+
+    fun setThemeStyle(style: ThemeStyle) {
+        viewModelScope.launch { preferences.set(PreferenceKeys.ThemeStyle, style.name.lowercase()) }
+    }
+
+    fun setCompactMode(compact: Boolean) {
+        viewModelScope.launch { preferences.set(PreferenceKeys.Compact, compact) }
+    }
+
+    fun setLanguage(language: String) {
+        viewModelScope.launch { l10n.setLanguage(language) }
     }
 
     fun agentsForServer(serverId: String? = activeServerId.value): List<Agent> =
@@ -167,24 +202,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         forceTls: Boolean = false,
         ignoreCert: Boolean = false,
     ): Boolean {
+        if (token.isNullOrBlank()) return false
         var server = ServerConnection(name = name, url = url, token = token, forceTls = forceTls, ignoreCert = ignoreCert)
         val service = ServerService(server)
-        val valid = if (!token.isNullOrEmpty()) {
-            service.validateDeviceToken(token, name.ifEmpty { "Android device" }).ok
-        } else {
-            service.testConnection()
-        }
+        val valid = service.validateDeviceToken(token, name.ifEmpty { "Android device" }).ok
         service.dispose()
         if (!valid) return false
         server = server.copy(isConnected = true, lastConnectedMillis = System.currentTimeMillis())
         _servers.value = _servers.value + server
         storage.saveServers(_servers.value)
         connectToServer(server)
+        setActiveServer(server.id)
         return true
     }
 
-    suspend fun addServerWithCredentials(name: String, url: String, username: String, password: String): Boolean {
-        val pending = ServerConnection(name = name, url = url, username = username)
+    suspend fun addServerWithCredentials(
+        name: String,
+        url: String,
+        username: String,
+        password: String,
+        forceTls: Boolean = false,
+        ignoreCert: Boolean = false,
+    ): Boolean {
+        val pending = ServerConnection(
+            name = name,
+            url = url,
+            username = username,
+            forceTls = forceTls,
+            ignoreCert = ignoreCert,
+        )
         val service = ServerService(pending)
         val token = service.login(username, password)
         service.dispose()
@@ -194,11 +240,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _servers.value = _servers.value + server
         storage.saveServers(_servers.value)
         connectToServer(server)
+        setActiveServer(server.id)
         return true
     }
 
-    suspend fun addServerWithPairingCode(name: String, url: String, pairingCode: String): Boolean {
-        val pending = ServerConnection(name = name, url = url)
+    suspend fun addServerWithPairingCode(
+        name: String,
+        url: String,
+        pairingCode: String,
+        forceTls: Boolean = false,
+        ignoreCert: Boolean = false,
+    ): Boolean {
+        val pending = ServerConnection(name = name, url = url, forceTls = forceTls, ignoreCert = ignoreCert)
         val service = ServerService(pending)
         val token = service.redeemPairingCode(pairingCode)
         service.dispose()
@@ -207,20 +260,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _servers.value = _servers.value + server
         storage.saveServers(_servers.value)
         connectToServer(server)
+        setActiveServer(server.id)
         return true
     }
 
     fun removeServer(serverId: String) {
+        val removedAgentIds = _agents.value.filter { it.serverId == serverId }.mapTo(mutableSetOf()) { it.id }
+        val removedActiveServer = _activeServerId.value == serverId
         services.remove(serverId)?.dispose()
         _servers.value = _servers.value.filterNot { it.id == serverId }
         _agents.value = _agents.value.filterNot { it.serverId == serverId }
+        _metrics.value = _metrics.value.filterKeys { it !in removedAgentIds }
         _connectionModes.value = _connectionModes.value - serverId
         _summaries.value = _summaries.value - serverId
         _alerts.value = _alerts.value - serverId
         _activity.value = _activity.value - serverId
         _needsReauth.value = _needsReauth.value - serverId
         sessionPasswords.remove(serverId)
-        viewModelScope.launch { storage.deleteServer(serverId) }
+        val nextActiveServerId = _servers.value.firstOrNull()?.id
+        if (removedActiveServer) _activeServerId.value = nextActiveServerId
+        viewModelScope.launch {
+            storage.deleteServer(serverId)
+            if (removedActiveServer) {
+                if (nextActiveServerId == null) preferences.remove(PreferenceKeys.ActiveServer)
+                else preferences.set(PreferenceKeys.ActiveServer, nextActiveServerId)
+            }
+        }
     }
 
     suspend fun reauthenticate(serverId: String, username: String, password: String): Boolean {
@@ -303,6 +368,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (status.isConnected) {
                     _needsReauth.value = _needsReauth.value - server.id
+                    viewModelScope.launch {
+                        val latestAlerts = service.fetchAlerts()
+                        val latestActivity = service.fetchRecentAudit(50)
+                        if (services[server.id] === service) {
+                            _alerts.value = _alerts.value + (server.id to latestAlerts)
+                            _activity.value = _activity.value + (server.id to latestActivity)
+                        }
+                    }
                 } else if (looksLikeAuthFailure(status.error)) {
                     handleAuthFailure(server.id)
                 }
