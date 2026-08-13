@@ -5,6 +5,7 @@ import { I } from "@/lib/icons"
 import { ConfirmDialog, Modal } from "@/components/shell/Dialog"
 import { EmptyState, FormBlock, PageHeader } from "@/components/shell/primitives"
 import "./deployments.css"
+import { completedDeploymentSteps, DEPLOYMENT_STEPS } from "@/lib/fleet"
 
 const terminal = (status?: string) => status === "success" || status === "failed"
 
@@ -160,6 +161,7 @@ export function DeploymentsScreen() {
                     <div className="deploy-meta mono">
                       <span>{I.agents({ size: 12 })} {hostname.get(detail.agentId) ?? detail.agentId}</span>
                       <span>{I.disk({ size: 12 })} {detail.deployPath}</span>
+                      {detail.type === "static" && <span>{detail.extractArchive ? I.expand({ size: 12 }) : I.disk({ size: 12 })} {t(detail.extractArchive ? "deploy.extractEnabled" : "deploy.extractDisabled")}</span>}
                       {detail.serviceName && <span>{I.power({ size: 12 })} {detail.serviceName}</span>}
                     </div>
                   </div>
@@ -230,12 +232,8 @@ export function DeploymentsScreen() {
 
 function DeploymentRail({ task }: { task: DeploymentTask | null }) {
   const { t } = useTranslation()
-  const steps = ["preflight", "download", "verify", "stage", "activate", "service", "health"]
-  const completed = new Set<string>()
-  for (const line of (task?.output ?? "").split("\n")) {
-    for (const step of steps) if (line.includes(step) && line.startsWith("[done]")) completed.add(step)
-  }
-  if (task?.status === "success") steps.forEach((s) => completed.add(s))
+  const steps = [...DEPLOYMENT_STEPS]
+  const completed = completedDeploymentSteps(task?.output ?? "", task?.status === "success")
   return (
     <section className="card deploy-rail-card">
       <div className="deploy-panel-head">
@@ -292,6 +290,7 @@ function ProjectModal({ agents, project, onClose, onSaved }: { agents: Agent[]; 
     type: project?.type ?? "java",
     agentId: project?.agentId ?? agents[0]?.id ?? "",
     deployPath: project?.deployPath ?? "/opt/nanolink/apps/",
+    extractArchive: project?.extractArchive ?? true,
     serviceName: project?.serviceName ?? "",
     healthUrl: project?.healthUrl ?? "",
     keepReleases: project?.keepReleases ?? 5,
@@ -318,6 +317,7 @@ function ProjectModal({ agents, project, onClose, onSaved }: { agents: Agent[]; 
         <FormBlock label={t("deploy.targetAgent")}><select className="select" value={form.agentId} onChange={(e) => set("agentId", e.target.value)}>{agents.map((a) => <option key={a.id} value={a.id}>{a.hostname} · {a.id.slice(0, 8)}</option>)}</select></FormBlock>
         <FormBlock label={t("deploy.keepReleases")}><input className="input" type="number" min={2} max={50} value={form.keepReleases} onChange={(e) => set("keepReleases", Number(e.target.value))} /></FormBlock>
         <div className="deploy-form-wide"><FormBlock label={t("deploy.deployPath")} hint={t("deploy.deployPathHint")}><input className="input mono" value={form.deployPath} onChange={(e) => set("deployPath", e.target.value)} placeholder={form.type === "java" ? "/opt/nanolink/apps/orders" : "/var/www/nanolink/portal"} /></FormBlock></div>
+        {form.type === "static" && <div className="deploy-form-wide"><label className="deploy-toggle"><input type="checkbox" checked={form.extractArchive} onChange={(e) => set("extractArchive", e.target.checked)} /><span><strong>{t("deploy.extractArchive")}</strong><small>{t("deploy.extractArchiveHint")}</small></span></label></div>}
         <FormBlock label={t("deploy.serviceName")} hint={form.type === "static" ? t("deploy.staticServiceHint") : undefined}><input className="input mono" value={form.serviceName} onChange={(e) => set("serviceName", e.target.value)} placeholder={form.type === "java" ? "orders.service" : "nginx"} /></FormBlock>
         <FormBlock label={t("deploy.healthUrl")}><input className="input mono" value={form.healthUrl} onChange={(e) => set("healthUrl", e.target.value)} placeholder="http://127.0.0.1:8080/actuator/health" /></FormBlock>
       </div>
@@ -332,7 +332,7 @@ function UploadReleaseModal({ project, onClose, onUploaded }: { project: Deploym
   const [file, setFile] = useState<File | null>(null)
   const [directoryFiles, setDirectoryFiles] = useState<File[]>([])
   const [uploadKind, setUploadKind] = useState<"artifact" | "directory">("artifact")
-  const [extract, setExtract] = useState(project.type === "static")
+  const [extract, setExtract] = useState(project.type === "static" && project.extractArchive)
   const [stripTopLevel, setStripTopLevel] = useState(false)
   const [version, setVersion] = useState(guessVersion())
   const [notes, setNotes] = useState("")

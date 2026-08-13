@@ -3,6 +3,7 @@ package handler
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	"go.uber.org/zap"
@@ -37,6 +38,23 @@ func TestValidateDeploymentProjectRequest(t *testing.T) {
 	}
 }
 
+func TestDeploymentExtractArchiveDefaultsOn(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:deployment-extract-default?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&database.DeploymentProject{}); err != nil {
+		t.Fatal(err)
+	}
+	project := database.DeploymentProject{Name: "site", Type: database.DeploymentProjectStatic, AgentID: "agent-1", DeployPath: "/var/www/nanolink/site", CreatedBy: 1}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !project.ExtractArchive {
+		t.Fatal("new deployment projects must extract archives by default")
+	}
+}
+
 func TestDeploymentArtifactSuffix(t *testing.T) {
 	if suffix, err := deploymentArtifactSuffix("java", "orders.jar"); err != nil || suffix != ".jar" {
 		t.Fatalf("valid jar rejected: suffix=%q err=%v", suffix, err)
@@ -59,6 +77,9 @@ func TestDeploymentCommandUsesCanonicalExtractionParameters(t *testing.T) {
 	if params["extract_artifact"] != "true" || params["strip_top_level"] != "true" {
 		t.Fatalf("unexpected extraction params: %#v", params)
 	}
+	if params["extract_archive"] != "true" {
+		t.Fatalf("rolling-upgrade extraction key missing: %#v", params)
+	}
 	if _, legacy := params["extract"]; legacy {
 		t.Fatalf("legacy extraction key must not be emitted: %#v", params)
 	}
@@ -66,7 +87,7 @@ func TestDeploymentCommandUsesCanonicalExtractionParameters(t *testing.T) {
 	noExtract := false
 	release.Extract = &noExtract
 	params = deploymentCommandParams(project, release, true)
-	if params["extract_artifact"] != "false" {
+	if params["extract_artifact"] != "false" || params["extract_archive"] != "false" {
 		t.Fatalf("explicit non-extract release ignored: %#v", params)
 	}
 }
@@ -101,6 +122,26 @@ func TestArtifactTokensAreRandomAndHashed(t *testing.T) {
 	}
 	if plainA == hashA || len(plainA) != 64 || len(hashA) != 64 {
 		t.Fatal("artifact token must be 32 random bytes and stored only as a SHA-256 digest")
+	}
+}
+
+func TestDeploymentTaskTokenExpires(t *testing.T) {
+	plain, hash, err := newArtifactToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Now().Add(time.Minute)
+	task := database.DeploymentTask{ArtifactTokenHash: hash, ArtifactTokenExpires: &expires}
+	if !validDeploymentTaskToken(&task, plain) {
+		t.Fatal("valid deployment task token was rejected")
+	}
+	if validDeploymentTaskToken(&task, "wrong") {
+		t.Fatal("incorrect deployment task token was accepted")
+	}
+	expired := time.Now().Add(-time.Minute)
+	task.ArtifactTokenExpires = &expired
+	if validDeploymentTaskToken(&task, plain) {
+		t.Fatal("expired deployment task token was accepted")
 	}
 }
 

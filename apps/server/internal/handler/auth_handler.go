@@ -69,6 +69,22 @@ type UserResponse struct {
 	IsSuperAdmin bool   `json:"isSuperAdmin"`
 }
 
+// BootstrapStatus lets the login screen render the only setup path that is
+// actually available on this server.
+func (h *AuthHandler) BootstrapStatus(c *gin.Context) {
+	hasUsers, registrationEnabled, err := h.authService.BootstrapStatus()
+	if err != nil {
+		h.logger.Errorf("Read bootstrap status failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read setup status"})
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{
+		"hasUsers":            hasUsers,
+		"registrationEnabled": registrationEnabled,
+	})
+}
+
 // Register handles user registration
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req RegisterRequest

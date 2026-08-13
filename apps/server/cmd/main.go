@@ -190,6 +190,7 @@ func main() {
 	{
 		// Public routes (no auth required)
 		authHandler := handler.NewAuthHandler(authService, sugar)
+		api.GET("/auth/bootstrap", authHandler.BootstrapStatus)
 		api.POST("/auth/register", authHandler.Register)
 		api.POST("/auth/login", authHandler.Login)
 
@@ -469,6 +470,7 @@ func main() {
 	// Agents authenticate artifact downloads with a short-lived task token, not
 	// a browser cookie. All management and upload routes remain super-admin only.
 	router.GET("/api/deployment-artifacts/:taskId", deploymentHandler.DownloadArtifact)
+	router.PUT("/api/deployment-log-updates/:taskId", deploymentHandler.UpdateLogs)
 	deploymentAPI := router.Group("/api")
 	deploymentAPI.Use(handler.LimitRequestBody(cfg.Server.MaxRequestBodyBytes))
 	deploymentAPI.Use(handler.AuthMiddlewareWithDevices(authService, deviceService), handler.RequireSuperAdmin())

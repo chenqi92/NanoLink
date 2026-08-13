@@ -53,3 +53,30 @@ func TestBootstrapAdminPasswordRotationRevokesExistingSessions(t *testing.T) {
 		t.Fatal("old bootstrap password is still valid")
 	}
 }
+
+func TestBootstrapStatusClosesRegistrationAfterFirstAccount(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:auth-bootstrap-status?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&database.User{}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewAuthService(db, AuthConfig{
+		JWTSecret:               "0123456789abcdef0123456789abcdef",
+		AllowPublicRegistration: true,
+	}, zap.NewNop().Sugar())
+	t.Cleanup(svc.loginLimiter.Stop)
+
+	hasUsers, registrationEnabled, err := svc.BootstrapStatus()
+	if err != nil || hasUsers || !registrationEnabled {
+		t.Fatalf("unexpected empty bootstrap status: hasUsers=%v registration=%v err=%v", hasUsers, registrationEnabled, err)
+	}
+	if _, err := svc.RegisterFirstSuperAdmin("admin", "InitialPass1", ""); err != nil {
+		t.Fatal(err)
+	}
+	hasUsers, registrationEnabled, err = svc.BootstrapStatus()
+	if err != nil || !hasUsers || registrationEnabled {
+		t.Fatalf("unexpected initialized bootstrap status: hasUsers=%v registration=%v err=%v", hasUsers, registrationEnabled, err)
+	}
+}

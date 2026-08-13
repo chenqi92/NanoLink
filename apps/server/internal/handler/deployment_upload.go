@@ -35,7 +35,7 @@ func (h *DeploymentHandler) storeDeploymentUpload(c *gin.Context, project databa
 	if kind == "" {
 		kind = "artifact"
 	}
-	extract := project.Type == database.DeploymentProjectStatic
+	extract := project.Type == database.DeploymentProjectStatic && project.ExtractArchive
 	if raw := strings.TrimSpace(c.PostForm("extract")); raw != "" {
 		value, err := strconv.ParseBool(raw)
 		if err != nil {

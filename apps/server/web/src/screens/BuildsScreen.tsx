@@ -15,9 +15,18 @@ import {
 import { I } from "@/lib/icons"
 import { Modal } from "@/components/shell/Dialog"
 import { EmptyState, FormBlock, PageHeader } from "@/components/shell/primitives"
+import { runAgentCommand } from "@/hooks/useAgentCommand"
 import "./builds.css"
 
 const terminal = (status?: string) => status === "success" || status === "failed" || status === "canceled"
+
+interface GitCredentialStatus {
+  username: string
+  gitVersion: string
+  credentialHelper: string
+  sshAgent: boolean
+  publicKeys: { name: string; key: string }[]
+}
 
 export function BuildsScreen() {
   const { t } = useTranslation()
@@ -359,6 +368,14 @@ function PipelineEditor({ pipeline, agents, deployments, onClose, onSaved }: { p
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [section, setSection] = useState<"source" | "flow" | "delivery">("source")
+  const [gitStatus, setGitStatus] = useState<GitCredentialStatus | null>(null)
+  const [gitStatusLoading, setGitStatusLoading] = useState(false)
+  const [gitStatusError, setGitStatusError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setGitStatus(null)
+    setGitStatusError(null)
+  }, [form.agentId])
 
   function set<K extends keyof BuildPipelineInput>(key: K, value: BuildPipelineInput[K]) { setForm((current) => ({ ...current, [key]: value })) }
   function suggest() { setForm((current) => ({ ...current, ...smartPreset(current.name, current.sourceUrl, current.artifactName, t) })) }
@@ -388,6 +405,21 @@ function PipelineEditor({ pipeline, agents, deployments, onClose, onSaved }: { p
       setError(messageOf(reason))
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function inspectGitCredentials() {
+    if (!form.agentId) return
+    setGitStatusLoading(true)
+    setGitStatusError(null)
+    try {
+      const result = await runAgentCommand(form.agentId, "BUILD_GIT_STATUS")
+      setGitStatus(JSON.parse(result.output ?? "{}") as GitCredentialStatus)
+    } catch (reason) {
+      setGitStatus(null)
+      setGitStatusError(messageOf(reason))
+    } finally {
+      setGitStatusLoading(false)
     }
   }
 
@@ -444,24 +476,27 @@ function PipelineEditor({ pipeline, agents, deployments, onClose, onSaved }: { p
             </div>
           ) : <div className="build-upload-note">{I.arrowUp({ size: 16 })}<span><strong>{t("build.uploadAtRun")}</strong>{t("build.uploadAtRunDesc")}</span></div>}
           {form.sourceType === "git" && (
-            <div className="build-form-grid">
-              <FormBlock label={t("build.gitAuth")} hint={t("build.gitAuthHint")}>
-                <select className="select" value={form.sourceAuth.type} onChange={(event) => setSourceAuth({ type: event.target.value as "none" | "basic" | "ssh", password: "" })}>
-                  <option value="none">{t("build.gitAuthNone")}</option>
-                  <option value="basic">{t("build.gitAuthBasic")}</option>
-                  <option value="ssh">{t("build.gitAuthSsh")}</option>
-                </select>
-              </FormBlock>
-              {form.sourceAuth.type === "basic" && <>
-                <FormBlock label={t("build.gitUsername")}><input className="input mono" value={form.sourceAuth.username ?? ""} onChange={(event) => setSourceAuth({ username: event.target.value })} /></FormBlock>
-                <FormBlock label={t("build.gitPassword")} hint={pipeline && form.sourceAuth.credentialConfigured ? t("build.secretUnchanged") : undefined}><input className="input mono" type="password" value={form.sourceAuth.password ?? ""} onChange={(event) => setSourceAuth({ password: event.target.value })} /></FormBlock>
-              </>}
-              {form.sourceAuth.type === "ssh" && <>
-                <div className="build-form-wide"><FormBlock label={t("build.sshPublicKey")} hint={t("build.sshPublicKeyHint")}><textarea className="textarea mono" rows={3} readOnly value={form.sourceAuth.sshPublicKey ?? t("build.sshPublicKeyAfterSave")} /></FormBlock></div>
-                <div className="build-form-wide"><FormBlock label={t("build.sshKnownHosts")} hint={t("build.sshKnownHostsHint")}><textarea className="textarea mono" rows={3} value={form.sourceAuth.sshKnownHosts ?? ""} onChange={(event) => setSourceAuth({ sshKnownHosts: event.target.value })} placeholder="git.example.com ssh-ed25519 AAAA…" /></FormBlock></div>
-                {pipeline && <button className="btn btn-sm" type="button" disabled={busy} onClick={rotateSshKey}>{I.refresh({ size: 12 })}<span>{t("build.rotateSshKey")}</span></button>}
-              </>}
-            </div>
+            <>
+              <div className="build-form-grid">
+                <FormBlock label={t("build.gitAuth")} hint={t("build.gitAuthHint")}>
+                  <select className="select" value={form.sourceAuth.type} onChange={(event) => setSourceAuth({ type: event.target.value as "none" | "basic" | "ssh", password: "" })}>
+                    <option value="none">{t("build.gitAuthNone")}</option>
+                    <option value="basic">{t("build.gitAuthBasic")}</option>
+                    <option value="ssh">{t("build.gitAuthSsh")}</option>
+                  </select>
+                </FormBlock>
+                {form.sourceAuth.type === "basic" && <>
+                  <FormBlock label={t("build.gitUsername")}><input className="input mono" value={form.sourceAuth.username ?? ""} onChange={(event) => setSourceAuth({ username: event.target.value })} /></FormBlock>
+                  <FormBlock label={t("build.gitPassword")} hint={pipeline && form.sourceAuth.credentialConfigured ? t("build.secretUnchanged") : undefined}><input className="input mono" type="password" value={form.sourceAuth.password ?? ""} onChange={(event) => setSourceAuth({ password: event.target.value })} /></FormBlock>
+                </>}
+                {form.sourceAuth.type === "ssh" && <>
+                  <div className="build-form-wide"><FormBlock label={t("build.sshPublicKey")} hint={t("build.sshPublicKeyHint")}><textarea className="textarea mono" rows={3} readOnly value={form.sourceAuth.sshPublicKey ?? t("build.sshPublicKeyAfterSave")} /></FormBlock></div>
+                  <div className="build-form-wide"><FormBlock label={t("build.sshKnownHosts")} hint={t("build.sshKnownHostsHint")}><textarea className="textarea mono" rows={3} value={form.sourceAuth.sshKnownHosts ?? ""} onChange={(event) => setSourceAuth({ sshKnownHosts: event.target.value })} placeholder="git.example.com ssh-ed25519 AAAA…" /></FormBlock></div>
+                  {pipeline && <button className="btn btn-sm" type="button" disabled={busy} onClick={rotateSshKey}>{I.refresh({ size: 12 })}<span>{t("build.rotateSshKey")}</span></button>}
+                </>}
+              </div>
+              {form.sourceAuth.type === "none" && <GitCredentialCard status={gitStatus} loading={gitStatusLoading} error={gitStatusError} disabled={!form.agentId} onInspect={inspectGitCredentials} />}
+            </>
           )}
         </div>
       )}
@@ -538,6 +573,35 @@ function PipelineEditor({ pipeline, agents, deployments, onClose, onSaved }: { p
       )}
       {error && <div className="build-modal-error">{error}</div>}
     </Modal>
+  )
+}
+
+function GitCredentialCard({ status, loading, error, disabled, onInspect }: { status: GitCredentialStatus | null; loading: boolean; error: string | null; disabled: boolean; onInspect: () => void }) {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState<string | null>(null)
+  const ready = !!status && (!!status.credentialHelper || status.sshAgent || status.publicKeys.length > 0)
+  async function copyKey(name: string, key: string) {
+    await navigator.clipboard.writeText(key)
+    setCopied(name)
+  }
+  return (
+    <section className="build-git-card" aria-live="polite">
+      <div className="build-git-head">
+        <div className="row gap-2"><span>{I.lock({ size: 14 })}</span><div className="col"><strong>{t("build.gitCredentials")}</strong><small>{t("build.gitCredentialsDesc")}</small></div></div>
+        <button type="button" className="btn btn-sm" disabled={disabled || loading} onClick={onInspect}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 12 })}<span>{t("build.inspectCredentials")}</span></button>
+      </div>
+      {error ? <div className="build-git-error" role="alert"><strong>{t("build.credentialCheckFailed")}</strong><span>{error}</span><small>{t("build.credentialCheckFix")}</small></div> : status ? (
+        <div className="build-git-body">
+          <div className="build-git-summary"><span className={`dot ${ready ? "ok" : "warn"}`} /><strong>{ready ? t("build.credentialsReady") : t("build.credentialsMissing")}</strong><span className="mono dim">{status.username || "—"} · {status.gitVersion || "git unavailable"}</span></div>
+          <div className="build-git-methods">
+            <span><small>{t("build.httpsCredentialHelper")}</small><strong className="mono">{status.credentialHelper || t("build.notConfigured")}</strong></span>
+            <span><small>{t("build.sshAgent")}</small><strong>{status.sshAgent ? t("common.on") : t("common.off")}</strong></span>
+            <span><small>{t("build.sshPublicKeys")}</small><strong className="mono">{status.publicKeys.length}</strong></span>
+          </div>
+          {status.publicKeys.length ? <div className="build-public-keys">{status.publicKeys.map((item) => <div key={item.name}><span className="mono">{item.name}</span><code title={item.key}>{item.key}</code><button type="button" className="btn btn-sm" onClick={() => copyKey(item.name, item.key)}>{copied === item.name ? I.check({ size: 11 }) : I.copy({ size: 11 })}<span>{copied === item.name ? t("common.copied") : t("build.copyPublicKey")}</span></button></div>)}</div> : <div className="build-git-empty">{t("build.noPublicKeyFix")}</div>}
+        </div>
+      ) : <div className="build-git-empty">{t("build.inspectCredentialsHint")}</div>}
+    </section>
   )
 }
 

@@ -23,6 +23,7 @@ type DeploymentProject struct {
 	Type             string    `gorm:"size:16;not null" json:"type"`
 	AgentID          string    `gorm:"size:64;index;not null" json:"agentId"`
 	DeployPath       string    `gorm:"size:500;not null" json:"deployPath"`
+	ExtractArchive   bool      `gorm:"default:true;not null" json:"extractArchive"`
 	ServiceName      string    `gorm:"size:160" json:"serviceName"`
 	HealthURL        string    `gorm:"size:1000" json:"healthUrl"`
 	KeepReleases     int       `gorm:"default:5;not null" json:"keepReleases"`

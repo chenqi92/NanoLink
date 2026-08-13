@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::Arc;
@@ -130,6 +130,7 @@ struct DeploymentRequest {
     artifact_name: Option<String>,
     extract_artifact: bool,
     strip_top_level: bool,
+    log_update_url: String,
 }
 
 impl DeploymentExecutor {
@@ -190,23 +191,36 @@ fn deploy_sync(
         "[done] preflight {} {}",
         req.project_type, req.version
     ));
+    send_log_update(&req, &logs);
 
     let releases = req.deploy_path.join("releases");
     if let Err(e) = fs::create_dir_all(&releases) {
-        return fail(logs, format!("Failed to create releases directory: {e}"));
+        return fail_with_update(
+            &req,
+            logs,
+            format!("Failed to create releases directory: {e}"),
+        );
     }
     if let Err(error) = validate_deploy_path(cfg, &req.deploy_path)
         .and_then(|_| validate_directory_without_links(&releases))
     {
-        return fail(logs, error);
+        return fail_with_update(&req, logs, error);
     }
     let release_path = releases.join(&req.version);
     if release_path.exists() {
-        return fail(logs, format!("Release {} already exists", req.version));
+        return fail_with_update(
+            &req,
+            logs,
+            format!("Release {} already exists", req.version),
+        );
     }
     let stage = releases.join(format!(".staging-{}", Uuid::new_v4()));
     if let Err(e) = fs::create_dir(&stage) {
-        return fail(logs, format!("Failed to create staging directory: {e}"));
+        return fail_with_update(
+            &req,
+            logs,
+            format!("Failed to create staging directory: {e}"),
+        );
     }
 
     let artifact_name = req.artifact_name.as_deref().unwrap_or("artifact");
@@ -221,12 +235,14 @@ fn deploy_sync(
             "[done] download {} bytes",
             fs::metadata(&artifact_path).map(|m| m.len()).unwrap_or(0)
         ));
+        send_log_update(&req, &logs);
         verify_artifact(
             &artifact_path,
             req.artifact_size.unwrap_or_default(),
             req.artifact_sha256.as_deref().unwrap_or_default(),
         )?;
         logs.push("[done] verify sha256".to_string());
+        send_log_update(&req, &logs);
 
         if req.project_type == "java" {
             fs::rename(&artifact_path, stage.join("app.jar"))
@@ -252,38 +268,42 @@ fn deploy_sync(
     if let Err(error) = prepare {
         let _ = fs::remove_file(&artifact_path);
         let _ = fs::remove_dir_all(&stage);
-        return fail(logs, error);
+        return fail_with_update(&req, logs, error);
     }
     logs.push(format!("[done] stage {}", release_path.display()));
+    send_log_update(&req, &logs);
 
     let previous = match activate_release(&req.deploy_path, &release_path) {
         Ok(previous) => previous,
         Err(error) => {
             remove_failed_release(&release_path, &mut logs);
-            return fail(logs, error);
+            return fail_with_update(&req, logs, error);
         }
     };
     logs.push(format!("[done] activate {}", req.version));
+    send_log_update(&req, &logs);
 
     if let Err(error) = restart_or_reload(&req) {
         if restore_previous(&req, previous.as_deref(), &mut logs) {
             remove_failed_release(&release_path, &mut logs);
         }
-        return fail(logs, error);
+        return fail_with_update(&req, logs, error);
     }
     logs.push(format!("[done] service {}", service_action_label(&req)));
+    send_log_update(&req, &logs);
 
     if let Err(error) = check_health(&req.health_url) {
         if restore_previous(&req, previous.as_deref(), &mut logs) {
             remove_failed_release(&release_path, &mut logs);
         }
-        return fail(logs, error);
+        return fail_with_update(&req, logs, error);
     }
     logs.push(if req.health_url.is_empty() {
         "[done] health check skipped".to_string()
     } else {
         "[done] health check passed".to_string()
     });
+    send_log_update(&req, &logs);
 
     if let Err(error) = prune_releases(&releases, &release_path, req.keep_releases) {
         warn!("Release cleanup failed: {}", error);
@@ -295,6 +315,7 @@ fn deploy_sync(
         ));
     }
     info!("Deployment completed: {}", release_path.display());
+    send_log_update(&req, &logs);
     Ok(logs)
 }
 
@@ -414,6 +435,13 @@ fn parse_request(
     } else {
         (None, None, None, None)
     };
+    let log_update_url = params
+        .get("log_update_url")
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default();
+    if require_artifact && !log_update_url.is_empty() {
+        validate_http_url(&log_update_url)?;
+    }
 
     Ok(DeploymentRequest {
         project_type,
@@ -428,6 +456,7 @@ fn parse_request(
         artifact_name,
         extract_artifact,
         strip_top_level,
+        log_update_url,
     })
 }
 
@@ -458,11 +487,10 @@ fn optional_bool(
 fn extract_artifact_flag(params: &HashMap<String, String>) -> Result<bool, String> {
     if params.contains_key("extract_artifact") {
         optional_bool(params, "extract_artifact", true)
-    } else {
-        // `extract` was used briefly by an earlier server implementation. Keep
-        // accepting it for rolling upgrades, while the canonical key wins when
-        // both are present.
+    } else if params.contains_key("extract") {
         optional_bool(params, "extract", true)
+    } else {
+        optional_bool(params, "extract_archive", true)
     }
 }
 
@@ -1026,6 +1054,71 @@ fn fail<T>(logs: Vec<String>, error: String) -> Result<T, (Vec<String>, String)>
     Err((logs, error))
 }
 
+fn fail_with_update<T>(
+    req: &DeploymentRequest,
+    mut logs: Vec<String>,
+    error: String,
+) -> Result<T, (Vec<String>, String)> {
+    logs.push(format!("[error] {error}"));
+    send_log_update(req, &logs);
+    Err((logs, error))
+}
+
+fn send_log_update(req: &DeploymentRequest, logs: &[String]) {
+    if req.log_update_url.is_empty() {
+        return;
+    }
+    let mut body = logs.join("\n");
+    const MAX_LOG: usize = 256 * 1024;
+    if body.len() > MAX_LOG {
+        let mut boundary = MAX_LOG;
+        while boundary > 0 && !body.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        body.truncate(boundary);
+    }
+    let mut command = if cfg!(windows) {
+        let mut cmd = Command::new("powershell");
+        cmd.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "$body=[Console]::In.ReadToEnd(); Invoke-WebRequest -Method Put -ContentType 'text/plain' -Body $body -TimeoutSec 5 -Uri $args[0] | Out-Null",
+            &req.log_update_url,
+        ]);
+        cmd
+    } else {
+        let mut cmd = Command::new("curl");
+        cmd.args([
+            "-f",
+            "--silent",
+            "--show-error",
+            "--connect-timeout",
+            "2",
+            "--max-time",
+            "5",
+            "-X",
+            "PUT",
+            "-H",
+            "Content-Type: text/plain; charset=utf-8",
+            "--data-binary",
+            "@-",
+            &req.log_update_url,
+        ]);
+        cmd
+    };
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if let Ok(mut child) = command.spawn() {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(body.as_bytes());
+        }
+        let _ = child.wait();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1091,6 +1184,9 @@ mod tests {
 
         let legacy = HashMap::from([("extract".to_string(), "false".to_string())]);
         assert!(!extract_artifact_flag(&legacy).unwrap());
+
+        let project_legacy = HashMap::from([("extract_archive".to_string(), "false".to_string())]);
+        assert!(!extract_artifact_flag(&project_legacy).unwrap());
 
         let conflicting = HashMap::from([
             ("extract".to_string(), "false".to_string()),

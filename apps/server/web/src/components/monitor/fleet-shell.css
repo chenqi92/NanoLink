@@ -1,0 +1,41 @@
+.fleet-shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 500px; max-height: 68vh; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; background: var(--bg-2); }
+.fleet-shell-targets { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); background: var(--panel); }
+.fleet-shell-section-head { min-height: 40px; padding: 9px 11px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); color: var(--fg-2); font-size: 11.5px; font-weight: 500; }
+.fleet-shell-select-actions { display: flex; padding: 5px 7px; border-bottom: 1px solid var(--border); }
+.fleet-shell-agent-list { padding: 6px; display: flex; flex-direction: column; gap: 3px; overflow: auto; }
+.fleet-shell-agent-list label { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid transparent; border-radius: 6px; color: var(--fg-3); cursor: pointer; }
+.fleet-shell-agent-list label:hover { background: var(--hover); }
+.fleet-shell-agent-list label.selected { border-color: var(--border-2); background: var(--panel-2); color: var(--fg-2); }
+.fleet-shell-agent-list input { accent-color: var(--fg); }
+.fleet-shell-agent-list strong { font-size: 11px; font-weight: 500; }
+.fleet-shell-agent-list small { color: var(--fg-4); font-size: 9px; }
+.fleet-shell-workspace { min-width: 0; display: flex; flex-direction: column; }
+.fleet-shell-command { padding: 11px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.fleet-shell-command > label { display: block; margin-bottom: 6px; color: var(--fg-3); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.fleet-shell-command > div { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.fleet-shell-command > div > span { color: var(--ok); text-align: center; }
+.fleet-shell-command small { display: block; margin-top: 6px; color: var(--fg-4); font-size: 10px; }
+.fleet-shell-results { flex: 1; min-height: 0; padding: 8px; display: flex; flex-direction: column; gap: 7px; overflow: auto; }
+.fleet-shell-result { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.fleet-shell-result.success { border-left: 2px solid var(--ok-2); }
+.fleet-shell-result.failed { border-left: 2px solid var(--crit-2); }
+.fleet-shell-result header { min-height: 36px; padding: 7px 9px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--border); }
+.fleet-shell-result header strong { font-size: 10.5px; font-weight: 500; }
+.fleet-shell-result pre { margin: 0; min-height: 42px; max-height: 180px; padding: 9px 10px; overflow: auto; white-space: pre-wrap; color: var(--fg-3); font: 10.5px/1.55 var(--font-mono); }
+.fleet-shell-result > div[role="alert"] { padding: 7px 10px; border-top: 1px solid rgba(239,68,68,.2); background: rgba(239,68,68,.06); color: var(--crit); font-size: 10.5px; }
+.fleet-shell-result-empty, .fleet-shell-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 320px; padding: 30px; color: var(--fg-4); text-align: center; }
+.fleet-shell-empty strong { color: var(--fg-2); font-size: 13px; }
+.fleet-shell-empty p { margin: 0; max-width: 440px; font-size: 11.5px; line-height: 1.55; }
+.fleet-shell-footnote { margin-right: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--fg-4); font-size: 10.5px; }
+@container app-viewport (max-width: 700px) {
+  .fleet-shell { grid-template-columns: 1fr; min-height: 0; max-height: none; }
+  .fleet-shell-targets { max-height: 210px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .fleet-shell-agent-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  .fleet-shell-workspace { min-height: 430px; }
+  .fleet-shell-command > div { grid-template-columns: 18px minmax(0, 1fr); }
+  .fleet-shell-command .btn { grid-column: 1 / -1; justify-content: center; }
+  .fleet-shell-footnote { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fleet-shell .pulse { animation: none; }
+}

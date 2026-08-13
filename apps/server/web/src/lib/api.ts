@@ -119,7 +119,12 @@ export interface User {
   username: string
   email?: string
   isSuperAdmin: boolean
-  createdAt: string
+  createdAt?: string
+}
+
+export interface BootstrapStatus {
+  hasUsers: boolean
+  registrationEnabled: boolean
 }
 
 // Agent types
@@ -275,6 +280,7 @@ export interface Summary {
 
 // API endpoints
 export const authApi = {
+  bootstrap: () => api.get<BootstrapStatus>("/auth/bootstrap"),
   login: (data: LoginRequest) => api.post<AuthResponse>("/auth/login", data),
   register: (data: RegisterRequest) => api.post<AuthResponse>("/auth/register", data),
   me: () => api.get<User>("/auth/me"),
@@ -733,6 +739,7 @@ export interface DeploymentProject {
   type: "java" | "static"
   agentId: string
   deployPath: string
+  extractArchive: boolean
   serviceName: string
   healthUrl: string
   keepReleases: number
@@ -783,6 +790,7 @@ export interface DeploymentProjectInput {
   type: "java" | "static"
   agentId: string
   deployPath: string
+  extractArchive: boolean
   serviceName: string
   healthUrl: string
   keepReleases: number

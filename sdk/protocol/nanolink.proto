@@ -431,6 +431,7 @@ enum CommandType {
   // Automated build pipeline (SYSTEM_ADMIN; isolated workspace/container)
   BUILD_EXECUTE = 130;        // Fetch source, execute validated DAG, upload verified artifact
   BUILD_CANCEL = 131;         // Stop an active build and clean its disposable workspace
+  BUILD_GIT_STATUS = 132;     // Report agent Git credential-helper and SSH public-key readiness
 }
 
 message CommandResult {

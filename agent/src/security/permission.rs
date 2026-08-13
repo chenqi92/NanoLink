@@ -100,7 +100,8 @@ impl PermissionChecker {
             CommandType::DeployExecute
             | CommandType::DeployRollback
             | CommandType::BuildExecute
-            | CommandType::BuildCancel => 3,
+            | CommandType::BuildCancel
+            | CommandType::BuildGitStatus => 3,
 
             // Unknown commands require highest level
             _ => 3,

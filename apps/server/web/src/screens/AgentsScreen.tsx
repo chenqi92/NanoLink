@@ -8,6 +8,8 @@ import { PageHeader, EmptyState, Status, Perm } from "@/components/shell/primiti
 import { VirtualAgentGrid } from "@/components/monitor/VirtualAgentGrid"
 import { agentStatus, osFamily, toneFor, formatRate } from "@/lib/format"
 import { useAuth } from "@/contexts/AuthContext"
+import { FleetShell } from "@/components/monitor/FleetShell"
+import { eligibleFleetShellAgents } from "@/lib/fleet"
 
 type Filter = "all" | "online" | "warn" | "offline"
 
@@ -19,6 +21,7 @@ export function AgentsScreen() {
   const [filter, setFilter] = useState<Filter>("all")
   const [view, setView] = useState<"grid" | "list">("grid")
   const [q, setQ] = useState("")
+  const [fleetShellOpen, setFleetShellOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const openAgent = useCallback((id: string) => navigate("agent-detail", { agentId: id }), [navigate])
@@ -81,6 +84,7 @@ export function AgentsScreen() {
     { k: "warn", label: t("mon.warn"), n: counts.warn },
     { k: "offline", label: t("status.offline"), n: counts.offline },
   ]
+  const fleetShellAgents = eligibleFleetShellAgents(agents)
 
   return (
     <div className="col" style={{ flex: 1, overflow: "hidden" }}>
@@ -89,6 +93,7 @@ export function AgentsScreen() {
         actions={
           <>
             <button className="btn btn-sm" onClick={() => refresh()}>{I.refresh({ size: 13 })}<span>{t("mon.refresh")}</span></button>
+            {fleetShellAgents.length > 0 && <button className="btn btn-sm" onClick={() => setFleetShellOpen(true)}>{I.term({ size: 13 })}<span>{t("fleetShell.open")}</span><span className="badge mono">{fleetShellAgents.length}</span></button>}
             {user?.isSuperAdmin && <button className="btn btn-sm btn-primary" onClick={() => navigate("tokens", { openWizard: true })}>{I.plus({ size: 13 })}<span>{t("wizard.addAgent")}</span></button>}
           </>
         }
@@ -182,6 +187,7 @@ export function AgentsScreen() {
           </div>
         )}
       </div>
+      {fleetShellOpen && <FleetShell agents={agents} onClose={() => setFleetShellOpen(false)} />}
     </div>
   )
 }

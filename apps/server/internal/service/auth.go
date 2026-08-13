@@ -317,6 +317,19 @@ func (s *AuthService) RegisterUser(username, password, email string) (*database.
 	return s.registerUser(s.db, username, password, email, false)
 }
 
+// BootstrapStatus reports whether the browser may create the first account.
+// It deliberately exposes only aggregate setup state, never the configured
+// bootstrap username or any credential material.
+func (s *AuthService) BootstrapStatus() (hasUsers, registrationEnabled bool, err error) {
+	var count int64
+	if err = s.db.Model(&database.User{}).Count(&count).Error; err != nil {
+		return false, false, err
+	}
+	hasUsers = count > 0
+	registrationEnabled = s.allowPublicRegistration && !hasUsers
+	return hasUsers, registrationEnabled, nil
+}
+
 // RegisterFirstSuperAdmin creates the first user as a super admin and then closes public registration.
 func (s *AuthService) RegisterFirstSuperAdmin(username, password, email string) (*database.User, error) {
 	if !s.allowPublicRegistration {

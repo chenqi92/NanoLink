@@ -688,6 +688,9 @@ func commandRequiredPermission(cmdType pb.CommandType) int {
 		pb.CommandType_FILE_UPLOAD,
 		pb.CommandType_DEPLOY_EXECUTE,
 		pb.CommandType_DEPLOY_ROLLBACK,
+		pb.CommandType_BUILD_EXECUTE,
+		pb.CommandType_BUILD_CANCEL,
+		pb.CommandType_BUILD_GIT_STATUS,
 		pb.CommandType_SYSTEM_REBOOT:
 		// Host-level lifecycle actions require SYSTEM_ADMIN (L3).
 		return database.PermissionSystemAdmin

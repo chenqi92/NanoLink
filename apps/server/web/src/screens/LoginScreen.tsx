@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import { useAuth } from "@/contexts/AuthContext"
@@ -6,6 +6,7 @@ import { useSettings } from "@/store/settings"
 import { FormBlock } from "@/components/shell/primitives"
 import { useData } from "@/contexts/DataContext"
 import { isOnline } from "@/lib/format"
+import { authApi, type BootstrapStatus } from "@/lib/api"
 
 function LoginVisual() {
   const dots: { x: number; y: number; opacity: number; delay: string }[] = []
@@ -52,6 +53,17 @@ export function LoginScreen() {
   const [password, setPassword] = useState("")
   const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
+  const [bootstrap, setBootstrap] = useState<BootstrapStatus | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    authApi.bootstrap().then((status) => { if (alive) setBootstrap(status) }).catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    if (mode === "register" && bootstrap && !bootstrap.registrationEnabled) setMode("login")
+  }, [bootstrap, mode])
 
   const online = agents.filter((a) => isOnline(a.lastHeartbeat)).length
 
@@ -102,7 +114,7 @@ export function LoginScreen() {
               <h1 className="display" style={{ margin: 0, fontSize: 26, fontWeight: 500, letterSpacing: "-0.02em" }}>
                 {mode === "login" ? t("auth.welcomeBack") : t("auth.createAccountTitle")}
               </h1>
-              <div className="muted" style={{ fontSize: 12 }}>{t("auth.continueMonitoring")}</div>
+              <div className="muted" style={{ fontSize: 12 }}>{mode === "register" ? t("auth.initialAdminDesc") : t("auth.continueMonitoring")}</div>
             </div>
 
             <FormBlock label={t("auth.username")}>
@@ -142,11 +154,18 @@ export function LoginScreen() {
               )}
             </button>
 
-            <div className="row gap-2" style={{ justifyContent: "center", marginTop: -8 }}>
-              <a className="lnk muted" style={{ fontSize: 11.5, cursor: "pointer" }} onClick={() => { setMode(mode === "login" ? "register" : "login"); clearError() }}>
-                {mode === "login" ? t("auth.noAccount") : t("auth.hasAccount")}
-              </a>
-            </div>
+            {bootstrap?.registrationEnabled ? (
+              <div className="row gap-2" style={{ justifyContent: "center", marginTop: -8 }}>
+                <button type="button" className="lnk muted" style={{ fontSize: 11.5, cursor: "pointer", border: 0, background: "none" }} onClick={() => { setMode(mode === "login" ? "register" : "login"); clearError() }}>
+                  {mode === "login" ? t("auth.createInitialAdmin") : t("auth.hasAccount")}
+                </button>
+              </div>
+            ) : bootstrap && !bootstrap.hasUsers ? (
+              <div className="auth-setup-note" role="status">
+                <span>{I.lock({ size: 13 })}</span>
+                <span>{t("auth.bootstrapEnvHint")}</span>
+              </div>
+            ) : null}
           </div>
         </form>
       </div>

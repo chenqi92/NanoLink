@@ -312,6 +312,7 @@ impl MessageHandler {
             CommandType::DeployRollback => self.deployment_executor.rollback(&command.params).await,
             CommandType::BuildExecute => self.build_executor.execute(&command.params).await,
             CommandType::BuildCancel => self.build_executor.cancel(&command.target),
+            CommandType::BuildGitStatus => self.build_executor.git_status().await,
 
             _ => CommandResult {
                 command_id: command.command_id.clone(),

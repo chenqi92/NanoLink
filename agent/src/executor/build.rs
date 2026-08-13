@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tracing::info;
 use url::Url;
@@ -152,6 +152,115 @@ impl BuildExecutor {
             },
         }
     }
+
+    pub async fn git_status(&self) -> CommandResult {
+        match tokio::task::spawn_blocking(git_status_sync).await {
+            Ok(Ok(output)) => CommandResult {
+                success: true,
+                output,
+                ..Default::default()
+            },
+            Ok(Err(error)) => CommandResult {
+                success: false,
+                error,
+                ..Default::default()
+            },
+            Err(error) => CommandResult {
+                success: false,
+                error: format!("Git readiness check failed: {error}"),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitCredentialStatus {
+    username: String,
+    git_version: String,
+    credential_helper: String,
+    ssh_agent: bool,
+    public_keys: Vec<GitPublicKey>,
+}
+
+#[derive(Serialize)]
+struct GitPublicKey {
+    name: String,
+    key: String,
+}
+
+fn git_status_sync() -> Result<String, String> {
+    let git_version = command_stdout("git", &["--version"]);
+    if git_version.is_empty() {
+        return Err(
+            "Git is not installed or is not available to the agent service account".to_string(),
+        );
+    }
+    let credential_helper =
+        command_stdout("git", &["config", "--global", "--get", "credential.helper"]);
+    let username = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_default();
+    let ssh_agent = std::env::var_os("SSH_AUTH_SOCK").is_some();
+    let mut public_keys = Vec::new();
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+        let ssh_dir = PathBuf::from(home).join(".ssh");
+        if let Ok(entries) = fs::read_dir(ssh_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
+                if !name.ends_with(".pub") || !kind.is_file() || kind.is_symlink() {
+                    continue;
+                }
+                let Ok(metadata) = entry.metadata() else {
+                    continue;
+                };
+                if metadata.len() == 0 || metadata.len() > 16 * 1024 {
+                    continue;
+                }
+                let Ok(value) = fs::read_to_string(path) else {
+                    continue;
+                };
+                let key = value.trim();
+                if is_ssh_public_key(key) {
+                    public_keys.push(GitPublicKey {
+                        name,
+                        key: key.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    public_keys.sort_by(|a, b| a.name.cmp(&b.name));
+    serde_json::to_string(&GitCredentialStatus {
+        username,
+        git_version,
+        credential_helper,
+        ssh_agent,
+        public_keys,
+    })
+    .map_err(|error| format!("Encode Git readiness status: {error}"))
+}
+
+fn command_stdout(program: &str, args: &[&str]) -> String {
+    Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
+fn is_ssh_public_key(value: &str) -> bool {
+    let prefix = value.split_whitespace().next().unwrap_or_default();
+    prefix.starts_with("ssh-") || prefix.starts_with("ecdsa-") || prefix.starts_with("sk-")
 }
 
 fn execute_sync(
@@ -1170,6 +1279,16 @@ mod tests {
     fn accepts_ssh_git_user_but_rejects_http_credentials() {
         assert!(validate_git_url("ssh://git@example.com/team/repo.git").is_ok());
         assert!(validate_git_url("https://user:secret@example.com/repo.git").is_err());
+    }
+
+    #[test]
+    fn recognizes_public_keys_without_exposing_private_material() {
+        assert!(is_ssh_public_key("ssh-ed25519 AAAAC3Nz test@example"));
+        assert!(is_ssh_public_key(
+            "ecdsa-sha2-nistp256 AAAAE2Vj test@example"
+        ));
+        assert!(!is_ssh_public_key("-----BEGIN OPENSSH PRIVATE KEY-----"));
+        assert!(!is_ssh_public_key("not a key"));
     }
 
     #[test]

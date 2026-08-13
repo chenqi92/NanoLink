@@ -28,6 +28,10 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
   const xtermRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const lineRef = useRef("")
+  const historyRef = useRef<string[]>([])
+  const historyIndexRef = useRef(0)
+  const awaitingRef = useRef(false)
   
   const [settings] = useState<TerminalSettings>(() => propSettings || loadTerminalSettings())
   const theme = getThemeById(settings.themeId)
@@ -41,16 +45,22 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
 
     ws.onopen = () => {
       xtermRef.current?.writeln(`\x1b[32m${t("shell.connectedToAgent")}\x1b[0m`)
-      xtermRef.current?.writeln("")
+      xtermRef.current?.write(`\r\n\x1b[90m${agentId.slice(0, 8)}\x1b[0m \x1b[32m$\x1b[0m `)
     }
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
         if (data.type === "output") {
-          xtermRef.current?.write(data.data)
+          awaitingRef.current = false
+          const output = String(data.data ?? "")
+          if (output) xtermRef.current?.write(output)
+          if (output && !output.endsWith("\n") && !output.endsWith("\r")) xtermRef.current?.write("\r\n")
+          xtermRef.current?.write(`\x1b[90m${agentId.slice(0, 8)}\x1b[0m \x1b[32m$\x1b[0m `)
         } else if (data.type === "error") {
+          awaitingRef.current = false
           xtermRef.current?.writeln(`\x1b[31m${t("shell.errorPrefix", { message: data.data })}\x1b[0m`)
+          xtermRef.current?.write(`\x1b[90m${agentId.slice(0, 8)}\x1b[0m \x1b[32m$\x1b[0m `)
         }
       } catch {
         // Raw output
@@ -93,10 +103,60 @@ export function Terminal({ agentId, settings: propSettings, onDisconnect }: Term
     xtermRef.current = term
     fitAddonRef.current = fitAddon
 
-    // Handle terminal input
-    term.onData((data) => {
+    const redrawLine = (next: string) => {
+      term.write(`\r\x1b[2K\x1b[90m${agentId.slice(0, 8)}\x1b[0m \x1b[32m$\x1b[0m ${next}`)
+      lineRef.current = next
+    }
+
+    const submitLine = () => {
+      const command = lineRef.current
+      term.write("\r\n")
+      lineRef.current = ""
+      if (!command.trim()) {
+        term.write(`\x1b[90m${agentId.slice(0, 8)}\x1b[0m \x1b[32m$\x1b[0m `)
+        return
+      }
+      historyRef.current = [...historyRef.current.filter((item) => item !== command), command].slice(-100)
+      historyIndexRef.current = historyRef.current.length
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: "input", data }))
+        awaitingRef.current = true
+        wsRef.current.send(JSON.stringify({ type: "input", data: command }))
+      } else {
+        term.writeln(`\x1b[31m${t("shell.connectionFailed")}\x1b[0m`)
+        term.write(`\x1b[90m${agentId.slice(0, 8)}\x1b[0m \x1b[32m$\x1b[0m `)
+      }
+    }
+
+    // The server executes one bounded command per message rather than exposing
+    // a PTY. Buffer a complete line locally so each keystroke is not dispatched
+    // as a separate shell command.
+    term.onData((data) => {
+      if (awaitingRef.current) return
+      if (data === "\x1b[A" || data === "\x1b[B") {
+        const history = historyRef.current
+        if (!history.length) return
+        historyIndexRef.current = data === "\x1b[A" ? Math.max(0, historyIndexRef.current - 1) : Math.min(history.length, historyIndexRef.current + 1)
+        redrawLine(historyIndexRef.current < history.length ? history[historyIndexRef.current] : "")
+        return
+      }
+      for (const char of data) {
+        if (char === "\r" || char === "\n") {
+          submitLine()
+        } else if (char === "\x7f") {
+          if (lineRef.current.length) {
+            lineRef.current = lineRef.current.slice(0, -1)
+            term.write("\b \b")
+          }
+        } else if (char === "\x03") {
+          term.write("^C\r\n")
+          redrawLine("")
+        } else if (char === "\x0c") {
+          term.clear()
+          redrawLine(lineRef.current)
+        } else if (char >= " " && lineRef.current.length < 16_000) {
+          lineRef.current += char
+          term.write(char)
+        }
       }
     })
 

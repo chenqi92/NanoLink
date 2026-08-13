@@ -27,6 +27,9 @@
     { "name": "SYSTEM_REBOOT",   "code": 40,  "level": 3 },
     { "name": "SHELL_EXECUTE",   "code": 50,  "level": 3 },
     { "name": "DEPLOY_EXECUTE",  "code": 120, "level": 3 },
-    { "name": "DEPLOY_ROLLBACK", "code": 121, "level": 3 }
+    { "name": "DEPLOY_ROLLBACK", "code": 121, "level": 3 },
+    { "name": "BUILD_EXECUTE",   "code": 130, "level": 3 },
+    { "name": "BUILD_CANCEL",    "code": 131, "level": 3 },
+    { "name": "BUILD_GIT_STATUS", "code": 132, "level": 3 }
   ]
 }

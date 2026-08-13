@@ -34,6 +34,8 @@ var (
 	serviceNamePattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.@-]{0,159}$`)
 )
 
+const maxDeploymentLogBytes = 256 * 1024
+
 type DeploymentHandler struct {
 	db          *gorm.DB
 	grpc        *grpcserver.Server
@@ -46,13 +48,14 @@ type DeploymentHandler struct {
 }
 
 type deploymentProjectRequest struct {
-	Name         string `json:"name" binding:"required"`
-	Type         string `json:"type" binding:"required"`
-	AgentID      string `json:"agentId" binding:"required"`
-	DeployPath   string `json:"deployPath" binding:"required"`
-	ServiceName  string `json:"serviceName"`
-	HealthURL    string `json:"healthUrl"`
-	KeepReleases int    `json:"keepReleases"`
+	Name           string `json:"name" binding:"required"`
+	Type           string `json:"type" binding:"required"`
+	AgentID        string `json:"agentId" binding:"required"`
+	DeployPath     string `json:"deployPath" binding:"required"`
+	ExtractArchive *bool  `json:"extractArchive"`
+	ServiceName    string `json:"serviceName"`
+	HealthURL      string `json:"healthUrl"`
+	KeepReleases   int    `json:"keepReleases"`
 }
 
 type deploymentProjectView struct {
@@ -128,6 +131,7 @@ func (h *DeploymentHandler) CreateProject(c *gin.Context) {
 		DeployPath: path.Clean(req.DeployPath), ServiceName: strings.TrimSpace(req.ServiceName), HealthURL: strings.TrimSpace(req.HealthURL),
 		KeepReleases: req.KeepReleases, CreatedBy: user.ID,
 	}
+	project.ExtractArchive = req.ExtractArchive == nil || *req.ExtractArchive
 	if project.KeepReleases == 0 {
 		project.KeepReleases = 5
 	}
@@ -161,6 +165,9 @@ func (h *DeploymentHandler) UpdateProject(c *gin.Context) {
 	project.Type = strings.ToLower(req.Type)
 	project.AgentID = strings.TrimSpace(req.AgentID)
 	project.DeployPath = path.Clean(req.DeployPath)
+	if req.ExtractArchive != nil {
+		project.ExtractArchive = *req.ExtractArchive
+	}
 	project.ServiceName = strings.TrimSpace(req.ServiceName)
 	project.HealthURL = strings.TrimSpace(req.HealthURL)
 	project.KeepReleases = req.KeepReleases
@@ -303,6 +310,7 @@ func (h *DeploymentHandler) dispatch(c *gin.Context, project database.Deployment
 		task.ArtifactTokenHash = tokenHash
 		task.ArtifactTokenExpires = &expires
 		params["artifact_url"] = h.artifactURL(c, task.ID, plainToken)
+		params["log_update_url"] = h.logUpdateURL(c, task.ID, plainToken)
 		commandType = pb.CommandType_DEPLOY_EXECUTE
 	}
 	if err := h.db.Create(&task).Error; err != nil {
@@ -346,6 +354,7 @@ func deploymentCommandParams(project database.DeploymentProject, release databas
 	params["artifact_size"] = strconv.FormatInt(release.ArtifactSize, 10)
 	params["artifact_name"] = release.ArtifactName
 	params["extract_artifact"] = strconv.FormatBool(extract)
+	params["extract_archive"] = strconv.FormatBool(extract)
 	params["strip_top_level"] = strconv.FormatBool(release.StripTopLevel)
 	return params
 }
@@ -412,11 +421,7 @@ func (h *DeploymentHandler) DownloadArtifact(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "artifact token not found"})
 		return
 	}
-	token := strings.TrimSpace(c.Query("token"))
-	digest := sha256.Sum256([]byte(token))
-	provided := hex.EncodeToString(digest[:])
-	if token == "" || task.ArtifactTokenExpires == nil || time.Now().After(*task.ArtifactTokenExpires) ||
-		len(provided) != len(task.ArtifactTokenHash) || subtle.ConstantTimeCompare([]byte(provided), []byte(task.ArtifactTokenHash)) != 1 {
+	if !validDeploymentTaskToken(&task, c.Query("token")) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "artifact token is invalid or expired"})
 		return
 	}
@@ -434,7 +439,49 @@ func (h *DeploymentHandler) DownloadArtifact(c *gin.Context) {
 	c.FileAttachment(artifactPath, release.ArtifactName)
 }
 
+// UpdateLogs persists bounded, task-scoped progress snapshots from an agent.
+// It shares the short-lived artifact token so no reusable agent credential is
+// exposed to this unauthenticated callback route.
+func (h *DeploymentHandler) UpdateLogs(c *gin.Context) {
+	var task database.DeploymentTask
+	if err := h.db.First(&task, "id = ?", c.Param("taskId")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "deployment log token not found"})
+		return
+	}
+	if !validDeploymentTaskToken(&task, c.Query("token")) || (task.Status != database.DeploymentStatusQueued && task.Status != database.DeploymentStatusRunning) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "deployment log token is invalid or expired"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDeploymentLogBytes+1)
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil || len(body) > maxDeploymentLogBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "deployment log exceeds the configured limit"})
+		return
+	}
+	if err := h.db.Model(&task).Update("output", truncateUTF8(string(body), maxDeploymentLogBytes)).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist deployment log"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func validDeploymentTaskToken(task *database.DeploymentTask, token string) bool {
+	token = strings.TrimSpace(token)
+	digest := sha256.Sum256([]byte(token))
+	provided := hex.EncodeToString(digest[:])
+	return token != "" && task.ArtifactTokenExpires != nil && time.Now().Before(*task.ArtifactTokenExpires) &&
+		len(provided) == len(task.ArtifactTokenHash) && subtle.ConstantTimeCompare([]byte(provided), []byte(task.ArtifactTokenHash)) == 1
+}
+
 func (h *DeploymentHandler) artifactURL(c *gin.Context, taskID, token string) string {
+	return h.taskCallbackURL(c, "/api/deployment-artifacts/", taskID, token)
+}
+
+func (h *DeploymentHandler) logUpdateURL(c *gin.Context, taskID, token string) string {
+	return h.taskCallbackURL(c, "/api/deployment-log-updates/", taskID, token)
+}
+
+func (h *DeploymentHandler) taskCallbackURL(c *gin.Context, endpoint, taskID, token string) string {
 	base := h.externalURL
 	if base == "" {
 		scheme := "http"
@@ -443,7 +490,7 @@ func (h *DeploymentHandler) artifactURL(c *gin.Context, taskID, token string) st
 		}
 		base = scheme + "://" + c.Request.Host
 	}
-	return fmt.Sprintf("%s/api/deployment-artifacts/%s?%s", strings.TrimRight(base, "/"), url.PathEscape(taskID), url.Values{"token": []string{token}}.Encode())
+	return fmt.Sprintf("%s%s%s?%s", strings.TrimRight(base, "/"), endpoint, url.PathEscape(taskID), url.Values{"token": []string{token}}.Encode())
 }
 
 func (h *DeploymentHandler) safeStoredArtifact(raw string) (string, error) {
