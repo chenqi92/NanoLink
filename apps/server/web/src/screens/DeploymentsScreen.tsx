@@ -77,6 +77,7 @@ export function DeploymentsScreen() {
 
   const hostname = useMemo(() => new Map(agents.map((a) => [a.id, a.hostname])), [agents])
   const currentRelease = detail?.releases.find((r) => r.id === detail.currentReleaseId)
+  const currentExtract = currentRelease?.extract ?? detail?.extractArchive ?? true
 
   async function runRelease() {
     if (!detail || !confirm) return
@@ -161,7 +162,7 @@ export function DeploymentsScreen() {
                     <div className="deploy-meta mono">
                       <span>{I.agents({ size: 12 })} {hostname.get(detail.agentId) ?? detail.agentId}</span>
                       <span>{I.disk({ size: 12 })} {detail.deployPath}</span>
-                      {detail.type === "static" && <span>{detail.extractArchive ? I.expand({ size: 12 }) : I.disk({ size: 12 })} {t(detail.extractArchive ? "deploy.extractEnabled" : "deploy.extractDisabled")}</span>}
+                      {detail.type === "static" && <span>{currentExtract ? I.expand({ size: 12 }) : I.disk({ size: 12 })} {t(currentExtract ? "deploy.extractEnabled" : "deploy.extractDisabled")}</span>}
                       {detail.serviceName && <span>{I.power({ size: 12 })} {detail.serviceName}</span>}
                     </div>
                   </div>

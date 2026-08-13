@@ -78,7 +78,7 @@ func TestDeploymentArtifactSuffix(t *testing.T) {
 }
 
 func TestDeploymentCommandUsesCanonicalExtractionParameters(t *testing.T) {
-	project := database.DeploymentProject{Type: database.DeploymentProjectStatic, DeployPath: "/var/www/nanolink/site", KeepReleases: 5}
+	project := database.DeploymentProject{Type: database.DeploymentProjectStatic, DeployPath: "/var/www/nanolink/site", ExtractArchive: true, KeepReleases: 5}
 	release := database.DeploymentRelease{Version: "1.0.0", ArtifactName: "site.tar.gz", ArtifactSize: 12, SHA256: "digest", StripTopLevel: true}
 	params := deploymentCommandParams(project, release, true)
 	if params["extract_artifact"] != "true" || params["strip_top_level"] != "true" {
@@ -91,6 +91,19 @@ func TestDeploymentCommandUsesCanonicalExtractionParameters(t *testing.T) {
 		t.Fatalf("legacy extraction key must not be emitted: %#v", params)
 	}
 
+	project.ExtractArchive = false
+	params = deploymentCommandParams(project, release, true)
+	if params["extract_artifact"] != "false" || params["extract_archive"] != "false" {
+		t.Fatalf("project non-extract default ignored: %#v", params)
+	}
+	extract := true
+	release.Extract = &extract
+	params = deploymentCommandParams(project, release, true)
+	if params["extract_artifact"] != "true" || params["extract_archive"] != "true" {
+		t.Fatalf("explicit extraction release ignored: %#v", params)
+	}
+
+	project.ExtractArchive = true
 	noExtract := false
 	release.Extract = &noExtract
 	params = deploymentCommandParams(project, release, true)

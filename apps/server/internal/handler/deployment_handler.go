@@ -347,7 +347,7 @@ func deploymentCommandParams(project database.DeploymentProject, release databas
 		return params
 	}
 	if project.Type == database.DeploymentProjectStatic {
-		extract := true
+		extract := project.ExtractArchive
 		if release.Extract != nil {
 			extract = *release.Extract
 		}
@@ -546,7 +546,7 @@ func (h *DeploymentHandler) ImportBuildArtifact(projectID uint, version, notes, 
 			return nil, errors.New("copy build artifact into deployment storage failed")
 		}
 	}
-	extract := project.Type == database.DeploymentProjectStatic
+	extract := project.Type == database.DeploymentProjectStatic && project.ExtractArchive
 	release := database.DeploymentRelease{
 		ID: id, ProjectID: projectID, Version: version, ArtifactName: artifactName,
 		ArtifactPath: finalPath, ArtifactSize: size, SHA256: digest,

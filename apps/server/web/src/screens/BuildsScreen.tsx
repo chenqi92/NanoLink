@@ -13,6 +13,7 @@ import {
   type DeploymentProject,
 } from "@/lib/api"
 import { I } from "@/lib/icons"
+import { cleanRunOutput, parseStageStates } from "@/lib/build"
 import { Modal } from "@/components/shell/Dialog"
 import { EmptyState, FormBlock, PageHeader } from "@/components/shell/primitives"
 import { runAgentCommand } from "@/hooks/useAgentCommand"
@@ -688,8 +689,6 @@ function staticPreset(t: (key: string) => string) { return { containerImage: "no
 function stage(id: string, name: string, command: string, needs: string[] = [], allowFailure = false): BuildStage { return { id, name, command, needs, allowFailure, timeoutSeconds: 0 } }
 
 function uniqueStageId(stages: BuildStage[], base: string) { let id = base; let i = 2; while (stages.some((stage) => stage.id === id)) id = `${base}-${i++}`; return id }
-function parseStageStates(output: string) { const states = new Map<string, "active" | "done" | "failed" | "warning">(); for (const line of output.split("\n")) { const match = line.match(/^\[stage:(start|done|failed|warning|canceled)\]\s+(\S+)/); if (match) states.set(match[2], match[1] === "start" ? "active" : match[1] === "canceled" ? "failed" : match[1] as "done" | "failed" | "warning") } return states }
-function cleanRunOutput(output: string) { return output.split("\n").filter((line) => line.startsWith("[log]")).map((line) => line.replace(/^\[log\]\s?/, "")).join("\n") }
 function sourceGlyph(type: BuildPipeline["sourceType"]) { return type === "git" ? "GIT" : type === "url" ? "URL" : "UP" }
 function sourceIcon(type: BuildPipeline["sourceType"]) { return type === "git" ? I.group({ size: 14 }) : type === "url" ? I.globe({ size: 14 }) : I.arrowUp({ size: 14 }) }
 function sourceLabel(t: (key: string, options?: Record<string, unknown>) => string, pipeline: Pick<BuildPipeline, "sourceType" | "sourceUrl" | "sourceRef">) { if (pipeline.sourceType === "upload") return t("build.sourceTypes.upload"); if (pipeline.sourceType === "url") return pipeline.sourceUrl; return `${pipeline.sourceUrl}${pipeline.sourceRef ? ` · ${pipeline.sourceRef}` : ""}` }
