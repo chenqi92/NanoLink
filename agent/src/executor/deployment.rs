@@ -1129,20 +1129,19 @@ mod tests {
 
     #[test]
     fn extraction_protocol_prefers_canonical_key_and_accepts_legacy_alias() {
-        #[cfg(unix)]
-        let (root, target) = ("/opt/nanolink/apps", "/opt/nanolink/apps/site");
-        #[cfg(windows)]
-        let (root, target) = (r"C:\opt\nanolink\apps", r"C:\opt\nanolink\apps\site");
+        let root = std::env::temp_dir().join(format!("nanolink-deploy-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("site");
         let cfg = DeploymentsConfig {
             enabled: true,
-            allowed_roots: vec![root.to_string()],
+            allowed_roots: vec![root.to_string_lossy().into_owned()],
             max_artifact_size: 1024,
             timeout_seconds: 30,
         };
         let mut params = HashMap::from([
             ("project_type".into(), "static".into()),
             ("version".into(), "1.0.0".into()),
-            ("deploy_path".into(), target.into()),
+            ("deploy_path".into(), target.to_string_lossy().into_owned()),
             ("artifact_url".into(), "https://example.com/site.tar".into()),
             ("artifact_sha256".into(), "a".repeat(64)),
             ("artifact_size".into(), "12".into()),
@@ -1152,10 +1151,11 @@ mod tests {
             ("strip_top_level".into(), "false".into()),
         ]);
         let request = parse_request(&cfg, &params, true).expect("canonical request");
-        assert!(!request.extract);
+        assert!(!request.extract_artifact);
         params.remove("extract_artifact");
         let request = parse_request(&cfg, &params, true).expect("legacy request");
-        assert!(request.extract);
+        assert!(request.extract_artifact);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
