@@ -37,7 +37,7 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <protobuf.version>3.25.5</protobuf.version>
+        <protobuf.version>4.35.1</protobuf.version>
         <grpc.version>1.83.1</grpc.version>
         <slf4j.version>2.0.18</slf4j.version>
         <skip.protobuf>false</skip.protobuf>
