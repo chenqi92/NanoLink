@@ -22,7 +22,12 @@ struct NanoCard<Content: View>: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: t.cardRadius, style: .continuous)
-        let inner = content
+        // The content is stacked explicitly: a multi-statement ViewBuilder body
+        // produces a `TupleView`, and applying `.background`/`.clipShape` to that
+        // directly fills and rounds *each* child separately, so a card holding N
+        // rows renders as N stacked cards butted against one another. Wrapping in
+        // a zero-spacing VStack keeps the card a single surface.
+        let inner = VStack(spacing: 0) { content }
             .modifier(OptionalPadding(padding: padding))
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(color ?? t.card)
@@ -55,13 +60,15 @@ struct NanoListRow<Leading: View, Content: View, Trailing: View>: View {
     private let trailing: Trailing
     var divider: Bool = true
     var onTap: (() -> Void)? = nil
-    var padding = EdgeInsets(top: 11, leading: 16, bottom: 11, trailing: 16)
+    /// `nil` takes the vertical inset from the design tokens, which are denser in
+    /// the desktop idiom.
+    var padding: EdgeInsets? = nil
     var verticalAlignment: VerticalAlignment = .center
     @Environment(\.nano) private var t
     @Environment(\.nanoCompact) private var compact
 
     init(divider: Bool = true, onTap: (() -> Void)? = nil,
-         padding: EdgeInsets = EdgeInsets(top: 11, leading: 16, bottom: 11, trailing: 16),
+         padding: EdgeInsets? = nil,
          verticalAlignment: VerticalAlignment = .center,
          @ViewBuilder content: () -> Content,
          @ViewBuilder leading: () -> Leading = { EmptyView() },
@@ -95,9 +102,11 @@ struct NanoListRow<Leading: View, Content: View, Trailing: View>: View {
     }
 
     private var resolvedPadding: EdgeInsets {
-        guard compact else { return padding }
-        return EdgeInsets(top: max(5, padding.top - 3), leading: padding.leading,
-                          bottom: max(5, padding.bottom - 3), trailing: padding.trailing)
+        let base = padding ?? EdgeInsets(top: t.rowVerticalPadding, leading: 16,
+                                         bottom: t.rowVerticalPadding, trailing: 16)
+        guard compact else { return base }
+        return EdgeInsets(top: max(5, base.top - 3), leading: base.leading,
+                          bottom: max(5, base.bottom - 3), trailing: base.trailing)
     }
 }
 

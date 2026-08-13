@@ -42,8 +42,10 @@ struct DashboardScreen: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                header
-                serverChips.padding(.top, 12)
+                // The Mac window titles the section itself and carries the global
+                // actions in its toolbar, so the inline header is phone/iPad only.
+                if !t.desktop { header }
+                serverChips.padding(.top, t.desktop ? 4 : 12)
                 kpiGrid.padding(.top, 12)
                 if !offline.isEmpty { offlineBanner.padding(.top, 12) }
 
@@ -83,15 +85,25 @@ struct DashboardScreen: View {
                 }
             }
             .padding(EdgeInsets(top: 8, leading: 16,
-                                bottom: horizontalSizeClass == .regular ? 48 : 110,
+                                bottom: t.desktop ? 24 : (horizontalSizeClass == .regular ? 48 : 110),
                                 trailing: 16))
         }
-        .refreshable { await refresh() }
+        .nanoPullToRefresh(enabled: !t.desktop) { await refresh() }
         .background(t.bg)
         .navigationDestination(for: AgentRoute.self) { AgentDetailScreen(agent: $0.agent) }
         .navigationDestination(isPresented: $showAddServer) { AddServerScreen() }
         .sheet(isPresented: $showServerSwitch) { ServerSwitchSheet() }
-        .safeAreaInset(edge: .bottom, alignment: .trailing) {
+        .toolbar {
+            if t.desktop {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showAddServer = true } label: {
+                        Label(tr("dashboard.newNode"), systemImage: "plus")
+                    }
+                    .help(tr("dashboard.newNode"))
+                }
+            }
+        }
+        .nanoFloatingAction(enabled: !t.desktop) {
             Button { showAddServer = true } label: {
                 Label(tr("dashboard.newNode"), systemImage: "plus")
                     .font(.system(size: 15, weight: .semibold))

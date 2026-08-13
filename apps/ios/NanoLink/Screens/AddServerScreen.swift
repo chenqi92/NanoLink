@@ -311,20 +311,27 @@ struct AddServerScreen: View {
             .textContentType(contentType)
             .textInputAutocapitalization(capitalization)
             .autocorrectionDisabled(autocorrectionDisabled)
-            .font(.system(size: 15))
+            .font(.system(size: t.desktop ? 13 : 15))
             .foregroundColor(t.fg)
-            .padding(.horizontal, 14)
-            .frame(height: 48)
+            .padding(.horizontal, t.desktop ? 9 : 14)
+            .frame(height: t.desktop ? 28 : 48)
             .background(t.card)
-            .overlay(RoundedRectangle(cornerRadius: t.fieldRadius).stroke(t.isIOS ? .clear : t.sep, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: t.fieldRadius)
+                .stroke(t.desktop ? t.sep : (t.isIOS ? .clear : t.sep), lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: t.fieldRadius, style: .continuous))
         }
     }
 
     private func toggleRow(_ label: String, value: Binding<Bool>) -> some View {
-        HStack { Text(label).font(.system(size: 14)).foregroundColor(t.fg2); Spacer(); Toggle("", isOn: value).labelsHidden() }
-            .padding(.horizontal, 14).frame(height: 48).background(t.card)
-            .clipShape(RoundedRectangle(cornerRadius: t.fieldRadius, style: .continuous))
+        HStack {
+            Text(label).font(.system(size: t.desktop ? 13 : 14)).foregroundColor(t.fg2)
+            Spacer()
+            Toggle("", isOn: value).labelsHidden()
+        }
+        .padding(.horizontal, t.desktop ? 10 : 14)
+        .frame(height: t.desktop ? 32 : 48)
+        .background(t.card)
+        .clipShape(RoundedRectangle(cornerRadius: t.fieldRadius, style: .continuous))
     }
 
     private func notice(_ icon: String, _ text: String, color: Color) -> some View {

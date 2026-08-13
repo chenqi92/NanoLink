@@ -58,18 +58,49 @@ struct NanoTokens {
     let crit: Color
     let info: Color
 
+    /// True in the macOS ("Optimize Interface for Mac") idiom, where controls are
+    /// pointer-sized and the window itself supplies title and toolbar chrome.
+    /// Set by `NanoTokens.resolve`; the palettes themselves stay platform-neutral.
+    var desktop: Bool = false
+
     var isIOS: Bool { style == .ios }
 
     // MARK: Corner radius conventions per platform
 
-    var cardRadius: CGFloat { isIOS ? 14 : 16 }
-    var fieldRadius: CGFloat { isIOS ? 12 : 8 }
-    var buttonRadius: CGFloat { isIOS ? 14 : 100 }
+    var cardRadius: CGFloat { desktop ? 8 : (isIOS ? 14 : 16) }
+    var fieldRadius: CGFloat { desktop ? 6 : (isIOS ? 12 : 8) }
+    var buttonRadius: CGFloat { desktop ? 6 : (isIOS ? 14 : 100) }
 
     // MARK: Display title weight (iOS is heavier/tighter than Material You)
 
-    var displayWeight: Font.Weight { isIOS ? .bold : .medium }
-    var displayTracking: CGFloat { isIOS ? -0.8 : -0.3 }
+    var displayWeight: Font.Weight { desktop ? .semibold : (isIOS ? .bold : .medium) }
+    var displayTracking: CGFloat { desktop ? -0.2 : (isIOS ? -0.8 : -0.3) }
+
+    // MARK: Desktop-aware metrics
+    //
+    // A pointer-driven window wants denser rows, smaller controls and no room
+    // reserved for a bottom tab bar, so screens read these instead of hard-coding
+    // the phone values.
+
+    /// Size of an inline page heading. Desktop windows carry the title in their
+    /// own chrome, so this only applies where a heading is still drawn in content.
+    var titleSize: CGFloat { desktop ? 20 : (isIOS ? 32 : 28) }
+
+    /// Top inset above an inline page heading.
+    var titleTopPadding: CGFloat { desktop ? 2 : (isIOS ? 32 : 4) }
+
+    /// Height of a standard push button.
+    var controlHeight: CGFloat { desktop ? 30 : (isIOS ? 50 : 40) }
+
+    /// Font size inside a standard push button.
+    var controlFontSize: CGFloat { desktop ? 13 : (isIOS ? 17 : 14) }
+
+    /// Vertical padding of a list row inside a grouped card.
+    var rowVerticalPadding: CGFloat { desktop ? 7 : 11 }
+
+    /// Bottom inset of a scrollable screen. Phones reserve room for the floating
+    /// tab bar; a desktop window has none.
+    var contentBottomInset: CGFloat { desktop ? 24 : 100 }
 
     // MARK: shared status palette
 
@@ -196,12 +227,16 @@ struct NanoTokens {
         ok: _ok, warn: _warn, crit: _crit, info: _info
     )
 
-    /// Resolve the tokens for a `ThemeStyle` + dark flag.
-    static func resolve(_ style: ThemeStyle, _ isDark: Bool) -> NanoTokens {
+    /// Resolve the tokens for a `ThemeStyle` + dark flag, optionally in the
+    /// desktop idiom.
+    static func resolve(_ style: ThemeStyle, _ isDark: Bool, desktop: Bool = false) -> NanoTokens {
+        var tokens: NanoTokens
         switch style {
-        case .ios: return isDark ? iosDark : iosLight
-        case .md: return isDark ? mdDark : mdLight
+        case .ios: tokens = isDark ? iosDark : iosLight
+        case .md: tokens = isDark ? mdDark : mdLight
         }
+        tokens.desktop = desktop
+        return tokens
     }
 }
 

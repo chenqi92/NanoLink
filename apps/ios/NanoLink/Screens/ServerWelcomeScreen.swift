@@ -15,19 +15,19 @@ struct ServerWelcomeScreen: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: t.isIOS ? .center : .leading, spacing: 0) {
-                    BrandMark(size: t.isIOS ? 72 : 64)
+                    BrandMark(size: t.desktop ? 56 : (t.isIOS ? 72 : 64))
                     Text("NanoOps")
-                        .font(.system(size: t.isIOS ? 32 : 36, weight: t.displayWeight))
+                        .font(.system(size: t.desktop ? 24 : (t.isIOS ? 32 : 36), weight: t.displayWeight))
                         .tracking(t.displayTracking)
                         .foregroundColor(t.fg)
-                        .padding(.top, 26)
+                        .padding(.top, t.desktop ? 16 : 26)
                     Text(tr("welcome.tagline"))
-                        .font(.system(size: 15.5))
+                        .font(.system(size: t.desktop ? 13 : 15.5))
                         .foregroundColor(t.fg3)
                         .multilineTextAlignment(t.isIOS ? .center : .leading)
                         .lineSpacing(5)
-                        .padding(.top, 10)
-                        .padding(.bottom, 28)
+                        .padding(.top, t.desktop ? 6 : 10)
+                        .padding(.bottom, t.desktop ? 20 : 28)
 
                     ForEach(Array(features.enumerated()), id: \.offset) { _, feature in
                         NanoCard(
@@ -50,7 +50,7 @@ struct ServerWelcomeScreen: View {
                     }
                 }
                 .frame(maxWidth: 460)
-                .padding(EdgeInsets(top: 48, leading: 24, bottom: 8, trailing: 24))
+                .padding(EdgeInsets(top: t.desktop ? 28 : 48, leading: 24, bottom: 8, trailing: 24))
                 .frame(maxWidth: .infinity)
             }
 

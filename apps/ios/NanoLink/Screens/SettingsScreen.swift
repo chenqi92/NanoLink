@@ -56,13 +56,14 @@ struct SettingsScreen: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 20)
             }
-            .padding(EdgeInsets(top: 8, leading: 16, bottom: 96, trailing: 16))
+            .padding(EdgeInsets(top: 8, leading: 16,
+                                bottom: t.desktop ? 24 : 96, trailing: 16))
             .frame(maxWidth: 760)
             .frame(maxWidth: .infinity)
         }
         .background(t.bg.ignoresSafeArea())
         .navigationTitle(tr("settings.title"))
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(t.desktop ? .inline : .large)
         .sheet(item: $picker) { selection in
             SettingsPickerSheet(title: pickerTitle(selection), options: pickerOptions(selection))
         }
