@@ -126,7 +126,7 @@ No config file is written. Server connection metadata (id, name, url, username,
 lastConnected) is persisted through `shared_preferences` under the key
 `nanolink_servers`; the `token` / `userToken` secrets are stored separately in
 `flutter_secure_storage` (Windows Credential Manager, macOS/iOS Keychain, Android
-Keystore), keyed by server id.
+Keystore, Linux libsecret), keyed by server id.
 
 The native iOS/iPadOS app uses the same split: metadata in `UserDefaults`, secrets in the
 iOS Keychain (`Services/KeychainStore.swift`).
