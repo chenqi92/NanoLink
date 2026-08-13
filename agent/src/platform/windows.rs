@@ -66,8 +66,6 @@ pub fn install_service(config_path: Option<PathBuf>) -> Result<(), String> {
         .set_description(SERVICE_DESCRIPTION)
         .map_err(|e| format!("Failed to set service description: {e}"))?;
 
-    println!("Service '{SERVICE_DISPLAY_NAME}' installed successfully.");
-    println!("Use 'sc start {SERVICE_NAME}' to start the service.");
     Ok(())
 }
 
@@ -101,7 +99,6 @@ pub fn uninstall_service() -> Result<(), String> {
         .delete()
         .map_err(|e| format!("Failed to delete service: {e}"))?;
 
-    println!("Service '{SERVICE_DISPLAY_NAME}' uninstalled successfully.");
     Ok(())
 }
 
@@ -118,7 +115,6 @@ pub fn start_service() -> Result<(), String> {
         .start::<String>(&[])
         .map_err(|e| format!("Failed to start service: {e}"))?;
 
-    println!("Service '{SERVICE_DISPLAY_NAME}' started.");
     Ok(())
 }
 
@@ -138,7 +134,6 @@ pub fn stop_service() -> Result<(), String> {
         .stop()
         .map_err(|e| format!("Failed to stop service: {e}"))?;
 
-    println!("Service '{SERVICE_DISPLAY_NAME}' stopped.");
     Ok(())
 }
 
@@ -188,7 +183,6 @@ pub fn restart_service() -> Result<(), String> {
         .start::<String>(&[])
         .map_err(|e| format!("Failed to start service: {e}"))?;
 
-    println!("Service '{SERVICE_DISPLAY_NAME}' restarted.");
     Ok(())
 }
 
@@ -213,7 +207,7 @@ pub fn is_service_running() -> bool {
 }
 
 /// Query service status
-pub fn query_service_status() -> Result<String, String> {
+pub fn query_service_status() -> Result<&'static str, String> {
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
         .map_err(|e| format!("Failed to connect to service manager: {e}"))?;
 
@@ -226,16 +220,16 @@ pub fn query_service_status() -> Result<String, String> {
         .map_err(|e| format!("Failed to query status: {e}"))?;
 
     let state = match status.current_state {
-        ServiceState::Stopped => "Stopped",
-        ServiceState::StartPending => "Starting...",
-        ServiceState::StopPending => "Stopping...",
-        ServiceState::Running => "Running",
-        ServiceState::ContinuePending => "Resuming...",
-        ServiceState::PausePending => "Pausing...",
-        ServiceState::Paused => "Paused",
+        ServiceState::Stopped => "service.state_stopped",
+        ServiceState::StartPending => "service.state_starting",
+        ServiceState::StopPending => "service.state_stopping",
+        ServiceState::Running => "service.state_running",
+        ServiceState::ContinuePending => "service.state_resuming",
+        ServiceState::PausePending => "service.state_pausing",
+        ServiceState::Paused => "service.state_paused",
     };
 
-    Ok(format!("Service '{SERVICE_DISPLAY_NAME}': {state}"))
+    Ok(state)
 }
 
 // Define the Windows service entry point

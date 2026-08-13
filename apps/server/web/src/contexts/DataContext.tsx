@@ -2,6 +2,7 @@ import React, { createContext, useContext, useCallback, useEffect, useState, use
 import { agentsApi, metricsApi, agentTokensApi, type Agent, type Metrics, type Summary, type AgentToken } from '@/lib/api'
 import { useAuth } from './AuthContext'
 import { useWebSocket, type WebSocketStatus } from '@/hooks/use-websocket'
+import i18n from '@/i18n'
 
 interface DataContextValue {
   agents: Agent[]
@@ -123,7 +124,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     if (!isAuthenticated) {
-      setError('Not authenticated')
+      setError(i18n.t('access.sessionExpired'))
       return
     }
 
@@ -139,7 +140,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setSummary(summaryData)
       setError(null)
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to fetch data'
+      const errorMsg = err instanceof Error ? err.message : i18n.t('access.requestFailedDesc')
       setError(errorMsg)
     } finally {
       setIsLoading(false)

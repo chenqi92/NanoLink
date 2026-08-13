@@ -383,20 +383,30 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
             match action {
                 ServiceAction::Install => {
                     let config_path = get_config_path(args);
-                    install_service(config_path).map_err(|e| anyhow::anyhow!(e))?;
+                    install_service(config_path)
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", t("service.error", lang)))?;
+                    println!("✓ {}", t("service.installed", lang));
+                    println!("{}", t("service.windows_start_hint", lang));
                 }
                 ServiceAction::Uninstall => {
-                    uninstall_service().map_err(|e| anyhow::anyhow!(e))?;
+                    uninstall_service()
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", t("service.error", lang)))?;
+                    println!("✓ {}", t("service.uninstalled", lang));
                 }
                 ServiceAction::Start => {
-                    start_service().map_err(|e| anyhow::anyhow!(e))?;
+                    start_service()
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", t("service.error", lang)))?;
+                    println!("✓ {}", t("service.started", lang));
                 }
                 ServiceAction::Stop => {
-                    stop_service().map_err(|e| anyhow::anyhow!(e))?;
+                    stop_service()
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", t("service.error", lang)))?;
+                    println!("✓ {}", t("service.stopped", lang));
                 }
                 ServiceAction::Status => {
-                    let status = query_service_status().map_err(|e| anyhow::anyhow!(e))?;
-                    println!("{status}");
+                    let status = query_service_status()
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", t("service.error", lang)))?;
+                    println!("NanoLink Agent: {}", t(status, lang));
                 }
                 ServiceAction::Run => {
                     run_as_service().map_err(|e| anyhow::anyhow!(e))?;
@@ -1479,7 +1489,7 @@ fn interactive_add_server(config_path: &Path, lang: Lang) -> Result<()> {
         .iter()
         .any(|s| s.host == host && s.port == port)
     {
-        anyhow::bail!("Server {host}:{port} already exists.");
+        anyhow::bail!("{} {host}:{port}", t("cli.server_exists", lang));
     }
 
     config.servers.push(crate::config::ServerConfig {
@@ -1524,7 +1534,7 @@ fn interactive_test_connection(
         .servers
         .iter()
         .find(|s| s.host == host && s.port == port)
-        .ok_or_else(|| anyhow::anyhow!("Server not found"))?
+        .ok_or_else(|| anyhow::anyhow!(t("cli.server_not_found", lang)))?
         .clone();
 
     // Create a tokio runtime for the async test
@@ -1642,7 +1652,11 @@ fn interactive_init_config(lang: Lang) -> Result<()> {
     let output_path = PathBuf::from(&output);
 
     if output_path.exists() {
-        anyhow::bail!("Config file already exists: {}", output_path.display());
+        anyhow::bail!(
+            "{}: {}",
+            t("cli.config_exists", lang),
+            output_path.display()
+        );
     }
 
     let sample_config = Config::sample();
@@ -1830,7 +1844,7 @@ fn interactive_check_update(args: &Args, lang: Lang) -> Result<()> {
     if restart {
         println!();
         println!("{}", t("config.restarting", lang));
-        if let Err(e) = restart_agent_service() {
+        if let Err(e) = restart_agent_service(lang) {
             println!("✗ {}: {}", t("config.restart_failed", lang), e);
         } else {
             println!("✓ {}", t("config.restart_success", lang));
@@ -1841,7 +1855,7 @@ fn interactive_check_update(args: &Args, lang: Lang) -> Result<()> {
 }
 
 /// Restart the agent service (platform-specific)
-fn restart_agent_service() -> Result<(), String> {
+fn restart_agent_service(_lang: Lang) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         crate::platform::restart_service()
@@ -1859,7 +1873,7 @@ fn restart_agent_service() -> Result<(), String> {
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
-        Err("Restart not supported on this platform".to_string())
+        Err(t("service.not_supported", _lang).to_string())
     }
 }
 
@@ -1877,7 +1891,7 @@ fn prompt_restart_after_config_change(lang: Lang) -> Result<()> {
 
     if restart {
         println!("{}", t("config.restarting", lang));
-        if let Err(e) = restart_agent_service() {
+        if let Err(e) = restart_agent_service(lang) {
             println!("✗ {}: {}", t("config.restart_failed", lang), e);
         } else {
             println!("✓ {}", t("config.restart_success", lang));
@@ -1997,7 +2011,7 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                         if *input >= 100 && *input <= 3600000 {
                             Ok(())
                         } else {
-                            Err("Value must be between 100 and 3600000 ms")
+                            Err(t("config.realtime_range", lang))
                         }
                     })
                     .interact_text()?;
@@ -2015,7 +2029,7 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                         if *input >= 10 && *input <= 100000 {
                             Ok(())
                         } else {
-                            Err("Value must be between 10 and 100000")
+                            Err(t("config.buffer_range", lang))
                         }
                     })
                     .interact_text()?;
@@ -2066,7 +2080,7 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                         if *input >= 1 {
                             Ok(())
                         } else {
-                            Err("Port must be between 1 and 65535")
+                            Err(t("gui.error.port_invalid", lang))
                         }
                     })
                     .interact_text()?;
@@ -2084,7 +2098,7 @@ fn interactive_modify_config(args: &Args, lang: Lang) -> Result<()> {
                         if *input >= 1 && *input <= 3600 {
                             Ok(())
                         } else {
-                            Err("Value must be between 1 and 3600 seconds")
+                            Err(t("config.heartbeat_range", lang))
                         }
                     })
                     .interact_text()?;
@@ -2940,20 +2954,23 @@ fn interactive_service_management(args: &Args, lang: Lang) -> Result<()> {
                 {
                     let config_path = get_config_path(args);
                     match crate::platform::install_service(config_path) {
-                        Ok(_) => println!("✓ {}", t("service.installed", lang)),
+                        Ok(_) => {
+                            println!("✓ {}", t("service.installed", lang));
+                            println!("{}", t("service.windows_start_hint", lang));
+                        }
                         Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
                     }
                 }
                 #[cfg(target_os = "linux")]
                 {
-                    match install_systemd_service(args) {
+                    match install_systemd_service(args, lang) {
                         Ok(_) => println!("✓ {}", t("service.installed", lang)),
                         Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
                     }
                 }
                 #[cfg(target_os = "macos")]
                 {
-                    match install_launchd_service(args) {
+                    match install_launchd_service(args, lang) {
                         Ok(_) => println!("✓ {}", t("service.installed", lang)),
                         Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
                     }
@@ -3071,7 +3088,7 @@ fn interactive_service_management(args: &Args, lang: Lang) -> Result<()> {
                 #[cfg(target_os = "windows")]
                 {
                     match crate::platform::query_service_status() {
-                        Ok(status) => println!("{status}"),
+                        Ok(status_key) => println!("NanoLink Agent: {}", t(status_key, lang)),
                         Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
                     }
                 }
@@ -3137,22 +3154,22 @@ fn is_root() -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn install_systemd_service(args: &Args) -> Result<(), String> {
+fn install_systemd_service(args: &Args, lang: Lang) -> Result<(), String> {
     use std::fs;
 
     // Check root permission
     if !is_root() {
-        return Err("Root permission required. Run with sudo.".to_string());
+        return Err(t("service.root_required", lang).to_string());
     }
 
     let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_escaped = validate_systemd_path(&exe_path)
-        .ok_or_else(|| "Invalid characters in executable path".to_string())?;
+        .ok_or_else(|| t("service.invalid_executable_path", lang).to_string())?;
 
     let config_arg = match get_config_path(args) {
         Some(p) => {
             let config_escaped = validate_systemd_path(&p)
-                .ok_or_else(|| "Invalid characters in config path".to_string())?;
+                .ok_or_else(|| t("service.invalid_config_path", lang).to_string())?;
             format!(" -c {}", config_escaped)
         }
         None => String::new(),
@@ -3179,7 +3196,7 @@ WantedBy=multi-user.target
         "/etc/systemd/system/nanolink-agent.service",
         service_content,
     )
-    .map_err(|e| format!("Failed to write service file: {}", e))?;
+    .map_err(|e| format!("{}: {e}", t("service.write_file_failed", lang)))?;
 
     std::process::Command::new("systemctl")
         .args(["daemon-reload"])
@@ -3217,12 +3234,12 @@ fn uninstall_systemd_service() -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn install_launchd_service(args: &Args) -> Result<(), String> {
+fn install_launchd_service(args: &Args, lang: Lang) -> Result<(), String> {
     use std::fs;
 
     // Check root permission
     if !is_root() {
-        return Err("Root permission required. Run with sudo.".to_string());
+        return Err(t("service.root_required", lang).to_string());
     }
 
     let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -3338,7 +3355,11 @@ fn interactive_diagnostics(args: &Args, lang: Lang) -> Result<()> {
         }
     }
     if low_space {
-        println!("! {} (<10% free)", t("diag.warning", lang));
+        println!(
+            "! {} ({})",
+            t("diag.warning", lang),
+            t("diag.low_space", lang)
+        );
     } else {
         println!("✓ {}", t("diag.ok", lang));
     }

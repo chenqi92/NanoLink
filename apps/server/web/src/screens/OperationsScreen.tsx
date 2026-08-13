@@ -228,7 +228,7 @@ function HealthPanel({ agentId }: { agentId: string }) {
                   <tr key={tg}>
                     <td className="mono">{tg}</td>
                     <td>
-                      {!r ? <span className="dim">—</span> : r.running ? <span className="dot pulse ok" /> : r.error ? <span className="row gap-2" style={{ alignItems: "center" }}><span className="dot crit" /><span style={{ fontSize: 11.5, color: "var(--crit)" }}>{r.error}</span></span> : <span className="row gap-2" style={{ alignItems: "center" }}><span className={`dot ${r.passed ? "ok" : "crit"}`} /><span style={{ fontSize: 11.5, color: r.passed ? "var(--ok)" : "var(--crit)" }}>{r.passed ? "ok" : "fail"}</span></span>}
+                      {!r ? <span className="dim">—</span> : r.running ? <span className="dot pulse ok" /> : r.error ? <span className="row gap-2" style={{ alignItems: "center" }}><span className="dot crit" /><span style={{ fontSize: 11.5, color: "var(--crit)" }}>{r.error}</span></span> : <span className="row gap-2" style={{ alignItems: "center" }}><span className={`dot ${r.passed ? "ok" : "crit"}`} /><span style={{ fontSize: 11.5, color: r.passed ? "var(--ok)" : "var(--crit)" }}>{t(r.passed ? "plat.ok" : "plat.fail")}</span></span>}
                     </td>
                     <td className="mono num dim" style={{ textAlign: "right", fontSize: 11 }}>{r?.latency != null ? `${r.latency} ms` : "—"}</td>
                     <td style={{ textAlign: "right" }}>
