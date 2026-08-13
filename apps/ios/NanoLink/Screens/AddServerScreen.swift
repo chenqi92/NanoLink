@@ -176,8 +176,8 @@ struct AddServerScreen: View {
         formScroll {
             notice("person.crop.circle.badge.checkmark", tr("addServer.accountNotice"), color: t.info)
             field(tr("addServer.serverName"), text: $name, hint: tr("addServer.serverNameHint"), contentType: .organizationName)
-            field(tr("addServer.serverUrl"), text: $url, hint: "https://server.example.com", keyboard: .URL, contentType: .URL, capitalization: .never)
-            field(tr("addServer.username"), text: $username, hint: tr("server.usernameHint"), contentType: .username, capitalization: .never)
+            field(tr("addServer.serverUrl"), text: $url, hint: "https://server.example.com", keyboard: .URL, contentType: .URL, capitalization: .never, autocorrectionDisabled: true)
+            field(tr("addServer.username"), text: $username, hint: tr("server.usernameHint"), contentType: .username, capitalization: .never, autocorrectionDisabled: true)
             field(tr("addServer.password"), text: $password, hint: tr("server.passwordHint"), secure: true, contentType: .password)
             if let error { errorBanner(error) }
             NanoButton(tr("addServer.login"), icon: "arrow.right.circle", fullWidth: true, loading: loading) {
@@ -196,8 +196,8 @@ struct AddServerScreen: View {
     private var manualForm: some View {
         formScroll {
             field(tr("addServer.serverName"), text: $name, hint: tr("addServer.serverNameHint"), contentType: .organizationName)
-            field(tr("addServer.serverUrl"), text: $url, hint: "https://server.example.com", keyboard: .URL, contentType: .URL, capitalization: .never)
-            field(tr("addServer.deviceTokenOptional"), text: $token, hint: tr("addServer.deviceTokenHint"), secure: true, capitalization: .never)
+            field(tr("addServer.serverUrl"), text: $url, hint: "https://server.example.com", keyboard: .URL, contentType: .URL, capitalization: .never, autocorrectionDisabled: true)
+            field(tr("addServer.deviceTokenOptional"), text: $token, hint: tr("addServer.deviceTokenHint"), secure: true, capitalization: .never, autocorrectionDisabled: true)
 
             Button { withAnimation { advanced.toggle() } } label: {
                 HStack {
@@ -226,7 +226,7 @@ struct AddServerScreen: View {
         formScroll {
             notice("number.square", tr("addServer.pairingNotice"), color: t.info)
             field(tr("addServer.serverName"), text: $name, hint: tr("addServer.serverNameHint"), contentType: .organizationName)
-            field(tr("addServer.serverUrl"), text: $url, hint: "https://server.example.com", keyboard: .URL, contentType: .URL, capitalization: .never)
+            field(tr("addServer.serverUrl"), text: $url, hint: "https://server.example.com", keyboard: .URL, contentType: .URL, capitalization: .never, autocorrectionDisabled: true)
 
             VStack(spacing: 12) {
                 HStack(spacing: 7) {
@@ -299,7 +299,8 @@ struct AddServerScreen: View {
     private func field(_ label: String, text: Binding<String>, hint: String,
                        secure: Bool = false, keyboard: UIKeyboardType = .default,
                        contentType: UITextContentType? = nil,
-                       capitalization: TextInputAutocapitalization = .sentences) -> some View {
+                       capitalization: TextInputAutocapitalization = .sentences,
+                       autocorrectionDisabled: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(label).font(.system(size: 12.5, weight: .medium)).foregroundColor(t.fg3)
             Group {
@@ -309,7 +310,7 @@ struct AddServerScreen: View {
             .keyboardType(keyboard)
             .textContentType(contentType)
             .textInputAutocapitalization(capitalization)
-            .autocorrectionDisabled(capitalization == .never)
+            .autocorrectionDisabled(autocorrectionDisabled)
             .font(.system(size: 15))
             .foregroundColor(t.fg)
             .padding(.horizontal, 14)
