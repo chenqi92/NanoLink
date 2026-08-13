@@ -136,6 +136,8 @@ __pycache__/
 # =========================
 # Temporary Files
 # =========================
+.codex-dev/
+.codex-cache/
 tmp/
 temp/
 *.tmp

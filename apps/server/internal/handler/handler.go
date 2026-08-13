@@ -126,13 +126,19 @@ func (h *Handler) GetAgents(c *gin.Context) {
 	result := make([]gin.H, 0)
 	for _, agent := range agents {
 		if visibleSet[agent.ID] {
+			permissionLevel, permissionErr := h.permService.GetUserAgentPermission(user.ID, agent.ID)
+			if permissionErr != nil {
+				h.logger.Errorf("Failed to resolve permission for user %d on agent %s: %v", user.ID, agent.ID, permissionErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve agent permissions"})
+				return
+			}
 			result = append(result, gin.H{
 				"id":              agent.ID,
 				"hostname":        agent.Hostname,
 				"os":              agent.OS,
 				"arch":            agent.Arch,
 				"version":         agent.Version,
-				"permissionLevel": agent.PermissionLevel,
+				"permissionLevel": capPermissionLevel(permissionLevel, agent.PermissionLevel),
 				"connectedAt":     agent.ConnectedAt,
 				"lastHeartbeat":   agent.LastHeartbeat,
 			})
@@ -145,14 +151,21 @@ func (h *Handler) GetAgents(c *gin.Context) {
 // GetAgent returns a specific agent
 func (h *Handler) GetAgent(c *gin.Context) {
 	agentID := c.Param("id")
+	user := GetCurrentUser(c)
+	permissionLevel := -1
 
 	// Check permission if service is available
 	if h.permService != nil {
-		user := GetCurrentUser(c)
 		if user != nil && !user.IsSuperAdmin {
-			canAccess, err := h.permService.CanUserAccessAgent(user.ID, agentID)
-			if err != nil || !canAccess {
+			var permissionErr error
+			permissionLevel, permissionErr = h.permService.GetUserAgentPermission(user.ID, agentID)
+			if errors.Is(permissionErr, service.ErrPermissionDenied) {
 				c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+				return
+			}
+			if permissionErr != nil {
+				h.logger.Errorf("Failed to resolve permission for user %d on agent %s: %v", user.ID, agentID, permissionErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve agent permissions"})
 				return
 			}
 		}
@@ -163,6 +176,11 @@ func (h *Handler) GetAgent(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
 		return
 	}
+	if permissionLevel < 0 || (user != nil && user.IsSuperAdmin) {
+		permissionLevel = agent.PermissionLevel
+	} else {
+		permissionLevel = capPermissionLevel(permissionLevel, agent.PermissionLevel)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":              agent.ID,
@@ -170,7 +188,7 @@ func (h *Handler) GetAgent(c *gin.Context) {
 		"os":              agent.OS,
 		"arch":            agent.Arch,
 		"version":         agent.Version,
-		"permissionLevel": agent.PermissionLevel,
+		"permissionLevel": permissionLevel,
 		"connectedAt":     agent.ConnectedAt,
 		"lastHeartbeat":   agent.LastHeartbeat,
 	})

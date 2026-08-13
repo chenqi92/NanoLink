@@ -76,15 +76,15 @@ export function AgentDetailScreen() {
   const status = agentStatus(a.lastHeartbeat)
   const ip = m?.networks?.find((n) => !n.interface.startsWith("lo") && n.ipAddresses?.length)?.ipAddresses?.[0]
 
-  const tabs: { k: Tab; label: string; icon: React.ReactNode; live?: boolean }[] = [
+  const tabs: { k: Tab; label: string; icon: React.ReactNode; required?: number }[] = [
     { k: "realtime", label: t("agent.realtimeData"), icon: <span className="dot pulse ok" style={{ width: 5, height: 5 }} /> },
     { k: "history", label: t("agent.historyCharts"), icon: I.chart({ size: 13 }) },
     { k: "processes", label: t("mon.tabProcesses"), icon: I.cpu({ size: 13 }) },
     { k: "services", label: t("mon.tabServices"), icon: I.bolt({ size: 13 }) },
     { k: "docker", label: t("mon.tabDocker"), icon: I.disk({ size: 13 }) },
     { k: "files", label: t("mon.tabFiles"), icon: I.audit({ size: 13 }) },
-    { k: "logs", label: t("mon.tabLogs"), icon: <span className="dot pulse ok" style={{ width: 5, height: 5 }} /> },
-    { k: "terminal", label: t("agent.terminal"), icon: I.term({ size: 13 }) },
+    { k: "logs", label: t("mon.tabLogs"), icon: <span className="dot pulse ok" style={{ width: 5, height: 5 }} />, required: 1 },
+    { k: "terminal", label: t("agent.terminal"), icon: I.term({ size: 13 }), required: 3 },
   ]
 
   return (
@@ -124,11 +124,11 @@ export function AgentDetailScreen() {
         </div>
         <div className="tabs" style={{ borderBottom: "none", marginBottom: -1, overflowX: "auto" }}>
           {tabs.map((tb) => {
-            const disabled = tb.k === "terminal" && a.permissionLevel < 1
+            const disabled = a.permissionLevel < (tb.required ?? 0)
             return (
-              <button key={tb.k} className={`tab ${tab === tb.k ? "active" : ""}`} onClick={() => !disabled && setTab(tb.k)} disabled={disabled}>
+              <button key={tb.k} className={`tab ${tab === tb.k ? "active" : ""}`} onClick={() => !disabled && setTab(tb.k)} disabled={disabled} title={disabled ? t("access.permissionLevelDesc", { level: `L${tb.required}` }) : undefined}>
                 {tb.icon} {tb.label}
-                {disabled && <span className="dim" style={{ fontSize: 10 }}>{t("mon.noAccess")}</span>}
+                {disabled && <span className="dim row gap-1" style={{ fontSize: 10 }}>{I.lock({ size: 10 })} L{tb.required}</span>}
               </button>
             )
           })}
@@ -143,7 +143,7 @@ export function AgentDetailScreen() {
         {tab === "processes" && <ProcessesTab agentId={a.id} permission={a.permissionLevel} />}
         {tab === "services" && <ServicesTab agentId={a.id} permission={a.permissionLevel} />}
         {tab === "docker" && <DockerTab agentId={a.id} permission={a.permissionLevel} />}
-        {tab === "files" && <FilesTab agentId={a.id} />}
+        {tab === "files" && <FilesTab agentId={a.id} permission={a.permissionLevel} />}
         {tab === "logs" && <AgentLogsTab agentId={a.id} permission={a.permissionLevel} />}
       </div>
     </div>

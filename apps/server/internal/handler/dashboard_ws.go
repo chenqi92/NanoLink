@@ -327,10 +327,17 @@ func (h *DashboardWSHandler) broadcastLoop() {
 				continue
 			}
 
+			data := msg.Data
+			if msg.Type == MsgTypeAgentUpdate && msg.AgentID != "" {
+				if agent := h.agentService.GetAgent(msg.AgentID); agent != nil {
+					data = h.agentToMapForClient(client, agent)
+				}
+			}
+
 			h.sendToClient(client, &DashboardMessage{
 				Type:      msg.Type,
 				Timestamp: time.Now().UnixMilli(),
-				Data:      msg.Data,
+				Data:      data,
 			})
 
 			if shouldRefreshSummary(msg.Type) {
@@ -425,7 +432,7 @@ func (h *DashboardWSHandler) filterAgentsForClient(client *dashboardClient, agen
 			continue
 		}
 
-		result = append(result, agentToMap(agent))
+		result = append(result, h.agentToMapForClient(client, agent))
 	}
 	return result
 }
@@ -446,6 +453,34 @@ func agentToMap(agent *service.Agent) gin.H {
 		"connectedAt":     s.ConnectedAt,
 		"lastHeartbeat":   s.LastHeartbeat,
 	}
+}
+
+func capPermissionLevel(granted, agentMaximum int) int {
+	if granted < 0 {
+		return 0
+	}
+	if granted > agentMaximum {
+		return agentMaximum
+	}
+	return granted
+}
+
+func (h *DashboardWSHandler) agentToMapForClient(client *dashboardClient, agent *service.Agent) gin.H {
+	result := agentToMap(agent)
+	if h.permService == nil || client.isSuperAdmin {
+		return result
+	}
+
+	granted, err := h.permService.GetUserAgentPermission(client.userID, agent.ID)
+	if err != nil {
+		h.logger.Warnf("Dashboard permission lookup failed for user %d on agent %s: %v", client.userID, agent.ID, err)
+		result["permissionLevel"] = 0
+		return result
+	}
+
+	maximum, _ := result["permissionLevel"].(int)
+	result["permissionLevel"] = capPermissionLevel(granted, maximum)
+	return result
 }
 
 func (h *DashboardWSHandler) filterMetricsForClient(client *dashboardClient, metrics map[string]*service.MetricsData) map[string]*service.MetricsData {

@@ -1,0 +1,207 @@
+{
+  "app": { "title": "NanoOps" },
+  "common": {
+    "loading": "加载中...", "cancel": "取消", "remove": "删除", "connect": "连接",
+    "online": "在线", "offline": "离线", "retry": "重试", "copy": "复制",
+    "add": "添加", "login": "登录", "dismiss": "撤销"
+  },
+  "status": {
+    "online": "在线", "offline": "离线", "connecting": "连接中", "connected": "已连接",
+    "error": "连接出错", "closed": "已断开", "reconnect": "重连"
+  },
+  "perm": { "l0": "只读", "l1": "基础写入", "l2": "服务控制", "l3": "系统管理" },
+  "home": {
+    "noServersTitle": "未连接服务器", "noServersDesc": "添加 NanoOps 服务器以开始监控您的代理",
+    "noAgentsTitle": "暂无代理连接", "noAgentsDesc": "代理连接后将显示在这里",
+    "connectingToServers": "正在连接服务器...", "agentCount": "{} 个代理", "agentsCount": "{} 个代理",
+    "removeServer": "删除服务器", "removeServerConfirm": "确定要删除 \"{}\" 吗？"
+  },
+  "connection": { "wsRealtime": "WebSocket（实时）", "httpPolling": "HTTP 轮询", "disconnected": "已断开" },
+  "theme": { "light": "浅色模式", "dark": "深色模式", "system": "跟随系统" },
+  "server": {
+    "addServer": "添加服务器", "removeServer": "删除服务器", "serverName": "服务器名称",
+    "serverNameHint": "例如：生产服务器", "serverNameRequired": "请输入名称", "serverUrl": "服务器地址",
+    "serverUrlHint": "例如：http://192.168.1.100:8080", "serverUrlRequired": "请输入服务器地址",
+    "serverUrlInvalid": "请输入有效的 URL（例如：http://...）", "authToken": "认证令牌（可选）",
+    "authTokenHint": "用于认证的 JWT 令牌", "connectionFailed": "连接失败，请检查 URL 和令牌。",
+    "deviceToken": "设备令牌", "accountLogin": "帐号登录",
+    "tokenModeHint": "使用设备令牌进行只读访问（通过二维码或配对码获取）",
+    "accountModeHint": "使用帐号密码获取完整权限包括写入操作", "username": "用户名", "usernameHint": "输入用户名",
+    "usernameRequired": "请输入用户名", "password": "密码", "passwordHint": "输入密码", "passwordRequired": "请输入密码",
+    "loginFailed": "登录失败，请检查用户名和密码。", "invalidQrCode": "无效的二维码格式", "chooseMethod": "连接服务器",
+    "chooseMethodDesc": "选择添加 NanoOps 服务器的方式", "scanQrCode": "扫描二维码", "scanQrCodeDesc": "扫描网页控制台上的二维码",
+    "enterPairingCode": "配对码", "pairingCodeDesc": "输入控制台上的6位配对码", "manualEntry": "手动配置",
+    "manualEntryDesc": "手动输入服务器地址和令牌", "accountLoginDesc": "使用帐号密码登录", "positionQrCode": "将二维码置于框内",
+    "qrNotSupported": "此设备不支持二维码扫描", "usePairingCodeInstead": "使用配对码", "enterPairingCodeTitle": "输入配对码",
+    "enterPairingCodeHint": "从管理后台 > 设备配对获取", "verifyCode": "验证配对码", "pairingCodeInvalid": "请输入有效的6位配对码",
+    "pairingCodeExpired": "配对码已过期或无效", "login": "登录"
+  },
+  "metrics": {
+    "cpu": "CPU", "memory": "内存", "ram": "内存", "disk": "磁盘", "network": "网络", "gpu": "GPU",
+    "npu": "NPU / AI 加速器", "overview": "概览", "cpuMemory": "CPU 和内存", "cpuUsage": "CPU 使用率",
+    "memoryUsage": "内存使用率", "gpuUsage": "GPU 使用率", "vram": "显存", "available": "可用",
+    "swapUsed": "交换已用", "swapTotal": "交换总计", "loadingMetrics": "加载指标中...", "waitingForMetrics": "等待指标数据...",
+    "storage": "存储（{} 个磁盘）", "storages": "存储（{} 个磁盘）", "networkInterface": "网络（{} 个接口）",
+    "networkInterfaces": "网络（{} 个接口）", "gpuCount": "GPU（{}）", "npuCount": "NPU / AI 加速器（{}）", "activeUsers": "活跃用户（{}）"
+  },
+  "system": {
+    "systemInfo": "系统信息", "os": "操作系统", "kernel": "内核", "uptime": "运行时间",
+    "systemModel": "系统型号", "motherboard": "主板", "bios": "BIOS"
+  },
+  "language": { "title": "语言", "english": "英文", "chinese": "中文" },
+  "nav": {
+    "dashboard": "仪表盘", "agents": "代理", "terminal": "终端", "settings": "设置",
+    "overview": "总览", "nodes": "节点", "activity": "活动", "assistant": "AI 助手"
+  },
+  "dashboard": {
+    "totalAgents": "代理总数", "avgCpu": "平均 CPU", "avgMemory": "平均内存", "alerts": "告警", "title": "总览",
+    "onlineNodes": "在线节点", "nodesOffline": "{n} 离线", "avgCpuLast60s": "过去 60s", "avgMemNodes": "{n} 节点",
+    "diskAlerts": "磁盘告警", "diskAlertsSub": "≥ 85% 使用率", "topCpu": "CPU 最高", "recentActivity": "最近活动",
+    "noActivity": "暂无活动记录", "noServersYet": "尚未添加服务器", "noOnlineNodes": "暂无在线节点", "add": "添加",
+    "offlineBanner": "{n} 节点离线", "avgMemUsed": "{gib} GiB 已用", "newNode": "新节点", "view": "查看"
+  },
+  "welcome": {
+    "subtitle": "连接服务器以开始监控", "chooseMethodHint": "扫描二维码、输入配对码或手动连接",
+    "scanQr": "扫描二维码", "scanQrDesc": "从 Web 控制台扫描", "enterCode": "输入配对码", "enterCodeDesc": "控制台显示的 6 位数字",
+    "manualEntry": "手动输入", "manualEntryDesc": "输入服务器地址和令牌", "tagline": "为运维而生的服务器监控与远程管理。",
+    "featureMetricsTitle": "实时指标 + 历史图表", "featureMetricsDesc": "CPU、内存、磁盘、网络、GPU、NPU",
+    "featureTerminalTitle": "权限分级的远程终端", "featureTerminalDesc": "L0 只读 → L3 系统管理",
+    "featureAuditTitle": "告警 · 审计 · 设备配对", "featureAuditDesc": "所有命令可追溯", "addServer": "添加服务器"
+  },
+  "agents": {
+    "title": "节点", "searchHint": "搜索节点、主机名、OS", "filterAll": "全部", "filterOnline": "在线",
+    "filterWarn": "告警", "filterOffline": "离线", "noNodes": "该服务器暂无节点", "noMatch": "没有匹配的节点",
+    "offlineNoData": "离线 · 无实时数据", "switchServer": "切换服务器", "filter": "筛选"
+  },
+  "agentDetail": {
+    "tabRealtime": "实时", "tabHistory": "历史", "tabTerminal": "终端", "tabTerminalLocked": "终端 🔒",
+    "agentVersion": "agent {version}", "heartbeat": "心跳 {ago} 前", "lastHeartbeat": "最后心跳 {ago} 前",
+    "nodeOffline": "节点离线", "cpu": "CPU", "memory": "内存", "storage": "存储", "networkInterfaces": "网络接口",
+    "gpu": "GPU", "gpuCount": "{n} 个", "aiAccelerator": "AI 加速器", "utilization": "利用率", "loginSessions": "登录会话",
+    "systemInfo": "系统信息", "memUsed": "已用", "memAvailable": "可用", "vram": "显存", "power": "功耗", "osLabel": "OS",
+    "kernel": "内核", "uptime": "运行时长", "motherboard": "主板", "systemModel": "整机", "bios": "BIOS", "perCore": "每核心",
+    "load": "负载 {values}", "ghz": "{value} GHz", "mtps": "{value} MT/s", "cacheBuffers": "缓存 / Buffer",
+    "chassis": "整机", "primaryIp": "主 IP", "powerOf": "{used}W / {limit}W"
+  },
+  "history": {
+    "loadFailed": "无法加载历史数据", "loadFailedSub": "请检查与服务器的连接", "noData": "无可用历史数据",
+    "noDataSub": "该时间范围内暂无采集记录", "cpu": "CPU", "memory": "内存", "network": "网络", "diskIo": "磁盘 IO",
+    "gpu": "GPU", "peak": "峰值 {value}{unit}", "anomaly": "近期异常", "anomalyCpu": "· CPU 峰值 {value}%", "anomalyMem": "· 内存峰值 {value}%"
+  },
+  "terminal": {
+    "title": "终端", "switchAgent": "切换", "noOnlineAgents": "没有在线的代理", "connected": "已连接到 {}",
+    "enterCommand": "输入命令...", "notImplemented": "远程命令执行功能尚未实现", "navTitle": "远程终端",
+    "navDesc": "选择要打开终端的节点。远程会话需要 L3 系统管理权限。", "noAvailableNodes": "暂无可用节点",
+    "noAvailableNodesSub": "需要至少一个在线的 L3 系统管理节点", "consoleNoServer": "找不到该节点所属的服务器连接。",
+    "consoleConnecting": "[nano] 正在连接 {url}", "consoleAuthenticated": "[nano] 已认证 · L{level}",
+    "inputHint": "输入命令…", "inputHintWaiting": "等待连接…", "lockedTitle": "权限不足",
+    "lockedDesc": "该节点尚未获得 L3 系统管理权限，需管理员提升权限后才能打开远程终端。", "recentSessions": "最近会话", "sessionFailed": "失败",
+    "connectError": "连接错误：{err}", "sessionEnded": "[nano] 会话已结束", "reconnect": "重新连接终端", "clear": "清空终端"
+  },
+  "alerts": {
+    "title": "活动 & 告警", "critical": "严重", "warning": "警告", "info": "信息", "current": "当前告警",
+    "allClear": "一切正常", "allClearSub": "当前没有需要关注的告警", "nodeOffline": "{host} 离线",
+    "nodeOfflineDetail": "节点未上报心跳", "cpuPressure": "{host} CPU 压力", "cpuHigh": "{host} CPU 偏高",
+    "usageDetail": "使用率 {value}%", "memPressure": "{host} 内存压力", "memHigh": "{host} 内存偏高",
+    "diskFull": "{host} 磁盘将满", "diskLow": "{host} 磁盘空间不足", "diskDetail": "{mount} {value}%",
+    "auditRecent": "审计 (最近)", "auditEmpty": "暂无最近活动", "clearAll": "全部清空", "acknowledge": "已确认",
+    "ackFailed": "确认失败：{error}", "clearAllFailed": "清空告警失败", "clearedCount": "已清空 {n} 条告警", "auditActivity": "{host} 有新的操作记录"
+  },
+  "assistant": {
+    "title": "AI 运维助手", "greeting": "你好，我是 NanoOps 助手",
+    "intro": "通过 MCP 协议连接，我可以帮你查询节点指标、诊断异常、生成运维建议。", "tryThese": "试试这些",
+    "suggestTopCpu": "哪些节点 CPU 最高？", "suggestDiskFull": "有没有磁盘快满的服务器？", "suggestHealth": "汇总当前集群健康状况",
+    "inputHint": "询问运维助手…", "comingSoon": "AI 助手即将上线", "autoDiagnosis": "自动诊断", "findingsCount": "{n} 项发现",
+    "allHealthy": "所有节点均在阈值范围内，集群健康。", "loadError": "无法加载诊断",
+    "loadErrorDesc": "请确认与服务器的连接，自动诊断依赖可访问的实时指标。", "actHistory": "查看历史", "actShell": "打开终端",
+    "actProcesses": "查看进程", "chatTitle": "助手对话", "askAssistant": "向助手提问", "noServer": "未连接服务器，请先添加服务器。",
+    "errLabel": "出错", "errNotConfigured": "助手未配置：该服务器尚未启用 LLM 集成，请联系管理员开启。",
+    "errUpstream": "助手的 AI 后端响应失败，请稍后重试。", "errBadRequest": "请求被拒绝，请尝试缩短消息内容。",
+    "errNetwork": "网络错误，请检查与服务器的连接后重试。", "errServer": "服务器返回错误，请稍后重试。"
+  },
+  "settings": {
+    "appearance": "外观", "theme": "主题", "language": "语言", "about": "关于", "version": "版本",
+    "copied": "已复制到剪贴板", "sourceCode": "源代码", "title": "设置", "loggedIn": "已登录账号", "notLoggedIn": "未登录",
+    "loggedInSub": "使用账号连接，拥有完整权限", "notLoggedInSub": "设备令牌模式 · 只读访问", "servers": "服务器 ({n})",
+    "current": "当前", "addNewServer": "添加新服务器", "tools": "工具", "aiAssistant": "AI 运维助手", "pairDevice": "配对新设备",
+    "themeLight": "浅色", "themeDark": "深色", "themeSystem": "跟随系统", "langChinese": "中文（简体）", "langEnglish": "English",
+    "notifications": "通知", "notifyOffline": "离线告警", "notifyHigh": "高 CPU / 内存", "notifyDisk": "磁盘空间",
+    "sourceCodeLabel": "源码", "pairNeedsLogin": "生成配对码需要先用账号登录一个服务器", "footer": "NanoOps Mobile · {version}",
+    "nodeCount": "{n} 节点", "compactMode": "紧凑模式", "terminal": "终端", "termTheme": "主题",
+    "termTheme_phosphor": "Phosphor (绿色)", "termTheme_amber": "Amber (琥珀)", "termTheme_mono": "Mono (单色)",
+    "termTheme_solarized": "Solarized", "termFontSize": "字号", "ptValue": "{n} pt", "termCursor": "光标样式",
+    "termCursor_block": "块状", "termCursor_bar": "竖线", "termCursor_underline": "下划线", "termBlink": "光标闪烁",
+    "notifyAudit": "审计日志通知", "notifyAuditNote": "应用运行期间每 15 秒检查一次新的审计活动。", "security": "安全", "faceId": "使用 Face ID 解锁",
+    "faceIdNote": "生物识别保护已启用。", "autoLock": "自动锁定", "autoLockOff": "关闭", "minutesValue": "{n} 分钟",
+    "clearTokens": "清除所有 Token", "clearTokensConfirm": "将移除所有已保存的服务器，并从安全存储中删除其 Token 与凭据，此操作不可撤销。",
+    "clearTokensConfirmAction": "全部清除", "clearTokensDone": "已清除所有 Token", "docsHelp": "文档与帮助", "docsCopied": "已复制文档链接",
+    "sendFeedback": "发送反馈", "feedbackCopied": "已复制反馈地址", "logout": "退出登录",
+    "logoutConfirm": "退出所有已登录的服务器？其已保存的凭据将被移除。", "logoutDone": "已退出登录"
+  },
+  "serverDetail": {
+    "notFound": "服务器不存在", "connectionMode": "连接方式", "authType": "认证类型", "authFull": "账号登录（完整权限）",
+    "authReadonly": "设备令牌（只读）", "nodeCount": "节点数", "username": "用户名", "lastConnected": "上次连接",
+    "copyUrl": "复制服务器地址", "urlCopied": "已复制服务器地址", "setActive": "设为当前服务器", "switchedTo": "已切换到 {name}",
+    "removeServer": "移除服务器", "removeConfirmTitle": "移除服务器？", "removeConfirmBody": "将断开并删除 “{name}” 的本地配置。",
+    "remove": "移除", "modeWebsocket": "WebSocket（实时）", "modeHttp": "HTTP 轮询", "modeDisconnected": "已断开",
+    "reconnect": "重新连接", "reauthTitle": "需要重新认证", "reauthBody": "该服务器的会话已过期或凭据被拒绝。请重新登录以恢复连接。",
+    "reauthSheetTitle": "重新登录", "reauthSheetBody": "请输入 {name} 的登录凭据。", "reauthLogin": "登录",
+    "reauthMissing": "请输入用户名和密码。", "reauthFailed": "登录失败，请检查凭据后重试。", "reauthSuccess": "已重新连接"
+  },
+  "addServer": {
+    "title": "添加服务器", "defaultServerName": "NanoOps 服务器", "connectionFailed": "连接失败，请检查服务器地址与令牌",
+    "qrInvalid": "二维码无效，请对准 NanoOps 配对二维码", "loginFailed": "登录失败，请检查地址与账号密码",
+    "headerScanQr": "扫描二维码", "headerAccount": "账号登录", "headerManual": "手动输入",
+    "chooseMethodHint": "选择连接方式。所有方式建议在 TLS 下使用，令牌仅保存在本机安全存储。", "methodScanQr": "扫描二维码",
+    "methodScanQrDesc": "对准 Web 后台生成的二维码", "methodAccount": "账号登录", "methodAccountDesc": "用户名 / 密码 · 完整权限",
+    "methodManual": "手动输入", "methodManualDesc": "Server URL + 设备令牌", "headerPairing": "配对码", "methodPairing": "配对码",
+    "methodPairingDesc": "服务器地址 + 6 位配对码", "pairingNotice": "输入服务器地址和 Web 后台「设备配对」中显示的 6 位配对码。",
+    "pairingCode": "配对码", "pairingCodeHint": "000000", "pairingCodeRequired": "请输入配对码", "pairingCodeInvalid": "配对码必须为 6 位数字",
+    "pairingFailed": "配对失败，配对码可能无效或已过期", "qrUnsupported": "当前平台不支持扫码", "qrPermissionDenied": "相机权限已关闭，请在系统设置中允许访问，或改用手动输入。",
+    "qrUnavailable": "当前设备没有可用的相机。", "useManualInstead": "改用手动输入",
+    "qrHint": "将二维码置于取景框内，从 Web 后台「设备配对」生成", "serverName": "服务器名称", "serverNameHint": "生产环境",
+    "nameRequired": "请输入名称", "serverUrl": "服务器地址", "deviceTokenOptional": "设备令牌（可选）", "deviceTokenHint": "只读访问可留空",
+    "connect": "连接", "accountNotice": "账号登录获得与该用户一致的完整权限。", "username": "用户名", "usernameRequired": "请输入用户名",
+    "password": "密码", "passwordRequired": "请输入密码", "login": "登录", "urlRequired": "请输入服务器地址",
+    "urlInvalid": "地址格式无效（需含 http(s)://）", "advanced": "高级", "deviceName": "设备名称", "deviceNameHint": "例如：Alice 的 iPhone",
+    "forceTls": "强制 TLS", "ignoreCert": "忽略证书错误", "forgotPassword": "忘记密码？", "forgotPasswordHint": "请在 Web 后台重置密码。",
+    "ssoLogin": "SSO 登录 →", "ssoHint": "单点登录需在服务器端配置。", "qrSaving": "正在保存并连接…",
+    "pairingEnterHint": "在 Web 后台生成配对码后，输入下方 6 位。", "pairingVerifying": "正在验证…", "pairingPaired": "✓ 已配对",
+    "pairingInvalid": "无效配对码", "pairingValid60s": "有效 60s", "pairingNeedsServer": "请先填写服务器名称和地址"
+  },
+  "security": {
+    "lockedTitle": "NanoOps 已锁定", "lockedBody": "请验证身份后访问已保存的服务器和运维数据。",
+    "unlock": "解锁", "unlockReason": "解锁 NanoOps", "enableReason": "为 NanoOps 启用生物识别保护", "cancel": "取消", "unavailable": "设备认证当前不可用。", "failed": "身份验证失败。"
+  },
+  "pairing": {
+    "title": "配对新设备", "intro": "用新设备的 NanoOps 扫描下方二维码，或手动输入配对码即可加入「{name}」。",
+    "pairingCode": "配对码", "codeCopied": "已复制配对码", "securityNote": "二维码内含访问令牌，请勿截图外传。完成配对后可在「设备」中随时撤销。",
+    "regenerate": "重新生成", "errorTitle": "无法生成配对码",
+    "errorDesc": "生成配对码需要使用账号登录的服务器连接。请确认该服务器已用账号登录，且网络可达。", "expiresIn": "{time} 后过期",
+    "expired": "配对码已过期", "grants": "授予权限"
+  },
+  "actions": {
+    "title": "操作", "openTerminal": "打开远程终端", "openTerminalSub": "开启远程 Shell 通道", "requestData": "请求最新数据",
+    "requestDataSub": "强制 Agent 立即上报指标", "copyAgentId": "复制 Agent ID", "reboot": "重启主机", "rebootSub": "需要 L3 · 危险操作",
+    "noServerForNode": "无法连接该节点所属服务器", "dataRequested": "已请求新数据", "dataRequestFailed": "请求失败：{error}",
+    "agentIdCopied": "已复制 Agent ID", "rebootSent": "已发送重启命令", "rebootFailed": "发送失败：{error}",
+    "rebootConfirmTitle": "重启该节点主机？", "rebootConfirmBody": "将向 Agent 下发系统重启命令，主机会断开并重新启动，指标采集中断直至恢复。",
+    "rebootConfirm": "重启", "requestDataPending": "正在请求最新数据…", "rebootPending": "正在发送重启命令…", "rebootDone": "主机已重启",
+    "commandDenied": "无权读取该命令的执行结果"
+  },
+  "serverSwitch": { "title": "切换服务器", "addServer": "添加服务器" },
+  "shell": {
+    "appName": "NanoOps", "servers": "{n} 服务器", "aiAssistant": "AI 运维助手", "settings": "设置", "footer": "NanoOps Mobile",
+    "sectionServers": "服务器", "sectionOther": "其他", "addServer": "添加服务器", "permissions": "权限与角色",
+    "auditLog": "审计日志", "roleAccount": "账号 · 完整权限", "roleDevice": "设备令牌 · 只读", "noServer": "未连接服务器",
+    "signOut": "退出登录", "signOutTitle": "退出登录？", "signOutBody": "这将断开连接并删除“{name}”的本地配置。"
+  },
+  "time": { "secondsAgo": "{n} 秒前", "minutesAgo": "{n} 分钟前", "hoursAgo": "{n} 小时前", "daysAgo": "{n} 天前" },
+  "audit": {
+    "title": "审计日志", "entriesCount": "{n} 条记录", "empty": "暂无审计记录", "emptySub": "此服务器上的命令活动将显示在这里"
+  },
+  "permissions": {
+    "title": "权限与角色", "intro": "按分配的权限等级分组的节点（L0 只读 → L3 系统管理）。", "levelGroup": "{n} 个节点",
+    "noneAtLevel": "此等级暂无节点", "empty": "暂无已连接节点", "emptySub": "节点连接后将显示权限等级"
+  }
+}

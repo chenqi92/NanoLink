@@ -6,7 +6,7 @@ import { useSettings } from "@/store/settings"
 import { useData } from "@/contexts/DataContext"
 import { useAuth } from "@/contexts/AuthContext"
 import { isOnline } from "@/lib/format"
-import { authApi } from "@/lib/api"
+import { authApi, type ApiError } from "@/lib/api"
 
 const PAGE_KEYS: Record<string, string> = {
   dashboard: "nav.dashboard",
@@ -113,9 +113,9 @@ function UserMenu() {
         setShowPasswordDialog(false)
         setPwdStatus("idle")
       }, 1500)
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPwdStatus("error")
-      if (err?.response?.status === 401) {
+      if ((err as Partial<ApiError>)?.status === 401) {
         setPwdError(t("plat.incorrectPassword"))
       } else {
         setPwdError(t("common.error"))
@@ -365,19 +365,20 @@ function UserMenu() {
   )
 }
 
-export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
+export function Topbar({ onOpenSearch, onOpenNavigation }: { onOpenSearch: () => void; onOpenNavigation: () => void }) {
   const { t } = useTranslation()
   const { navigate } = useRouter()
   const { tweaks, toggleTheme, lang, setLang } = useSettings()
 
   return (
-    <header style={{ height: 52, padding: "0 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--border)", background: "var(--bg)", flexShrink: 0, position: "relative", zIndex: 5 }}>
-      <Breadcrumb />
+    <header className="topbar" style={{ height: 52, padding: "0 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid var(--border)", background: "var(--bg)", flexShrink: 0, position: "relative", zIndex: 5 }}>
+      <button className="btn btn-ghost btn-icon mobile-nav-trigger" onClick={onOpenNavigation} aria-label={t("assistant.openNavigation")} title={t("assistant.openNavigation")}>{I.menu({ size: 15 })}</button>
+      <span className="topbar-breadcrumb"><Breadcrumb /></span>
       <div style={{ flex: 1 }} />
 
       <button
         onClick={onOpenSearch}
-        className="row gap-2"
+        className="row gap-2 topbar-search"
         style={{ appearance: "none", height: 30, padding: "0 10px", background: "var(--panel-2)", border: "1px solid var(--border)", color: "var(--fg-4)", fontFamily: "inherit", fontSize: 12, borderRadius: 6, cursor: "pointer", minWidth: 220, alignItems: "center", justifyContent: "flex-start", gap: 8 }}
       >
         {I.search({ size: 13 })}
@@ -386,13 +387,13 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
         <span className="kbd">⌘K</span>
       </button>
 
-      <ConnStatus />
+      <span className="topbar-connection"><ConnStatus /></span>
 
-      <button className="btn btn-ghost btn-sm" onClick={() => navigate("assistant")} title={t("nav.assistant")}>
+      <button className="btn btn-ghost btn-sm topbar-assistant" onClick={() => navigate("assistant")} title={t("nav.assistant")}>
         {I.sparkle({ size: 13 })} <span>{t("topbar.assistant")}</span>
       </button>
 
-      <div className="vr" style={{ height: 22 }} />
+      <div className="vr topbar-divider" style={{ height: 22 }} />
 
       <button className="btn btn-ghost btn-sm" onClick={() => setLang(lang === "en" ? "zh" : "en")} title={t("header.language")}>
         {I.globe({ size: 13 })} <span className="mono">{lang === "zh" ? "中" : "EN"}</span>

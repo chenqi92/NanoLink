@@ -5,10 +5,13 @@ import { PageHeader } from "@/components/shell/primitives"
 import { AgentPicker } from "@/components/monitor/AgentPicker"
 import { useAgentCommand } from "@/hooks/useAgentCommand"
 import type { AgentLogEntry } from "@/lib/api"
+import { useData } from "@/contexts/DataContext"
+import { ContentState, LoadingState, RequestState } from "@/components/shell/RequestState"
 
 type Scope = "system" | "server" | "audit"
 
 const SCOPE_CMD: Record<Scope, string> = { system: "SYSTEM_LOGS", server: "SERVICE_LOGS", audit: "AUDIT_LOGS" }
+const SCOPE_PERMISSION: Record<Scope, number> = { system: 1, server: 0, audit: 2 }
 const LEVEL_COLOR: Record<string, string> = { info: "var(--fg-3)", warn: "var(--warn)", warning: "var(--warn)", error: "var(--crit)", err: "var(--crit)", debug: "var(--fg-dim)" }
 
 function LogViewer({ lines, live }: { lines: AgentLogEntry[]; live?: boolean }) {
@@ -35,12 +38,15 @@ function LogViewer({ lines, live }: { lines: AgentLogEntry[]; live?: boolean }) 
 
 export function LogsScreen() {
   const { t } = useTranslation()
+  const { agents } = useData()
   const [scope, setScope] = useState<Scope>("system")
   const [agentId, setAgentId] = useState("")
   const [service, setService] = useState("")
   const [level, setLevel] = useState("all")
   const [q, setQ] = useState("")
   const [paused, setPaused] = useState(false)
+  const selectedAgent = agents.find((agent) => agent.id === agentId)
+  const permission = selectedAgent?.permissionLevel ?? 0
 
   const enabled = !!agentId && (scope !== "server" || !!service)
   const params = useMemo<Record<string, string>>(() => {
@@ -61,6 +67,10 @@ export function LogsScreen() {
     return () => clearInterval(id)
   }, [paused, enabled])
 
+  useEffect(() => {
+    if (selectedAgent && permission < SCOPE_PERMISSION[scope]) setScope("server")
+  }, [selectedAgent, permission, scope])
+
   const allLines = data?.logResult?.lines ?? []
   const filtered = allLines.filter((l) => {
     if (level !== "all" && (l.level || "").toLowerCase() !== level) return false
@@ -68,10 +78,10 @@ export function LogsScreen() {
     return true
   })
 
-  const scopes: { k: Scope; label: string }[] = [
-    { k: "system", label: t("dev.systemLogs") },
-    { k: "server", label: t("dev.serverLogs") },
-    { k: "audit", label: t("dev.auditLogs") },
+  const scopes: { k: Scope; label: string; required: number }[] = [
+    { k: "system", label: t("dev.systemLogs"), required: 1 },
+    { k: "server", label: t("dev.serverLogs"), required: 0 },
+    { k: "audit", label: t("dev.auditLogs"), required: 2 },
   ]
 
   return (
@@ -80,7 +90,7 @@ export function LogsScreen() {
       <div style={{ padding: "0 24px", borderBottom: "1px solid var(--border)" }}>
         <div className="tabs" style={{ borderBottom: "none", marginBottom: -1 }}>
           {scopes.map((s) => (
-            <button key={s.k} className={`tab ${scope === s.k ? "active" : ""}`} onClick={() => setScope(s.k)}>{s.label}</button>
+            <button key={s.k} className={`tab ${scope === s.k ? "active" : ""}`} disabled={permission < s.required} title={permission < s.required ? t("access.permissionLevelDesc", { level: `L${s.required}` }) : undefined} onClick={() => setScope(s.k)}>{s.label}{permission < s.required && <span className="dim row gap-1" style={{ fontSize: 10 }}>{I.lock({ size: 10 })} L{s.required}</span>}</button>
           ))}
         </div>
       </div>
@@ -118,13 +128,13 @@ export function LogsScreen() {
         </div>
 
         {!enabled ? (
-          <div className="card" style={{ padding: "40px 24px", textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{scope === "server" ? "Enter a service name above" : t("common.loading")}</div>
+          !agentId ? <ContentState kind="empty" title={t("mon.noAgents")} compact /> : <ContentState kind="empty" title={t("dev.enterServiceName")} compact />
         ) : loading && !data ? (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}><span className="dot pulse ok" /> {t("common.loading")}</div>
-        ) : error ? (
-          <div className="badge crit" style={{ height: "auto", padding: 10 }}>{error}</div>
+          <LoadingState compact />
+        ) : error != null ? (
+          <RequestState error={error} onRetry={reload} compact />
         ) : filtered.length === 0 ? (
-          <div className="card" style={{ padding: "40px 24px", textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{t("common.noData")}</div>
+          <ContentState kind="empty" title={t("common.noData")} compact />
         ) : (
           <LogViewer lines={filtered} live={!paused} />
         )}

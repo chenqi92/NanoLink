@@ -215,32 +215,42 @@ func (h *AssistantHandler) Status(c *gin.Context) {
 	c.JSON(http.StatusOK, h.llm.Status())
 }
 
-// resolveChatConfig picks the provider configuration for this request:
-// an explicitly requested profile, else the active profile, else the
-// globally configured provider. The second return reports whether a usable
-// provider configuration was found.
-func (h *AssistantHandler) resolveChatConfig(profileID uint) (service.LLMConfig, bool) {
+type chatResponse struct {
+	Reply string                   `json:"reply"`
+	Model service.LLMModelIdentity `json:"model"`
+}
+
+// resolveChatConfig picks the provider configuration and non-secret model
+// identity for this request: an explicitly requested profile, else the active
+// profile, else the globally configured provider. The final return reports
+// whether a usable provider configuration was found.
+func (h *AssistantHandler) resolveChatConfig(profileID uint) (service.LLMConfig, service.LLMModelIdentity, bool) {
 	if h.profiles != nil {
 		if profileID != 0 {
 			profile, err := h.profiles.GetProfile(profileID)
 			if err == nil {
 				if cfg, cfgErr := h.profiles.ConfigForProfile(profile); cfgErr == nil && cfg.APIKey != "" && cfg.Model != "" {
-					return cfg, true
+					return cfg, service.LLMModelIdentity{ProfileID: profile.ID, ProfileName: profile.Name, Provider: cfg.Provider, Model: cfg.Model}, true
 				}
 			}
 			// An explicit but unusable selection should not silently fall back
 			// to a different model than the user picked.
-			return service.LLMConfig{}, false
+			return service.LLMConfig{}, service.LLMModelIdentity{}, false
 		}
-		if cfg, err := h.profiles.ActiveConfig(); err == nil && cfg.APIKey != "" && cfg.Model != "" {
-			return cfg, true
+		if profile, err := h.profiles.GetActiveProfile(); err == nil {
+			if cfg, cfgErr := h.profiles.ConfigForProfile(profile); cfgErr == nil && cfg.APIKey != "" && cfg.Model != "" {
+				return cfg, service.LLMModelIdentity{ProfileID: profile.ID, ProfileName: profile.Name, Provider: cfg.Provider, Model: cfg.Model}, true
+			}
 		}
 	}
-	if h.llm != nil && h.llm.Enabled() {
-		// Signal "use the client's own configuration" with an empty config.
-		return service.LLMConfig{}, true
+	if h.llm != nil {
+		status := h.llm.Status()
+		if status.Enabled {
+			// Signal "use the client's own configuration" with an empty config.
+			return service.LLMConfig{}, service.LLMModelIdentity{Provider: status.Provider, Model: status.Model}, true
+		}
 	}
-	return service.LLMConfig{}, false
+	return service.LLMConfig{}, service.LLMModelIdentity{}, false
 }
 
 // Chat answers a free-form question using the configured external LLM, grounding
@@ -254,7 +264,7 @@ func (h *AssistantHandler) Chat(c *gin.Context) {
 		return
 	}
 
-	cfg, ok := h.resolveChatConfig(req.ProfileID)
+	cfg, model, ok := h.resolveChatConfig(req.ProfileID)
 	if !ok {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error": "AI assistant chat is not configured. Ask a super admin to configure an AI provider in Settings.",
@@ -278,19 +288,24 @@ func (h *AssistantHandler) Chat(c *gin.Context) {
 		return
 	}
 	system := h.buildSystemPrompt(visible, all)
-	var reply string
+	var result service.LLMChatResult
 	var err error
 	if cfg.Model != "" {
-		reply, err = h.llm.ChatWithConfig(c.Request.Context(), cfg, system, msgs)
+		result, err = h.llm.ChatWithConfigResult(c.Request.Context(), cfg, system, msgs)
 	} else {
-		reply, err = h.llm.Chat(c.Request.Context(), system, msgs)
+		result, err = h.llm.ChatResult(c.Request.Context(), system, msgs)
 	}
 	if err != nil {
 		h.logger.Warnw("assistant chat failed", "err", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "assistant chat failed"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"reply": reply})
+	if result.Model.Provider != model.Provider || result.Model.Model != model.Model {
+		h.logger.Warnw("assistant model identity changed during resolution", "resolved_provider", model.Provider, "resolved_model", model.Model, "used_provider", result.Model.Provider, "used_model", result.Model.Model)
+	}
+	result.Model.ProfileID = model.ProfileID
+	result.Model.ProfileName = model.ProfileName
+	c.JSON(http.StatusOK, chatResponse{Reply: result.Reply, Model: result.Model})
 }
 
 // buildSystemPrompt assembles a concise live snapshot of the fleet so the LLM

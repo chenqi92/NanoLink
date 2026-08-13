@@ -11,7 +11,7 @@ echo -e "${GREEN}Stopping NanoLink Development Environment${NC}"
 if [ -f /tmp/nanolink-backend.pid ]; then
     BACKEND_PID=$(cat /tmp/nanolink-backend.pid)
     if kill -0 $BACKEND_PID 2>/dev/null; then
-        echo "Stopping backend (PID: $BACKEND_PID)"
+        echo "Stopping backend (  PID: $BACKEND_PID)"
         kill $BACKEND_PID
     fi
     rm /tmp/nanolink-backend.pid

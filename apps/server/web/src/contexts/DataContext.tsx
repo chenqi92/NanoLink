@@ -19,7 +19,7 @@ interface DataContextValue {
 const DataContext = createContext<DataContextValue | undefined>(undefined)
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, user } = useAuth()
 
   const [agents, setAgents] = useState<Agent[]>([])
   const [agentOrder, setAgentOrder] = useState<Map<string, number>>(new Map()) // AgentID -> SortOrder
@@ -196,12 +196,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true)
       setError(null)
       setAgentOrder(new Map())
-    } else {
+    } else if (user?.isSuperAdmin) {
       // Fetch agent order when authenticated
       fetchAgentOrder()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated])
+  }, [isAuthenticated, user?.isSuperAdmin, fetchAgentOrder])
 
   const clearError = useCallback(() => {
     setError(null)

@@ -112,3 +112,27 @@ func TestValidateLLMSettingsRejectsUnsafeBaseURL(t *testing.T) {
 		t.Fatal("URL credentials/query were accepted")
 	}
 }
+
+func TestValidateLLMSettingsAcceptsEveryCatalogProvider(t *testing.T) {
+	for _, provider := range providerCatalog {
+		provider := provider
+		t.Run(provider.ID, func(t *testing.T) {
+			baseURL := provider.DefaultBaseURL
+			if baseURL == "" {
+				baseURL = "https://llm.example.test/v1"
+			}
+			cfg, err := validateLLMSettingsUpdate(LLMSettingsUpdate{
+				Provider:  provider.ID,
+				Model:     "model",
+				BaseURL:   baseURL,
+				MaxTokens: 1024,
+			})
+			if err != nil {
+				t.Fatalf("catalog provider was rejected: %v", err)
+			}
+			if cfg.Provider != provider.ID {
+				t.Fatalf("provider = %q, want %q", cfg.Provider, provider.ID)
+			}
+		})
+	}
+}

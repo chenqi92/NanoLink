@@ -16,7 +16,7 @@ import (
 // LLMConfig configures the external LLM backing the assistant chat.
 type LLMConfig struct {
 	Enabled   bool
-	Provider  string // "anthropic" | "openai" | "openai-compatible"
+	Provider  string // provider catalog ID; non-Anthropic vendors use the OpenAI-compatible wire format
 	Model     string
 	BaseURL   string
 	APIKey    string
@@ -37,6 +37,21 @@ type LLMStatus struct {
 	Configured bool   `json:"configured"`
 	Provider   string `json:"provider"`
 	Model      string `json:"model"`
+}
+
+// LLMModelIdentity identifies the non-secret provider and model used for a chat.
+type LLMModelIdentity struct {
+	ProfileID   uint   `json:"profileId,omitempty"`
+	ProfileName string `json:"profileName,omitempty"`
+	Provider    string `json:"provider"`
+	Model       string `json:"model"`
+}
+
+// LLMChatResult contains an assistant reply and the configuration identity from
+// the same immutable snapshot used for the upstream request.
+type LLMChatResult struct {
+	Reply string
+	Model LLMModelIdentity
 }
 
 // LLMClient talks to an external LLM over HTTP. It supports the Anthropic
@@ -113,11 +128,22 @@ func (c *LLMClient) Enabled() bool {
 // Chat sends a system prompt and conversation to the configured provider and
 // returns the assistant's text reply.
 func (c *LLMClient) Chat(ctx context.Context, system string, messages []ChatMessage) (string, error) {
+	result, err := c.ChatResult(ctx, system, messages)
+	return result.Reply, err
+}
+
+// ChatResult sends a conversation using one global configuration snapshot and
+// returns the non-secret identity from that same snapshot.
+func (c *LLMClient) ChatResult(ctx context.Context, system string, messages []ChatMessage) (LLMChatResult, error) {
 	cfg := c.snapshot()
 	if !cfg.Enabled || cfg.APIKey == "" || cfg.Model == "" {
-		return "", fmt.Errorf("AI assistant is not configured: set llm.enabled, llm.model and NANOLINK_LLM_API_KEY")
+		return LLMChatResult{}, fmt.Errorf("AI assistant is not configured: set llm.enabled, llm.model and NANOLINK_LLM_API_KEY")
 	}
-	return c.chatWithConfig(ctx, cfg, system, messages)
+	reply, err := c.chatWithConfig(ctx, cfg, system, messages)
+	if err != nil {
+		return LLMChatResult{}, err
+	}
+	return LLMChatResult{Reply: reply, Model: LLMModelIdentity{Provider: cfg.Provider, Model: cfg.Model}}, nil
 }
 
 // Test verifies the saved provider credentials even when the assistant is
@@ -135,11 +161,22 @@ func (c *LLMClient) Test(ctx context.Context) error {
 // instead of the globally configured one, so a caller can chat through a saved
 // profile without mutating shared state.
 func (c *LLMClient) ChatWithConfig(ctx context.Context, cfg LLMConfig, system string, messages []ChatMessage) (string, error) {
+	result, err := c.ChatWithConfigResult(ctx, cfg, system, messages)
+	return result.Reply, err
+}
+
+// ChatWithConfigResult normalizes and uses one explicit configuration snapshot,
+// returning the non-secret identity that was sent upstream.
+func (c *LLMClient) ChatWithConfigResult(ctx context.Context, cfg LLMConfig, system string, messages []ChatMessage) (LLMChatResult, error) {
 	cfg = normalizeLLMRuntimeConfig(cfg)
 	if cfg.APIKey == "" || cfg.Model == "" {
-		return "", fmt.Errorf("AI provider is not configured: model and API key are required")
+		return LLMChatResult{}, fmt.Errorf("AI provider is not configured: model and API key are required")
 	}
-	return c.chatWithConfig(ctx, cfg, system, messages)
+	reply, err := c.chatWithConfig(ctx, cfg, system, messages)
+	if err != nil {
+		return LLMChatResult{}, err
+	}
+	return LLMChatResult{Reply: reply, Model: LLMModelIdentity{Provider: cfg.Provider, Model: cfg.Model}}, nil
 }
 
 // TestConfig verifies an explicit provider configuration with a minimal request.

@@ -4,6 +4,8 @@ import { I } from "@/lib/icons"
 import { useAgentCommand, runAgentCommand } from "@/hooks/useAgentCommand"
 import { Modal } from "@/components/shell/Dialog"
 import { formatBytes, toneFor } from "@/lib/format"
+import { ContentState, LoadingState, RequestState } from "@/components/shell/RequestState"
+import { userErrorMessage } from "@/lib/errors"
 
 const SERVICE_CONTROL_LEVEL = 2
 
@@ -33,7 +35,7 @@ function useCommandAction(agentId: string, onDone?: () => void) {
         setFlash({ kind: "ok", text: t("dev.cmdSent") })
         onDone?.()
       } catch (e) {
-        setFlash({ kind: "crit", text: `${t("dev.cmdFailed")}: ${e instanceof Error ? e.message : String(e)}` })
+        setFlash({ kind: "crit", text: userErrorMessage(e, t) })
       } finally {
         setBusy(null)
       }
@@ -69,11 +71,10 @@ function Toolbar({ count, loading, onReload, q, setQ, extra }: { count: number; 
   )
 }
 
-function StatePanel({ loading, error, empty, emptyMsg }: { loading: boolean; error: string | null; empty: boolean; emptyMsg: string }) {
-  const { t } = useTranslation()
-  if (loading) return <div style={{ padding: 32, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}><span className="dot pulse ok" /> {t("common.loading")}</div>
-  if (error) return <div className="badge crit" style={{ height: "auto", padding: 10, margin: "12px 0" }}>{error}</div>
-  if (empty) return <div style={{ padding: 32, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{emptyMsg}</div>
+function StatePanel({ loading, error, empty, emptyMsg, onRetry }: { loading: boolean; error: unknown; empty: boolean; emptyMsg: string; onRetry?: () => void }) {
+  if (loading) return <LoadingState compact />
+  if (error != null) return <RequestState error={error} onRetry={onRetry} compact />
+  if (empty) return <ContentState kind="empty" title={emptyMsg} compact />
   return null
 }
 
@@ -121,7 +122,7 @@ export function ProcessesTab({ agentId, permission = 0 }: { agentId: string; per
     <div className="col" style={{ padding: 20 }}>
       <Toolbar count={rows.length} loading={loading} onReload={reload} q={q} setQ={setQ} extra={sortToggle} />
       <Flash flash={flash} onClose={() => setFlash(null)} />
-      <StatePanel loading={loading && !data} error={error} empty={!!data && rows.length === 0} emptyMsg={t("mon.noProcesses")} />
+      <StatePanel loading={loading && !data} error={error} empty={!!data && rows.length === 0} emptyMsg={t("mon.noProcesses")} onRetry={reload} />
       {data && rows.length > 0 && (
         <div className="card" style={{ overflow: "auto" }}>
           <table className="tbl" style={{ minWidth: 760 }}>
@@ -210,7 +211,7 @@ export function ServicesTab({ agentId, permission = 0 }: { agentId: string; perm
     <div className="col" style={{ padding: 20 }}>
       <Toolbar count={rows.length} loading={loading} onReload={reload} q={q} setQ={setQ} extra={summary} />
       <Flash flash={flash} onClose={() => setFlash(null)} />
-      <StatePanel loading={loading && !data} error={error} empty={!!data && rows.length === 0} emptyMsg={t("common.noData")} />
+      <StatePanel loading={loading && !data} error={error} empty={!!data && rows.length === 0} emptyMsg={t("common.noData")} onRetry={reload} />
       {data && rows.length > 0 && (
         <div className="card" style={{ overflow: "auto" }}>
           <table className="tbl" style={{ minWidth: 760 }}>
@@ -277,7 +278,7 @@ export function DockerTab({ agentId, permission = 0 }: { agentId: string; permis
     <div className="col" style={{ padding: 20 }}>
       <Toolbar count={rows.length} loading={loading} onReload={reload} q={q} setQ={setQ} extra={summary} />
       <Flash flash={flash} onClose={() => setFlash(null)} />
-      <StatePanel loading={loading && !data} error={error} empty={!!data && rows.length === 0} emptyMsg={t("mon.noContainers")} />
+      <StatePanel loading={loading && !data} error={error} empty={!!data && rows.length === 0} emptyMsg={t("mon.noContainers")} onRetry={reload} />
       {data && rows.length > 0 && (
         <div className="card" style={{ overflow: "auto" }}>
           <table className="tbl" style={{ minWidth: 760 }}>
@@ -342,9 +343,9 @@ function ContainerLogsModal({ agentId, container, onClose }: { agentId: string; 
   return (
     <Modal width={720} onClose={onClose} title={`${t("dev.containerLogs")} · ${container.name}`}>
       {loading && !data ? (
-        <div style={{ padding: 24, textAlign: "center", color: "var(--fg-4)" }}><span className="dot pulse ok" /> {t("common.loading")}</div>
-      ) : error ? (
-        <div className="badge crit" style={{ height: "auto", padding: 10 }}>{error}</div>
+        <LoadingState compact />
+      ) : error != null ? (
+        <RequestState error={error} compact />
       ) : text ? (
         <pre className="code" style={{ fontSize: 11, maxHeight: "60vh", overflow: "auto" }}>{text}</pre>
       ) : (
@@ -361,7 +362,7 @@ const parentDir = (p: string) => {
   return idx <= 0 ? "/" : trimmed.slice(0, idx)
 }
 
-export function FilesTab({ agentId }: { agentId: string }) {
+export function FilesTab({ agentId, permission = 0 }: { agentId: string; permission?: number }) {
   const { t } = useTranslation()
   const [path, setPath] = useState("/var/log")
   const [input, setInput] = useState("/var/log")
@@ -387,7 +388,7 @@ export function FilesTab({ agentId }: { agentId: string }) {
           <button className="btn btn-sm btn-ghost btn-icon" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button>
         </div>
         <div className="col" style={{ flex: 1, overflow: "auto" }}>
-          <StatePanel loading={loading && !data} error={error} empty={!!data && entries.length === 0} emptyMsg={t("common.noData")} />
+          <StatePanel loading={loading && !data} error={error} empty={!!data && entries.length === 0} emptyMsg={t("common.noData")} onRetry={reload} />
           {entries.map((e) => {
             const full = `${path.replace(/\/+$/, "")}/${e.name}`
             const isSel = selected === full
@@ -403,7 +404,7 @@ export function FilesTab({ agentId }: { agentId: string }) {
       </div>
       <div className="card col flex-1" style={{ overflow: "hidden" }}>
         {selected ? (
-          <FileViewer key={selected} agentId={agentId} path={selected} />
+          <FileViewer key={selected} agentId={agentId} path={selected} permission={permission} />
         ) : (
           <div className="col" style={{ flex: 1, alignItems: "center", justifyContent: "center", color: "var(--fg-4)" }}>
             {I.audit({ size: 32 })}
@@ -415,7 +416,7 @@ export function FilesTab({ agentId }: { agentId: string }) {
   )
 }
 
-function FileViewer({ agentId, path }: { agentId: string; path: string }) {
+function FileViewer({ agentId, path, permission }: { agentId: string; path: string; permission: number }) {
   const { t } = useTranslation()
   const [tailing, setTailing] = useState(true)
   const { data, loading, error, reload } = useAgentCommand(agentId, "FILE_TAIL", { target: path, params: { lines: "300" } })
@@ -436,7 +437,7 @@ function FileViewer({ agentId, path }: { agentId: string; path: string }) {
             <span className={`dot ${tailing ? "ok pulse" : ""}`} />
             <span>{tailing ? t("dev.tail") : "tail"}</span>
           </button>
-          <button className="btn btn-sm btn-ghost" disabled={!!busy} onClick={() => run("dl", "FILE_DOWNLOAD", { target: path })}>{busy === "dl" ? <span className="dot pulse ok" /> : I.external({ size: 12 })}<span>{t("dev.download")}</span></button>
+          <button className="btn btn-sm btn-ghost" disabled={!!busy || permission < 1} title={permission < 1 ? t("access.permissionLevelDesc", { level: "L1" }) : undefined} onClick={() => run("dl", "FILE_DOWNLOAD", { target: path })}>{busy === "dl" ? <span className="dot pulse ok" /> : I.external({ size: 12 })}<span>{t("dev.download")}</span></button>
           <button className="btn btn-sm btn-ghost btn-icon" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 12 })}</button>
         </div>
       </div>
@@ -444,8 +445,8 @@ function FileViewer({ agentId, path }: { agentId: string; path: string }) {
       <div style={{ flex: 1, overflow: "auto", padding: 14, fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.6, background: "var(--bg-2)" }}>
         {loading && !data ? (
           <div style={{ color: "var(--fg-4)" }}><span className="dot pulse ok" /> {t("common.loading")}</div>
-        ) : error ? (
-          <div className="badge crit" style={{ height: "auto", padding: 10 }}>{error}</div>
+        ) : error != null ? (
+          <RequestState error={error} onRetry={reload} compact />
         ) : lines.length === 0 ? (
           <div style={{ color: "var(--fg-4)" }}>{t("dev.noLines")}</div>
         ) : (
@@ -483,10 +484,7 @@ export function AgentLogsTab({ agentId, permission }: { agentId: string; permiss
 
   if (!enabled) {
     return (
-      <div style={{ padding: 40, textAlign: "center" }}>
-        <span style={{ color: "var(--fg-4)" }}>{I.shield({ size: 32 })}</span>
-        <div style={{ marginTop: 12, fontSize: 13 }}>{t("mon.noAccess")} · L1+</div>
-      </div>
+      <div style={{ padding: 20 }}><ContentState kind="forbidden" eyebrow={t("access.restricted")} title={t("access.noPermissionTitle")} description={t("access.permissionLevelDesc", { level: "L1" })} /></div>
     )
   }
 
@@ -510,7 +508,7 @@ export function AgentLogsTab({ agentId, permission }: { agentId: string; permiss
           <button className="btn btn-sm btn-ghost" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button>
         </div>
       </div>
-      <StatePanel loading={loading && !data} error={error} empty={!!data && lines.length === 0} emptyMsg={t("common.noData")} />
+      <StatePanel loading={loading && !data} error={error} empty={!!data && lines.length === 0} emptyMsg={t("common.noData")} onRetry={reload} />
       {data && lines.length > 0 && (
         <div className="card" style={{ flex: 1, overflow: "auto", background: "var(--bg-2)", padding: "10px 12px", fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6 }}>
           {lines.map((l, i) => (

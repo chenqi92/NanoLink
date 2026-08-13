@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import { I } from "@/lib/icons"
 import { useRouter, type Page } from "@/store/router"
 import { useAuth } from "@/contexts/AuthContext"
+import { pageRequiresSuperAdmin } from "@/lib/access"
 
 interface NavItem {
   id: Page
@@ -11,7 +12,7 @@ interface NavItem {
   badge?: number
 }
 
-export function Sidebar({ collapsed, setCollapsed, alertCount = 0 }: { collapsed: boolean; setCollapsed: (v: boolean) => void; alertCount?: number }) {
+export function Sidebar({ collapsed, setCollapsed, alertCount = 0, onNavigate }: { collapsed: boolean; setCollapsed: (v: boolean) => void; alertCount?: number; onNavigate?: () => void }) {
   const { t } = useTranslation()
   const { route, navigate } = useRouter()
   const { user } = useAuth()
@@ -20,17 +21,17 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0 }: { collapsed
     {
       label: t("nav.monitoring"),
       items: [
+        { id: "assistant", icon: I.ai({}), label: t("nav.assistant") },
         { id: "dashboard", icon: I.dashboard({}), label: t("nav.dashboard") },
         { id: "agents", icon: I.agents({}), label: t("nav.agents") },
         { id: "alerts", icon: I.warn({}), label: t("nav.alerts"), badge: alertCount },
-        { id: "assistant", icon: I.ai({}), label: t("nav.assistant") },
       ],
     },
     {
       label: t("nav.ops"),
       items: [
         { id: "operations", icon: I.bolt({}), label: t("nav.operations") },
-        ...(user?.isSuperAdmin ? [{ id: "deployments" as Page, icon: I.arrowUp({}), label: t("nav.deployments") }] : []),
+        { id: "deployments", icon: I.arrowUp({}), label: t("nav.deployments") },
         { id: "logs", icon: I.audit({}), label: t("nav.logs") },
       ],
     },
@@ -53,11 +54,18 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0 }: { collapsed
       ],
     },
   ]
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => user?.isSuperAdmin || !pageRequiresSuperAdmin(item.id)),
+    }))
+    .filter((group) => group.items.length > 0)
 
   const isRail = collapsed
 
   return (
     <aside
+      className="app-sidebar"
       style={{
         width: isRail ? 56 : 224,
         borderRight: "1px solid var(--border)",
@@ -95,7 +103,7 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0 }: { collapsed
       </div>
 
       <nav style={{ padding: 8, flex: 1, overflow: "auto" }}>
-        {groups.map((g, gi) => (
+        {visibleGroups.map((g, gi) => (
           <div key={gi} style={{ marginBottom: 14 }}>
             {!isRail && <div className="upper" style={{ padding: "8px 10px 4px", color: "var(--fg-4)" }}>{g.label}</div>}
             <div className="col" style={{ gap: 1 }}>
@@ -104,7 +112,11 @@ export function Sidebar({ collapsed, setCollapsed, alertCount = 0 }: { collapsed
                 return (
                   <button
                     key={it.id}
-                    onClick={() => navigate(it.id)}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => {
+                      navigate(it.id)
+                      onNavigate?.()
+                    }}
                     title={isRail ? it.label : ""}
                     style={{
                       appearance: "none",

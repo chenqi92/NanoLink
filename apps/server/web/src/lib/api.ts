@@ -3,6 +3,28 @@ const API_BASE = "/api"
 export interface ApiError {
   error: string
   status: number
+  requiredLevel?: string
+  [key: string]: unknown
+}
+
+export const SESSION_EXPIRED_EVENT = "nanolink:session-expired"
+
+function apiError(payload: unknown, status: number, fallback: string): ApiError {
+  const data = payload && typeof payload === "object" ? payload as Record<string, unknown> : {}
+  return {
+    ...data,
+    error: typeof data.error === "string" && data.error ? data.error : fallback,
+    status,
+  }
+}
+
+function announceExpiredSession(url: string, payload?: unknown) {
+  // Invalid credentials on the login/register forms are expected 401s. The
+  // initial /me probe also runs before there is a known browser session.
+  if (["/auth/login", "/auth/register", "/auth/me"].includes(url)) return
+  const data = payload && typeof payload === "object" ? payload as Record<string, unknown> : {}
+  if (url === "/auth/password" && data.error === "current password is incorrect") return
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
 }
 
 class ApiClient {
@@ -24,12 +46,13 @@ class ApiClient {
 
     if (response.status === 401) {
       const data = await response.json().catch(() => ({}))
-      throw { error: data.error || "Authentication required", status: 401 } as ApiError
+      announceExpiredSession(url, data)
+      throw apiError(data, 401, "Authentication required")
     }
 
     if (!response.ok) {
       const data = await response.json().catch(() => ({}))
-      throw { error: data.error || "Request failed", status: response.status } as ApiError
+      throw apiError(data, response.status, "Request failed")
     }
 
     return response.json()
@@ -39,8 +62,9 @@ class ApiClient {
     return this.fetch<T>(url)
   }
 
-  async post<T>(url: string, body?: unknown): Promise<T> {
+  async post<T>(url: string, body?: unknown, options: RequestInit = {}): Promise<T> {
     return this.fetch<T>(url, {
+      ...options,
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     })
@@ -65,7 +89,8 @@ class ApiClient {
     })
     if (!response.ok) {
       const data = await response.json().catch(() => ({}))
-      throw { error: data.error || "Upload failed", status: response.status } as ApiError
+      if (response.status === 401) announceExpiredSession(url, data)
+      throw apiError(data, response.status, "Upload failed")
     }
     return response.json()
   }
@@ -302,7 +327,24 @@ export const settingsApi = {
   update: (data: Record<string, string>) => api.put<Record<string, string>>("/settings", data),
 }
 
-export type LLMProvider = "anthropic" | "openai" | "openai-compatible"
+export type LLMProvider =
+  | "anthropic"
+  | "openai"
+  | "gemini"
+  | "mistral"
+  | "groq"
+  | "openrouter"
+  | "deepseek"
+  | "zhipu"
+  | "moonshot"
+  | "qwen"
+  | "minimax"
+  | "baichuan"
+  | "stepfun"
+  | "siliconflow"
+  | "hunyuan"
+  | "ernie"
+  | "openai-compatible"
 export interface LLMSettings {
   enabled: boolean
   provider: LLMProvider
@@ -455,6 +497,7 @@ export interface LLMProfile {
   baseUrl: string
   maxTokens: number
   isActive: boolean
+  apiKeyConfigured: boolean
   createdAt: string
   updatedAt: string
 }
@@ -462,7 +505,7 @@ export interface LLMProfile {
 export interface ProviderInfo {
   id: string
   label: string
-  defaultBaseURL: string
+  defaultBaseUrl: string
   wire: string
   canListModels: boolean
   region: string
@@ -470,7 +513,41 @@ export interface ProviderInfo {
 
 export interface ProviderModel {
   id: string
+  displayName: string
+}
+
+export interface ChatResponse {
+  reply: string
+  model?: {
+    profileId?: number
+    profileName?: string
+    provider: string
+    model: string
+  }
+}
+
+export interface McpToolDescriptor {
   name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+
+export interface McpActivity {
+  id: number
+  toolName: string
+  startedAt: string
+  durationMs: number
+  success: boolean
+}
+
+export interface McpOverview {
+  enabled: boolean
+  transport?: string
+  state: "disabled" | "starting" | "running" | "stopped" | "unavailable"
+  server: { name: string; version: string }
+  protocolVersion: string
+  tools: McpToolDescriptor[]
+  activity: McpActivity[]
 }
 
 export interface LLMProfileInput {
@@ -485,8 +562,12 @@ export interface LLMProfileInput {
 export const assistantApi = {
   findings: () => api.get<FindingDTO[]>("/assistant/findings"),
   status: () => api.get<AssistantStatus>("/assistant/status"),
-  chat: (messages: ChatMessage[], profileId?: number) => api.post<{ reply: string }>("/assistant/chat", { messages, profileId }),
+  chat: (messages: ChatMessage[], profileId?: number, signal?: AbortSignal) => api.post<ChatResponse>("/assistant/chat", { messages, profileId }, { signal }),
   profiles: () => api.get<LLMProfile[]>("/assistant/profiles"),
+}
+
+export const mcpApi = {
+  overview: () => api.get<McpOverview>("/mcp/overview"),
 }
 
 export const llmProfilesApi = {

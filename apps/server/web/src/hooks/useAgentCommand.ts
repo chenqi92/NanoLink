@@ -29,7 +29,7 @@ export function useAgentCommand(agentId: string, type: string, opts: { target?: 
   const paramsKey = params ? JSON.stringify(params) : ""
   const [data, setData] = useState<CommandResultData | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<unknown>(null)
   const reqId = useRef(0)
 
   const run = useCallback(async () => {
@@ -42,8 +42,7 @@ export function useAgentCommand(agentId: string, type: string, opts: { target?: 
       setData(result)
     } catch (e) {
       if (reqId.current !== myReq) return
-      const msg = typeof e === "object" && e && "error" in e ? String((e as { error: unknown }).error) : e instanceof Error ? e.message : "failed"
-      setError(msg)
+      setError(e)
     } finally {
       if (reqId.current === myReq) setLoading(false)
     }
@@ -51,7 +50,6 @@ export function useAgentCommand(agentId: string, type: string, opts: { target?: 
 
   useEffect(() => {
     if (enabled) run()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run, enabled])
 
   return { data, loading, error, reload: run }

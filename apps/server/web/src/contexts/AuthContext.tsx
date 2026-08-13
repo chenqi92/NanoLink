@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useCallback, useEffect, useState } from 'react'
-import { authApi, type User } from '@/lib/api'
+import { authApi, SESSION_EXPIRED_EVENT, type User } from '@/lib/api'
 
 interface AuthContextValue {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
   error: string | null
+  sessionExpired: boolean
 
   login: (username: string, password: string) => Promise<void>
   register: (username: string, password: string, email?: string) => Promise<void>
@@ -19,6 +20,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [sessionExpired, setSessionExpired] = useState(false)
+
+  useEffect(() => {
+    const expireSession = () => {
+      setUser(null)
+      setError(null)
+      setSessionExpired(true)
+      setIsLoading(false)
+    }
+    window.addEventListener(SESSION_EXPIRED_EVENT, expireSession)
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expireSession)
+  }, [])
 
   useEffect(() => {
     const initAuth = async () => {
@@ -42,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await authApi.login({ username, password })
       setUser(response.user)
+      setSessionExpired(false)
     } catch (err) {
       const errorMsg = typeof err === 'object' && err !== null && 'error' in err
         ? String((err as { error: unknown }).error)
@@ -59,6 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await authApi.register({ username, password, email })
       setUser(response.user)
+      setSessionExpired(false)
     } catch (err) {
       const errorMsg = typeof err === 'object' && err !== null && 'error' in err
         ? String((err as { error: unknown }).error)
@@ -78,6 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setUser(null)
       setError(null)
+      setSessionExpired(false)
     }
   }, [])
 
@@ -90,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: !!user,
     isLoading,
     error,
+    sessionExpired,
     login,
     register,
     logout,

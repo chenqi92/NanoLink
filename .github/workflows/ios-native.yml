@@ -1,0 +1,86 @@
+name: Native iOS
+
+on:
+  pull_request:
+    paths:
+      - "apps/ios/**"
+      - ".github/workflows/ios-native.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/ios/**"
+      - ".github/workflows/ios-native.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test (iPhone + iPad)
+    runs-on: macos-15
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Select available simulators
+        id: simulators
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          devices = json.loads(
+              subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"])
+          )["devices"]
+          ios_devices = [
+              device
+              for runtime, runtime_devices in devices.items()
+              if ".iOS-" in runtime
+              for device in runtime_devices
+              if device.get("isAvailable", True)
+          ]
+
+          def first(prefix):
+              return next((device["udid"] for device in ios_devices if device["name"].startswith(prefix)), None)
+
+          iphone = first("iPhone")
+          ipad = first("iPad")
+          if not iphone or not ipad:
+              raise SystemExit("Both an iPhone and an iPad simulator are required")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"iphone={iphone}\n")
+              output.write(f"ipad={ipad}\n")
+          PY
+
+      - name: Test on iPhone and iPad
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project apps/ios/NanoLink.xcodeproj \
+            -scheme NanoLink \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.iphone }}" \
+            -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.ipad }}" \
+            -parallel-testing-enabled YES \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+
+      - name: Build release configuration
+        run: |
+          xcodebuild \
+            -project apps/ios/NanoLink.xcodeproj \
+            -scheme NanoLink \
+            -configuration Release \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO \
+            build

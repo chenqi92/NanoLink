@@ -3,7 +3,13 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"go.uber.org/zap"
 )
 
 // mockAgentService implements a minimal AgentService for testing
@@ -287,7 +293,84 @@ func TestResourceURIParsing(t *testing.T) {
 	}
 }
 
+type blockingTestTransport struct {
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (t *blockingTestTransport) ReadMessage() ([]byte, error) {
+	<-t.closed
+	return nil, context.Canceled
+}
+
+func (t *blockingTestTransport) WriteMessage([]byte) error { return nil }
+func (t *blockingTestTransport) Close() error {
+	t.once.Do(func() { close(t.closed) })
+	return nil
+}
+
 // Benchmark tests
+func TestSnapshotSortsToolsAndHidesExecutionData(t *testing.T) {
+	s := NewServer(nil, nil, zap.NewNop().Sugar())
+	s.tools = map[string]*Tool{
+		"z_tool": {Name: "z_tool", Description: "last", InputSchema: map[string]interface{}{"type": "object"}},
+		"a_tool": {Name: "a_tool", Description: "first", InputSchema: map[string]interface{}{"type": "object"}},
+	}
+	s.recordActivity("z_tool", time.Now().Add(-time.Millisecond), true)
+
+	overview := s.Snapshot()
+	if overview.Enabled || overview.State != "disabled" {
+		t.Fatalf("disabled snapshot = %#v", overview)
+	}
+	if len(overview.Tools) != 2 || overview.Tools[0].Name != "a_tool" || overview.Tools[1].Name != "z_tool" {
+		t.Fatalf("tools were not sorted: %#v", overview.Tools)
+	}
+	data, err := json.Marshal(overview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"arguments", "result", "apiKey", "token"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("snapshot contains forbidden field %q: %s", forbidden, data)
+		}
+	}
+}
+
+func TestActivityIsNewestFirstAndBounded(t *testing.T) {
+	s := NewServer(nil, nil, zap.NewNop().Sugar())
+	for i := 0; i < 55; i++ {
+		s.recordActivity(fmt.Sprintf("tool-%d", i), time.Now(), i%2 == 0)
+	}
+	overview := s.Snapshot()
+	if len(overview.Activity) != 50 {
+		t.Fatalf("activity length = %d, want 50", len(overview.Activity))
+	}
+	if overview.Activity[0].ToolName != "tool-54" || overview.Activity[49].ToolName != "tool-5" {
+		t.Fatalf("activity order = first %q last %q", overview.Activity[0].ToolName, overview.Activity[49].ToolName)
+	}
+}
+
+func TestSnapshotReportsStoppedAfterServeReturns(t *testing.T) {
+	transport := &blockingTestTransport{closed: make(chan struct{})}
+	s := NewServer(nil, nil, zap.NewNop().Sugar(), WithTransport(transport), WithTransportName("test"))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Serve(ctx) }()
+
+	deadline := time.Now().Add(time.Second)
+	for s.Snapshot().State != "running" && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if state := s.Snapshot().State; state != "running" {
+		t.Fatalf("state before cancellation = %q", state)
+	}
+	cancel()
+	<-done
+	if state := s.Snapshot().State; state != "stopped" {
+		t.Fatalf("state after cancellation = %q", state)
+	}
+}
+
 func BenchmarkJSONRPCParsing(b *testing.B) {
 	input := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
 	b.ResetTimer()

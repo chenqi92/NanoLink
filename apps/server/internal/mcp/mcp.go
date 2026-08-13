@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -27,15 +28,49 @@ type Server struct {
 	resources map[string]*Resource
 	prompts   map[string]*Prompt
 
-	mu       sync.RWMutex
-	started  bool
-	shutdown chan struct{}
+	mu             sync.RWMutex
+	started        bool
+	stopped        bool
+	enabled        bool
+	transportName  string
+	shutdown       chan struct{}
+	activity       []ToolActivity
+	nextActivityID uint64
 }
 
 // ServerInfo contains MCP server metadata
 type ServerInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+}
+
+const ProtocolVersion = "2024-11-05"
+
+// ToolDescriptor is the sanitized public description of a registered tool.
+type ToolDescriptor struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	InputSchema map[string]interface{} `json:"inputSchema"`
+}
+
+// ToolActivity contains process-lifetime execution metadata without arguments or results.
+type ToolActivity struct {
+	ID         uint64    `json:"id"`
+	ToolName   string    `json:"toolName"`
+	StartedAt  time.Time `json:"startedAt"`
+	DurationMS int64     `json:"durationMs"`
+	Success    bool      `json:"success"`
+}
+
+// Overview is safe to expose to authenticated dashboard users.
+type Overview struct {
+	Enabled         bool             `json:"enabled"`
+	Transport       string           `json:"transport,omitempty"`
+	State           string           `json:"state"`
+	Server          ServerInfo       `json:"server"`
+	ProtocolVersion string           `json:"protocolVersion"`
+	Tools           []ToolDescriptor `json:"tools"`
+	Activity        []ToolActivity   `json:"activity"`
 }
 
 // Capabilities describes what the MCP server supports
@@ -68,6 +103,14 @@ type Option func(*Server)
 func WithTransport(t Transport) Option {
 	return func(s *Server) {
 		s.transport = t
+		s.enabled = t != nil
+	}
+}
+
+// WithTransportName records the configured transport without exposing credentials.
+func WithTransportName(name string) Option {
+	return func(s *Server) {
+		s.transportName = name
 	}
 }
 
@@ -139,6 +182,51 @@ func (s *Server) RegisterPrompt(prompt *Prompt) {
 	s.prompts[prompt.Name] = prompt
 }
 
+// Snapshot returns a deterministic, sanitized view of MCP capabilities and activity.
+func (s *Server) Snapshot() Overview {
+	s.mu.RLock()
+	tools := make([]ToolDescriptor, 0, len(s.tools))
+	for _, tool := range s.tools {
+		tools = append(tools, ToolDescriptor{Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema})
+	}
+	// Keep the JSON contract stable for clients: an empty activity feed must be
+	// encoded as [] instead of null.
+	activity := append(make([]ToolActivity, 0, len(s.activity)), s.activity...)
+	enabled, started, stopped, transportName := s.enabled, s.started, s.stopped, s.transportName
+	s.mu.RUnlock()
+
+	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
+	state := "disabled"
+	if enabled {
+		state = "starting"
+		if started {
+			state = "running"
+		} else if stopped {
+			state = "stopped"
+		}
+	}
+	return Overview{
+		Enabled:         enabled,
+		Transport:       transportName,
+		State:           state,
+		Server:          ServerInfo{Name: "nanolink", Version: "0.3.1"},
+		ProtocolVersion: ProtocolVersion,
+		Tools:           tools,
+		Activity:        activity,
+	}
+}
+
+func (s *Server) recordActivity(name string, started time.Time, success bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextActivityID++
+	entry := ToolActivity{ID: s.nextActivityID, ToolName: name, StartedAt: started.UTC(), DurationMS: time.Since(started).Milliseconds(), Success: success}
+	s.activity = append([]ToolActivity{entry}, s.activity...)
+	if len(s.activity) > 50 {
+		s.activity = s.activity[:50]
+	}
+}
+
 // Serve starts the MCP server and processes messages
 func (s *Server) Serve(ctx context.Context) error {
 	if s.transport == nil {
@@ -151,7 +239,14 @@ func (s *Server) Serve(ctx context.Context) error {
 		return fmt.Errorf("server already started")
 	}
 	s.started = true
+	s.stopped = false
 	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.started = false
+		s.stopped = true
+		s.mu.Unlock()
+	}()
 
 	s.logger.Info("MCP server starting...")
 
@@ -205,7 +300,15 @@ func (s *Server) Serve(ctx context.Context) error {
 
 // Stop stops the MCP server
 func (s *Server) Stop() {
+	s.mu.Lock()
+	if !s.started {
+		s.mu.Unlock()
+		return
+	}
+	s.started = false
+	s.stopped = true
 	close(s.shutdown)
+	s.mu.Unlock()
 }
 
 // handleMessage processes an incoming JSON-RPC message
@@ -249,7 +352,7 @@ func (s *Server) handleMessage(ctx context.Context, data []byte) ([]byte, error)
 // handleInitialize handles the initialize request
 func (s *Server) handleInitialize(msg JSONRPCMessage) ([]byte, error) {
 	result := map[string]interface{}{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": ProtocolVersion,
 		"serverInfo": ServerInfo{
 			Name:    "nanolink",
 			Version: "0.3.1",
@@ -311,7 +414,9 @@ func (s *Server) handleToolsCall(ctx context.Context, msg JSONRPCMessage) ([]byt
 	toolCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	started := time.Now()
 	result, err := tool.Handler(toolCtx, params.Arguments)
+	s.recordActivity(params.Name, started, err == nil)
 	if err != nil {
 		return s.successResponse(msg.ID, map[string]interface{}{
 			"content": []map[string]interface{}{

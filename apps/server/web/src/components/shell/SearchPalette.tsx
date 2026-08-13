@@ -5,11 +5,13 @@ import { useData } from "@/contexts/DataContext"
 import { useRouter } from "@/store/router"
 import { usersApi, type UserDetail } from "@/lib/api"
 import { isOnline } from "@/lib/format"
+import { useAuth } from "@/contexts/AuthContext"
 
 export function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation()
   const { agents } = useData()
   const { navigate } = useRouter()
+  const { user } = useAuth()
   const [q, setQ] = useState("")
   const [users, setUsers] = useState<UserDetail[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
@@ -18,9 +20,10 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
     if (open) {
       setQ("")
       setTimeout(() => inputRef.current?.focus(), 50)
-      usersApi.list().then(setUsers).catch(() => setUsers([]))
+      if (user?.isSuperAdmin) usersApi.list().then(setUsers).catch(() => setUsers([]))
+      else setUsers([])
     }
-  }, [open])
+  }, [open, user?.isSuperAdmin])
 
   if (!open) return null
   const ql = q.toLowerCase()
@@ -28,9 +31,9 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
   const userMatches = users.filter((u) => !ql || u.username.toLowerCase().includes(ql) || (u.email || "").toLowerCase().includes(ql)).slice(0, 4)
 
   const actions = [
-    { label: t("wizard.addAgent"), run: () => { navigate("tokens", { openWizard: true }); onClose() } },
+    ...(user?.isSuperAdmin ? [{ label: t("wizard.addAgent"), run: () => { navigate("tokens", { openWizard: true }); onClose() } }] : []),
     { label: t("acc.generatePairing"), run: () => { navigate("devices", { openPair: true }); onClose() } },
-    { label: t("nav.audit"), run: () => { navigate("audit"); onClose() } },
+    ...(user?.isSuperAdmin ? [{ label: t("nav.audit"), run: () => { navigate("audit"); onClose() } }] : []),
   ].filter((a) => !ql || a.label.toLowerCase().includes(ql))
 
   function go(page: Parameters<typeof navigate>[0], extra?: Parameters<typeof navigate>[1]) {

@@ -6,6 +6,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { DataProvider } from './contexts/DataContext'
 import { SettingsProvider } from './store/settings'
 import { RouterProvider } from './store/router'
+import { AssistantProvider } from './contexts/AssistantContext'
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
@@ -14,7 +15,9 @@ createRoot(document.getElementById('root')!).render(
       <SettingsProvider>
         <DataProvider>
           <RouterProvider>
-            <App />
+            <AssistantProvider>
+              <App />
+            </AssistantProvider>
           </RouterProvider>
         </DataProvider>
       </SettingsProvider>

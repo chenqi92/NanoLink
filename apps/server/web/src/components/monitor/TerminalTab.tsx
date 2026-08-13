@@ -2,20 +2,15 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import { Terminal } from "@/components/shell/Terminal"
+import { ContentState } from "@/components/shell/RequestState"
 
 export function TerminalTab({ agentId, permission }: { agentId: string; permission: number }) {
   const { t } = useTranslation()
   const [key, setKey] = useState(0)
 
-  if (permission < 1) {
+  if (permission < 3) {
     return (
-      <div style={{ padding: 40, textAlign: "center" }}>
-        <span style={{ color: "var(--fg-4)" }}>{I.shield({ size: 32 })}</span>
-        <div style={{ marginTop: 12, fontSize: 14, fontWeight: 500 }}>{t("mon.noAccess")}</div>
-        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-          {t("permission.l3")} · {t("agent.terminal")}
-        </div>
-      </div>
+      <div style={{ padding: 20 }}><ContentState kind="forbidden" eyebrow={t("access.restricted")} title={t("access.noPermissionTitle")} description={t("access.permissionLevelDesc", { level: "L3" })} /></div>
     )
   }
 

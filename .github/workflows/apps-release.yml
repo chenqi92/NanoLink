@@ -350,32 +350,17 @@ jobs:
           name: nanolink-android
           path: apps/desktop/release/*.apk
 
-  # Build iOS IPA (unsigned for sideload)
+  # Build native iOS IPA (unsigned for sideload)
   mobile-ios:
-    name: Build iOS IPA
-    runs-on: macos-14
+    name: Build Native iOS IPA
+    runs-on: macos-15
 
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Get dependencies
-        working-directory: apps/desktop
-        run: flutter pub get
-
-      - name: Build iOS (no codesign)
-        working-directory: apps/desktop
-        run: flutter build ios --release --no-codesign
-
-      - name: Create IPA
-        working-directory: apps/desktop
+      - name: Resolve version
+        id: version
         run: |
           VERSION="${{ inputs.version }}"
           if [ -z "$VERSION" ]; then
@@ -383,18 +368,38 @@ jobs:
             VERSION="${VERSION#v}"
           fi
           if [ -z "$VERSION" ]; then
-            VERSION=$(cat ../../VERSION | tr -d '[:space:]')
+            VERSION=$(cat VERSION | tr -d '[:space:]')
           fi
-          mkdir -p release Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r "release/NanoLink-iOS-$VERSION-unsigned.ipa" Payload
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build native iOS app (no codesign)
+        run: |
+          xcodebuild \
+            -project apps/ios/NanoLink.xcodeproj \
+            -scheme NanoLink \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath apps/ios/build \
+            MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Create unsigned IPA
+        run: |
+          APP_PATH="apps/ios/build/Build/Products/Release-iphoneos/NanoLink.app"
+          test -d "$APP_PATH"
+          mkdir -p apps/ios/release apps/ios/Payload
+          cp -R "$APP_PATH" apps/ios/Payload/
+          cd apps/ios
+          zip -r "release/NanoLink-iOS-${{ steps.version.outputs.version }}-unsigned.ipa" Payload
           rm -rf Payload
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nanolink-ios
-          path: apps/desktop/release/*.ipa
+          path: apps/ios/release/*.ipa
 
   # Create release with all artifacts
   release:

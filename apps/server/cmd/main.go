@@ -426,6 +426,25 @@ func main() {
 	grpcAuthInterceptor := grpcserver.NewAuthInterceptor(authService, permService, sugar)
 	grpcServer := grpcserver.NewServerWithAuth(cfg, agentService, agentTokenService, metricsService, grpcAuthInterceptor, sugar)
 
+	// Build the canonical MCP registry regardless of whether serving is enabled so
+	// authenticated dashboard users can inspect the capabilities in this build.
+	mcpOptions := []mcp.Option{mcp.WithAuditService(auditService), mcp.WithGRPCServer(grpcServer)}
+	var mcpSSETransport *mcp.SSETransport
+	if cfg.MCP.Enabled {
+		switch cfg.MCP.Transport {
+		case "sse":
+			addr := net.JoinHostPort(cfg.MCP.SSEBindAddress, fmt.Sprintf("%d", cfg.MCP.SSEPort))
+			mcpSSETransport = mcp.NewSSETransport(addr, cfg.MCP.SSEAuthToken, sugar)
+			mcpOptions = append(mcpOptions, mcp.WithTransport(mcpSSETransport), mcp.WithTransportName("sse"))
+		default:
+			mcpOptions = append(mcpOptions, mcp.WithTransport(mcp.NewStdioTransport(sugar)), mcp.WithTransportName("stdio"))
+		}
+	}
+	mcpServer := mcp.NewServer(agentService, metricsService, sugar, mcpOptions...)
+	mcpOverviewAPI := router.Group("/api")
+	mcpOverviewAPI.Use(handler.LimitRequestBody(cfg.Server.MaxRequestBodyBytes), handler.AuthMiddleware(authService))
+	mcpOverviewAPI.GET("/mcp/overview", handler.NewMCPStatusHandler(mcpServer).Overview)
+
 	// Wire gRPC server and audit service into the main handler so /api/agents/:id/command
 	// dispatches commands to agents (with audit) instead of returning a placeholder
 	h.SetGRPCServer(grpcServer)
@@ -584,34 +603,19 @@ func main() {
 		}
 	}()
 
-	// Start MCP server if enabled
-	var mcpServer *mcp.Server
+	// Start the configured MCP transport and serve loop after the HTTP routes are live.
 	if cfg.MCP.Enabled {
 		sugar.Info("MCP server enabled, starting...")
-		var transport mcp.Transport
-		switch cfg.MCP.Transport {
-		case "sse":
-			addr := net.JoinHostPort(cfg.MCP.SSEBindAddress, fmt.Sprintf("%d", cfg.MCP.SSEPort))
-			sseTransport := mcp.NewSSETransport(addr, cfg.MCP.SSEAuthToken, sugar)
-			transport = sseTransport
+		if mcpSSETransport != nil {
 			go func() {
-				if err := sseTransport.Serve(); err != nil && err != http.ErrServerClosed {
+				if err := mcpSSETransport.Serve(); err != nil && err != http.ErrServerClosed {
 					sugar.Errorf("MCP SSE server error: %v", err)
 				}
 			}()
-			sugar.Infof("MCP server using SSE transport on %s", addr)
-		default:
-			transport = mcp.NewStdioTransport(sugar)
+			sugar.Infof("MCP server using SSE transport on %s:%d", cfg.MCP.SSEBindAddress, cfg.MCP.SSEPort)
+		} else {
 			sugar.Info("MCP server using stdio transport")
 		}
-		mcpServer = mcp.NewServer(
-			agentService,
-			metricsService,
-			sugar,
-			mcp.WithTransport(transport),
-			mcp.WithAuditService(auditService),
-			mcp.WithGRPCServer(grpcServer),
-		)
 		go func() {
 			if err := mcpServer.Serve(context.Background()); err != nil {
 				sugar.Errorf("MCP server error: %v", err)
@@ -655,9 +659,12 @@ func main() {
 		sugar.Errorf("WebSocket server shutdown error: %v", err)
 	}
 
-	// Stop MCP server if enabled
-	if mcpServer != nil {
+	// Stop MCP only when its serve loop was started.
+	if cfg.MCP.Enabled {
 		mcpServer.Stop()
+		if mcpSSETransport != nil {
+			_ = mcpSSETransport.Close()
+		}
 		sugar.Info("MCP server stopped")
 	}
 

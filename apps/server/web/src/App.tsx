@@ -12,14 +12,17 @@ import { AgentWizard } from "@/components/agents/AgentWizard"
 import { ScreenRouter } from "@/screens"
 import { useRouter } from "@/store/router"
 import { I } from "@/lib/icons"
+import { Drawer } from "@/components/shell/Drawer"
+import "@/styles/shell.css"
 
 function App() {
   const { t } = useTranslation()
-  const { isAuthenticated, isLoading: authLoading } = useAuth()
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth()
   const { route, setRoute } = useRouter()
   const [collapsed, setCollapsed] = useState(false)
   const [openSearch, setOpenSearch] = useState(false)
   const [openWizard, setOpenWizard] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [alertCount, setAlertCount] = useState(0)
 
   // Poll unacknowledged alert count for the sidebar badge
@@ -42,10 +45,10 @@ function App() {
   // Open the add-agent wizard when a navigation requests it
   useEffect(() => {
     if (route.openWizard) {
-      setOpenWizard(true)
+      if (user?.isSuperAdmin) setOpenWizard(true)
       setRoute({ ...route, openWizard: false })
     }
-  }, [route, setRoute])
+  }, [route, setRoute, user?.isSuperAdmin])
 
   // Global ⌘K / Esc
   useEffect(() => {
@@ -80,17 +83,20 @@ function App() {
 
   return (
     <>
-      <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", background: "var(--bg)", color: "var(--fg)" }}>
+      <div className="app-shell">
         <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} alertCount={alertCount} />
-        <div className="col" style={{ flex: 1, minWidth: 0 }}>
-          <Topbar onOpenSearch={() => setOpenSearch(true)} />
+        <div className="col app-shell-main">
+          <Topbar onOpenSearch={() => setOpenSearch(true)} onOpenNavigation={() => setMobileNavOpen(true)} />
           <main style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <ScreenRouter />
           </main>
         </div>
       </div>
+      <Drawer open={mobileNavOpen} title={t("assistant.mobileNavigation")} closeLabel={t("assistant.closeNavigation")} side="left" width={280} onClose={() => setMobileNavOpen(false)} className="mobile-nav-drawer">
+        <Sidebar collapsed={false} setCollapsed={() => {}} alertCount={alertCount} onNavigate={() => setMobileNavOpen(false)} />
+      </Drawer>
       <SearchPalette open={openSearch} onClose={() => setOpenSearch(false)} />
-      {openWizard && <AgentWizard onClose={() => setOpenWizard(false)} />}
+      {openWizard && user?.isSuperAdmin && <AgentWizard onClose={() => setOpenWizard(false)} />}
     </>
   )
 }

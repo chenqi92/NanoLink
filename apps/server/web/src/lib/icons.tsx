@@ -30,7 +30,7 @@ function Icon({ d, size = 16, fill, sw = 1.5, children, ...rest }: IconProps) {
 
 type IconCmp = (p: IconProps) => ReactNode
 
-export const I: Record<string, IconCmp> = {
+export const I = {
   brand: ({ size = 18 }: IconProps) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor" />
@@ -95,7 +95,8 @@ export const I: Record<string, IconCmp> = {
   history: (p) => <Icon {...p}><path d="M2 8V3M2 8h5"/><path d="M3.5 12c1.2 1 3 1.5 4.5 1.5 3.3 0 6-2.7 6-6s-2.7-6-6-6c-2 0-3.8 1-4.8 2.5"/><path d="M8 5v3.5l2.5 1.5"/></Icon>,
   lock: (p) => <Icon {...p}><rect x="3.5" y="7" width="9" height="7" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2"/></Icon>,
   download: (p) => <Icon {...p}><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 12v1a1 1 0 001 1h8a1 1 0 001-1v-1"/></Icon>,
-}
+  menu: (p) => <Icon {...p}><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></Icon>,
+} satisfies Record<string, IconCmp>
 
 export function osIcon(family?: string, size = 16) {
   if (family === "darwin") return I.apple({ size })

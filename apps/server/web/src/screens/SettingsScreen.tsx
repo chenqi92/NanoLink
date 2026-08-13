@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { serverApi, settingsApi, llmSettingsApi, llmProfilesApi, versionApi, type ServerInfo, type ServerUpdateInfo, type LLMSettings, type LLMProvider, type LLMProfile, type ProviderInfo, type ProviderModel } from "@/lib/api"
-import { useSettings, type Tweaks } from "@/store/settings"
+import { useSettings, type Density, type Tweaks } from "@/store/settings"
 import { PageHeader, FormBlock, KVRow } from "@/components/shell/primitives"
 import { I } from "@/lib/icons"
+import "./settings.css"
 
 function Segmented<T extends string>({ value, options, onChange }: { value: T; options: { v: T; label: ReactNode }[]; onChange: (v: T) => void }) {
   return (
-    <div className="row gap-1" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: 3, alignSelf: "flex-start" }}>
+    <div className="settings-segmented" role="group">
       {options.map((o) => (
-        <button key={o.v} className="btn btn-sm" onClick={() => onChange(o.v)}
-          style={{ height: 24, padding: "0 12px", background: value === o.v ? "var(--panel)" : "transparent", border: value === o.v ? "1px solid var(--border-2)" : "1px solid transparent", color: value === o.v ? "var(--fg)" : "var(--fg-4)" }}>
+        <button
+          key={o.v}
+          type="button"
+          className={`settings-segmented-option${value === o.v ? " is-active" : ""}`}
+          aria-pressed={value === o.v}
+          onClick={() => onChange(o.v)}
+        >
           {o.label}
         </button>
       ))}
@@ -18,15 +24,72 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
   )
 }
 
-function Section({ title, icon, children }: { title: ReactNode; icon: ReactNode; children: ReactNode }) {
+function Section({ title, icon, description, action, wide = false, children }: { title: ReactNode; icon: ReactNode; description?: ReactNode; action?: ReactNode; wide?: boolean; children: ReactNode }) {
   return (
-    <div className="card" style={{ padding: 0 }}>
-      <div className="row gap-2" style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", alignItems: "center", color: "var(--fg-2)" }}>
-        <span style={{ color: "var(--fg-4)" }}>{icon}</span>
-        <span style={{ fontSize: 12.5, fontWeight: 500 }}>{title}</span>
+    <section className={`card settings-section${wide ? " settings-section-wide" : ""}`}>
+      <div className="settings-section-header">
+        <div className="settings-section-heading">
+          <span className="settings-section-icon">{icon}</span>
+          <div>
+            <h3>{title}</h3>
+            {description && <p>{description}</p>}
+          </div>
+        </div>
+        {action && <div className="settings-section-action">{action}</div>}
       </div>
-      <div className="col" style={{ padding: 16, gap: 18 }}>{children}</div>
+      <div className="settings-section-body">{children}</div>
+    </section>
+  )
+}
+
+function ComponentSizePicker({ value, onChange, labels }: { value: Density; onChange: (value: Density) => void; labels: Record<Density, { title: string; description: string }> }) {
+  const options: Density[] = ["compact", "regular", "comfy"]
+  return (
+    <div className="component-size-picker" role="radiogroup">
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          className={`component-size-option${value === option ? " is-active" : ""}`}
+          role="radio"
+          aria-checked={value === option}
+          onClick={() => onChange(option)}
+        >
+          <span className="component-size-preview" data-preview-size={option} aria-hidden="true">
+            <span className="component-size-preview-sidebar" />
+            <span className="component-size-preview-main">
+              <span />
+              <span />
+              <span />
+            </span>
+          </span>
+          <span className="component-size-copy">
+            <strong>{labels[option].title}</strong>
+            <small>{labels[option].description}</small>
+          </span>
+          <span className="component-size-check" aria-hidden="true">{value === option && I.check({ size: 13 })}</span>
+        </button>
+      ))}
     </div>
+  )
+}
+
+function ProviderOptions({ providers, internationalLabel, chinaLabel }: { providers: ProviderInfo[]; internationalLabel: string; chinaLabel: string }) {
+  const international = providers.filter((provider) => provider.region !== "china")
+  const china = providers.filter((provider) => provider.region === "china")
+  return (
+    <>
+      {international.length > 0 && (
+        <optgroup label={internationalLabel}>
+          {international.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+        </optgroup>
+      )}
+      {china.length > 0 && (
+        <optgroup label={chinaLabel}>
+          {china.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
+        </optgroup>
+      )}
+    </>
   )
 }
 
@@ -163,8 +226,9 @@ export function SettingsScreen() {
       setEditingProfile(profile)
       setProfileForm({ name: profile.name, provider: profile.provider, model: profile.model, baseUrl: profile.baseUrl, apiKey: "", maxTokens: profile.maxTokens })
     } else {
+      const defaultProvider = providers[0]
       setEditingProfile({})
-      setProfileForm({ name: "", provider: providers[0]?.id || "anthropic", model: "", baseUrl: "", apiKey: "", maxTokens: 4096 })
+      setProfileForm({ name: "", provider: defaultProvider?.id || "anthropic", model: "", baseUrl: defaultProvider?.defaultBaseUrl || "https://api.anthropic.com", apiKey: "", maxTokens: 4096 })
     }
     setAvailableModels([])
     setProfileStatus("idle")
@@ -229,73 +293,92 @@ export function SettingsScreen() {
 
   const deleteProfile = async (id: number) => {
     if (!confirm(t("plat.confirmDeleteProfile"))) return
+    setProfileStatus("busy")
     try {
       await llmProfilesApi.delete(id)
       const updated = await llmProfilesApi.list()
       setProfiles(updated)
-    } catch {}
+      setProfileStatus("idle")
+    } catch {
+      setProfileStatus("error")
+    }
   }
 
   const activateProfile = async (id: number) => {
+    setProfileStatus("busy")
     try {
       await llmProfilesApi.activate(id)
       const updated = await llmProfilesApi.list()
       setProfiles(updated)
-    } catch {}
+      setProfileStatus("idle")
+    } catch {
+      setProfileStatus("error")
+    }
   }
 
-  const tabs: { key: TabKey; label: string; icon: ReactNode }[] = [
-    { key: "appearance", label: t("plat.appearance"), icon: I.settings({ size: 13 }) },
-    { key: "server", label: t("plat.server"), icon: I.dashboard({ size: 13 }) },
-    { key: "updates", label: t("plat.serverUpdate"), icon: I.download({ size: 13 }) },
-    { key: "ai", label: t("plat.aiProvider"), icon: I.sparkle({ size: 13 }) },
+  const tabs: { key: TabKey; label: string; description: string; icon: ReactNode }[] = [
+    { key: "appearance", label: t("plat.appearance"), description: t("plat.appearanceDescription"), icon: I.settings({ size: 15 }) },
+    { key: "server", label: t("plat.server"), description: t("plat.serverDescription"), icon: I.dashboard({ size: 15 }) },
+    { key: "updates", label: t("plat.serverUpdate"), description: t("plat.updatesDescription"), icon: I.download({ size: 15 }) },
+    { key: "ai", label: t("plat.aiProvider"), description: t("plat.aiProviderDescription"), icon: I.sparkle({ size: 15 }) },
   ]
+  const activeTabInfo = tabs.find((tab) => tab.key === activeTab) ?? tabs[0]
+  const chinaProviderCount = providers.filter((provider) => provider.region === "china").length
+  const internationalProviderCount = providers.length - chinaProviderCount
 
   return (
-    <div className="col" style={{ flex: 1, overflow: "hidden" }}>
+    <div className="settings-screen">
       <PageHeader title={t("nav.settings")} subtitle={t("plat.settingsSubtitle")} />
 
-      {/* Tabs */}
-      <div style={{ padding: "0 24px", borderBottom: "1px solid var(--border)" }}>
-        <div className="row gap-1">
+      <div className="settings-workspace">
+        <nav className="settings-nav" aria-label={t("plat.settingsNavigation")}>
+          <div className="settings-nav-label">{t("plat.settingsNavigation")}</div>
           {tabs.map((tab) => (
             <button
               key={tab.key}
+              type="button"
               onClick={() => setActiveTab(tab.key)}
-              className="row gap-2"
-              style={{
-                appearance: "none",
-                border: "none",
-                background: "transparent",
-                padding: "10px 14px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                fontSize: 13,
-                color: activeTab === tab.key ? "var(--fg)" : "var(--fg-3)",
-                fontWeight: activeTab === tab.key ? 500 : 400,
-                borderBottom: activeTab === tab.key ? "2px solid var(--accent)" : "2px solid transparent",
-                alignItems: "center",
-              }}
+              className={`settings-nav-item${activeTab === tab.key ? " is-active" : ""}`}
+              aria-current={activeTab === tab.key ? "page" : undefined}
             >
-              <span style={{ color: activeTab === tab.key ? "var(--accent)" : "var(--fg-4)" }}>
-                {tab.icon}
+              <span className="settings-nav-icon">{tab.icon}</span>
+              <span className="settings-nav-copy">
+                <strong>{tab.label}</strong>
+                <small>{tab.description}</small>
               </span>
-              <span>{tab.label}</span>
+              <span className="settings-nav-arrow" aria-hidden="true">{I.chev({ size: 13 })}</span>
             </button>
           ))}
-        </div>
-      </div>
+        </nav>
 
-      <div style={{ padding: 24, overflow: "auto", flex: 1 }}>
+        <div className="settings-content">
+          <div className="settings-content-inner">
+            <header className="settings-content-header">
+              <h2>{activeTabInfo.label}</h2>
+              <p>{activeTabInfo.description}</p>
+            </header>
         {/* Appearance Tab */}
         {activeTab === "appearance" && (
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
-            <Section title={t("plat.appearance")} icon={I.settings({ size: 13 })}>
+          <div className="settings-grid">
+            <Section
+              title={t("plat.componentSize")}
+              description={t("plat.componentSizeHint")}
+              icon={I.expand({ size: 15 })}
+              wide
+            >
+              <ComponentSizePicker
+                value={tweaks.density}
+                onChange={(value) => set("density", value)}
+                labels={{
+                  compact: { title: t("plat.compact"), description: t("plat.compactDescription") },
+                  regular: { title: t("plat.regular"), description: t("plat.regularDescription") },
+                  comfy: { title: t("plat.comfy"), description: t("plat.comfyDescription") },
+                }}
+              />
+            </Section>
+            <Section title={t("plat.appearance")} description={t("plat.appearanceSectionHint")} icon={I.settings({ size: 15 })}>
               <FormBlock label={t("plat.theme")}>
                 <Segmented value={tweaks.theme} onChange={(v) => set("theme", v)} options={[{ v: "dark", label: t("plat.dark") }, { v: "light", label: t("plat.light") }]} />
-              </FormBlock>
-              <FormBlock label={t("plat.density")}>
-                <Segmented value={tweaks.density} onChange={(v) => set("density", v)} options={[{ v: "compact", label: t("plat.compact") }, { v: "regular", label: t("plat.regular") }, { v: "comfy", label: t("plat.comfy") }]} />
               </FormBlock>
               <FormBlock label={t("plat.cardStyle")}>
                 <Segmented value={tweaks.card} onChange={(v) => set("card", v)} options={[{ v: "elevated", label: t("plat.elevated") }, { v: "outlined", label: t("plat.outlined") }, { v: "flat", label: t("plat.flat") }]} />
@@ -309,7 +392,7 @@ export function SettingsScreen() {
                 </div>
               </FormBlock>
             </Section>
-            <Section title={t("plat.typography")} icon={I.edit({ size: 13 })}>
+            <Section title={t("plat.typography")} description={t("plat.typographySectionHint")} icon={I.edit({ size: 15 })}>
               <FormBlock label={t("plat.fontFamily")}>
                 <Segmented value={tweaks.font} onChange={(v) => set("font", v)} options={[
                   { v: "sans", label: t("plat.sans") },
@@ -343,7 +426,7 @@ export function SettingsScreen() {
 
         {/* Server Tab */}
         {activeTab === "server" && (
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
+          <div className="settings-grid">
             <Section title={t("plat.server")} icon={I.dashboard({ size: 13 })}>
               <KVRow label={t("plat.serverName")} value={info?.serverName || "NanoOps"} />
               <KVRow label={t("plat.version")} value={info?.version ? `v${info.version}` : "—"} />
@@ -380,7 +463,7 @@ export function SettingsScreen() {
                 <Segmented value={(cfg.agentAutoUpdate as "enabled" | "manual") || "manual"} onChange={(v) => setCfgVal("agentAutoUpdate", v)} options={[{ v: "enabled", label: t("plat.autoUpdateOn") }, { v: "manual", label: t("plat.autoUpdateManual") }]} />
               </FormBlock>
               <div className="row gap-2" style={{ alignItems: "center" }}>
-                <button className="btn btn-sm btn-primary" onClick={saveSettings} disabled={cfgStatus === "busy"}>{cfgStatus === "busy" && <span className="dot pulse ok" />}{t("common.save")}</button>
+                <button className="btn btn-primary" onClick={saveSettings} disabled={cfgStatus === "busy"}>{cfgStatus === "busy" && <span className="dot pulse ok" />}{t("common.save")}</button>
                 {cfgStatus === "done" && <span className="badge ok">{t("plat.settingsSaved")}</span>}
                 {cfgStatus === "error" && <span className="badge crit">{t("common.error")}</span>}
               </div>
@@ -390,7 +473,7 @@ export function SettingsScreen() {
 
         {/* Updates Tab */}
         {activeTab === "updates" && (
-          <div style={{ maxWidth: 900 }}>
+          <div className="settings-single-column">
             <Section title={t("plat.serverUpdate")} icon={I.download({ size: 13 })}>
               <FormBlock label={t("plat.currentVersion")}>
                 <div className="row gap-2" style={{ alignItems: "center" }}>
@@ -422,7 +505,7 @@ export function SettingsScreen() {
 
               <div className="row gap-2" style={{ alignItems: "center", flexWrap: "wrap" }}>
                 <button
-                  className="btn btn-sm"
+                  className="btn"
                   onClick={checkForUpdates}
                   disabled={updateStatus === "checking" || updateStatus === "applying"}
                 >
@@ -432,7 +515,7 @@ export function SettingsScreen() {
 
                 {updateInfo?.updateAvailable && !updateInfo.blocker && (
                   <button
-                    className="btn btn-sm btn-primary"
+                    className="btn btn-primary"
                     onClick={applyUpdate}
                     disabled={updateStatus === "applying"}
                   >
@@ -458,92 +541,130 @@ export function SettingsScreen() {
 
         {/* AI Tab */}
         {activeTab === "ai" && (
-          <div style={{ maxWidth: 900 }}>
+          <div className="settings-ai-stack">
             {editingProfile ? (
-              <Section title={editingProfile.id ? t("plat.editProfile") : t("plat.newProfile")} icon={I.sparkle({ size: 13 })}>
-                <FormBlock label={t("plat.profileName")}>
-                  <input className="input" value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} placeholder={t("plat.profileNamePlaceholder")} />
-                </FormBlock>
-                <FormBlock label={t("plat.aiProviderType")}>
-                  <select className="input" value={profileForm.provider} onChange={(e) => { setProfileForm({ ...profileForm, provider: e.target.value, baseUrl: providers.find((p) => p.id === e.target.value)?.defaultBaseURL || "" }); setAvailableModels([]) }}>
-                    {providers.map((p) => (
-                      <option key={p.id} value={p.id}>{p.label}</option>
-                    ))}
-                  </select>
-                </FormBlock>
-                <FormBlock label={t("plat.aiBaseUrl")}>
-                  <input className="input mono" value={profileForm.baseUrl} onChange={(e) => setProfileForm({ ...profileForm, baseUrl: e.target.value })} placeholder={providers.find((p) => p.id === profileForm.provider)?.defaultBaseURL} />
-                </FormBlock>
-                <FormBlock label="API Key">
-                  <input className="input mono" type="password" value={profileForm.apiKey} onChange={(e) => setProfileForm({ ...profileForm, apiKey: e.target.value })} placeholder={editingProfile.id ? t("plat.apiKeyKeepExisting") : t("plat.apiKeyPlaceholder")} />
-                  {editingProfile.id && <div className="hint">{t("plat.apiKeyUpdateHint")}</div>}
-                </FormBlock>
-                <FormBlock label={t("plat.aiModel")}>
-                  <div className="row gap-2" style={{ alignItems: "flex-start" }}>
-                    {availableModels.length === 0 ? (
-                      <input className="input mono" value={profileForm.model} onChange={(e) => setProfileForm({ ...profileForm, model: e.target.value })} placeholder="claude-sonnet-4-5" style={{ flex: 1 }} />
-                    ) : (
-                      <select className="input mono" value={profileForm.model} onChange={(e) => setProfileForm({ ...profileForm, model: e.target.value })} style={{ flex: 1 }}>
-                        <option value="">{t("plat.selectModel")}</option>
-                        {availableModels.map((m) => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                      </select>
-                    )}
-                    <button className="btn btn-sm" onClick={fetchModels} disabled={fetchingModels || !profileForm.provider}>
-                      {fetchingModels && <span className="dot pulse ok" />}
-                      {t("plat.fetchModels")}
-                    </button>
+              <Section
+                title={editingProfile.id ? t("plat.editProfile") : t("plat.newProfile")}
+                description={t("plat.profileFormDescription")}
+                icon={I.sparkle({ size: 15 })}
+                action={<button type="button" className="btn btn-ghost" onClick={closeProfileForm}>{I.back({ size: 14 })}{t("common.cancel")}</button>}
+              >
+                <div className="profile-form-grid">
+                  <FormBlock label={t("plat.profileName")}>
+                    <input className="input" value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} placeholder={t("plat.profileNamePlaceholder")} />
+                  </FormBlock>
+                  <FormBlock label={t("plat.aiProviderType")}>
+                    <select className="input" value={profileForm.provider} onChange={(e) => { setProfileForm({ ...profileForm, provider: e.target.value, baseUrl: providers.find((p) => p.id === e.target.value)?.defaultBaseUrl || "" }); setAvailableModels([]) }}>
+                      {providers.length === 0 && <option value={profileForm.provider}>{profileForm.provider}</option>}
+                      <ProviderOptions providers={providers} internationalLabel={t("plat.internationalProviders")} chinaLabel={t("plat.chinaProviders")} />
+                    </select>
+                  </FormBlock>
+                  <div className="profile-form-span-2">
+                    <FormBlock label={t("plat.aiBaseUrl")} hint={t("plat.aiBaseUrlHint")}>
+                      <input className="input mono" value={profileForm.baseUrl} onChange={(e) => setProfileForm({ ...profileForm, baseUrl: e.target.value })} placeholder={providers.find((p) => p.id === profileForm.provider)?.defaultBaseUrl} />
+                    </FormBlock>
                   </div>
-                  {availableModels.length > 0 && <div className="hint">{t("plat.fetchedModels", { count: availableModels.length })}</div>}
-                </FormBlock>
-                <FormBlock label={t("plat.aiMaxTokens")}>
-                  <input className="input mono" type="number" min={1} max={65536} value={profileForm.maxTokens} onChange={(e) => setProfileForm({ ...profileForm, maxTokens: Number(e.target.value) })} />
-                </FormBlock>
-                <div className="row gap-2" style={{ alignItems: "center", flexWrap: "wrap" }}>
-                  <button className="btn btn-sm btn-primary" onClick={saveProfile} disabled={profileStatus === "busy" || !profileForm.name.trim() || !profileForm.model.trim()}>
+                  <FormBlock label="API Key" hint={editingProfile.id ? t("plat.apiKeyUpdateHint") : undefined}>
+                    <input className="input mono" type="password" autoComplete="new-password" value={profileForm.apiKey} onChange={(e) => setProfileForm({ ...profileForm, apiKey: e.target.value })} placeholder={editingProfile.id ? t("plat.apiKeyKeepExisting") : t("plat.apiKeyPlaceholder")} />
+                  </FormBlock>
+                  <FormBlock label={t("plat.aiMaxTokens")}>
+                    <input className="input mono" type="number" min={1} max={65536} value={profileForm.maxTokens} onChange={(e) => setProfileForm({ ...profileForm, maxTokens: Number(e.target.value) })} />
+                  </FormBlock>
+                  <div className="profile-form-span-2">
+                    <FormBlock label={t("plat.aiModel")}>
+                      <div className="profile-model-row">
+                        {availableModels.length === 0 ? (
+                          <input className="input mono" value={profileForm.model} onChange={(e) => setProfileForm({ ...profileForm, model: e.target.value })} placeholder="claude-sonnet-4-5" />
+                        ) : (
+                          <select className="input mono" value={profileForm.model} onChange={(e) => setProfileForm({ ...profileForm, model: e.target.value })}>
+                            <option value="">{t("plat.selectModel")}</option>
+                            {availableModels.map((m) => (
+                              <option key={m.id} value={m.id}>{m.displayName}</option>
+                            ))}
+                          </select>
+                        )}
+                        <button type="button" className="btn" onClick={fetchModels} disabled={fetchingModels || !profileForm.provider}>
+                          {fetchingModels && <span className="dot pulse ok" />}
+                          {t("plat.fetchModels")}
+                        </button>
+                      </div>
+                      {availableModels.length > 0 && <div className="hint">{t("plat.fetchedModels", { count: availableModels.length })}</div>}
+                    </FormBlock>
+                  </div>
+                </div>
+                <div className="settings-actions">
+                  <button className="btn btn-primary" onClick={saveProfile} disabled={profileStatus === "busy" || !profileForm.name.trim() || !profileForm.model.trim()}>
                     {profileStatus === "busy" && <span className="dot pulse ok" />}{t("common.save")}
                   </button>
-                  <button className="btn btn-sm btn-ghost" onClick={closeProfileForm}>{t("common.cancel")}</button>
                   {profileStatus === "done" && <span className="badge ok">{t("plat.settingsSaved")}</span>}
                   {profileStatus === "error" && <span className="badge crit">{t("common.error")}</span>}
                 </div>
               </Section>
             ) : (
-              <Section title={t("plat.llmProfiles")} icon={I.sparkle({ size: 13 })}>
-                <div className="row gap-2" style={{ marginBottom: 12 }}>
-                  <button className="btn btn-sm btn-primary" onClick={() => openProfileForm()}>{I.plus({ size: 13 })}<span>{t("plat.newProfile")}</span></button>
+              <Section
+                title={t("plat.llmProfiles")}
+                description={t("plat.providerProfilesDescription")}
+                icon={I.sparkle({ size: 15 })}
+                action={<button className="btn btn-primary" onClick={() => openProfileForm()} disabled={profileStatus === "busy"}>{I.plus({ size: 14 })}<span>{t("plat.newProfile")}</span></button>}
+              >
+                <div className="provider-catalog-summary">
+                  <span className="provider-catalog-icon">{I.globe({ size: 16 })}</span>
+                  <div className="provider-catalog-copy">
+                    <strong>{t("plat.providerCatalogAvailable", { count: providers.length })}</strong>
+                    <span>{t("plat.providerCatalogHint")}</span>
+                  </div>
+                  <div className="provider-catalog-badges">
+                    <span className="badge">{t("plat.internationalProviderCount", { count: internationalProviderCount })}</span>
+                    <span className="badge">{t("plat.chinaProviderCount", { count: chinaProviderCount })}</span>
+                  </div>
                 </div>
+                {profileStatus === "error" && <div className="badge crit" role="alert">{t("common.error")}</div>}
                 {profiles.length === 0 ? (
-                  <div className="hint">{t("plat.noProfiles")}</div>
+                  <div className="provider-empty-state">
+                    <span>{I.sparkle({ size: 20 })}</span>
+                    <strong>{t("plat.noProfilesTitle")}</strong>
+                    <p>{t("plat.noProfiles")}</p>
+                    <button className="btn" onClick={() => openProfileForm()}>{I.plus({ size: 14 })}{t("plat.newProfile")}</button>
+                  </div>
                 ) : (
-                  <div className="col gap-2">
-                    {profiles.map((p) => (
-                      <div key={p.id} className="card" style={{ padding: 12, border: "1px solid var(--border)" }}>
-                        <div className="row gap-2" style={{ alignItems: "center" }}>
-                          <div className="col flex-1" style={{ gap: 3, minWidth: 0 }}>
-                            <div className="row gap-2" style={{ alignItems: "center" }}>
-                              <span style={{ fontSize: 13, fontWeight: 500 }}>{p.name}</span>
-                              {p.isActive && <span className="badge ok" style={{ fontSize: 9.5 }}>{t("plat.active")}</span>}
+                  <div className="provider-profile-grid">
+                    {profiles.map((profile) => {
+                      const provider = providers.find((item) => item.id === profile.provider)
+                      const providerLabel = provider?.label || profile.provider
+                      return (
+                        <article key={profile.id} className={`provider-profile-card${profile.isActive ? " is-active" : ""}`}>
+                          <div className="provider-profile-header">
+                            <span className="provider-profile-mark" title={providerLabel}>{profile.provider.slice(0, 2).toUpperCase()}</span>
+                            <div className="provider-profile-title">
+                              <div>
+                                <strong>{profile.name}</strong>
+                                {profile.isActive && <span className="badge ok">{t("plat.active")}</span>}
+                              </div>
+                              <span>{providerLabel}</span>
                             </div>
-                            <span className="mono muted" style={{ fontSize: 11 }}>{providers.find((pv) => pv.id === p.provider)?.label || p.provider} · {p.model}</span>
                           </div>
-                          <div className="row gap-1">
-                            {!p.isActive && <button className="btn btn-sm btn-ghost" onClick={() => activateProfile(p.id)}>{t("plat.activate")}</button>}
-                            <button className="btn btn-sm btn-ghost btn-icon" onClick={() => openProfileForm(p)} title={t("common.edit")}>{I.edit({ size: 13 })}</button>
-                            <button className="btn btn-sm btn-ghost btn-icon" onClick={() => deleteProfile(p.id)} title={t("common.delete")}>{I.trash({ size: 13 })}</button>
+                          <dl className="provider-profile-meta">
+                            <div><dt>{t("plat.aiModel")}</dt><dd className="mono">{profile.model}</dd></div>
+                            <div><dt>{t("plat.aiMaxTokens")}</dt><dd className="mono num">{profile.maxTokens.toLocaleString()}</dd></div>
+                            <div><dt>API Key</dt><dd className={profile.apiKeyConfigured ? "status-ok" : "status-warn"}>{profile.apiKeyConfigured ? t("plat.configured") : t("plat.notConfigured")}</dd></div>
+                          </dl>
+                          <div className="provider-profile-actions">
+                            {!profile.isActive && <button className="btn btn-ghost" onClick={() => activateProfile(profile.id)} disabled={profileStatus === "busy"}>{I.check({ size: 13 })}{t("plat.activate")}</button>}
+                            <span className="provider-profile-action-spacer" />
+                            <button className="btn btn-ghost btn-icon" onClick={() => openProfileForm(profile)} disabled={profileStatus === "busy"} aria-label={t("common.edit")} title={t("common.edit")}>{I.edit({ size: 14 })}</button>
+                            <button className="btn btn-ghost btn-icon" onClick={() => deleteProfile(profile.id)} disabled={profileStatus === "busy"} aria-label={t("common.delete")} title={t("common.delete")}>{I.trash({ size: 14 })}</button>
                           </div>
-                        </div>
-                      </div>
-                    ))}
+                        </article>
+                      )
+                    })}
                   </div>
                 )}
-                <div className="hint" style={{ marginTop: 12 }}>{t("plat.profilesHint")}</div>
+                <div className="hint">{t("plat.profilesHint")}</div>
               </Section>
             )}
 
             {!editingProfile && llm && (
-              <Section title={t("plat.globalLLMFallback")} icon={I.settings({ size: 13 })}>
+              <Section title={t("plat.globalLLMFallback")} description={t("plat.globalFallbackHint")} icon={I.settings({ size: 15 })}>
                 <FormBlock label={t("plat.aiAssistant")}>
                   <Segmented
                     value={llm.enabled ? "enabled" : "disabled"}
@@ -558,11 +679,14 @@ export function SettingsScreen() {
                   <select
                     className="input"
                     value={llm.provider}
-                    onChange={(e) => { setLLM({ ...llm, provider: e.target.value as LLMProvider }); setLLMStatus("idle") }}
+                    onChange={(e) => {
+                      const provider = providers.find((item) => item.id === e.target.value)
+                      setLLM({ ...llm, provider: e.target.value as LLMProvider, baseUrl: provider?.defaultBaseUrl || "" })
+                      setLLMStatus("idle")
+                    }}
                   >
-                    <option value="anthropic">Anthropic</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="openai-compatible">{t("plat.openAICompatible")}</option>
+                    {providers.length === 0 && <option value={llm.provider}>{llm.provider}</option>}
+                    <ProviderOptions providers={providers} internationalLabel={t("plat.internationalProviders")} chinaLabel={t("plat.chinaProviders")} />
                   </select>
                 </FormBlock>
                 <FormBlock label={t("plat.aiModel")}>
@@ -578,7 +702,7 @@ export function SettingsScreen() {
                     className="input mono"
                     value={llm.baseUrl}
                     onChange={(e) => { setLLM({ ...llm, baseUrl: e.target.value }); setLLMStatus("idle") }}
-                    placeholder={llm.provider === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com"}
+                    placeholder={providers.find((provider) => provider.id === llm.provider)?.defaultBaseUrl || "https://api.example.com"}
                   />
                   <div className="hint" style={{ marginTop: 6 }}>{t("plat.aiBaseUrlHint")}</div>
                 </FormBlock>
@@ -608,25 +732,26 @@ export function SettingsScreen() {
                     onChange={(e) => { setLLM({ ...llm, maxTokens: Number(e.target.value) }); setLLMStatus("idle") }}
                   />
                 </FormBlock>
-                <div className="row gap-2" style={{ alignItems: "center", flexWrap: "wrap" }}>
-                  <button className="btn btn-sm btn-primary" onClick={() => saveLLM(false)} disabled={llmStatus === "busy"}>
+                <div className="settings-actions">
+                  <button className="btn btn-primary" onClick={() => saveLLM(false)} disabled={llmStatus === "busy"}>
                     {llmStatus === "busy" && <span className="dot pulse ok" />}{t("common.save")}
                   </button>
-                  <button className="btn btn-sm" onClick={() => saveLLM(true)} disabled={llmStatus === "busy" || (!llm.apiKeyConfigured && !llmApiKey.trim()) || !llm.model.trim()}>
+                  <button className="btn" onClick={() => saveLLM(true)} disabled={llmStatus === "busy" || (!llm.apiKeyConfigured && !llmApiKey.trim()) || !llm.model.trim()}>
                     {t("plat.saveAndTest")}
                   </button>
                   {llm.apiKeyConfigured && llm.apiKeySource === "stored" && (
-                    <button className="btn btn-sm btn-ghost" onClick={clearLLMApiKey} disabled={llmStatus === "busy"}>{t("plat.removeApiKey")}</button>
+                    <button className="btn btn-ghost" onClick={clearLLMApiKey} disabled={llmStatus === "busy"}>{t("plat.removeApiKey")}</button>
                   )}
                   {llmStatus === "done" && <span className="badge ok">{t("plat.settingsSaved")}</span>}
                   {llmStatus === "tested" && <span className="badge ok">{t("plat.connectionSucceeded")}</span>}
                   {llmStatus === "error" && <span className="badge crit">{t("plat.connectionOrSaveFailed")}</span>}
                 </div>
-                <div className="hint">{t("plat.globalFallbackHint")}</div>
               </Section>
             )}
           </div>
         )}
+          </div>
+        </div>
       </div>
     </div>
   )

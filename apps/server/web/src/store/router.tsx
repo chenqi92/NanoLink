@@ -37,7 +37,7 @@ interface RouterContextValue {
 const RouterContext = createContext<RouterContextValue | undefined>(undefined)
 
 export function RouterProvider({ children }: { children: React.ReactNode }) {
-  const [route, setRoute] = useState<Route>({ page: "dashboard" })
+  const [route, setRoute] = useState<Route>({ page: "assistant" })
 
   const navigate = useCallback((page: Page, extra?: Partial<Route>) => {
     setRoute({ page, ...extra })

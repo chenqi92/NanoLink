@@ -7,6 +7,7 @@ import { useRouter } from "@/store/router"
 import { PageHeader, EmptyState, Status, Perm } from "@/components/shell/primitives"
 import { VirtualAgentGrid } from "@/components/monitor/VirtualAgentGrid"
 import { agentStatus, osFamily, toneFor, formatRate } from "@/lib/format"
+import { useAuth } from "@/contexts/AuthContext"
 
 type Filter = "all" | "online" | "warn" | "offline"
 
@@ -14,6 +15,7 @@ export function AgentsScreen() {
   const { t } = useTranslation()
   const { agents, metrics, refresh } = useData()
   const { navigate } = useRouter()
+  const { user } = useAuth()
   const [filter, setFilter] = useState<Filter>("all")
   const [view, setView] = useState<"grid" | "list">("grid")
   const [q, setQ] = useState("")
@@ -87,7 +89,7 @@ export function AgentsScreen() {
         actions={
           <>
             <button className="btn btn-sm" onClick={() => refresh()}>{I.refresh({ size: 13 })}<span>{t("mon.refresh")}</span></button>
-            <button className="btn btn-sm btn-primary" onClick={() => navigate("tokens", { openWizard: true })}>{I.plus({ size: 13 })}<span>{t("wizard.addAgent")}</span></button>
+            {user?.isSuperAdmin && <button className="btn btn-sm btn-primary" onClick={() => navigate("tokens", { openWizard: true })}>{I.plus({ size: 13 })}<span>{t("wizard.addAgent")}</span></button>}
           </>
         }
       />

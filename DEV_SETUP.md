@@ -22,6 +22,21 @@ Development mode runs the frontend with hot-reload and proxies API requests to t
 start-dev.bat
 ```
 
+You can also double-click `start-dev.bat`. It will automatically:
+
+- install or synchronize the Web dependencies;
+- rebuild and start the local Server when no healthy API is already running;
+- start Vite with hot reload on a fixed port;
+- wait for both services to become healthy;
+- open the dashboard in the default browser.
+
+If port 8080 already exposes a healthy NanoOps API, the script safely reuses
+it. If port 5173 is occupied, Vite automatically uses the next free port up to
+5183 and the script opens the correct URL.
+
+Use `start-dev.bat -NoBrowser` when you do not want it to open a browser, or
+`start-dev.bat -SkipBackendBuild` to reuse the existing Server binary.
+
 Then open http://localhost:5173/dashboard
 
 **Default credentials:** admin / admin123456
@@ -34,9 +49,8 @@ Then open http://localhost:5173/dashboard
 ```
 
 **Windows:**
-Close the frontend window and run:
 ```bat
-taskkill /F /IM nanolink-server.exe
+stop-dev.bat
 ```
 
 ## Production Build

@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/shell/primitives"
 import { LineChart } from "@/components/charts"
 import { VirtualAgentGrid } from "@/components/monitor/VirtualAgentGrid"
 import { agentStatus, formatBytes, toneFor } from "@/lib/format"
+import { useAuth } from "@/contexts/AuthContext"
 
 const MAX_PULSE = 80
 
@@ -15,6 +16,7 @@ export function DashboardScreen() {
   const { t } = useTranslation()
   const { agents, metrics, summary, refresh } = useData()
   const { navigate } = useRouter()
+  const { user } = useAuth()
   const scrollRef = useRef<HTMLDivElement>(null)
   const openAgent = useCallback((id: string) => navigate("agent-detail", { agentId: id }), [navigate])
 
@@ -65,10 +67,12 @@ export function DashboardScreen() {
               {I.refresh({ size: 13 })}
               <span>{t("mon.refresh")}</span>
             </button>
-            <button className="btn btn-sm btn-primary" onClick={() => navigate("tokens", { openWizard: true })}>
-              {I.plus({ size: 13 })}
-              <span>{t("wizard.addAgent")}</span>
-            </button>
+            {user?.isSuperAdmin && (
+              <button className="btn btn-sm btn-primary" onClick={() => navigate("tokens", { openWizard: true })}>
+                {I.plus({ size: 13 })}
+                <span>{t("wizard.addAgent")}</span>
+              </button>
+            )}
           </>
         }
       />
@@ -129,12 +133,12 @@ export function DashboardScreen() {
             icon={I.agents({ size: 28 })}
             title={t("mon.noAgents")}
             desc={t("mon.noAgentsDesc")}
-            action={
+            action={user?.isSuperAdmin ? (
               <button className="btn btn-sm btn-primary" onClick={() => navigate("tokens", { openWizard: true })}>
                 {I.plus({ size: 13 })}
                 <span>{t("wizard.addAgent")}</span>
               </button>
-            }
+            ) : undefined}
           />
         ) : (
           <VirtualAgentGrid agents={agents} metrics={metrics} onOpen={openAgent} scrollRef={scrollRef} />

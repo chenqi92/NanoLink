@@ -5,12 +5,10 @@ import { useRouter } from "@/store/router"
 import { PageHeader, FormBlock } from "@/components/shell/primitives"
 import { Modal, ConfirmDialog } from "@/components/shell/Dialog"
 import { alertsApi, type AlertInstanceDTO, type AlertRuleModel, type NotifyChannelModel, type SilenceModel } from "@/lib/api"
+import { useAuth } from "@/contexts/AuthContext"
+import { InlineIssue } from "@/components/shell/RequestState"
 
 type Tab = "active" | "rules" | "channels" | "silences"
-
-function errMsg(e: unknown): string {
-  return (e as { error?: string })?.error || "Request failed"
-}
 
 const OP_SYMBOL: Record<string, string> = { gt: ">", lt: "<", ge: "≥", le: "≤", eq: "=" }
 
@@ -63,6 +61,8 @@ function AlertCard({ a, onAck, onAgent }: { a: AlertInstanceDTO; onAck: () => vo
 export function AlertsScreen() {
   const { t } = useTranslation()
   const { navigate } = useRouter()
+  const { user } = useAuth()
+  const isAdmin = !!user?.isSuperAdmin
   const [tab, setTab] = useState<Tab>("active")
   const [alerts, setAlerts] = useState<AlertInstanceDTO[]>([])
   const [rules, setRules] = useState<AlertRuleModel[]>([])
@@ -74,33 +74,39 @@ export function AlertsScreen() {
   const [newSilence, setNewSilence] = useState(false)
   const [delRule, setDelRule] = useState<AlertRuleModel | null>(null)
   const [testing, setTesting] = useState<number | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  const [err, setErr] = useState<unknown>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setErr(null)
     try {
-      const [a, r, c, s] = await Promise.all([
-        alertsApi.list(),
-        alertsApi.rules().catch((e) => { setErr(errMsg(e)); return [] as AlertRuleModel[] }),
-        alertsApi.channels().catch((e) => { setErr(errMsg(e)); return [] as NotifyChannelModel[] }),
-        alertsApi.silences().catch(() => [] as SilenceModel[]),
-      ])
+      const a = await alertsApi.list()
       setAlerts(a)
-      setRules(r)
-      setChannels(c)
-      setSilences(s)
+      if (isAdmin) {
+        const [r, c, s] = await Promise.all([alertsApi.rules(), alertsApi.channels(), alertsApi.silences()])
+        setRules(r)
+        setChannels(c)
+        setSilences(s)
+      } else {
+        setRules([])
+        setChannels([])
+        setSilences([])
+      }
     } catch (e) {
-      setErr(errMsg(e))
+      setErr(e)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isAdmin])
   useEffect(() => {
     load()
     const id = setInterval(() => alertsApi.list().then(setAlerts).catch(() => {}), 15000)
     return () => clearInterval(id)
   }, [load])
+
+  useEffect(() => {
+    if (!isAdmin && tab !== "active") setTab("active")
+  }, [isAdmin, tab])
 
   const crit = alerts.filter((a) => a.level === "crit").length
   const warn = alerts.filter((a) => a.level === "warn").length
@@ -112,23 +118,23 @@ export function AlertsScreen() {
       await alertsApi.ack(id)
       setAlerts((arr) => arr.map((a) => (a.id === id ? { ...a, ack: true } : a)))
     } catch (e) {
-      setErr(errMsg(e))
+      setErr(e)
     }
   }
   async function ackAll() {
     try {
       await Promise.all(alerts.filter((a) => !a.ack).map((a) => alertsApi.ack(a.id)))
+      await load()
     } catch (e) {
-      setErr(errMsg(e))
+      setErr(e)
     }
-    load()
   }
   async function toggleRule(r: AlertRuleModel) {
     try {
       await alertsApi.updateRule(r.id, { enabled: !r.enabled })
       setRules((rs) => rs.map((x) => (x.id === r.id ? { ...x, enabled: !x.enabled } : x)))
     } catch (e) {
-      setErr(errMsg(e))
+      setErr(e)
     }
   }
 
@@ -139,7 +145,7 @@ export function AlertsScreen() {
       await alertsApi.testChannel(id)
       load()
     } catch (e) {
-      setErr(errMsg(e))
+      setErr(e)
     } finally {
       setTesting(null)
     }
@@ -147,9 +153,11 @@ export function AlertsScreen() {
 
   const tabs: { k: Tab; label: string; n: number }[] = [
     { k: "active", label: t("plat.active"), n: alerts.length },
-    { k: "rules", label: t("plat.rules"), n: rules.length },
-    { k: "channels", label: t("plat.channels"), n: channels.length },
-    { k: "silences", label: t("plat.silences"), n: silences.length },
+    ...(isAdmin ? [
+      { k: "rules" as Tab, label: t("plat.rules"), n: rules.length },
+      { k: "channels" as Tab, label: t("plat.channels"), n: channels.length },
+      { k: "silences" as Tab, label: t("plat.silences"), n: silences.length },
+    ] : []),
   ]
 
   return (
@@ -161,9 +169,9 @@ export function AlertsScreen() {
           <>
             <button className="btn btn-sm" onClick={load}>{I.refresh({ size: 13 })}<span>{t("acc.refresh")}</span></button>
             {tab === "active" && <button className="btn btn-sm" onClick={ackAll} disabled={unack === 0}>{I.check({ size: 13 })}<span>{t("plat.ackAll")}</span></button>}
-            {tab === "rules" && <button className="btn btn-sm btn-primary" onClick={() => setNewRule(true)}>{I.plus({ size: 13 })}<span>{t("plat.newRule")}</span></button>}
-            {tab === "channels" && <button className="btn btn-sm btn-primary" onClick={() => setNewChannel(true)}>{I.plus({ size: 13 })}<span>{t("plat.addChannel")}</span></button>}
-            {tab === "silences" && <button className="btn btn-sm btn-primary" onClick={() => setNewSilence(true)}>{I.plus({ size: 13 })}<span>{t("plat.newSilence")}</span></button>}
+            {isAdmin && tab === "rules" && <button className="btn btn-sm btn-primary" onClick={() => setNewRule(true)}>{I.plus({ size: 13 })}<span>{t("plat.newRule")}</span></button>}
+            {isAdmin && tab === "channels" && <button className="btn btn-sm btn-primary" onClick={() => setNewChannel(true)}>{I.plus({ size: 13 })}<span>{t("plat.addChannel")}</span></button>}
+            {isAdmin && tab === "silences" && <button className="btn btn-sm btn-primary" onClick={() => setNewSilence(true)}>{I.plus({ size: 13 })}<span>{t("plat.newSilence")}</span></button>}
           </>
         }
       />
@@ -175,12 +183,7 @@ export function AlertsScreen() {
         </div>
       </div>
       <div style={{ padding: "20px 24px", overflow: "auto", flex: 1 }}>
-        {err && (
-          <div className="row gap-2" style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 6, background: "color-mix(in srgb, var(--crit) 10%, transparent)", border: "1px solid var(--crit)", color: "var(--crit)", fontSize: 12, alignItems: "center" }}>
-            <span style={{ flex: 1 }}>{err}</span>
-            <button className="btn btn-sm btn-ghost" onClick={() => setErr(null)} style={{ color: "var(--crit)" }}>✕</button>
-          </div>
-        )}
+        {err != null && <div style={{ marginBottom: 12 }}><InlineIssue error={err} onDismiss={() => setErr(null)} /></div>}
         {loading ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{t("common.loading")}</div>
         ) : tab === "active" ? (
@@ -238,7 +241,7 @@ export function AlertsScreen() {
                   </div>
                   <div className="row gap-1">
                     <button className="btn btn-sm btn-ghost" disabled={testing === c.id} onClick={() => testChannel(c.id)}>{testing === c.id ? <span className="dot pulse ok" /> : I.bolt({ size: 12 })}<span>{t("plat.test")}</span></button>
-                    <button className="btn btn-sm btn-ghost btn-icon" onClick={async () => { try { await alertsApi.deleteChannel(c.id) } catch (e) { setErr(errMsg(e)) } load() }}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 12 })}</span></button>
+                    <button className="btn btn-sm btn-ghost btn-icon" onClick={async () => { try { await alertsApi.deleteChannel(c.id); await load() } catch (e) { setErr(e) } }}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 12 })}</span></button>
                   </div>
                 </div>
               </div>
@@ -264,7 +267,7 @@ export function AlertsScreen() {
                       </div>
                       <span className="dim" style={{ fontSize: 11 }}>{t("plat.until")} {new Date(s.until).toLocaleString()}{s.createdBy ? ` · ${s.createdBy}` : ""}</span>
                     </div>
-                    <button className="btn btn-sm btn-ghost btn-icon" onClick={async () => { try { await alertsApi.deleteSilence(s.id) } catch (e) { setErr(errMsg(e)) } load() }}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 12 })}</span></button>
+                    <button className="btn btn-sm btn-ghost btn-icon" onClick={async () => { try { await alertsApi.deleteSilence(s.id); await load() } catch (e) { setErr(e) } }}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 12 })}</span></button>
                   </div>
                 </div>
               ))
@@ -273,15 +276,15 @@ export function AlertsScreen() {
         )}
       </div>
 
-      {newRule && <RuleModal onClose={() => setNewRule(false)} onDone={() => { setNewRule(false); load() }} />}
-      {newChannel && <ChannelModal onClose={() => setNewChannel(false)} onDone={() => { setNewChannel(false); load() }} />}
-      {newSilence && <SilenceModal onClose={() => setNewSilence(false)} onDone={() => { setNewSilence(false); load() }} />}
-      {delRule && <ConfirmDialog title={t("common.delete")} danger message={t("plat.deleteRuleConfirm", { name: delRule.name })} confirmLabel={t("common.delete")} onClose={() => setDelRule(null)} onConfirm={async () => { try { await alertsApi.deleteRule(delRule.id) } catch (e) { setErr(errMsg(e)) } setDelRule(null); load() }} />}
+      {newRule && <RuleModal onClose={() => setNewRule(false)} onDone={() => { setNewRule(false); load() }} onError={setErr} />}
+      {newChannel && <ChannelModal onClose={() => setNewChannel(false)} onDone={() => { setNewChannel(false); load() }} onError={setErr} />}
+      {newSilence && <SilenceModal onClose={() => setNewSilence(false)} onDone={() => { setNewSilence(false); load() }} onError={setErr} />}
+      {delRule && <ConfirmDialog title={t("common.delete")} danger message={t("plat.deleteRuleConfirm", { name: delRule.name })} confirmLabel={t("common.delete")} onClose={() => setDelRule(null)} onConfirm={async () => { try { await alertsApi.deleteRule(delRule.id); setDelRule(null); await load() } catch (e) { setErr(e) } }} />}
     </div>
   )
 }
 
-function RuleModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function RuleModal({ onClose, onDone, onError }: { onClose: () => void; onDone: () => void; onError: (error: unknown) => void }) {
   const { t } = useTranslation()
   const [name, setName] = useState("")
   const [metric, setMetric] = useState("cpu")
@@ -294,6 +297,8 @@ function RuleModal({ onClose, onDone }: { onClose: () => void; onDone: () => voi
     try {
       await alertsApi.createRule({ name, metric, operator, threshold, severity })
       onDone()
+    } catch (error) {
+      onError(error)
     } finally { setBusy(false) }
   }
   return (
@@ -319,7 +324,7 @@ function RuleModal({ onClose, onDone }: { onClose: () => void; onDone: () => voi
   )
 }
 
-function ChannelModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function ChannelModal({ onClose, onDone, onError }: { onClose: () => void; onDone: () => void; onError: (error: unknown) => void }) {
   const { t } = useTranslation()
   const [kind, setKind] = useState("slack")
   const [name, setName] = useState("")
@@ -330,6 +335,8 @@ function ChannelModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
     try {
       await alertsApi.createChannel({ kind, name, target })
       onDone()
+    } catch (error) {
+      onError(error)
     } finally { setBusy(false) }
   }
   return (
@@ -345,7 +352,7 @@ function ChannelModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
   )
 }
 
-function SilenceModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function SilenceModal({ onClose, onDone, onError }: { onClose: () => void; onDone: () => void; onError: (error: unknown) => void }) {
   const { t } = useTranslation()
   const [matcher, setMatcher] = useState("all")
   const [reason, setReason] = useState("")
@@ -356,6 +363,8 @@ function SilenceModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
     try {
       await alertsApi.createSilence({ matcher: matcher.trim() || "all", reason, durationMin })
       onDone()
+    } catch (error) {
+      onError(error)
     } finally { setBusy(false) }
   }
   return (

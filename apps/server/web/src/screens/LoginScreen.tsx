@@ -43,7 +43,7 @@ function LoginVisual() {
 
 export function LoginScreen() {
   const { t } = useTranslation()
-  const { login, register, error, clearError } = useAuth()
+  const { login, register, error, sessionExpired, clearError } = useAuth()
   const { lang, setLang } = useSettings()
   const { agents } = useData()
 
@@ -121,6 +121,13 @@ export function LoginScreen() {
 
             {error && (
               <div className="badge crit" style={{ height: "auto", padding: "8px 10px", whiteSpace: "normal", lineHeight: 1.4 }}>{error}</div>
+            )}
+
+            {sessionExpired && !error && (
+              <div className="row gap-2" style={{ alignItems: "flex-start", padding: "9px 10px", border: "1px solid var(--border-2)", borderRadius: "var(--radius)", background: "var(--panel-2)", color: "var(--fg-3)", fontSize: 11.5, lineHeight: 1.5 }} role="status">
+                <span style={{ color: "var(--warn)", marginTop: 1 }}>{I.lock({ size: 13 })}</span>
+                <span>{t("access.sessionNotice")}</span>
+              </div>
             )}
 
             <button type="submit" className="btn btn-primary" style={{ height: 36, justifyContent: "center" }} disabled={loading || !username || !password}>

@@ -247,10 +247,8 @@ func llmSettingsView(cfg LLMConfig, source string) LLMSettingsView {
 
 func validateLLMSettingsUpdate(update LLMSettingsUpdate) (LLMConfig, error) {
 	provider := strings.ToLower(strings.TrimSpace(update.Provider))
-	switch provider {
-	case "anthropic", "openai", "openai-compatible":
-	default:
-		return LLMConfig{}, errors.New("provider must be anthropic, openai, or openai-compatible")
+	if _, ok := providerByID(provider); !ok {
+		return LLMConfig{}, errors.New("provider is not supported")
 	}
 	model := strings.TrimSpace(update.Model)
 	if len(model) > 200 || strings.IndexFunc(model, unicode.IsControl) >= 0 {

@@ -7,6 +7,9 @@ import { Modal, ConfirmDialog } from "@/components/shell/Dialog"
 import { useAgentCommand, runAgentCommand } from "@/hooks/useAgentCommand"
 import { formatBytes } from "@/lib/format"
 import type { AgentConfigResult } from "@/lib/api"
+import { ContentState, LoadingState, RequestState } from "@/components/shell/RequestState"
+import { userErrorMessage } from "@/lib/errors"
+import { useData } from "@/contexts/DataContext"
 
 type Tab = "packages" | "scripts" | "configs" | "health"
 
@@ -19,11 +22,11 @@ function MiniStat({ label, value, color }: { label: string; value: number; color
   )
 }
 
-function State({ loading, error, empty, msg }: { loading: boolean; error: string | null; empty: boolean; msg?: string }) {
+function State({ loading, error, empty, msg, onRetry }: { loading: boolean; error: unknown; empty: boolean; msg?: string; onRetry?: () => void }) {
   const { t } = useTranslation()
-  if (loading) return <div style={{ padding: 32, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}><span className="dot pulse ok" /> {t("common.loading")}</div>
-  if (error) return <div className="badge crit" style={{ height: "auto", padding: 10, margin: "12px 0" }}>{error}</div>
-  if (empty) return <div style={{ padding: 32, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{msg ?? t("common.noData")}</div>
+  if (loading) return <LoadingState compact />
+  if (error != null) return <RequestState error={error} onRetry={onRetry} compact />
+  if (empty) return <ContentState kind="empty" title={msg ?? t("common.noData")} compact />
   return null
 }
 
@@ -48,13 +51,14 @@ function Flash({ flash, onClose }: { flash: { kind: "ok" | "crit"; text: string 
   return <div className={`badge ${flash.kind}`} style={{ height: "auto", padding: "6px 10px", cursor: "pointer" }} onClick={onClose} role="status">{flash.text}</div>
 }
 
-function PackagesPanel({ agentId }: { agentId: string }) {
+function PackagesPanel({ agentId, permission }: { agentId: string; permission: number }) {
   const { t } = useTranslation()
   const { data, loading, error, reload } = useAgentCommand(agentId, "PACKAGE_LIST", { enabled: !!agentId })
   const [busy, setBusy] = useState<string | null>(null)
   const [flash, setFlash] = useState<{ kind: "ok" | "crit"; text: string } | null>(null)
   const pkgs = data?.packages ?? []
   const updates = pkgs.filter((p) => p.updateAvailable)
+  const canUpdate = permission >= 3
 
   const act = useCallback(async (key: string, type: string, target?: string, after?: boolean) => {
     setBusy(key)
@@ -64,7 +68,7 @@ function PackagesPanel({ agentId }: { agentId: string }) {
       setFlash({ kind: "ok", text: t("dev.cmdSent") })
       if (after) reload()
     } catch (e) {
-      setFlash({ kind: "crit", text: `${t("dev.cmdFailed")}: ${e instanceof Error ? e.message : String(e)}` })
+      setFlash({ kind: "crit", text: userErrorMessage(e, t) })
     } finally {
       setBusy(null)
     }
@@ -75,10 +79,10 @@ function PackagesPanel({ agentId }: { agentId: string }) {
       <div className="row gap-2" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
         <Flash flash={flash} onClose={() => setFlash(null)} />
         <button className="btn btn-sm" disabled={!!busy} onClick={() => act("check", "PACKAGE_CHECK_UPDATES", undefined, true)}>{busy === "check" ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}<span>{t("dev.checkNow")}</span></button>
-        <button className="btn btn-sm btn-primary" disabled={!!busy || updates.length === 0} onClick={() => act("all", "SYSTEM_UPDATE", undefined, true)}>{busy === "all" ? <span className="dot pulse ok" /> : I.arrowUp({ size: 13 })}<span>{t("dev.updateAll")}</span></button>
+        <button className="btn btn-sm btn-primary" disabled={!!busy || updates.length === 0 || !canUpdate} title={canUpdate ? undefined : t("access.permissionLevelDesc", { level: "L3" })} onClick={() => act("all", "SYSTEM_UPDATE", undefined, true)}>{busy === "all" ? <span className="dot pulse ok" /> : I.arrowUp({ size: 13 })}<span>{t("dev.updateAll")}</span></button>
         <button className="btn btn-sm btn-ghost" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button>
       </div>
-      <State loading={loading && !data} error={error} empty={!!data && pkgs.length === 0} />
+      <State loading={loading && !data} error={error} empty={!!data && pkgs.length === 0} onRetry={reload} />
       {data && pkgs.length > 0 && (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
@@ -98,7 +102,7 @@ function PackagesPanel({ agentId }: { agentId: string }) {
                     <td className="mono num dim" style={{ fontSize: 11 }}>{p.installedSize ? formatBytes(p.installedSize) : "—"}</td>
                     <td style={{ textAlign: "right" }}>
                       {p.updateAvailable && (
-                        <button className="btn btn-sm btn-ghost" disabled={!!busy} onClick={() => act(`pkg-${p.name}`, "PACKAGE_UPDATE", p.name)}>{busy === `pkg-${p.name}` ? <span className="dot pulse ok" /> : I.arrowUp({ size: 11 })}<span style={{ fontSize: 11 }}>{t("dev.update")}</span></button>
+                        <button className="btn btn-sm btn-ghost" disabled={!!busy || !canUpdate} title={canUpdate ? undefined : t("access.permissionLevelDesc", { level: "L3" })} onClick={() => act(`pkg-${p.name}`, "PACKAGE_UPDATE", p.name)}>{busy === `pkg-${p.name}` ? <span className="dot pulse ok" /> : I.arrowUp({ size: 11 })}<span style={{ fontSize: 11 }}>{t("dev.update")}</span></button>
                       )}
                     </td>
                   </tr>
@@ -112,7 +116,7 @@ function PackagesPanel({ agentId }: { agentId: string }) {
   )
 }
 
-function ScriptsPanel({ agentId }: { agentId: string }) {
+function ScriptsPanel({ agentId, permission }: { agentId: string; permission: number }) {
   const { t } = useTranslation()
   const { data, loading, error, reload } = useAgentCommand(agentId, "SCRIPT_LIST", { enabled: !!agentId })
   const [busy, setBusy] = useState<string | null>(null)
@@ -128,7 +132,7 @@ function ScriptsPanel({ agentId }: { agentId: string }) {
       const res = await runAgentCommand(agentId, "SCRIPT_EXECUTE", { target: name })
       setFlash({ kind: "ok", text: res.output ? `${name}: ${res.output.slice(0, 200)}` : t("dev.cmdSent") })
     } catch (e) {
-      setFlash({ kind: "crit", text: `${t("dev.cmdFailed")}: ${e instanceof Error ? e.message : String(e)}` })
+      setFlash({ kind: "crit", text: userErrorMessage(e, t) })
     } finally {
       setBusy(null)
     }
@@ -140,7 +144,7 @@ function ScriptsPanel({ agentId }: { agentId: string }) {
         <Flash flash={flash} onClose={() => setFlash(null)} />
         <button className="btn btn-sm btn-ghost" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button>
       </div>
-      <State loading={loading && !data} error={error} empty={!!data && scripts.length === 0} />
+      <State loading={loading && !data} error={error} empty={!!data && scripts.length === 0} onRetry={reload} />
       {data && scripts.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
           {scripts.map((s) => (
@@ -160,7 +164,7 @@ function ScriptsPanel({ agentId }: { agentId: string }) {
               <div className="hr" />
               <div className="row" style={{ justifyContent: "space-between", fontSize: 11 }}>
                 {s.signatureVerified ? <span className="badge ok" style={{ fontSize: 9.5 }}>{I.check({ size: 10 })} signed</span> : <span />}
-                <button className="btn btn-sm btn-ghost" disabled={busy === s.name} onClick={() => setConfirm(s.name)}>{busy === s.name ? <span className="dot pulse ok" /> : I.bolt({ size: 12 })}<span>{t("dev.run")}</span></button>
+                <button className="btn btn-sm btn-ghost" disabled={busy === s.name || permission < Math.max(2, s.requiredPermission ?? 0)} title={permission < Math.max(2, s.requiredPermission ?? 0) ? t("access.permissionLevelDesc", { level: `L${Math.max(2, s.requiredPermission ?? 0)}` }) : undefined} onClick={() => setConfirm(s.name)}>{busy === s.name ? <span className="dot pulse ok" /> : I.bolt({ size: 12 })}<span>{t("dev.run")}</span></button>
               </div>
             </div>
           ))}
@@ -194,12 +198,12 @@ function HealthPanel({ agentId }: { agentId: string }) {
       const item = res.healthResult?.checks?.[0]
       setResults((r) => ({ ...r, [target]: { target, passed: item?.passed, latency: item?.durationMs, message: item?.message } }))
     } catch (e) {
-      setResults((r) => ({ ...r, [target]: { target, error: e instanceof Error ? e.message : "failed" } }))
+      setResults((r) => ({ ...r, [target]: { target, error: userErrorMessage(e, t) } }))
     }
-  }, [agentId])
+  }, [agentId, t])
 
   const runAll = useCallback(() => { targets.forEach((tg) => runOne(tg)) }, [targets, runOne])
-  useEffect(() => { if (agentId) runAll() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [agentId])
+  useEffect(() => { if (agentId) runAll() }, [agentId, runAll])
 
   return (
     <div className="col gap-3">
@@ -246,7 +250,7 @@ function HealthPanel({ agentId }: { agentId: string }) {
 
 interface CfgRow { path: string; valid?: boolean; error?: string; running?: boolean }
 
-function ConfigsPanel({ agentId }: { agentId: string }) {
+function ConfigsPanel({ agentId, permission }: { agentId: string; permission: number }) {
   const { t } = useTranslation()
   const [paths, setPaths] = useStoredList("nanolink_managed_configs", ["/etc/nginx/nginx.conf", "/etc/hosts"])
   const [rows, setRows] = useState<Record<string, CfgRow>>({})
@@ -259,12 +263,12 @@ function ConfigsPanel({ agentId }: { agentId: string }) {
       const res = await runAgentCommand(agentId, "CONFIG_VALIDATE", { params: { path } })
       setRows((r) => ({ ...r, [path]: { path, valid: res.configResult?.valid, error: res.configResult?.validationError } }))
     } catch (e) {
-      setRows((r) => ({ ...r, [path]: { path, error: e instanceof Error ? e.message : "failed" } }))
+      setRows((r) => ({ ...r, [path]: { path, error: userErrorMessage(e, t) } }))
     }
-  }, [agentId])
+  }, [agentId, t])
 
   const validateAll = useCallback(() => { paths.forEach((p) => validate(p)) }, [paths, validate])
-  useEffect(() => { if (agentId) validateAll() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [agentId])
+  useEffect(() => { if (agentId) validateAll() }, [agentId, validateAll])
 
   const [backupsFor, setBackupsFor] = useState<{ path: string; result: AgentConfigResult } | null>(null)
   const [flash, setFlash] = useState<{ kind: "ok" | "crit"; text: string } | null>(null)
@@ -274,7 +278,7 @@ function ConfigsPanel({ agentId }: { agentId: string }) {
       const res = await runAgentCommand(agentId, "CONFIG_READ", { params: { path } })
       setViewing({ path, result: res.configResult ?? { path, content: res.output } })
     } catch (e) {
-      setViewing({ path, result: { path, content: `Error: ${e instanceof Error ? e.message : "failed"}` } })
+      setViewing({ path, result: { path, content: userErrorMessage(e, t) } })
     }
   }
 
@@ -284,7 +288,7 @@ function ConfigsPanel({ agentId }: { agentId: string }) {
       const res = await runAgentCommand(agentId, "CONFIG_LIST_BACKUPS", { params: { path } })
       setBackupsFor({ path, result: res.configResult ?? { path, backups: [] } })
     } catch (e) {
-      setFlash({ kind: "crit", text: `${t("dev.cmdFailed")}: ${e instanceof Error ? e.message : String(e)}` })
+      setFlash({ kind: "crit", text: userErrorMessage(e, t) })
     }
   }
 
@@ -295,7 +299,7 @@ function ConfigsPanel({ agentId }: { agentId: string }) {
       setFlash({ kind: "ok", text: t("dev.cmdSent") })
       validate(path)
     } catch (e) {
-      setFlash({ kind: "crit", text: `${t("dev.cmdFailed")}: ${e instanceof Error ? e.message : String(e)}` })
+      setFlash({ kind: "crit", text: userErrorMessage(e, t) })
     }
   }
 
@@ -358,7 +362,7 @@ function ConfigsPanel({ agentId }: { agentId: string }) {
                     <td className="mono truncate" style={{ maxWidth: 240, fontSize: 11.5 }}>{b.path}</td>
                     <td className="mono dim" style={{ fontSize: 11 }}>{b.createdAt ? new Date(b.createdAt).toLocaleString() : "—"}</td>
                     <td className="mono num dim" style={{ textAlign: "right", fontSize: 11 }}>{b.size != null ? formatBytes(b.size) : "—"}</td>
-                    <td style={{ textAlign: "right" }}><button className="btn btn-sm btn-ghost" onClick={() => rollback(backupsFor.path, b.path)}>{I.back({ size: 11 })}<span>{t("dev.rollback")}</span></button></td>
+                    <td style={{ textAlign: "right" }}><button className="btn btn-sm btn-ghost" disabled={permission < 2} title={permission < 2 ? t("access.permissionLevelDesc", { level: "L2" }) : undefined} onClick={() => rollback(backupsFor.path, b.path)}>{I.back({ size: 11 })}<span>{t("dev.rollback")}</span></button></td>
                   </tr>
                 ))}
               </tbody>
@@ -372,8 +376,11 @@ function ConfigsPanel({ agentId }: { agentId: string }) {
 
 export function OperationsScreen() {
   const { t } = useTranslation()
+  const { agents } = useData()
   const [tab, setTab] = useState<Tab>("packages")
   const [agentId, setAgentId] = useState("")
+  const selectedAgent = agents.find((agent) => agent.id === agentId)
+  const permission = selectedAgent?.permissionLevel ?? 0
   const tabs: { k: Tab; label: string; icon: React.ReactNode }[] = [
     { k: "packages", label: t("dev.packages"), icon: I.disk({ size: 13 }) },
     { k: "scripts", label: t("dev.scripts"), icon: I.term({ size: 13 }) },
@@ -392,13 +399,13 @@ export function OperationsScreen() {
       </div>
       <div style={{ padding: "20px 24px", overflow: "auto", flex: 1 }}>
         {!agentId ? (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--fg-4)", fontSize: 12.5 }}>{t("common.loading")}</div>
+          agents.length === 0 ? <ContentState kind="empty" title={t("mon.noAgents")} description={t("mon.noAgentsDesc")} /> : <LoadingState />
         ) : tab === "packages" ? (
-          <PackagesPanel agentId={agentId} />
+          <PackagesPanel agentId={agentId} permission={permission} />
         ) : tab === "scripts" ? (
-          <ScriptsPanel agentId={agentId} />
+          <ScriptsPanel agentId={agentId} permission={permission} />
         ) : tab === "configs" ? (
-          <ConfigsPanel agentId={agentId} />
+          <ConfigsPanel agentId={agentId} permission={permission} />
         ) : (
           <HealthPanel agentId={agentId} />
         )}
