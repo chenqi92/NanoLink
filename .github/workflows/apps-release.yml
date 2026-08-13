@@ -156,7 +156,7 @@ jobs:
           Compress-Archive -Path "$buildDir\*" -DestinationPath "$outDir\NanoLink-Windows-$version.zip"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nanolink-windows
           path: apps/desktop/release/*.zip
@@ -201,7 +201,7 @@ jobs:
           hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/NanoLink.app -ov -format UDZO "release/NanoLink-macOS-Intel-$VERSION.dmg"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nanolink-macos-x64
           path: apps/desktop/release/*.dmg
@@ -246,7 +246,7 @@ jobs:
           hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/NanoLink.app -ov -format UDZO "release/NanoLink-macOS-AppleSilicon-$VERSION.dmg"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nanolink-macos-arm64
           path: apps/desktop/release/*.dmg
@@ -295,7 +295,7 @@ jobs:
           tar -czvf "release/NanoLink-Linux-$VERSION.tar.gz" -C build/linux/x64/release/bundle .
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nanolink-linux
           path: apps/desktop/release/*.tar.gz
@@ -345,7 +345,7 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk "release/NanoLink-Android-$VERSION.apk"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nanolink-android
           path: apps/desktop/release/*.apk
@@ -396,7 +396,7 @@ jobs:
           rm -rf Payload
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nanolink-ios
           path: apps/ios/release/*.ipa

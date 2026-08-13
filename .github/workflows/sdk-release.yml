@@ -107,7 +107,7 @@ jobs:
           cp sdk/java/target/*.jar dist/java/ || true
 
       - name: Upload Java SDK artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: java-sdk-${{ needs.prepare.outputs.version }}
           path: dist/java/
@@ -263,7 +263,7 @@ jobs:
           cd ../..
 
       - name: Upload Go SDK artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: go-sdk-${{ needs.prepare.outputs.version }}
           path: dist/go/
@@ -322,7 +322,7 @@ jobs:
           cp sdk/python/dist/* dist/python/
 
       - name: Upload Python SDK artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-sdk-${{ needs.prepare.outputs.version }}
           path: dist/python/
@@ -389,7 +389,7 @@ jobs:
           cd ../..
 
       - name: Upload proto artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: proto-${{ needs.prepare.outputs.version }}
           path: dist/nanolink-proto-*.tar.gz
