@@ -48,7 +48,8 @@ export function LogsScreen() {
   const selectedAgent = agents.find((agent) => agent.id === agentId)
   const permission = selectedAgent?.permissionLevel ?? 0
 
-  const enabled = !!agentId && (scope !== "server" || !!service)
+  const canReadScope = permission >= SCOPE_PERMISSION[scope]
+  const enabled = !!agentId && canReadScope && (scope !== "server" || !!service)
   const params = useMemo<Record<string, string>>(() => {
     const p: Record<string, string> = { lines: "200" }
     if (scope === "server") p.service = service
@@ -128,7 +129,13 @@ export function LogsScreen() {
         </div>
 
         {!enabled ? (
-          !agentId ? <ContentState kind="empty" title={t("mon.noAgents")} compact /> : <ContentState kind="empty" title={t("dev.enterServiceName")} compact />
+          !agentId ? (
+            <ContentState kind="empty" title={t("mon.noAgents")} compact />
+          ) : !canReadScope ? (
+            <ContentState kind="forbidden" eyebrow={t("access.restricted")} title={t("access.noPermissionTitle")} description={t("access.permissionLevelDesc", { level: `L${SCOPE_PERMISSION[scope]}` })} compact />
+          ) : (
+            <ContentState kind="empty" title={t("dev.enterServiceName")} compact />
+          )
         ) : loading && !data ? (
           <LoadingState compact />
         ) : error != null ? (
