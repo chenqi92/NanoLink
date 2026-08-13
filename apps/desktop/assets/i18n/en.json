@@ -247,6 +247,7 @@
     "load": "load {values}",
     "ghz": "{value} GHz",
     "mtps": "{value} MT/s",
+    "swap": "Swap",
     "cacheBuffers": "Cache / Buffers",
     "chassis": "Chassis",
     "primaryIp": "Primary IP",

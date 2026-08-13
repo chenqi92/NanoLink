@@ -526,7 +526,7 @@ class _RealtimeTab extends StatelessWidget {
             _kv(context, 'agentDetail.cacheBuffers'.tr(),
                 '${Fmt.gib(m.memory.cached).toStringAsFixed(1)} / ${Fmt.gib(m.memory.buffers).toStringAsFixed(1)} GiB'),
           if (m.memory.swapTotal > 0)
-            _kv(context, 'Swap',
+            _kv(context, 'agentDetail.swap'.tr(),
                 '${Fmt.gib(m.memory.swapUsed).toStringAsFixed(1)} / ${Fmt.gib(m.memory.swapTotal).toStringAsFixed(0)} GiB',
                 warn: m.memory.swapUsed / m.memory.swapTotal > 0.2),
         ],

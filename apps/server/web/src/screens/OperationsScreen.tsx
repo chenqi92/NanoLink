@@ -210,7 +210,7 @@ function HealthPanel({ agentId }: { agentId: string }) {
       <div className="row gap-2" style={{ flexWrap: "wrap" }}>
         <div className="row gap-2" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", height: 30, flex: 1, minWidth: 220 }}>
           {I.shield({ size: 13 })}
-          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && input.trim()) { setTargets([...targets, input.trim()]); setInput("") } }} placeholder="host:port / https://host" style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "var(--font-mono)", fontSize: 12 }} />
+          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && input.trim()) { setTargets([...targets, input.trim()]); setInput("") } }} placeholder={t("dev.hostTargetPlaceholder")} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "var(--font-mono)", fontSize: 12 }} />
         </div>
         <button className="btn btn-sm" onClick={() => { if (input.trim()) { setTargets([...targets, input.trim()]); setInput("") } }}>{I.plus({ size: 13 })}<span>{t("dev.addTarget")}</span></button>
         <button className="btn btn-sm btn-primary" onClick={runAll}>{I.refresh({ size: 13 })}<span>{t("dev.runAll")}</span></button>

@@ -3,6 +3,7 @@
 //! Provides bilingual support (English/Chinese) with automatic language detection.
 
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use sys_locale::get_locale;
 
 /// Supported languages
@@ -45,6 +46,34 @@ pub fn detect_language() -> Lang {
             }
         })
         .unwrap_or(Lang::En)
+}
+
+#[derive(Deserialize)]
+struct LanguageConfig {
+    agent: Option<LanguageAgentConfig>,
+}
+
+#[derive(Deserialize)]
+struct LanguageAgentConfig {
+    language: Option<String>,
+}
+
+/// Read only the preferred language from a config file without loading or migrating it.
+pub fn configured_language(path: &Path) -> Option<Lang> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let config: LanguageConfig = if path.extension().is_some_and(|ext| ext == "toml") {
+        toml::from_str(&content).ok()?
+    } else {
+        serde_yaml::from_str(&content).ok()?
+    };
+    config.agent?.language.as_deref().and_then(Lang::from_str)
+}
+
+/// Resolve a configured language, falling back to the system locale.
+pub fn resolve_language(config_path: Option<&Path>) -> Lang {
+    config_path
+        .and_then(configured_language)
+        .unwrap_or_else(detect_language)
 }
 
 /// Get translated string for the given key and language
@@ -431,6 +460,10 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("service.stopping", Lang::En) => "Stopping service...",
         ("service.stopped", Lang::Zh) => "服务已停止",
         ("service.stopped", Lang::En) => "Service stopped",
+        ("service.restarting", Lang::Zh) => "正在重启服务...",
+        ("service.restarting", Lang::En) => "Restarting service...",
+        ("service.restarted", Lang::Zh) => "服务已重启",
+        ("service.restarted", Lang::En) => "Service restarted",
         ("service.error", Lang::Zh) => "服务操作失败",
         ("service.error", Lang::En) => "Service operation failed",
         ("service.not_supported", Lang::Zh) => "当前平台不支持此操作",
@@ -621,6 +654,8 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("gui.error.run_failed", Lang::En) => "Failed to run wizard",
 
         // Non-interactive CLI and status output
+        ("cli.about", Lang::Zh) => "轻量级服务器监控 Agent",
+        ("cli.about", Lang::En) => "Lightweight server monitoring agent",
         ("cli.searched_locations", Lang::Zh) => "已搜索以下位置",
         ("cli.searched_locations", Lang::En) => "Searched locations",
         ("cli.quick_start", Lang::Zh) => "快速开始",
@@ -698,6 +733,26 @@ mod tests {
     fn test_translation() {
         assert_eq!(t("menu.start_agent", Lang::Zh), "启动 Agent");
         assert_eq!(t("menu.start_agent", Lang::En), "Start Agent");
+        assert_eq!(t("cli.about", Lang::Zh), "轻量级服务器监控 Agent");
+        assert_eq!(
+            t("cli.about", Lang::En),
+            "Lightweight server monitoring agent"
+        );
+    }
+
+    #[test]
+    fn test_configured_language_yaml_and_toml() {
+        let temp_dir = std::env::temp_dir();
+        let yaml_path = temp_dir.join("nanolink-i18n-test.yaml");
+        let toml_path = temp_dir.join("nanolink-i18n-test.toml");
+        std::fs::write(&yaml_path, "agent:\n  language: zh\n").unwrap();
+        std::fs::write(&toml_path, "[agent]\nlanguage = \"en\"\n").unwrap();
+
+        assert_eq!(configured_language(&yaml_path), Some(Lang::Zh));
+        assert_eq!(configured_language(&toml_path), Some(Lang::En));
+
+        let _ = std::fs::remove_file(yaml_path);
+        let _ = std::fs::remove_file(toml_path);
     }
 
     #[test]

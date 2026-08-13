@@ -56,4 +56,61 @@ final class NanoLinkCoreTests: XCTestCase {
         XCTAssertEqual(agent.permissionLevel, 3)
         XCTAssertTrue(agent.isOnline)
     }
+
+    func testShellSectionRawValuesKeepTabOrder() {
+        XCTAssertEqual(ShellSection.allCases.map(\.rawValue), [0, 1, 2, 3, 4])
+        XCTAssertEqual(ShellSection.overview.titleKey, "nav.overview")
+        XCTAssertEqual(ShellSection.nodes.icon, "server.rack")
+        XCTAssertEqual(ShellSection(rawValue: 3), .activity)
+    }
+
+    func testAgentSelectionResolvesOnlyVisibleNodes() {
+        let agents = [
+            Agent.from(JSON(["id": "agent-1", "hostname": "one"]), serverId: "server-1"),
+            Agent.from(JSON(["id": "agent-2", "hostname": "two"]), serverId: "server-1")
+        ]
+
+        XCTAssertEqual(AgentSelection.resolve("agent-2", in: agents), "agent-2")
+        XCTAssertNil(AgentSelection.resolve("agent-3", in: agents), "removed node must not stay selected")
+        XCTAssertNil(AgentSelection.resolve("agent-1", in: []), "server switch empties the visible set")
+        XCTAssertNil(AgentSelection.resolve(nil, in: agents))
+    }
+
+    func testShellRouterSelectingNodeLandsOnNodesSection() {
+        let router = ShellRouter()
+
+        router.show(.settings)
+        XCTAssertEqual(router.section, .settings)
+        XCTAssertNil(router.selectedAgentID, "showing a section must not select a node")
+
+        router.select(agentID: "agent-1")
+        XCTAssertEqual(router.selectedAgentID, "agent-1")
+        XCTAssertEqual(router.section, .nodes)
+
+        router.show(.terminal)
+        XCTAssertEqual(router.selectedAgentID, "agent-1", "section switch keeps the selected node")
+
+        router.clearSelection()
+        XCTAssertNil(router.selectedAgentID)
+        XCTAssertEqual(router.section, .terminal, "clearing selection must not move the section")
+    }
+
+    func testShellRouterSelectingNilDoesNotSwitchSection() {
+        let router = ShellRouter()
+        router.show(.activity)
+
+        router.select(agentID: nil)
+
+        XCTAssertNil(router.selectedAgentID)
+        XCTAssertEqual(router.section, .activity)
+    }
+
+    func testShellRouterRefreshTickAdvancesPerRequest() {
+        let router = ShellRouter()
+
+        XCTAssertEqual(router.refreshTick, 0)
+        router.requestRefresh()
+        router.requestRefresh()
+        XCTAssertEqual(router.refreshTick, 2)
+    }
 }

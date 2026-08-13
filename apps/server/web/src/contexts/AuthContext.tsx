@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useCallback, useEffect, useState } from 'react'
 import { authApi, SESSION_EXPIRED_EVENT, type User } from '@/lib/api'
+import i18n from '@/i18n'
 
 interface AuthContextValue {
   user: User | null
@@ -59,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       const errorMsg = typeof err === 'object' && err !== null && 'error' in err
         ? String((err as { error: unknown }).error)
-        : 'Login failed'
+        : i18n.t('auth.loginFailed')
       setError(errorMsg)
       throw err
     } finally {
@@ -77,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       const errorMsg = typeof err === 'object' && err !== null && 'error' in err
         ? String((err as { error: unknown }).error)
-        : 'Registration failed'
+        : i18n.t('auth.registerFailed')
       setError(errorMsg)
       throw err
     } finally {

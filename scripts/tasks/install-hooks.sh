@@ -10,7 +10,8 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TASK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(dirname "$TASK_DIR")"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 HOOKS_DIR="$ROOT_DIR/.git/hooks"
 HOOKS_SRC="$SCRIPT_DIR/hooks"

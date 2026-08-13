@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "NanoOps needs camera access to scan the pairing QR code from the web dashboard.";
+"NSLocalNetworkUsageDescription" = "NanoOps connects to NanoLink servers and managed devices on your local network.";
+"NSFaceIDUsageDescription" = "NanoOps uses Face ID to protect access to saved server connections and operational data.";

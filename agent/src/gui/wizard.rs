@@ -1,7 +1,7 @@
 //! Configuration wizard for NanoLink Agent
 
 use crate::config::{Config, ServerConfig};
-use crate::i18n::{Lang, detect_language, t};
+use crate::i18n::{Lang, t};
 use eframe::egui;
 use std::path::PathBuf;
 
@@ -101,6 +101,7 @@ impl WizardState {
         };
 
         let mut config = Config::sample();
+        config.agent.language = Some(self.lang.as_str().to_string());
         config.servers = vec![server];
 
         // Determine config path
@@ -409,8 +410,7 @@ impl WizardApp {
 }
 
 /// Run the configuration wizard
-pub fn run_wizard() -> anyhow::Result<()> {
-    let lang = detect_language();
+pub fn run_wizard(lang: Lang) -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([500.0, 450.0])

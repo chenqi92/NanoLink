@@ -247,6 +247,7 @@
     "load": "负载 {values}",
     "ghz": "{value} GHz",
     "mtps": "{value} MT/s",
+    "swap": "交换空间",
     "cacheBuffers": "缓存 / Buffer",
     "chassis": "整机",
     "primaryIp": "主 IP",

@@ -59,6 +59,7 @@
     "dashboard": "仪表盘", "agents": "代理", "terminal": "终端", "settings": "设置",
     "overview": "总览", "nodes": "节点", "activity": "活动", "assistant": "AI 助手"
   },
+  "menu": { "view": "视图", "refresh": "刷新" },
   "dashboard": {
     "totalAgents": "代理总数", "avgCpu": "平均 CPU", "avgMemory": "平均内存", "alerts": "告警", "title": "总览",
     "onlineNodes": "在线节点", "nodesOffline": "{n} 离线", "avgCpuLast60s": "过去 60s", "avgMemNodes": "{n} 节点",
@@ -77,7 +78,8 @@
   "agents": {
     "title": "节点", "searchHint": "搜索节点、主机名、OS", "filterAll": "全部", "filterOnline": "在线",
     "filterWarn": "告警", "filterOffline": "离线", "noNodes": "该服务器暂无节点", "noMatch": "没有匹配的节点",
-    "offlineNoData": "离线 · 无实时数据", "switchServer": "切换服务器", "filter": "筛选"
+    "offlineNoData": "离线 · 无实时数据", "switchServer": "切换服务器", "filter": "筛选",
+    "selectNode": "选择一个节点查看详情"
   },
   "agentDetail": {
     "tabRealtime": "实时", "tabHistory": "历史", "tabTerminal": "终端", "tabTerminalLocked": "终端 🔒",
@@ -87,7 +89,7 @@
     "systemInfo": "系统信息", "memUsed": "已用", "memAvailable": "可用", "vram": "显存", "power": "功耗", "osLabel": "OS",
     "kernel": "内核", "uptime": "运行时长", "motherboard": "主板", "systemModel": "整机", "bios": "BIOS", "perCore": "每核心",
     "load": "负载 {values}", "ghz": "{value} GHz", "mtps": "{value} MT/s", "cacheBuffers": "缓存 / Buffer",
-    "chassis": "整机", "primaryIp": "主 IP", "powerOf": "{used}W / {limit}W"
+    "swap": "交换空间", "chassis": "整机", "primaryIp": "主 IP", "powerOf": "{used}W / {limit}W"
   },
   "history": {
     "loadFailed": "无法加载历史数据", "loadFailedSub": "请检查与服务器的连接", "noData": "无可用历史数据",
