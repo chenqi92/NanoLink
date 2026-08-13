@@ -3,46 +3,101 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    open-pull-requests-limit: 1
+    groups:
+      github-actions:
+        patterns: ["*"]
 
   - package-ecosystem: npm
     directory: /apps/server/web
     schedule: { interval: weekly }
+    open-pull-requests-limit: 2
     groups:
       web-minor-patches:
+        patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      # @eslint/js 10 requires eslint 10 and a coordinated toolchain upgrade.
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: gomod
     directory: /apps/server
     schedule: { interval: weekly }
+    open-pull-requests-limit: 2
+    groups:
+      server-go-minor-patches:
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: gomod
     directory: /sdk/go
     schedule: { interval: weekly }
+    open-pull-requests-limit: 2
+    groups:
+      sdk-go-minor-patches:
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: gomod
     directory: /demo/go-gin
     schedule: { interval: weekly }
+    # Demo applications receive security updates only.
+    open-pull-requests-limit: 0
 
   - package-ecosystem: cargo
     directory: /agent
     schedule: { interval: weekly }
+    open-pull-requests-limit: 2
+    groups:
+      agent-minor-patches:
+        patterns: ["*"]
+        update-types: [minor, patch]
 
   - package-ecosystem: maven
     directory: /sdk/java
     schedule: { interval: weekly }
+    open-pull-requests-limit: 2
+    groups:
+      java-sdk-minor-patches:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      # JUnit 6 requires Java 17; the SDK still targets Java 11.
+      - dependency-name: "org.junit.jupiter:junit-jupiter"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: maven
     directory: /demo/spring-boot
     schedule: { interval: weekly }
+    # Demo applications receive security updates only.
+    open-pull-requests-limit: 0
 
   - package-ecosystem: pip
     directory: /sdk/python
     schedule: { interval: weekly }
+    open-pull-requests-limit: 2
+    groups:
+      python-sdk-minor-patches:
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: pip
     directory: /demo/python-fastapi
     schedule: { interval: weekly }
+    # Demo applications receive security updates only.
+    open-pull-requests-limit: 0
 
   - package-ecosystem: pub
     directory: /apps/desktop
     schedule: { interval: weekly }
+    open-pull-requests-limit: 2
+    groups:
+      desktop-minor-patches:
+        patterns: ["*"]
+        update-types: [minor, patch]
 
   - package-ecosystem: docker
     directory: /apps/docker
     schedule: { interval: weekly }
+    open-pull-requests-limit: 2
+    groups:
+      docker-minor-patches:
+        patterns: ["*"]
+        update-types: [minor, patch]
