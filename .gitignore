@@ -102,6 +102,8 @@ apps/server/web/dist/*
 build/
 out/
 release/
+/apps/server/nanolink-server
+/demo/go-gin/go-gin
 *.exe
 *.dll
 *.so
