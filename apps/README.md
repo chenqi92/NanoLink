@@ -7,9 +7,8 @@ Complete standalone applications for monitoring servers with NanoLink.
 | Application | Platform | Stack | Description |
 |-------------|----------|-------|-------------|
 | [Server](./server) | Linux/Docker | Go + React/Vite | Web-based monitoring dashboard |
-| [Desktop](./desktop) | Windows/macOS/Linux | Flutter | Desktop application |
-| [Desktop](./desktop) | Android | Flutter | APK, same codebase as desktop |
-| [iOS](./ios) | iOS/iPadOS | SwiftUI | Native Xcode project (`NanoLink.xcodeproj`) |
+| [Android](./android) | Android | Kotlin + Jetpack Compose | Native Android project |
+| [Apple](./ios) | iOS/iPadOS/macOS | SwiftUI | Native Xcode project with Mac Catalyst support |
 
 ## Architecture
 
@@ -19,8 +18,8 @@ Complete standalone applications for monitoring servers with NanoLink.
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │  Linux Server   │  │ Desktop/Android │  │  iOS / iPadOS   │  │
-│  │  (Docker/Web)   │  │   (Flutter)     │  │   (SwiftUI)     │  │
+│  │  Linux Server   │  │     Android     │  │ Apple Platforms │  │
+│  │  (Docker/Web)   │  │    (Compose)    │  │   (SwiftUI)     │  │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
 │           │                    │                     │           │
 │           └────────────────────┴─────────────────────┘           │
@@ -54,14 +53,11 @@ docker-compose up -d
 docker run -d -p 9100:9100 -p 8080:8080 ghcr.io/chenqi92/nanolink-server:latest
 ```
 
-### Desktop / Mobile Application
+### Native Applications
 
 Download from [Releases](https://github.com/chenqi92/NanoLink/releases):
 
-- **Windows**: `NanoLink-Windows-<version>.zip`
-- **macOS Intel**: `NanoLink-macOS-Intel-<version>.dmg`
-- **macOS Apple Silicon**: `NanoLink-macOS-AppleSilicon-<version>.dmg`
-- **Linux**: `NanoLink-Linux-<version>.tar.gz`
+- **macOS**: `NanoLink-macOS-<version>.zip`
 - **Android**: `NanoLink-Android-<version>.apk`
 - **iOS**: `NanoLink-iOS-<version>-unsigned.ipa` (unsigned, for sideloading)
 
@@ -74,8 +70,8 @@ cd docker
 docker-compose -f docker-compose.build.yml build
 ```
 
-This builds the `linux/amd64` + `linux/arm64` server image. Desktop, Android and
-iOS artifacts are built per-platform by `.github/workflows/apps-release.yml`.
+This builds the `linux/amd64` + `linux/arm64` server image. Android and Apple
+artifacts are built per-platform by `.github/workflows/apps-release.yml`.
 
 ### Build Specific Platform
 
@@ -84,14 +80,18 @@ iOS artifacts are built per-platform by `.github/workflows/apps-release.yml`.
 cd server
 go build -o nanolink-server ./cmd
 
-# Desktop / Android (requires Flutter 3.44.4, Dart SDK ^3.5.0)
-cd desktop
-flutter pub get
-flutter build windows --release   # or: macos / linux / apk
+# Android (requires JDK 17 and Android SDK)
+cd android
+./gradlew assembleRelease
 
-# iOS / iPadOS (requires macOS with Xcode)
+# iOS / iPadOS (requires Xcode)
 xcodebuild -project ios/NanoLink.xcodeproj -scheme NanoLink \
   -configuration Release -sdk iphoneos build
+
+# macOS through Mac Catalyst
+xcodebuild -project ios/NanoLink.xcodeproj -scheme NanoLink \
+  -configuration Release \
+  -destination "platform=macOS,variant=Mac Catalyst" build
 ```
 
 ## Configuration
@@ -120,16 +120,11 @@ dashboard:
   enabled: true
 ```
 
-### Desktop / Mobile Configuration
+### Native Application Configuration
 
-No config file is written. Server connection metadata (id, name, url, username,
-lastConnected) is persisted through `shared_preferences` under the key
-`nanolink_servers`; the `token` / `userToken` secrets are stored separately in
-`flutter_secure_storage` (Windows Credential Manager, macOS/iOS Keychain, Android
-Keystore, Linux libsecret), keyed by server id.
-
-The native iOS/iPadOS app uses the same split: metadata in `UserDefaults`, secrets in the
-iOS Keychain (`Services/KeychainStore.swift`).
+The Android app stores preferences with DataStore and secrets with Android
+Keystore. The Apple app stores metadata in `UserDefaults` and secrets in Keychain
+(`Services/KeychainStore.swift`).
 
 ## License
 

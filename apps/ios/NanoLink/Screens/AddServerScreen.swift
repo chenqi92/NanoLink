@@ -6,7 +6,7 @@ private enum ServerConnectionMethod: String, Identifiable {
     var id: String { rawValue }
 }
 
-/// Add-server flow with all four connection methods from the Flutter app.
+/// Add-server flow with QR code, account, pairing code and manual methods.
 struct AddServerScreen: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss

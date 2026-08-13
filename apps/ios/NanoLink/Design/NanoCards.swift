@@ -37,7 +37,7 @@ struct NanoCard<Content: View>: View {
     }
 }
 
-/// Applies padding only when a value is supplied (matches Flutter's nullable padding).
+/// Applies padding only when a value is supplied.
 private struct OptionalPadding: ViewModifier {
     let padding: EdgeInsets?
     func body(content: Content) -> some View {

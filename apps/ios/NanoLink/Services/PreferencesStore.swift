@@ -1,7 +1,7 @@
 import Foundation
 
-/// Typed accessors over `UserDefaults`, mirroring the Flutter app's
-/// `shared_preferences` usage: non-secret app configuration such as the selected
+/// Typed accessors over `UserDefaults` for non-secret app configuration such as
+/// the selected
 /// theme, language, active server id, and the persisted server metadata list.
 enum PreferencesStore {
     private static let d = UserDefaults.standard

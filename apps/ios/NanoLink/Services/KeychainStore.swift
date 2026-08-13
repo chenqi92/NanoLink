@@ -1,8 +1,8 @@
 import Foundation
 import Security
 
-/// Thin wrapper over the iOS Keychain (Generic Password) used to persist server
-/// secrets — mirroring the Flutter app's `flutter_secure_storage`. Each secret is
+/// Thin wrapper over the Keychain (Generic Password) used to persist server
+/// secrets. Each secret is
 /// stored under a per-server account string.
 enum KeychainStore {
     private static let service = "com.nanolink.app.secrets"

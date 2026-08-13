@@ -1,7 +1,7 @@
 import Foundation
 
-/// Persists server connections, mirroring the Flutter `StorageService`:
-/// non-secret metadata goes to `UserDefaults` (via `PreferencesStore`), while
+/// Persists server connections: non-secret metadata goes to `UserDefaults` (via
+/// `PreferencesStore`), while
 /// secrets (`token` / `userToken`) live in the Keychain keyed by server id.
 final class StorageService {
     static let shared = StorageService()

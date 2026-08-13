@@ -15,7 +15,7 @@ English | [中文](README_CN.md)
 | [Agent](./agent) | Monitoring agent deployed on target servers | Rust |
 | [SDK](./sdk) | Client libraries for embedding in existing services | Java / Go / Python |
 | [Dashboard](./dashboard) | Web visualization panel | Vue 3 + TailwindCSS |
-| [Apps](./apps) | Standalone deployable applications | Go + Flutter + SwiftUI |
+| [Apps](./apps) | Standalone deployable applications | Go + Kotlin + SwiftUI |
 
 ## System Architecture
 
@@ -66,10 +66,10 @@ English | [中文](README_CN.md)
 │                    NanoLink Applications                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │  Linux Server   │  │ Desktop/Android │  │  iOS / iPadOS   │  │
-│  │   (Go + Web)    │  │   (Flutter)     │  │   (SwiftUI)     │  │
+│  │  Linux Server   │  │     Android     │  │ Apple Platforms │  │
+│  │   (Go + Web)    │  │    (Compose)    │  │   (SwiftUI)     │  │
 │  │                 │  │                 │  │                 │  │
-│  │  Docker Deploy  │  │ Win/macOS/Linux │  │  Native Xcode   │  │
+│  │  Docker Deploy  │  │ Native Android  │  │ iOS/iPadOS/macOS│  │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
 │           └────────────────────┴────────────────────┘           │
 │                                │                                 │
@@ -1077,11 +1077,8 @@ NanoLink/
 │   │   │   ├── handler/        # HTTP/WebSocket handlers
 │   │   │   └── proto/          # Generated Proto code
 │   │   └── web/                # Embedded Dashboard
-│   ├── desktop/                # Flutter app (Windows/macOS/Linux/Android)
-│   │   ├── lib/                # Dart sources
-│   │   ├── windows/ macos/ linux/ android/   # Platform runners
-│   │   └── pubspec.yaml
-│   ├── ios/                    # Native iOS/iPadOS app (SwiftUI)
+│   ├── android/                # Native Android app (Kotlin/Compose)
+│   ├── ios/                    # Native iOS/iPadOS/macOS app (SwiftUI)
 │   │   ├── NanoLink/           # Swift sources
 │   │   └── NanoLink.xcodeproj
 │   └── docker/                 # Docker configuration
@@ -1139,10 +1136,10 @@ npm install && npm run build
 # Linux Server (Docker)
 cd apps/docker && docker-compose build
 
-# Desktop / Android (requires Flutter 3.44.4)
-cd apps/desktop && flutter pub get && flutter build windows --release
+# Android (requires JDK 17 and Android SDK)
+cd apps/android && ./gradlew assembleRelease
 
-# iOS / iPadOS (requires macOS with Xcode)
+# iOS / iPadOS / macOS (requires Xcode)
 xcodebuild -project apps/ios/NanoLink.xcodeproj -scheme NanoLink \
   -configuration Release -sdk iphoneos build
 ```

@@ -2,8 +2,7 @@ import Foundation
 
 // MARK: - JSON access helper
 
-/// Tolerant reader over `JSONSerialization` output (`[String: Any]`), mirroring
-/// the flexible `fromJson(Map)` decoding the Flutter models relied on. Server
+/// Tolerant reader over `JSONSerialization` output (`[String: Any]`). Server
 /// payloads mix snake_case / camelCase and numbers-as-strings, so every getter
 /// coerces defensively and accepts a list of candidate keys.
 struct JSON {

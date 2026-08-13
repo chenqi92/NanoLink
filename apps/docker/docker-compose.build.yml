@@ -3,8 +3,8 @@ version: '3.8'
 # Multi-architecture build configuration for the server image.
 # Usage: docker-compose -f docker-compose.build.yml build
 #
-# Desktop (Flutter: Windows/macOS/Linux), Android and iOS artifacts cannot be
-# produced from this file — each needs its own host toolchain. See
+# Native Android and Apple artifacts cannot be produced from this file — each
+# needs its own host toolchain. See
 # .github/workflows/apps-release.yml and apps/README.md.
 
 services:

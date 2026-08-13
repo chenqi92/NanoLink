@@ -1,7 +1,7 @@
 # NanoLink Functional Analysis
 
 ## Project Overview
-NanoLink is a high-performance system monitoring and management framework consisting of a Go server, a Rust agent, and a cross-platform Flutter application. It provides real-time metrics, remote shell access, and agent management capability.
+NanoLink is a high-performance system monitoring and management framework consisting of a Go server, a Rust agent, and native Android and Apple applications. It provides real-time metrics, remote shell access, and agent management capability.
 
 ## Core Functionalities
 

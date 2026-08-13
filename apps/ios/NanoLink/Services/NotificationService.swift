@@ -1,8 +1,8 @@
 import Foundation
 import UserNotifications
 
-/// Thin wrapper over UserNotifications for foreground alert pushes, mirroring the
-/// Flutter `NotificationService`. Requests authorization once, then posts local
+/// Thin wrapper over UserNotifications for foreground alert pushes. Requests
+/// authorization once, then posts local
 /// notifications with a stable identifier so re-firing the same alert replaces
 /// its banner instead of stacking duplicates.
 final class NotificationService: NSObject, UNUserNotificationCenterDelegate {

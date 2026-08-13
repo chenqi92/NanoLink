@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Client version
 
-/// Native client version reported to the server (mirrors the Flutter constant).
+/// Native client version reported to the server.
 let clientVersion = "0.3.3"
 
 // MARK: - Connection status

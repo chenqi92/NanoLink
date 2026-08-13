@@ -4,8 +4,7 @@ import SwiftUI
 ///
 /// A root view resolves `NanoTokens` from the `ThemeStore` (style + mode) and the
 /// system color scheme, then injects them via `.nanoTheme(...)`. Descendant views
-/// read `@Environment(\.nano)` — the SwiftUI analogue of Flutter's
-/// `context.nano` (`NanoTokens.of(context)`).
+/// read the tokens through `@Environment(\.nano)`.
 private struct NanoTokensKey: EnvironmentKey {
     static let defaultValue: NanoTokens = .iosDark
 }

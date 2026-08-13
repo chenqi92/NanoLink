@@ -56,13 +56,6 @@
       "type": "regex"
     },
     {
-      "path": "apps/desktop/pubspec.yaml",
-      "pattern": "^version: .*$",
-      "replacement": "version: {{VERSION}}",
-      "type": "regex",
-      "description": "Flutter desktop app version"
-    },
-    {
       "path": "demo/spring-boot/pom.xml",
       "pattern": "<version>.*</version><!-- DEMO_VERSION -->",
       "replacement": "<version>{{VERSION}}</version><!-- DEMO_VERSION -->",

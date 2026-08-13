@@ -116,7 +116,6 @@ function Main {
         "dashboard/package.json",
         "apps/server/cmd/main.go",
         "apps/server/web/package.json",
-        "apps/desktop/pubspec.yaml",
         "demo/spring-boot/pom.xml",
         "scripts/version.json",
         "agent/scripts/install.sh",

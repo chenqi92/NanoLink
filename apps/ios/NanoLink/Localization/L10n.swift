@@ -1,8 +1,8 @@
 import Foundation
 import Combine
 
-/// Runtime localization engine that mirrors the Flutter app's easy_localization
-/// setup: the same `en.json` / `zh.json` string tables are bundled and looked up
+/// Runtime localization engine. The `en.json` / `zh.json` string tables are
+/// bundled and looked up
 /// by dot-path key (e.g. `dashboard.title`). Language can be switched in-app and
 /// is persisted; views observing this object rebuild on change.
 final class L10n: ObservableObject {

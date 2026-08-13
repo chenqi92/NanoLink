@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// Account, server, tool, appearance, terminal, notification, security and app
-/// metadata settings. Local preferences use the same keys as the Flutter app.
+/// metadata settings.
 struct SettingsScreen: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var theme: ThemeStore

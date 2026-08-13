@@ -5,13 +5,11 @@ import SwiftUI
 /// - `.ios` — Apple system colors, large titles, grouped cards.
 /// - `.md`  — Material 3 / Material You surfaces.
 ///
-/// All concrete color values mirror the Flutter `NanoTokens` (which in turn
-/// mirror `design/nanolink/mobile/mobile-tokens.css`). This is the Swift port of
-/// `nano_tokens.dart`.
+/// Concrete color values follow the shared mobile design tokens.
 enum NanoStyle { case ios, md }
 
 extension Color {
-    /// Build a color from a Flutter-style 0xAARRGGBB integer (alpha-first).
+    /// Build a color from a 0xAARRGGBB integer (alpha-first).
     init(argb: UInt32) {
         let a = Double((argb >> 24) & 0xFF) / 255.0
         let r = Double((argb >> 16) & 0xFF) / 255.0

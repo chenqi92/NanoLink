@@ -172,28 +172,17 @@ flowchart TD
     K --> D
 ```
 
-### 6.2 Flutter 客户端更新
+### 6.2 原生客户端更新
 
 #### 新增页面/组件
-- `QrScannerScreen` - 二维码扫描页面 (移动端)
-- `PairingCodeDialog` - 配对码输入对话框 (桌面端)
-- `AddServerDialog` 更新 - 支持账号密码登录
+- Android 与 Apple 客户端提供二维码扫描页面
+- macOS 客户端提供配对码输入界面
+- 添加服务器界面支持账号密码登录
 
 #### 数据模型更新
-```dart
-class ServerConnection {
-  String id;
-  String name;
-  String url;
-  String? token;           // 设备令牌 (只读)
-  String? userToken;       // 用户登录令牌 (完整权限)
-  String? username;        // 用于用户认证
-  AuthMode authMode;       // token / user
-  int permissionLevel;     // 权限级别
-}
-
-enum AuthMode { deviceToken, userCredential }
-```
+- `ServerConnection` 保存 ID、名称、地址、用户名和认证模式
+- 设备令牌与用户令牌写入平台安全存储
+- 权限级别随连接信息保存，用于控制客户端操作
 
 ---
 
@@ -236,8 +225,8 @@ enum AuthMode { deviceToken, userCredential }
 - [ ] 设备编辑/删除功能
 
 ### Phase 3: 客户端实现
-- [ ] Flutter QR 扫描 (mobile_scanner)
-- [ ] 配对码输入 (桌面端)
+- [ ] Android 与 Apple 原生 QR 扫描
+- [ ] macOS 配对码输入
 - [ ] 账号密码登录表单
 - [ ] 多认证模式支持
 

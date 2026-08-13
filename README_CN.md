@@ -15,7 +15,7 @@
 | [Agent](./agent) | 部署在目标服务器的监控代理 | Rust |
 | [SDK](./sdk) | 嵌入现有服务的客户端库 | Java / Go / Python |
 | [Dashboard](./dashboard) | Web 可视化面板 | Vue 3 + TailwindCSS |
-| [Apps](./apps) | 独立部署的完整应用 | Go + Flutter + SwiftUI |
+| [Apps](./apps) | 独立部署的完整应用 | Go + Kotlin + SwiftUI |
 
 ## 系统架构
 
@@ -66,10 +66,10 @@
 │                    NanoLink Applications                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │  Linux Server   │  │ Desktop/Android │  │  iOS / iPadOS   │  │
-│  │   (Go + Web)    │  │   (Flutter)     │  │   (SwiftUI)     │  │
+│  │  Linux Server   │  │     Android     │  │   Apple 平台    │  │
+│  │   (Go + Web)    │  │    (Compose)    │  │   (SwiftUI)     │  │
 │  │                 │  │                 │  │                 │  │
-│  │  Docker 部署    │  │ Win/macOS/Linux │  │   原生 Xcode    │  │
+│  │  Docker 部署    │  │   原生 Android  │  │iOS/iPadOS/macOS │  │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
 │           └────────────────────┴────────────────────┘           │
 │                                │                                 │
@@ -1115,11 +1115,8 @@ NanoLink/
 │   │   │   ├── handler/        # HTTP/WebSocket 处理器
 │   │   │   └── proto/          # 生成的 Proto 代码
 │   │   └── web/                # 嵌入式 Dashboard
-│   ├── desktop/                # Flutter 应用（Windows/macOS/Linux/Android）
-│   │   ├── lib/                # Dart 源码
-│   │   ├── windows/ macos/ linux/ android/   # 各平台 Runner
-│   │   └── pubspec.yaml
-│   ├── ios/                    # 原生 iOS/iPadOS 应用（SwiftUI）
+│   ├── android/                # 原生 Android 应用（Kotlin/Compose）
+│   ├── ios/                    # 原生 iOS/iPadOS/macOS 应用（SwiftUI）
 │   │   ├── NanoLink/           # Swift 源码
 │   │   └── NanoLink.xcodeproj
 │   └── docker/                 # Docker 配置
@@ -1177,10 +1174,10 @@ npm install && npm run build
 # Linux Server (Docker)
 cd apps/docker && docker-compose build
 
-# Desktop / Android (需要 Flutter 3.44.4)
-cd apps/desktop && flutter pub get && flutter build windows --release
+# Android（需要 JDK 17 和 Android SDK）
+cd apps/android && ./gradlew assembleRelease
 
-# iOS / iPadOS (需要 macOS + Xcode)
+# iOS / iPadOS / macOS（需要 Xcode）
 xcodebuild -project apps/ios/NanoLink.xcodeproj -scheme NanoLink \
   -configuration Release -sdk iphoneos build
 ```

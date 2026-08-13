@@ -82,39 +82,11 @@ The container includes a health check:
 - Timeout: 10s
 - Retries: 3
 
-## Building Desktop Applications
+## Building Native Applications
 
-The desktop app is Flutter. Each desktop target must be built on its own platform:
-
-### Windows
-```powershell
-cd apps/desktop
-flutter pub get
-flutter build windows --release
-```
-
-### macOS
-```bash
-cd apps/desktop
-flutter pub get
-flutter build macos --release
-```
-
-### Linux
-```bash
-cd apps/desktop
-flutter pub get
-flutter build linux --release
-```
-
-Build outputs:
-- Windows: `build\windows\x64\runner\Release\`
-- macOS: `build/macos/Build/Products/Release/NanoOps.app`
-- Linux: `build/linux/x64/release/bundle/`
-
-`.github/workflows/apps-release.yml` packages these into
-`NanoLink-Windows-<version>.zip`, `NanoLink-macOS-Intel-<version>.dmg`,
-`NanoLink-macOS-AppleSilicon-<version>.dmg` and `NanoLink-Linux-<version>.tar.gz`.
+Android is built from `apps/android` with Gradle. iOS, iPadOS and macOS
+(Mac Catalyst) are built from `apps/ios/NanoLink.xcodeproj` with Xcode. The
+release workflow packages the native APK, IPA and macOS application.
 
 ## License
 

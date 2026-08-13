@@ -95,11 +95,13 @@ lerna-debug.log*
 # =========================
 # Build & Distribution
 # =========================
+/artifacts/
 dist/
 !apps/server/web/dist/
 apps/server/web/dist/*
 !apps/server/web/dist/.gitkeep
 build/
+/apps/ios/build-*/
 out/
 release/
 /apps/server/nanolink-server

@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// App entry point. Owns the three global stores and injects the resolved
-/// design tokens + localization into the whole view tree, mirroring the
-/// Flutter `main.dart` `MultiProvider` + `MaterialApp` bootstrap.
+/// App entry point. Owns the global stores and injects the resolved design
+/// tokens and localization into the whole view tree.
 @main
 struct NanoLinkApp: App {
     @StateObject private var store = AppStore.shared

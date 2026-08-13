@@ -2,8 +2,8 @@ import Foundation
 import SwiftUI
 import Combine
 
-/// App theme mode (mirrors the Flutter `AppThemeMode`). Persisted as an integer
-/// index under `theme_mode` (0=light, 1=dark, 2=system); default dark.
+/// App theme mode persisted as an integer under `theme_mode`
+/// (0=light, 1=dark, 2=system); default dark.
 enum AppThemeMode: Int, CaseIterable {
     case light = 0
     case dark = 1

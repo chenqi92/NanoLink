@@ -117,7 +117,6 @@ main() {
     update_file "dashboard/package.json" "$CURRENT_VERSION" "$NEW_VERSION"
     update_file "apps/server/cmd/main.go" "$CURRENT_VERSION" "$NEW_VERSION"
     update_file "apps/server/web/package.json" "$CURRENT_VERSION" "$NEW_VERSION"
-    update_file "apps/desktop/pubspec.yaml" "$CURRENT_VERSION" "$NEW_VERSION"
     update_file "demo/spring-boot/pom.xml" "$CURRENT_VERSION" "$NEW_VERSION"
     update_file "scripts/version.json" "$CURRENT_VERSION" "$NEW_VERSION"
     update_file "agent/scripts/install.sh" "$CURRENT_VERSION" "$NEW_VERSION"

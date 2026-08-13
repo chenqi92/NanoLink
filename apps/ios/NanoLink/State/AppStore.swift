@@ -12,7 +12,6 @@ private struct PendingAlert {
 /// metrics / summaries across all servers, evaluates client-side alert
 /// notifications, and handles silent re-authentication on token expiry.
 ///
-/// Ports `AppProvider` (a Flutter ChangeNotifier) to an `ObservableObject`.
 /// All mutations occur on the main actor so SwiftUI observation is consistent;
 /// `ServerService` delivers its callbacks here already hopped to main.
 @MainActor
