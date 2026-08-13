@@ -346,16 +346,18 @@ func deploymentCommandParams(project database.DeploymentProject, release databas
 	if !includeArtifact {
 		return params
 	}
-	extract := project.Type == database.DeploymentProjectStatic
-	if release.Extract != nil {
-		extract = *release.Extract
+	if project.Type == database.DeploymentProjectStatic {
+		extract := true
+		if release.Extract != nil {
+			extract = *release.Extract
+		}
+		params["extract_artifact"] = strconv.FormatBool(extract)
+		params["extract_archive"] = strconv.FormatBool(extract)
+		params["strip_top_level"] = strconv.FormatBool(release.StripTopLevel)
 	}
 	params["artifact_sha256"] = release.SHA256
 	params["artifact_size"] = strconv.FormatInt(release.ArtifactSize, 10)
 	params["artifact_name"] = release.ArtifactName
-	params["extract_artifact"] = strconv.FormatBool(extract)
-	params["extract_archive"] = strconv.FormatBool(extract)
-	params["strip_top_level"] = strconv.FormatBool(release.StripTopLevel)
 	return params
 }
 

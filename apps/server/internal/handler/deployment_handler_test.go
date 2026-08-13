@@ -38,7 +38,7 @@ func TestValidateDeploymentProjectRequest(t *testing.T) {
 	}
 }
 
-func TestDeploymentExtractArchiveDefaultsOn(t *testing.T) {
+func TestDeploymentExtractArchivePersistsExplicitValues(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:deployment-extract-default?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -46,12 +46,19 @@ func TestDeploymentExtractArchiveDefaultsOn(t *testing.T) {
 	if err := db.AutoMigrate(&database.DeploymentProject{}); err != nil {
 		t.Fatal(err)
 	}
-	project := database.DeploymentProject{Name: "site", Type: database.DeploymentProjectStatic, AgentID: "agent-1", DeployPath: "/var/www/nanolink/site", CreatedBy: 1}
+	project := database.DeploymentProject{Name: "site", Type: database.DeploymentProjectStatic, AgentID: "agent-1", DeployPath: "/var/www/nanolink/site", ExtractArchive: true, CreatedBy: 1}
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatal(err)
 	}
 	if !project.ExtractArchive {
-		t.Fatal("new deployment projects must extract archives by default")
+		t.Fatal("explicit extraction setting was not persisted")
+	}
+	plain := database.DeploymentProject{Name: "plain", Type: database.DeploymentProjectStatic, AgentID: "agent-1", DeployPath: "/var/www/nanolink/plain", ExtractArchive: false, CreatedBy: 1}
+	if err := db.Create(&plain).Error; err != nil {
+		t.Fatal(err)
+	}
+	if plain.ExtractArchive {
+		t.Fatal("explicit non-extraction setting was overwritten by a database default")
 	}
 }
 
@@ -89,6 +96,17 @@ func TestDeploymentCommandUsesCanonicalExtractionParameters(t *testing.T) {
 	params = deploymentCommandParams(project, release, true)
 	if params["extract_artifact"] != "false" || params["extract_archive"] != "false" {
 		t.Fatalf("explicit non-extract release ignored: %#v", params)
+	}
+}
+
+func TestJavaDeploymentOmitsStaticExtractionParameters(t *testing.T) {
+	project := database.DeploymentProject{Type: database.DeploymentProjectJava, DeployPath: "/opt/nanolink/apps/orders", ServiceName: "orders.service", KeepReleases: 5}
+	release := database.DeploymentRelease{Version: "1.0.0", ArtifactName: "orders.jar", ArtifactSize: 12, SHA256: "digest"}
+	params := deploymentCommandParams(project, release, true)
+	for _, key := range []string{"extract_artifact", "extract_archive", "strip_top_level"} {
+		if _, exists := params[key]; exists {
+			t.Fatalf("Java deployment unexpectedly emitted %s: %#v", key, params)
+		}
 	}
 }
 
