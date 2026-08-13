@@ -743,23 +743,26 @@ fn extract_archive(artifact: &Path, name: &str, stage: &Path) -> Result<(), Stri
         } else if name.to_lowercase().ends_with(".tar") {
             run_tool(
                 Command::new("tar")
-                    .arg("-xf")
-                    .arg("--no-same-owner")
-                    .arg("--no-same-permissions")
+                    .arg("--extract")
+                    .arg("--file")
                     .arg(artifact)
-                    .arg("-C")
-                    .arg(stage),
+                    .arg("--directory")
+                    .arg(stage)
+                    .arg("--no-same-owner")
+                    .arg("--no-same-permissions"),
                 ARCHIVE_TOOL_TIMEOUT,
             )
         } else {
             run_tool(
                 Command::new("tar")
-                    .arg("-xzf")
-                    .arg("--no-same-owner")
-                    .arg("--no-same-permissions")
+                    .arg("--extract")
+                    .arg("--gzip")
+                    .arg("--file")
                     .arg(artifact)
-                    .arg("-C")
-                    .arg(stage),
+                    .arg("--directory")
+                    .arg(stage)
+                    .arg("--no-same-owner")
+                    .arg("--no-same-permissions"),
                 ARCHIVE_TOOL_TIMEOUT,
             )
         }
@@ -1221,6 +1224,35 @@ mod tests {
         assert!(validate_artifact_name("static", "site.tar.gz").is_ok());
         assert!(validate_artifact_name("static", "site.tar").is_ok());
         assert!(validate_artifact_name("static", "../site.zip").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracts_tar_and_tar_gz_with_safe_options() {
+        let root = std::env::temp_dir().join(format!("nanolink-tar-test-{}", Uuid::new_v4()));
+        let source = root.join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("index.html"), b"ok").unwrap();
+
+        for (name, gzip) in [("site.tar", false), ("site.tar.gz", true)] {
+            let archive = root.join(name);
+            let mut create = Command::new("tar");
+            create.arg(if gzip { "-czf" } else { "-cf" });
+            let status = create
+                .arg(&archive)
+                .arg("-C")
+                .arg(&source)
+                .arg(".")
+                .status()
+                .unwrap();
+            assert!(status.success());
+
+            let stage = root.join(format!("stage-{name}"));
+            fs::create_dir(&stage).unwrap();
+            extract_archive(&archive, name, &stage).unwrap();
+            assert_eq!(fs::read(stage.join("index.html")).unwrap(), b"ok");
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
