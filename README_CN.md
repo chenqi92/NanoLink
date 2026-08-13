@@ -15,7 +15,7 @@
 | [Agent](./agent) | 部署在目标服务器的监控代理 | Rust |
 | [SDK](./sdk) | 嵌入现有服务的客户端库 | Java / Go / Python |
 | [Dashboard](./dashboard) | Web 可视化面板 | Vue 3 + TailwindCSS |
-| [Apps](./apps) | 独立部署的完整应用 | Go + Tauri |
+| [Apps](./apps) | 独立部署的完整应用 | Go + Flutter + SwiftUI |
 
 ## 系统架构
 
@@ -66,10 +66,10 @@
 │                    NanoLink Applications                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │  Linux Server   │  │ Windows Desktop │  │  macOS Desktop  │  │
-│  │   (Go + Web)    │  │    (Tauri)      │  │    (Tauri)      │  │
+│  │  Linux Server   │  │ Desktop/Android │  │  iOS / iPadOS   │  │
+│  │   (Go + Web)    │  │   (Flutter)     │  │   (SwiftUI)     │  │
 │  │                 │  │                 │  │                 │  │
-│  │  Docker 部署    │  │   原生桌面应用   │  │   原生桌面应用   │  │
+│  │  Docker 部署    │  │ Win/macOS/Linux │  │   原生 Xcode    │  │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
 │           └────────────────────┴────────────────────┘           │
 │                                │                                 │
@@ -1115,9 +1115,13 @@ NanoLink/
 │   │   │   ├── handler/        # HTTP/WebSocket 处理器
 │   │   │   └── proto/          # 生成的 Proto 代码
 │   │   └── web/                # 嵌入式 Dashboard
-│   ├── desktop/                # Tauri 桌面应用
-│   │   ├── src/                # Vue 前端
-│   │   └── src-tauri/          # Rust 后端
+│   ├── desktop/                # Flutter 应用（Windows/macOS/Linux/Android）
+│   │   ├── lib/                # Dart 源码
+│   │   ├── windows/ macos/ linux/ android/   # 各平台 Runner
+│   │   └── pubspec.yaml
+│   ├── ios/                    # 原生 iOS/iPadOS 应用（SwiftUI）
+│   │   ├── NanoLink/           # Swift 源码
+│   │   └── NanoLink.xcodeproj
 │   └── docker/                 # Docker 配置
 │       ├── Dockerfile
 │       ├── docker-compose.yml
@@ -1173,8 +1177,12 @@ npm install && npm run build
 # Linux Server (Docker)
 cd apps/docker && docker-compose build
 
-# Desktop (需要 Rust + Node.js)
-cd apps/desktop && npm install && npm run tauri build
+# Desktop / Android (需要 Flutter 3.44.4)
+cd apps/desktop && flutter pub get && flutter build windows --release
+
+# iOS / iPadOS (需要 macOS + Xcode)
+xcodebuild -project apps/ios/NanoLink.xcodeproj -scheme NanoLink \
+  -configuration Release -sdk iphoneos build
 ```
 
 ## 应用部署

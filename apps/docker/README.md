@@ -84,26 +84,37 @@ The container includes a health check:
 
 ## Building Desktop Applications
 
-Desktop applications (Windows/macOS) must be built on their respective platforms:
+The desktop app is Flutter. Each desktop target must be built on its own platform:
 
 ### Windows
 ```powershell
 cd apps/desktop
-npm install
-npm run tauri build
+flutter pub get
+flutter build windows --release
 ```
 
 ### macOS
 ```bash
 cd apps/desktop
-npm install
-npm run tauri build
+flutter pub get
+flutter build macos --release
+```
+
+### Linux
+```bash
+cd apps/desktop
+flutter pub get
+flutter build linux --release
 ```
 
 Build outputs:
-- Windows: `src-tauri/target/release/bundle/msi/*.msi`
-- macOS Intel: `src-tauri/target/release/bundle/dmg/*-x64.dmg`
-- macOS Apple Silicon: `src-tauri/target/release/bundle/dmg/*-aarch64.dmg`
+- Windows: `build\windows\x64\runner\Release\`
+- macOS: `build/macos/Build/Products/Release/NanoOps.app`
+- Linux: `build/linux/x64/release/bundle/`
+
+`.github/workflows/apps-release.yml` packages these into
+`NanoLink-Windows-<version>.zip`, `NanoLink-macOS-Intel-<version>.dmg`,
+`NanoLink-macOS-AppleSilicon-<version>.dmg` and `NanoLink-Linux-<version>.tar.gz`.
 
 ## License
 

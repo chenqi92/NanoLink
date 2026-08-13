@@ -4,10 +4,12 @@ Complete standalone applications for monitoring servers with NanoLink.
 
 ## Applications
 
-| Application | Platform | Description |
-|-------------|----------|-------------|
-| [Server](./server) | Linux/Docker | Web-based monitoring dashboard |
-| [Desktop](./desktop) | Windows/macOS | Native desktop application |
+| Application | Platform | Stack | Description |
+|-------------|----------|-------|-------------|
+| [Server](./server) | Linux/Docker | Go + React/Vite | Web-based monitoring dashboard |
+| [Desktop](./desktop) | Windows/macOS/Linux | Flutter | Desktop application |
+| [Desktop](./desktop) | Android | Flutter | APK, same codebase as desktop |
+| [iOS](./ios) | iOS/iPadOS | SwiftUI | Native Xcode project (`NanoLink.xcodeproj`) |
 
 ## Architecture
 
@@ -17,8 +19,8 @@ Complete standalone applications for monitoring servers with NanoLink.
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │  Linux Server   │  │ Windows Desktop │  │  macOS Desktop  │  │
-│  │  (Docker/Web)   │  │    (Tauri)      │  │    (Tauri)      │  │
+│  │  Linux Server   │  │ Desktop/Android │  │  iOS / iPadOS   │  │
+│  │  (Docker/Web)   │  │   (Flutter)     │  │   (SwiftUI)     │  │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
 │           │                    │                     │           │
 │           └────────────────────┴─────────────────────┘           │
@@ -52,29 +54,28 @@ docker-compose up -d
 docker run -d -p 9100:9100 -p 8080:8080 ghcr.io/chenqi92/nanolink-server:latest
 ```
 
-### Desktop Application
+### Desktop / Mobile Application
 
 Download from [Releases](https://github.com/chenqi92/NanoLink/releases):
 
-- **Windows**: `NanoLink_x.x.x_x64_en-US.msi`
-- **macOS Intel**: `NanoLink_x.x.x_x64.dmg`
-- **macOS Apple Silicon**: `NanoLink_x.x.x_aarch64.dmg`
+- **Windows**: `NanoLink-Windows-<version>.zip`
+- **macOS Intel**: `NanoLink-macOS-Intel-<version>.dmg`
+- **macOS Apple Silicon**: `NanoLink-macOS-AppleSilicon-<version>.dmg`
+- **Linux**: `NanoLink-Linux-<version>.tar.gz`
+- **Android**: `NanoLink-Android-<version>.apk`
+- **iOS**: `NanoLink-iOS-<version>-unsigned.ipa` (unsigned, for sideloading)
 
 ## Building
 
-### Build All Platforms
+### Server Image (multi-arch)
 
 ```bash
 cd docker
-docker-compose -f docker-compose.build.yml up
+docker-compose -f docker-compose.build.yml build
 ```
 
-This will build:
-- Linux AMD64 server image
-- Linux ARM64 server image
-- Windows x64 installer
-- macOS x64 DMG
-- macOS ARM64 DMG
+This builds the `linux/amd64` + `linux/arm64` server image. Desktop, Android and
+iOS artifacts are built per-platform by `.github/workflows/apps-release.yml`.
 
 ### Build Specific Platform
 
@@ -83,10 +84,14 @@ This will build:
 cd server
 go build -o nanolink-server ./cmd
 
-# Desktop (requires Rust and Node.js)
+# Desktop / Android (requires Flutter 3.44.4, Dart SDK ^3.5.0)
 cd desktop
-npm install
-npm run tauri build
+flutter pub get
+flutter build windows --release   # or: macos / linux / apk
+
+# iOS / iPadOS (requires macOS with Xcode)
+xcodebuild -project ios/NanoLink.xcodeproj -scheme NanoLink \
+  -configuration Release -sdk iphoneos build
 ```
 
 ## Configuration
@@ -115,11 +120,16 @@ dashboard:
   enabled: true
 ```
 
-### Desktop Configuration
+### Desktop / Mobile Configuration
 
-Settings are stored in:
-- Windows: `%APPDATA%\NanoLink\config.json`
-- macOS: `~/Library/Application Support/NanoLink/config.json`
+No config file is written. Server connection metadata (id, name, url, username,
+lastConnected) is persisted through `shared_preferences` under the key
+`nanolink_servers`; the `token` / `userToken` secrets are stored separately in
+`flutter_secure_storage` (Windows Credential Manager, macOS/iOS Keychain, Android
+Keystore), keyed by server id.
+
+The native iOS/iPadOS app uses the same split: metadata in `UserDefaults`, secrets in the
+iOS Keychain (`Services/KeychainStore.swift`).
 
 ## License
 
