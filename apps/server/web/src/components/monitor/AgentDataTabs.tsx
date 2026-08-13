@@ -313,7 +313,15 @@ export function DockerTab({ agentId, permission = 0 }: { agentId: string; permis
                     <td className="mono dim" style={{ fontSize: 11 }}>{c.network || "—"}</td>
                     <td style={{ textAlign: "right" }}>
                       <div className="row gap-1" style={{ justifyContent: "flex-end" }}>
-                        <button className="btn btn-sm btn-ghost" onClick={() => setLogsFor({ id: c.id, name: c.name })}>{I.audit({ size: 11 })}<span style={{ fontSize: 11 }}>{t("dev.logs")}</span></button>
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          disabled={permission < 1}
+                          title={permission < 1 ? t("access.permissionLevelDesc", { level: "L1" }) : undefined}
+                          onClick={() => setLogsFor({ id: c.id, name: c.name })}
+                        >
+                          {permission < 1 ? I.lock({ size: 11 }) : I.audit({ size: 11 })}
+                          <span style={{ fontSize: 11 }}>{t("dev.logs")}</span>
+                        </button>
                         {running ? (
                           <>
                             <button className="btn btn-sm btn-ghost" disabled={!canControl || !!busy} title={canControl ? undefined : t("dev.needL2")} onClick={() => run(k("restart"), "DOCKER_RESTART", { target: c.id })}>{busy === k("restart") ? <span className="dot pulse ok" /> : I.refresh({ size: 11 })}<span style={{ fontSize: 11 }}>{t("dev.restart")}</span></button>
@@ -331,7 +339,7 @@ export function DockerTab({ agentId, permission = 0 }: { agentId: string; permis
           </table>
         </div>
       )}
-      {logsFor && <ContainerLogsModal agentId={agentId} container={logsFor} onClose={() => setLogsFor(null)} />}
+      {logsFor && permission >= 1 && <ContainerLogsModal agentId={agentId} container={logsFor} onClose={() => setLogsFor(null)} />}
     </div>
   )
 }
