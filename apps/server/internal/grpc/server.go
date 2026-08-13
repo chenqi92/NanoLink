@@ -323,10 +323,38 @@ func (s *Server) Start(port int, tlsCert, tlsKey, clientCAPath string) error {
 	return s.grpcServer.Serve(lis)
 }
 
-// Stop stops the gRPC server gracefully
+const grpcGracefulStopTimeout = 10 * time.Second
+
+type grpcServerStopper interface {
+	GracefulStop()
+	Stop()
+}
+
+// Stop drains ordinary RPCs, but bounds the wait because Agent metric streams
+// are intentionally long-lived and would otherwise block process shutdown.
 func (s *Server) Stop() {
 	if s.grpcServer != nil {
-		s.grpcServer.GracefulStop()
+		if !stopGRPCServer(s.grpcServer, grpcGracefulStopTimeout) {
+			s.logger.Warnf("gRPC graceful shutdown exceeded %s; active streams were force-closed", grpcGracefulStopTimeout)
+		}
+	}
+}
+
+func stopGRPCServer(server grpcServerStopper, timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		server.GracefulStop()
+		close(done)
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		server.Stop()
+		return false
 	}
 }
 
