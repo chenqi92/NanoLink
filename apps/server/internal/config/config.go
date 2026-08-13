@@ -321,6 +321,9 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("jwt.expire_hour", "NANOLINK_JWT_EXPIRE_HOUR")
 	_ = viper.BindEnv("superadmin.username", "NANOLINK_ADMIN_USERNAME")
 	_ = viper.BindEnv("superadmin.password", "NANOLINK_ADMIN_PASSWORD")
+	_ = viper.BindEnv("server.http_port", "NANOLINK_SERVER_HTTP_PORT")
+	_ = viper.BindEnv("server.ws_port", "NANOLINK_SERVER_WS_PORT")
+	_ = viper.BindEnv("server.grpc_port", "NANOLINK_SERVER_GRPC_PORT")
 	_ = viper.BindEnv("server.external_url", "NANOLINK_EXTERNAL_URL")
 	_ = viper.BindEnv("server.tls_cert", "NANOLINK_TLS_CERT")
 	_ = viper.BindEnv("server.tls_key", "NANOLINK_TLS_KEY")
@@ -379,6 +382,21 @@ func Load(path string) (*Config, error) {
 	}
 	if dbPath := os.Getenv("NANOLINK_DATABASE_PATH"); dbPath != "" {
 		cfg.Database.Path = dbPath
+	}
+	if raw := os.Getenv("NANOLINK_SERVER_HTTP_PORT"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 65535 {
+			cfg.Server.HTTPPort = n
+		}
+	}
+	if raw := os.Getenv("NANOLINK_SERVER_WS_PORT"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 65535 {
+			cfg.Server.WSPort = n
+		}
+	}
+	if raw := os.Getenv("NANOLINK_SERVER_GRPC_PORT"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 65535 {
+			cfg.Server.GRPCPort = n
+		}
 	}
 	if externalURL := os.Getenv("NANOLINK_EXTERNAL_URL"); externalURL != "" {
 		cfg.Server.ExternalURL = externalURL
