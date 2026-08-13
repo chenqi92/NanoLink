@@ -71,7 +71,10 @@ struct AgentsWorkspaceScreen: View {
             Button { showServerSwitch = true } label: {
                 Image(systemName: "server.rack").font(.system(size: 15)).foregroundColor(t.accent)
                     .frame(width: 32, height: 32).background(t.card).clipShape(Circle())
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(tr("agents.switchServer"))
+            .help(tr("agents.switchServer"))
         }
         .padding(.top, 8)
     }

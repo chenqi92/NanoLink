@@ -77,6 +77,8 @@ struct AgentListPane: View {
                         .frame(width: 36, height: 36)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(tr("actions.title"))
+                .help(tr("actions.title"))
                 .padding(.top, 8)
                 .padding(.trailing, 6)
             }

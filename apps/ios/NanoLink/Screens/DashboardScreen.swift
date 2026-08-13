@@ -117,9 +117,18 @@ struct DashboardScreen: View {
             Spacer()
             NavigationLink { AssistantScreen() } label: {
                 circleButton("sparkles", gradient: true)
-            }.buttonStyle(.plain)
-            NavigationLink { AgentsScreen() } label: { circleButton("magnifyingglass") }.buttonStyle(.plain)
-            Button { showServerSwitch = true } label: { circleButton("server.rack") }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(tr("nav.assistant"))
+            .help(tr("nav.assistant"))
+            NavigationLink { AgentsScreen() } label: { circleButton("magnifyingglass") }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("agents.searchHint"))
+                .help(tr("agents.searchHint"))
+            Button { showServerSwitch = true } label: { circleButton("server.rack") }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("agents.switchServer"))
+                .help(tr("agents.switchServer"))
         }
         .padding(.top, t.isIOS ? 32 : 4)
     }
