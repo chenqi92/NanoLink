@@ -1,13 +1,26 @@
 package handler
 
 import (
+	"errors"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
+	"golang.org/x/crypto/ssh"
 )
+
+type testSecretCodec struct{}
+
+func (testSecretCodec) EncryptSecret(value string) (string, error) { return "sealed:" + value, nil }
+func (testSecretCodec) DecryptSecret(value string) (string, error) {
+	if !strings.HasPrefix(value, "sealed:") {
+		return "", errors.New("invalid test secret")
+	}
+	return strings.TrimPrefix(value, "sealed:"), nil
+}
 
 func validBuildPipelineRequest() buildPipelineRequest {
 	return buildPipelineRequest{
@@ -98,5 +111,50 @@ func TestBuildURLValidation(t *testing.T) {
 	}
 	if err := validateRemoteSourceURL("file:///etc/passwd"); err == nil {
 		t.Fatal("non-HTTP source URL was accepted")
+	}
+}
+
+func TestBuildHTTPSCredentialsAreEncryptedAndPreserved(t *testing.T) {
+	h := &BuildHandler{codec: testSecretCodec{}}
+	req := validBuildPipelineRequest()
+	req.SourceURL = "https://git.example.com/team/repo.git"
+	req.SourceAuth = buildSourceAuthRequest{Type: database.BuildSourceAuthBasic, Username: "builder", Password: "token-secret"}
+	view, sealed, err := h.prepareSourceAuth(req, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sealed == "token-secret" || view.CredentialConfigured != true || view.Username != "builder" {
+		t.Fatalf("credential was not safely prepared: view=%#v sealed=%q", view, sealed)
+	}
+	existing := &database.BuildPipeline{SourceType: database.BuildSourceGit, SourceAuthType: database.BuildSourceAuthBasic, SourceUsername: "builder", SourceCredential: sealed}
+	req.SourceAuth.Password = ""
+	_, preserved, err := h.prepareSourceAuth(req, existing)
+	if err != nil || preserved != sealed {
+		t.Fatalf("empty update did not preserve credential: sealed=%q err=%v", preserved, err)
+	}
+
+	req.SourceURL = "http://git.example.com/team/repo.git"
+	if _, _, err := h.prepareSourceAuth(req, nil); err == nil {
+		t.Fatal("basic credentials were accepted over plaintext HTTP")
+	}
+}
+
+func TestBuildSSHAuthGeneratesDeployKeyPair(t *testing.T) {
+	h := &BuildHandler{codec: testSecretCodec{}}
+	req := validBuildPipelineRequest()
+	req.SourceAuth = buildSourceAuthRequest{Type: database.BuildSourceAuthSSH, SSHKnownHosts: "example.com ssh-ed25519 AAAA"}
+	view, sealed, err := h.prepareSourceAuth(req, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKey, err := h.decryptBuildCredential(sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ssh.ParsePrivateKey([]byte(privateKey)); err != nil {
+		t.Fatalf("generated private key is not OpenSSH-compatible: %v", err)
+	}
+	if !strings.HasPrefix(view.SSHPublicKey, "ssh-ed25519 ") || !view.CredentialConfigured {
+		t.Fatalf("generated public key is invalid: %#v", view)
 	}
 }

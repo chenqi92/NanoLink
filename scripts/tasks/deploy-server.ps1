@@ -120,6 +120,10 @@ try {
     $composeService = Get-RequiredSetting "DEPLOY_COMPOSE_SERVICE"
     $imageRepository = Get-RequiredSetting "DEPLOY_IMAGE_REPOSITORY"
     $healthTimeoutText = Get-RequiredSetting "DEPLOY_HEALTH_TIMEOUT_SECONDS"
+    $hostHttpPortText = [Environment]::GetEnvironmentVariable("DEPLOY_HOST_HTTP_PORT", "Process")
+    if ([string]::IsNullOrWhiteSpace($hostHttpPortText)) { $hostHttpPortText = "8080" }
+    $localHealthUrl = [Environment]::GetEnvironmentVariable("DEPLOY_LOCAL_HEALTH_URL", "Process")
+    if ([string]::IsNullOrWhiteSpace($localHealthUrl)) { $localHealthUrl = "http://127.0.0.1:$hostHttpPortText/api/health" }
     $publicUrl = [Environment]::GetEnvironmentVariable("DEPLOY_PUBLIC_URL", "Process")
     if ($null -eq $publicUrl) { $publicUrl = "" }
     $publicUrl = $publicUrl.TrimEnd("/")
@@ -145,6 +149,7 @@ try {
 
     $sshPort = 0
     $healthTimeout = 0
+    $hostHttpPort = 0
     $expectedAgents = 0
     if (-not [int]::TryParse($sshPortText, [ref]$sshPort) -or $sshPort -lt 1 -or $sshPort -gt 65535) {
         throw "DEPLOY_SSH_PORT must be between 1 and 65535."
@@ -152,6 +157,17 @@ try {
     if (-not [int]::TryParse($healthTimeoutText, [ref]$healthTimeout) -or $healthTimeout -lt 30 -or $healthTimeout -gt 900) {
         throw "DEPLOY_HEALTH_TIMEOUT_SECONDS must be between 30 and 900."
     }
+    if (-not [int]::TryParse($hostHttpPortText, [ref]$hostHttpPort) -or $hostHttpPort -lt 1 -or $hostHttpPort -gt 65535) {
+        throw "DEPLOY_HOST_HTTP_PORT must be between 1 and 65535."
+    }
+    if ($localHealthUrl -notmatch "^http://127\.0\.0\.1:([0-9]+)/api/health$") {
+        throw "DEPLOY_LOCAL_HEALTH_URL must be a loopback URL in the form http://127.0.0.1:PORT/api/health."
+    }
+    $localHealthPort = [int]$Matches[1]
+    if ($localHealthPort -lt 1 -or $localHealthPort -gt 65535 -or $localHealthPort -ne $hostHttpPort) {
+        throw "DEPLOY_LOCAL_HEALTH_URL port must match a valid DEPLOY_HOST_HTTP_PORT."
+    }
+    $localHttpOrigin = $localHealthUrl.Substring(0, $localHealthUrl.Length - "/api/health".Length)
     if (-not [int]::TryParse($expectedAgentText, [ref]$expectedAgents) -or $expectedAgents -lt 0) {
         throw "DEPLOY_EXPECTED_AGENT_COUNT must be zero or greater."
     }
@@ -271,6 +287,8 @@ smoke_name='__SMOKE_NAME__'
 health_timeout=__HEALTH_TIMEOUT__
 expected_agents=__EXPECTED_AGENTS__
 public_url='__PUBLIC_URL__'
+local_health_url='__LOCAL_HEALTH_URL__'
+local_http_origin='__LOCAL_HTTP_ORIGIN__'
 rollback_needed=0
 
 cleanup() {
@@ -347,14 +365,14 @@ done
 test "$healthy" -eq 1
 test -n "$container_id"
 
-health_json=$(curl -fsS http://127.0.0.1:8080/api/health)
+health_json=$(curl -fsS "$local_health_url")
 echo "Health: $health_json"
-local_asset=$(curl -fsSL http://127.0.0.1:8080/dashboard | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -n 1 || true)
+local_asset=$(curl -fsSL "$local_http_origin/dashboard" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -n 1 || true)
 echo "Local asset: $local_asset"
 
 if [ "$expected_agents" -gt 0 ]; then
   for ((i=0; i<health_timeout; i++)); do
-    health_json=$(curl -fsS http://127.0.0.1:8080/api/health)
+    health_json=$(curl -fsS "$local_health_url")
     agent_count=$(printf '%s' "$health_json" | grep -o '"agentCount":[0-9]*' | cut -d: -f2 || true)
     if [ "${agent_count:-0}" -ge "$expected_agents" ]; then
       break
@@ -399,6 +417,8 @@ echo "DEPLOY_OK image=$image_tag backup=$backup_file"
         "__HEALTH_TIMEOUT__" = "$healthTimeout"
         "__EXPECTED_AGENTS__" = "$expectedAgents"
         "__PUBLIC_URL__" = $publicUrl
+        "__LOCAL_HEALTH_URL__" = $localHealthUrl
+        "__LOCAL_HTTP_ORIGIN__" = $localHttpOrigin
         "__REMOTE_SCRIPT__" = $remoteScript
     }
     foreach ($entry in $replacements.GetEnumerator()) {
@@ -410,6 +430,7 @@ echo "DEPLOY_OK image=$image_tag backup=$backup_file"
 
     if ($DryRun) {
         Write-Host "Generated remote rollout script: $remoteScriptName"
+        Write-Host "Health target: $localHealthUrl"
         Write-Host "`nDry run completed; no remote changes were made." -ForegroundColor Green
         exit 0
     }

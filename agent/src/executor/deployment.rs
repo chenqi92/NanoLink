@@ -32,6 +32,8 @@ struct DeploymentRequest {
     artifact_sha256: Option<String>,
     artifact_size: Option<u64>,
     artifact_name: Option<String>,
+    extract: bool,
+    strip_top_level: bool,
 }
 
 impl DeploymentExecutor {
@@ -128,12 +130,18 @@ fn deploy_sync(
         if req.project_type == "java" {
             fs::rename(&artifact_path, stage.join("app.jar"))
                 .map_err(|e| format!("Failed to stage JAR: {e}"))?;
-        } else {
+        } else if req.extract {
             validate_archive_entries(&artifact_path, artifact_name)?;
             extract_archive(&artifact_path, artifact_name, &stage)?;
             reject_extracted_links(&stage)?;
+            if req.strip_top_level {
+                strip_single_top_level(&stage)?;
+            }
             fs::remove_file(&artifact_path)
                 .map_err(|e| format!("Failed to remove staged archive: {e}"))?;
+        } else {
+            fs::rename(&artifact_path, stage.join(artifact_name))
+                .map_err(|e| format!("Failed to stage static artifact: {e}"))?;
         }
         fs::rename(&stage, &release_path)
             .map_err(|e| format!("Failed to finalize release: {e}"))?;
@@ -270,6 +278,31 @@ fn parse_request(
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(5)
         .clamp(2, 50);
+    let extract = params
+        .get("extract_artifact")
+        .or_else(|| params.get("extract"))
+        .map(|value| {
+            value
+                .parse::<bool>()
+                .map_err(|_| "Invalid extract flag".to_string())
+        })
+        .transpose()?
+        .unwrap_or(project_type == "static");
+    let strip_top_level = params
+        .get("strip_top_level")
+        .map(|value| {
+            value
+                .parse::<bool>()
+                .map_err(|_| "Invalid strip_top_level flag".to_string())
+        })
+        .transpose()?
+        .unwrap_or(false);
+    if project_type == "java" && (extract || strip_top_level) {
+        return Err("Java deployments cannot extract artifacts".to_string());
+    }
+    if strip_top_level && !extract {
+        return Err("strip_top_level requires archive extraction".to_string());
+    }
 
     let (artifact_url, artifact_sha256, artifact_size, artifact_name) = if require_artifact {
         let url = required(params, "artifact_url")?;
@@ -302,6 +335,8 @@ fn parse_request(
         artifact_sha256,
         artifact_size,
         artifact_name,
+        extract,
+        strip_top_level,
     })
 }
 
@@ -354,10 +389,13 @@ fn validate_artifact_name(project_type: &str, name: &str) -> Result<(), String> 
     }
     if project_type == "static"
         && !lower.ends_with(".zip")
+        && !lower.ends_with(".tar")
         && !lower.ends_with(".tar.gz")
         && !lower.ends_with(".tgz")
     {
-        return Err("Static deployments require a .zip, .tar.gz, or .tgz artifact".to_string());
+        return Err(
+            "Static deployments require a .zip, .tar, .tar.gz, or .tgz artifact".to_string(),
+        );
     }
     Ok(())
 }
@@ -450,6 +488,8 @@ fn validate_archive_entries(artifact: &Path, name: &str) -> Result<(), String> {
     {
         let output = if name.to_lowercase().ends_with(".zip") {
             Command::new("unzip").args(["-Z1"]).arg(artifact).output()
+        } else if name.to_lowercase().ends_with(".tar") {
+            Command::new("tar").args(["-tf"]).arg(artifact).output()
         } else {
             Command::new("tar").args(["-tzf"]).arg(artifact).output()
         }
@@ -492,6 +532,15 @@ fn extract_archive(artifact: &Path, name: &str, stage: &Path) -> Result<(), Stri
                 .arg("-d")
                 .arg(stage)
                 .status()
+        } else if name.to_lowercase().ends_with(".tar") {
+            Command::new("tar")
+                .arg("-xf")
+                .arg("--no-same-owner")
+                .arg("--no-same-permissions")
+                .arg(artifact)
+                .arg("-C")
+                .arg(stage)
+                .status()
         } else {
             Command::new("tar")
                 .arg("-xzf")
@@ -508,6 +557,38 @@ fn extract_archive(artifact: &Path, name: &str, stage: &Path) -> Result<(), Stri
         }
         Ok(())
     }
+}
+
+fn strip_single_top_level(stage: &Path) -> Result<(), String> {
+    let mut entries = fs::read_dir(stage)
+        .map_err(|e| format!("Failed to inspect extracted top level: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to inspect extracted top level: {e}"))?;
+    if entries.len() != 1 {
+        return Err("strip_top_level requires exactly one top-level directory".to_string());
+    }
+    let root = entries.pop().expect("one entry").path();
+    if !root.is_dir()
+        || fs::symlink_metadata(&root)
+            .map(|meta| meta.file_type().is_symlink())
+            .unwrap_or(true)
+    {
+        return Err("strip_top_level requires exactly one top-level directory".to_string());
+    }
+    let parent = stage
+        .parent()
+        .ok_or_else(|| "Invalid staging directory".to_string())?;
+    let flattened = parent.join(format!(".flatten-{}", Uuid::new_v4()));
+    fs::rename(&root, &flattened).map_err(|e| format!("Failed to flatten archive root: {e}"))?;
+    fs::remove_dir(stage).map_err(|e| format!("Failed to replace staging root: {e}"))?;
+    if let Err(error) = fs::rename(&flattened, stage) {
+        let _ = fs::create_dir(stage);
+        let _ = fs::rename(&flattened, stage.join("content"));
+        return Err(format!(
+            "Failed to activate flattened archive root: {error}"
+        ));
+    }
+    Ok(())
 }
 
 fn reject_extracted_links(root: &Path) -> Result<(), String> {
@@ -739,7 +820,39 @@ mod tests {
         assert!(validate_artifact_name("java", "service.jar").is_ok());
         assert!(validate_artifact_name("java", "service.zip").is_err());
         assert!(validate_artifact_name("static", "site.tar.gz").is_ok());
+        assert!(validate_artifact_name("static", "site.tar").is_ok());
         assert!(validate_artifact_name("static", "../site.zip").is_err());
+    }
+
+    #[test]
+    fn extraction_protocol_prefers_canonical_key_and_accepts_legacy_alias() {
+        #[cfg(unix)]
+        let (root, target) = ("/opt/nanolink/apps", "/opt/nanolink/apps/site");
+        #[cfg(windows)]
+        let (root, target) = (r"C:\opt\nanolink\apps", r"C:\opt\nanolink\apps\site");
+        let cfg = DeploymentsConfig {
+            enabled: true,
+            allowed_roots: vec![root.to_string()],
+            max_artifact_size: 1024,
+            timeout_seconds: 30,
+        };
+        let mut params = HashMap::from([
+            ("project_type".into(), "static".into()),
+            ("version".into(), "1.0.0".into()),
+            ("deploy_path".into(), target.into()),
+            ("artifact_url".into(), "https://example.com/site.tar".into()),
+            ("artifact_sha256".into(), "a".repeat(64)),
+            ("artifact_size".into(), "12".into()),
+            ("artifact_name".into(), "site.tar".into()),
+            ("extract_artifact".into(), "false".into()),
+            ("extract".into(), "true".into()),
+            ("strip_top_level".into(), "false".into()),
+        ]);
+        let request = parse_request(&cfg, &params, true).expect("canonical request");
+        assert!(!request.extract);
+        params.remove("extract_artifact");
+        let request = parse_request(&cfg, &params, true).expect("legacy request");
+        assert!(request.extract);
     }
 
     #[test]

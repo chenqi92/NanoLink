@@ -49,6 +49,11 @@ Deployment options:
 - Windows: `-AllowDirty`, `-SkipChecks`, `-DryRun`, `-ConfigPath path`
 - Linux/macOS: `--allow-dirty`, `--skip-checks`, `--dry-run`, `--config path`
 
+`DEPLOY_HOST_HTTP_PORT` controls the host port used by post-rollout checks and
+defaults to `8080`. `DEPLOY_LOCAL_HEALTH_URL` may override the derived endpoint,
+but is restricted to `http://127.0.0.1:PORT/api/health` and must use the same
+validated port.
+
 For intentional non-interactive production automation, Windows supports
 `-Yes` and Linux/macOS supports `--yes`. Avoid these flags for normal manual
 deployments so the production confirmation remains active.

@@ -148,6 +148,8 @@ compose_dir=$(required_setting DEPLOY_COMPOSE_DIR)
 compose_service=$(required_setting DEPLOY_COMPOSE_SERVICE)
 image_repository=$(required_setting DEPLOY_IMAGE_REPOSITORY)
 health_timeout=$(required_setting DEPLOY_HEALTH_TIMEOUT_SECONDS)
+host_http_port=${DEPLOY_HOST_HTTP_PORT:-8080}
+local_health_url=${DEPLOY_LOCAL_HEALTH_URL:-http://127.0.0.1:${host_http_port}/api/health}
 public_url=${DEPLOY_PUBLIC_URL-}
 public_url=${public_url%/}
 identity_file=${DEPLOY_SSH_IDENTITY_FILE-}
@@ -163,6 +165,12 @@ allow_dirty_config=${DEPLOY_ALLOW_DIRTY:-false}
 [[ -z $public_url || $public_url =~ ^https://[A-Za-z0-9._:-]+$ ]] || die 'DEPLOY_PUBLIC_URL must be an HTTPS origin without a path.'
 [[ $ssh_port =~ ^[0-9]+$ ]] && (( ssh_port >= 1 && ssh_port <= 65535 )) || die 'DEPLOY_SSH_PORT must be between 1 and 65535.'
 [[ $health_timeout =~ ^[0-9]+$ ]] && (( health_timeout >= 30 && health_timeout <= 900 )) || die 'DEPLOY_HEALTH_TIMEOUT_SECONDS must be between 30 and 900.'
+[[ $host_http_port =~ ^[0-9]+$ ]] && (( host_http_port >= 1 && host_http_port <= 65535 )) || die 'DEPLOY_HOST_HTTP_PORT must be between 1 and 65535.'
+[[ $local_health_url =~ ^http://127\.0\.0\.1:([0-9]+)/api/health$ ]] || die 'DEPLOY_LOCAL_HEALTH_URL must be a loopback URL in the form http://127.0.0.1:PORT/api/health.'
+local_health_port=${BASH_REMATCH[1]}
+(( local_health_port >= 1 && local_health_port <= 65535 )) || die 'DEPLOY_LOCAL_HEALTH_URL contains an invalid port.'
+(( local_health_port == host_http_port )) || die 'DEPLOY_LOCAL_HEALTH_URL port must match DEPLOY_HOST_HTTP_PORT.'
+local_http_origin=${local_health_url%/api/health}
 [[ $expected_agents =~ ^[0-9]+$ ]] || die 'DEPLOY_EXPECTED_AGENT_COUNT must be zero or greater.'
 case "$allow_dirty_config" in
   true|TRUE|True) allow_dirty_config=1 ;;
@@ -273,6 +281,8 @@ smoke_name='__SMOKE_NAME__'
 health_timeout=__HEALTH_TIMEOUT__
 expected_agents=__EXPECTED_AGENTS__
 public_url='__PUBLIC_URL__'
+local_health_url='__LOCAL_HEALTH_URL__'
+local_http_origin='__LOCAL_HTTP_ORIGIN__'
 rollback_needed=0
 
 cleanup() {
@@ -347,15 +357,15 @@ for ((i=0; i<health_timeout; i++)); do
 done
 [[ $healthy -eq 1 && -n $container_id ]]
 
-health_json=$(curl -fsS http://127.0.0.1:8080/api/health)
+health_json=$(curl -fsS "$local_health_url")
 echo "Health: $health_json"
-local_asset=$(curl -fsSL http://127.0.0.1:8080/dashboard | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -n 1 || true)
+local_asset=$(curl -fsSL "$local_http_origin/dashboard" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -n 1 || true)
 echo "Local asset: $local_asset"
 
 if (( expected_agents > 0 )); then
   agent_count=0
   for ((i=0; i<health_timeout; i++)); do
-    health_json=$(curl -fsS http://127.0.0.1:8080/api/health)
+    health_json=$(curl -fsS "$local_health_url")
     agent_count=$(printf '%s' "$health_json" | grep -o '"agentCount":[0-9]*' | cut -d: -f2 || true)
     if (( ${agent_count:-0} >= expected_agents )); then break; fi
     sleep 1
@@ -397,11 +407,13 @@ replace_placeholder __SMOKE_NAME__ "$smoke_name"
 replace_placeholder __HEALTH_TIMEOUT__ "$health_timeout"
 replace_placeholder __EXPECTED_AGENTS__ "$expected_agents"
 replace_placeholder __PUBLIC_URL__ "$public_url"
+replace_placeholder __LOCAL_HEALTH_URL__ "$local_health_url"
+replace_placeholder __LOCAL_HTTP_ORIGIN__ "$local_http_origin"
 replace_placeholder __REMOTE_SCRIPT__ "$remote_script"
 chmod 700 "$remote_script_path"
 
 if (( dry_run )); then
-  printf 'Generated remote rollout script: %s\n\nDry run completed; no remote changes were made.\n' "$remote_script_name"
+  printf 'Generated remote rollout script: %s\nHealth target: %s\n\nDry run completed; no remote changes were made.\n' "$remote_script_name" "$local_health_url"
   exit 0
 fi
 

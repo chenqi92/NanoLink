@@ -3,9 +3,12 @@ package database
 import "time"
 
 const (
-	BuildSourceGit    = "git"
-	BuildSourceURL    = "url"
-	BuildSourceUpload = "upload"
+	BuildSourceGit       = "git"
+	BuildSourceURL       = "url"
+	BuildSourceUpload    = "upload"
+	BuildSourceAuthNone  = "none"
+	BuildSourceAuthBasic = "basic"
+	BuildSourceAuthSSH   = "ssh"
 
 	BuildRunnerDocker = "docker"
 	BuildRunnerHost   = "host"
@@ -25,31 +28,36 @@ const (
 // packaging workflow. Complex fields are stored as validated JSON snapshots so
 // an in-flight or historical run is not changed by later pipeline edits.
 type BuildPipeline struct {
-	ID               uint       `gorm:"primarykey" json:"id"`
-	Name             string     `gorm:"uniqueIndex;size:100;not null" json:"name"`
-	Description      string     `gorm:"size:500" json:"description"`
-	AgentID          string     `gorm:"size:64;index;not null" json:"agentId"`
-	SourceType       string     `gorm:"size:16;not null" json:"sourceType"`
-	SourceURL        string     `gorm:"size:2000" json:"sourceUrl"`
-	SourceRef        string     `gorm:"size:255" json:"sourceRef"`
-	RunnerType       string     `gorm:"size:16;not null" json:"runnerType"`
-	ContainerImage   string     `gorm:"size:500" json:"containerImage"`
-	StagesJSON       string     `gorm:"type:text;not null" json:"-"`
-	VariablesJSON    string     `gorm:"type:text" json:"-"`
-	ArtifactPattern  string     `gorm:"size:500;not null" json:"artifactPattern"`
-	ArtifactName     string     `gorm:"size:255" json:"artifactName"`
-	KeepArtifacts    int        `gorm:"default:20;not null" json:"keepArtifacts"`
-	PublishProjectID *uint      `gorm:"index" json:"publishProjectId,omitempty"`
-	TimeoutSeconds   int        `gorm:"default:1800;not null" json:"timeoutSeconds"`
-	Schedule         string     `gorm:"size:100" json:"schedule"`
-	Enabled          bool       `gorm:"not null" json:"enabled"`
-	WebhookTokenHash string     `gorm:"size:64" json:"-"`
-	WebhookTokenHint string     `gorm:"size:12" json:"webhookTokenHint,omitempty"`
-	LastRunAt        *time.Time `json:"lastRunAt,omitempty"`
-	LastScheduledAt  *time.Time `json:"lastScheduledAt,omitempty"`
-	CreatedBy        uint       `gorm:"index;not null" json:"createdBy"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
+	ID                  uint       `gorm:"primarykey" json:"id"`
+	Name                string     `gorm:"uniqueIndex;size:100;not null" json:"name"`
+	Description         string     `gorm:"size:500" json:"description"`
+	AgentID             string     `gorm:"size:64;index;not null" json:"agentId"`
+	SourceType          string     `gorm:"size:16;not null" json:"sourceType"`
+	SourceURL           string     `gorm:"size:2000" json:"sourceUrl"`
+	SourceRef           string     `gorm:"size:255" json:"sourceRef"`
+	SourceAuthType      string     `gorm:"size:16;not null;default:none" json:"sourceAuthType"`
+	SourceUsername      string     `gorm:"size:255" json:"sourceUsername,omitempty"`
+	SourceCredential    string     `gorm:"type:text" json:"-"`
+	SourceSSHPublicKey  string     `gorm:"type:text" json:"sourceSshPublicKey,omitempty"`
+	SourceSSHKnownHosts string     `gorm:"type:text" json:"sourceSshKnownHosts,omitempty"`
+	RunnerType          string     `gorm:"size:16;not null" json:"runnerType"`
+	ContainerImage      string     `gorm:"size:500" json:"containerImage"`
+	StagesJSON          string     `gorm:"type:text;not null" json:"-"`
+	VariablesJSON       string     `gorm:"type:text" json:"-"`
+	ArtifactPattern     string     `gorm:"size:500;not null" json:"artifactPattern"`
+	ArtifactName        string     `gorm:"size:255" json:"artifactName"`
+	KeepArtifacts       int        `gorm:"default:20;not null" json:"keepArtifacts"`
+	PublishProjectID    *uint      `gorm:"index" json:"publishProjectId,omitempty"`
+	TimeoutSeconds      int        `gorm:"default:1800;not null" json:"timeoutSeconds"`
+	Schedule            string     `gorm:"size:100" json:"schedule"`
+	Enabled             bool       `gorm:"not null" json:"enabled"`
+	WebhookTokenHash    string     `gorm:"size:64" json:"-"`
+	WebhookTokenHint    string     `gorm:"size:12" json:"webhookTokenHint,omitempty"`
+	LastRunAt           *time.Time `json:"lastRunAt,omitempty"`
+	LastScheduledAt     *time.Time `json:"lastScheduledAt,omitempty"`
+	CreatedBy           uint       `gorm:"index;not null" json:"createdBy"`
+	CreatedAt           time.Time  `json:"createdAt"`
+	UpdatedAt           time.Time  `json:"updatedAt"`
 }
 
 // BuildRun is an immutable execution snapshot plus its live/result state.
@@ -65,6 +73,10 @@ type BuildRun struct {
 	SourceType           string     `gorm:"size:16;not null" json:"sourceType"`
 	SourceURL            string     `gorm:"size:2000" json:"sourceUrl"`
 	SourceRef            string     `gorm:"size:255" json:"sourceRef"`
+	SourceAuthType       string     `gorm:"size:16;not null;default:none" json:"sourceAuthType"`
+	SourceUsername       string     `gorm:"size:255" json:"sourceUsername,omitempty"`
+	SourceCredential     string     `gorm:"type:text" json:"-"`
+	SourceSSHKnownHosts  string     `gorm:"type:text" json:"-"`
 	SourceName           string     `gorm:"size:255" json:"sourceName"`
 	SourcePath           string     `gorm:"size:1000" json:"-"`
 	SourceSize           int64      `json:"sourceSize"`

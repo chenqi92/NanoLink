@@ -749,6 +749,8 @@ export interface DeploymentRelease {
   keepArtifacts: number
   artifactSize: number
   sha256: string
+  extract?: boolean
+  stripTopLevel: boolean
   notes: string
   createdAt: string
 }
@@ -791,11 +793,26 @@ export const deploymentsApi = {
   project: (id: number) => api.get<DeploymentProjectDetail>(`/deployment-projects/${id}`),
   createProject: (body: DeploymentProjectInput) => api.post<DeploymentProject>("/deployment-projects", body),
   updateProject: (id: number, body: DeploymentProjectInput) => api.put<DeploymentProject>(`/deployment-projects/${id}`, body),
-  uploadRelease: (projectId: number, version: string, notes: string, artifact: File) => {
+  uploadRelease: (projectId: number, version: string, notes: string, artifact: File, extract?: boolean, stripTopLevel = false) => {
     const form = new FormData()
     form.set("version", version)
     form.set("notes", notes)
     form.set("artifact", artifact)
+    form.set("uploadKind", "artifact")
+    if (extract !== undefined) form.set("extract", String(extract))
+    form.set("stripTopLevel", String(stripTopLevel))
+    return api.upload<DeploymentRelease>(`/deployment-projects/${projectId}/releases`, form)
+  },
+  uploadDirectory: (projectId: number, version: string, notes: string, files: File[]) => {
+    const form = new FormData()
+    form.set("version", version)
+    form.set("notes", notes)
+    form.set("uploadKind", "directory")
+    form.set("extract", "true")
+    for (const file of files) {
+      form.append("files", file, file.name)
+      form.append("paths", file.webkitRelativePath)
+    }
     return api.upload<DeploymentRelease>(`/deployment-projects/${projectId}/releases`, form)
   },
   deploy: (projectId: number, releaseId: string) => api.post<DeploymentTask>(`/deployment-projects/${projectId}/releases/${releaseId}/deploy`),
@@ -820,6 +837,15 @@ export interface BuildVariable {
   required: boolean
 }
 
+export interface BuildSourceAuth {
+  type: "none" | "basic" | "ssh"
+  username?: string
+  password?: string
+  credentialConfigured?: boolean
+  sshPublicKey?: string
+  sshKnownHosts?: string
+}
+
 export interface BuildPipeline {
   id: number
   name: string
@@ -828,6 +854,7 @@ export interface BuildPipeline {
   sourceType: "git" | "url" | "upload"
   sourceUrl: string
   sourceRef: string
+  sourceAuth: BuildSourceAuth
   runnerType: "docker" | "host"
   containerImage: string
   stages: BuildStage[]
@@ -896,6 +923,7 @@ export const buildsApi = {
   createPipeline: (body: BuildPipelineInput) => api.post<BuildPipeline>("/build-pipelines", body),
   updatePipeline: (id: number, body: BuildPipelineInput) => api.put<BuildPipeline>(`/build-pipelines/${id}`, body),
   rotateWebhookToken: (id: number) => api.post<{ webhookToken: string; webhookTokenHint: string }>(`/build-pipelines/${id}/webhook-token`),
+  rotateSshKey: (id: number) => api.post<BuildSourceAuth>(`/build-pipelines/${id}/ssh-key`),
   run: (id: number, version?: string) => api.post<BuildRun>(`/build-pipelines/${id}/run`, { version }),
   uploadAndRun: (id: number, version: string, source: File) => {
     const form = new FormData()

@@ -34,16 +34,18 @@ type DeploymentProject struct {
 
 // DeploymentRelease is immutable metadata for a server-side artifact.
 type DeploymentRelease struct {
-	ID           string    `gorm:"primaryKey;size:36" json:"id"`
-	ProjectID    uint      `gorm:"uniqueIndex:idx_project_version;index;not null" json:"projectId"`
-	Version      string    `gorm:"uniqueIndex:idx_project_version;size:64;not null" json:"version"`
-	ArtifactName string    `gorm:"size:255;not null" json:"artifactName"`
-	ArtifactPath string    `gorm:"size:1000;not null" json:"-"`
-	ArtifactSize int64     `gorm:"not null" json:"artifactSize"`
-	SHA256       string    `gorm:"size:64;not null" json:"sha256"`
-	Notes        string    `gorm:"type:text" json:"notes"`
-	CreatedBy    uint      `gorm:"index;not null" json:"createdBy"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID            string    `gorm:"primaryKey;size:36" json:"id"`
+	ProjectID     uint      `gorm:"uniqueIndex:idx_project_version;index;not null" json:"projectId"`
+	Version       string    `gorm:"uniqueIndex:idx_project_version;size:64;not null" json:"version"`
+	ArtifactName  string    `gorm:"size:255;not null" json:"artifactName"`
+	ArtifactPath  string    `gorm:"size:1000;not null" json:"-"`
+	ArtifactSize  int64     `gorm:"not null" json:"artifactSize"`
+	SHA256        string    `gorm:"size:64;not null" json:"sha256"`
+	Extract       *bool     `json:"extract,omitempty"`
+	StripTopLevel bool      `gorm:"not null;default:false" json:"stripTopLevel"`
+	Notes         string    `gorm:"type:text" json:"notes"`
+	CreatedBy     uint      `gorm:"index;not null" json:"createdBy"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 // DeploymentTask persists every deploy/rollback attempt independently of the

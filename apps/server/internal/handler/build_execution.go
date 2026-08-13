@@ -104,6 +104,14 @@ func (h *BuildHandler) dispatchPipeline(pipeline database.BuildPipeline, input b
 	if err != nil {
 		return nil, err
 	}
+	sourceAuthType := pipeline.SourceAuthType
+	if sourceAuthType == "" {
+		sourceAuthType = database.BuildSourceAuthNone
+	}
+	sourceCredential, err := h.decryptBuildCredential(pipeline.SourceCredential)
+	if err != nil {
+		return nil, err
+	}
 	var runNumber int
 	if err := h.db.Model(&database.BuildRun{}).Where("pipeline_id = ?", pipeline.ID).Select("COALESCE(MAX(run_number), 0)").Scan(&runNumber).Error; err != nil {
 		return nil, errors.New("failed to allocate build number")
@@ -115,6 +123,8 @@ func (h *BuildHandler) dispatchPipeline(pipeline database.BuildPipeline, input b
 		ID: uuid.NewString(), PipelineID: pipeline.ID, RunNumber: runNumber, AgentID: pipeline.AgentID, CommandID: commandID,
 		Status: database.BuildStatusQueued, Trigger: input.Trigger, Version: version,
 		SourceType: pipeline.SourceType, SourceURL: pipeline.SourceURL, SourceRef: pipeline.SourceRef,
+		SourceAuthType: sourceAuthType, SourceUsername: pipeline.SourceUsername,
+		SourceCredential: pipeline.SourceCredential, SourceSSHKnownHosts: pipeline.SourceSSHKnownHosts,
 		SourceName: input.SourceName, SourcePath: input.SourcePath, SourceSize: input.SourceSize, SourceSHA256: input.SourceSHA256,
 		RunnerType: pipeline.RunnerType, ContainerImage: pipeline.ContainerImage, StagesJSON: pipeline.StagesJSON, VariablesJSON: pipeline.VariablesJSON,
 		ArtifactPattern: pipeline.ArtifactPattern, ArtifactName: pipeline.ArtifactName, PublishProjectID: pipeline.PublishProjectID,
@@ -148,6 +158,15 @@ func (h *BuildHandler) dispatchPipeline(pipeline database.BuildPipeline, input b
 		"stages_json": run.StagesJSON, "variables_json": string(variablesJSON),
 		"artifact_pattern": run.ArtifactPattern, "artifact_name": run.ArtifactName,
 		"timeout_seconds": strconv.Itoa(run.TimeoutSeconds),
+		"git_auth_type":   run.SourceAuthType, "git_username": run.SourceUsername,
+		"git_ssh_known_hosts": run.SourceSSHKnownHosts,
+	}
+	if sourceCredential != "" {
+		if run.SourceAuthType == database.BuildSourceAuthBasic {
+			params["git_password"] = sourceCredential
+		} else if run.SourceAuthType == database.BuildSourceAuthSSH {
+			params["git_ssh_private_key"] = sourceCredential
+		}
 	}
 	if sourcePlain != "" {
 		params["source_download_url"], err = h.callbackURL(input.BaseURL, "/api/build-source-downloads/"+run.ID, sourcePlain)
@@ -302,7 +321,7 @@ func (h *BuildHandler) UpdateLogs(c *gin.Context) {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "build log exceeds the configured limit"})
 		return
 	}
-	masked := h.maskSecrets(run.VariablesJSON, string(body))
+	masked := h.maskRunSecrets(&run, string(body))
 	if err := h.db.Model(&run).Update("output", truncateUTF8(masked, h.maxLog)).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist build log"})
 		return
@@ -370,7 +389,7 @@ func (h *BuildHandler) HandleCommandResult(agentID, commandID, output string, su
 		return
 	}
 	finished := time.Now()
-	output = h.maskSecrets(run.VariablesJSON, output)
+	output = h.maskRunSecrets(&run, output)
 	updates := map[string]any{
 		"output": truncateUTF8(output, h.maxLog), "finished_at": &finished,
 		"source_token_hash": "", "source_token_expires": nil, "artifact_token_hash": "", "artifact_token_expires": nil,
@@ -448,6 +467,18 @@ func (h *BuildHandler) maskSecrets(rawVariables, output string) string {
 		if err == nil && len(plain) >= 4 {
 			output = strings.ReplaceAll(output, plain, "***")
 		}
+	}
+	return output
+}
+
+func (h *BuildHandler) maskRunSecrets(run *database.BuildRun, output string) string {
+	output = h.maskSecrets(run.VariablesJSON, output)
+	if output == "" || run.SourceCredential == "" {
+		return output
+	}
+	plain, err := h.decryptBuildCredential(run.SourceCredential)
+	if err == nil && len(plain) >= 4 {
+		output = strings.ReplaceAll(output, plain, "***")
 	}
 	return output
 }

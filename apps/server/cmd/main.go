@@ -501,6 +501,7 @@ func main() {
 		buildAPI.PUT("/build-pipelines/:id", buildHandler.UpdatePipeline)
 		buildAPI.POST("/build-pipelines/:id/run", buildHandler.RunPipeline)
 		buildAPI.POST("/build-pipelines/:id/webhook-token", buildHandler.RotateWebhookToken)
+		buildAPI.POST("/build-pipelines/:id/ssh-key", buildHandler.RotateSSHKey)
 		buildAPI.GET("/build-runs", buildHandler.ListRuns)
 		buildAPI.GET("/build-runs/:runId", buildHandler.GetRun)
 		buildAPI.POST("/build-runs/:runId/cancel", buildHandler.CancelRun)

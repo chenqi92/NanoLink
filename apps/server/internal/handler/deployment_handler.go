@@ -183,70 +183,39 @@ func (h *DeploymentHandler) UploadRelease(c *gin.Context) {
 	}
 
 	// This route deliberately bypasses the general 1 MB JSON limit, but retains
-	// a deployment-specific hard cap. The extra 1 MB covers multipart headers.
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.maxArtifact+(1<<20))
+	// a deployment-specific hard cap. Directory uploads use one multipart part
+	// per file, so reserve bounded header overhead without relaxing file limits.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.maxArtifact+(16<<20))
 	version := strings.TrimSpace(c.PostForm("version"))
 	if !releaseVersionPattern.MatchString(version) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "version must contain only letters, numbers, dot, dash, or underscore"})
 		return
 	}
-	fileHeader, err := c.FormFile("artifact")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "artifact file is required"})
-		return
-	}
-	if fileHeader.Size <= 0 || fileHeader.Size > h.maxArtifact {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("artifact must be between 1 byte and %d bytes", h.maxArtifact)})
-		return
-	}
-	artifactName := filepath.Base(fileHeader.Filename)
-	suffix, err := deploymentArtifactSuffix(project.Type, artifactName)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
 	id := uuid.NewString()
 	projectDir := filepath.Join(h.storageRoot, strconv.FormatUint(uint64(projectID), 10))
 	if err := os.MkdirAll(projectDir, 0o750); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare artifact storage"})
 		return
 	}
-	tmpPath := filepath.Join(projectDir, id+".upload")
-	finalPath := filepath.Join(projectDir, id+suffix)
-	in, err := fileHeader.Open()
+	stored, err := h.storeDeploymentUpload(c, project, projectDir, id)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read artifact"})
-		return
-	}
-	defer in.Close()
-	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create artifact"})
-		return
-	}
-	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(out, hash), io.LimitReader(in, h.maxArtifact+1))
-	closeErr := out.Close()
-	if copyErr != nil || closeErr != nil || written <= 0 || written > h.maxArtifact {
-		_ = os.Remove(tmpPath)
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "artifact exceeds the configured limit or could not be stored"})
-		return
-	}
-	if err := os.Rename(tmpPath, finalPath); err != nil {
-		_ = os.Remove(tmpPath)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to finalize artifact"})
+		status := http.StatusBadRequest
+		if errors.Is(err, errDeploymentUploadTooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 
 	user := GetCurrentUser(c)
 	release := database.DeploymentRelease{
-		ID: id, ProjectID: projectID, Version: version, ArtifactName: artifactName,
-		ArtifactPath: finalPath, ArtifactSize: written, SHA256: hex.EncodeToString(hash.Sum(nil)),
+		ID: id, ProjectID: projectID, Version: version, ArtifactName: stored.name,
+		ArtifactPath: stored.path, ArtifactSize: stored.size, SHA256: stored.sha256,
+		Extract: &stored.extract, StripTopLevel: stored.stripTopLevel,
 		Notes: strings.TrimSpace(c.PostForm("notes")), CreatedBy: user.ID,
 	}
 	if err := h.db.Create(&release).Error; err != nil {
-		_ = os.Remove(finalPath)
+		_ = os.Remove(stored.path)
 		c.JSON(http.StatusConflict, gin.H{"error": "this version already exists"})
 		return
 	}
@@ -322,11 +291,7 @@ func (h *DeploymentHandler) dispatch(c *gin.Context, project database.Deployment
 		CommandID: commandID, Action: action, Status: database.DeploymentStatusQueued,
 		CreatedBy: user.ID, CreatedByName: user.Username, StartedAt: &now,
 	}
-	params := map[string]string{
-		"project_type": project.Type, "version": release.Version, "deploy_path": project.DeployPath,
-		"service_name": project.ServiceName, "health_url": project.HealthURL,
-		"keep_releases": strconv.Itoa(project.KeepReleases),
-	}
+	params := deploymentCommandParams(project, release, action == database.DeploymentActionDeploy)
 	commandType := pb.CommandType_DEPLOY_ROLLBACK
 	if action == database.DeploymentActionDeploy {
 		plainToken, tokenHash, err := newArtifactToken()
@@ -338,9 +303,6 @@ func (h *DeploymentHandler) dispatch(c *gin.Context, project database.Deployment
 		task.ArtifactTokenHash = tokenHash
 		task.ArtifactTokenExpires = &expires
 		params["artifact_url"] = h.artifactURL(c, task.ID, plainToken)
-		params["artifact_sha256"] = release.SHA256
-		params["artifact_size"] = strconv.FormatInt(release.ArtifactSize, 10)
-		params["artifact_name"] = release.ArtifactName
 		commandType = pb.CommandType_DEPLOY_EXECUTE
 	}
 	if err := h.db.Create(&task).Error; err != nil {
@@ -365,6 +327,27 @@ func (h *DeploymentHandler) dispatch(c *gin.Context, project database.Deployment
 	h.db.Model(&task).Update("status", database.DeploymentStatusRunning)
 	task.Status = database.DeploymentStatusRunning
 	c.JSON(http.StatusAccepted, task)
+}
+
+func deploymentCommandParams(project database.DeploymentProject, release database.DeploymentRelease, includeArtifact bool) map[string]string {
+	params := map[string]string{
+		"project_type": project.Type, "version": release.Version, "deploy_path": project.DeployPath,
+		"service_name": project.ServiceName, "health_url": project.HealthURL,
+		"keep_releases": strconv.Itoa(project.KeepReleases),
+	}
+	if !includeArtifact {
+		return params
+	}
+	extract := project.Type == database.DeploymentProjectStatic
+	if release.Extract != nil {
+		extract = *release.Extract
+	}
+	params["artifact_sha256"] = release.SHA256
+	params["artifact_size"] = strconv.FormatInt(release.ArtifactSize, 10)
+	params["artifact_name"] = release.ArtifactName
+	params["extract_artifact"] = strconv.FormatBool(extract)
+	params["strip_top_level"] = strconv.FormatBool(release.StripTopLevel)
+	return params
 }
 
 func (h *DeploymentHandler) GetTask(c *gin.Context) {
@@ -514,10 +497,12 @@ func (h *DeploymentHandler) ImportBuildArtifact(projectID uint, version, notes, 
 			return nil, errors.New("copy build artifact into deployment storage failed")
 		}
 	}
+	extract := project.Type == database.DeploymentProjectStatic
 	release := database.DeploymentRelease{
 		ID: id, ProjectID: projectID, Version: version, ArtifactName: artifactName,
 		ArtifactPath: finalPath, ArtifactSize: size, SHA256: digest,
-		Notes: strings.TrimSpace(notes), CreatedBy: userID,
+		Extract: &extract,
+		Notes:   strings.TrimSpace(notes), CreatedBy: userID,
 	}
 	if err := h.db.Create(&release).Error; err != nil {
 		_ = os.Remove(finalPath)
@@ -573,12 +558,12 @@ func deploymentArtifactSuffix(projectType, name string) (string, error) {
 		}
 		return ".jar", nil
 	}
-	for _, suffix := range []string{".tar.gz", ".tgz", ".zip"} {
+	for _, suffix := range []string{".tar.gz", ".tgz", ".tar", ".zip"} {
 		if strings.HasSuffix(lower, suffix) {
 			return suffix, nil
 		}
 	}
-	return "", errors.New("static projects require a .zip, .tar.gz, or .tgz artifact")
+	return "", errors.New("static projects require a .zip, .tar, .tar.gz, or .tgz artifact")
 }
 
 func newArtifactToken() (plain, hash string, err error) {

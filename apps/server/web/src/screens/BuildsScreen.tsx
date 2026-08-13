@@ -377,6 +377,19 @@ function PipelineEditor({ pipeline, agents, deployments, onClose, onSaved }: { p
     set("stages", [...form.stages, { id, name: t("build.newStage"), command: "", needs: form.stages.length ? [form.stages.at(-1)!.id] : [], allowFailure: false, timeoutSeconds: 0 }])
   }
   function addVariable() { set("variables", [...form.variables, { name: "", value: "", secret: false, required: false }]) }
+  function setSourceAuth(patch: Partial<BuildPipelineInput["sourceAuth"]>) { set("sourceAuth", { ...form.sourceAuth, ...patch }) }
+  async function rotateSshKey() {
+    if (!pipeline) return
+    setBusy(true); setError(null)
+    try {
+      const sourceAuth = await buildsApi.rotateSshKey(pipeline.id)
+      set("sourceAuth", sourceAuth)
+    } catch (reason) {
+      setError(messageOf(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function save() {
     setBusy(true); setError(null)
@@ -430,6 +443,26 @@ function PipelineEditor({ pipeline, agents, deployments, onClose, onSaved }: { p
               {form.sourceType === "git" && <FormBlock label={t("build.branchOrTag")}><input className="input mono" value={form.sourceRef} onChange={(event) => set("sourceRef", event.target.value)} placeholder="main" /></FormBlock>}
             </div>
           ) : <div className="build-upload-note">{I.arrowUp({ size: 16 })}<span><strong>{t("build.uploadAtRun")}</strong>{t("build.uploadAtRunDesc")}</span></div>}
+          {form.sourceType === "git" && (
+            <div className="build-form-grid">
+              <FormBlock label={t("build.gitAuth")} hint={t("build.gitAuthHint")}>
+                <select className="select" value={form.sourceAuth.type} onChange={(event) => setSourceAuth({ type: event.target.value as "none" | "basic" | "ssh", password: "" })}>
+                  <option value="none">{t("build.gitAuthNone")}</option>
+                  <option value="basic">{t("build.gitAuthBasic")}</option>
+                  <option value="ssh">{t("build.gitAuthSsh")}</option>
+                </select>
+              </FormBlock>
+              {form.sourceAuth.type === "basic" && <>
+                <FormBlock label={t("build.gitUsername")}><input className="input mono" value={form.sourceAuth.username ?? ""} onChange={(event) => setSourceAuth({ username: event.target.value })} /></FormBlock>
+                <FormBlock label={t("build.gitPassword")} hint={pipeline && form.sourceAuth.credentialConfigured ? t("build.secretUnchanged") : undefined}><input className="input mono" type="password" value={form.sourceAuth.password ?? ""} onChange={(event) => setSourceAuth({ password: event.target.value })} /></FormBlock>
+              </>}
+              {form.sourceAuth.type === "ssh" && <>
+                <div className="build-form-wide"><FormBlock label={t("build.sshPublicKey")} hint={t("build.sshPublicKeyHint")}><textarea className="textarea mono" rows={3} readOnly value={form.sourceAuth.sshPublicKey ?? t("build.sshPublicKeyAfterSave")} /></FormBlock></div>
+                <div className="build-form-wide"><FormBlock label={t("build.sshKnownHosts")} hint={t("build.sshKnownHostsHint")}><textarea className="textarea mono" rows={3} value={form.sourceAuth.sshKnownHosts ?? ""} onChange={(event) => setSourceAuth({ sshKnownHosts: event.target.value })} placeholder="git.example.com ssh-ed25519 AAAA…" /></FormBlock></div>
+                {pipeline && <button className="btn btn-sm" type="button" disabled={busy} onClick={rotateSshKey}>{I.refresh({ size: 12 })}<span>{t("build.rotateSshKey")}</span></button>}
+              </>}
+            </div>
+          )}
         </div>
       )}
 
@@ -559,6 +592,7 @@ function pipelineToInput(pipeline: BuildPipeline | undefined, agentId: string, t
   return pipeline ? {
     name: pipeline.name, description: pipeline.description, agentId: pipeline.agentId,
     sourceType: pipeline.sourceType, sourceUrl: pipeline.sourceUrl, sourceRef: pipeline.sourceRef,
+    sourceAuth: { ...pipeline.sourceAuth, password: "" },
     runnerType: pipeline.runnerType, containerImage: pipeline.containerImage,
     stages: pipeline.stages.map((stage) => ({ ...stage, needs: [...stage.needs] })), variables: pipeline.variables.map((variable) => ({ ...variable, value: "" })),
     artifactPattern: pipeline.artifactPattern, artifactName: pipeline.artifactName,
@@ -567,6 +601,7 @@ function pipelineToInput(pipeline: BuildPipeline | undefined, agentId: string, t
     schedule: pipeline.schedule, enabled: pipeline.enabled,
   } : {
     name: "", description: "", agentId, sourceType: "git", sourceUrl: "", sourceRef: "main",
+    sourceAuth: { type: "none", username: "", password: "", sshKnownHosts: "" },
     runnerType: "docker", containerImage: "node:22-alpine",
     stages: nodePreset(t).stages, variables: [], artifactPattern: "app.tar.gz", artifactName: "app.tar.gz",
     keepArtifacts: 20,

@@ -14,7 +14,7 @@ use url::Url;
 use uuid::Uuid;
 
 #[cfg(unix)]
-use std::os::unix::process::CommandExt;
+use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 
 use crate::config::{BuildsConfig, Config};
 use crate::proto::CommandResult;
@@ -49,6 +49,10 @@ struct BuildRequest {
     source_ref: String,
     source_name: String,
     source_sha256: String,
+    git_auth_type: String,
+    git_username: String,
+    git_credential: String,
+    git_ssh_known_hosts: String,
     runner_type: String,
     container_image: String,
     stages: Vec<BuildStage>,
@@ -266,6 +270,7 @@ fn parse_request(
         return Err("Automated builds are disabled on this agent".to_string());
     }
     let get = |key: &str| params.get(key).map(|s| s.trim()).unwrap_or("");
+    let get_raw = |key: &str| params.get(key).map(String::as_str).unwrap_or("");
     let run_id = get("run_id").to_string();
     if run_id.is_empty()
         || !run_id
@@ -332,6 +337,58 @@ fn parse_request(
     } else {
         validate_http_url(&source_download_url)?;
     }
+    let git_auth_type = get("git_auth_type");
+    let git_auth_type = if git_auth_type.is_empty() {
+        "none"
+    } else {
+        git_auth_type
+    };
+    let git_username = get("git_username").to_string();
+    let git_ssh_known_hosts = get_raw("git_ssh_known_hosts").trim().to_string();
+    let git_credential = match git_auth_type {
+        "none" => String::new(),
+        "basic" => {
+            let parsed =
+                Url::parse(&source_url).map_err(|_| "Git URL must be absolute".to_string())?;
+            if source_type != "git" || parsed.scheme() != "https" || git_username.is_empty() {
+                return Err(
+                    "Basic Git authentication requires an HTTPS source and username".to_string(),
+                );
+            }
+            let password = get_raw("git_password").to_string();
+            if password.is_empty()
+                || password.len() > 16 * 1024
+                || password.chars().any(|c| matches!(c, '\r' | '\n' | '\0'))
+            {
+                return Err("Git password or access token is invalid".to_string());
+            }
+            password
+        }
+        "ssh" => {
+            let parsed =
+                Url::parse(&source_url).map_err(|_| "Git URL must be absolute".to_string())?;
+            let private_key = get_raw("git_ssh_private_key").to_string();
+            if source_type != "git"
+                || parsed.scheme() != "ssh"
+                || !private_key.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----")
+                || !private_key
+                    .trim_end()
+                    .ends_with("-----END OPENSSH PRIVATE KEY-----")
+                || private_key.len() > 64 * 1024
+                || private_key.contains('\0')
+            {
+                return Err(
+                    "SSH Git authentication requires an ssh:// source and a valid deploy key"
+                        .to_string(),
+                );
+            }
+            if git_ssh_known_hosts.len() > 64 * 1024 || git_ssh_known_hosts.contains('\0') {
+                return Err("SSH known_hosts data is invalid".to_string());
+            }
+            private_key
+        }
+        _ => return Err("git_auth_type must be none, basic, or ssh".to_string()),
+    };
     Ok(BuildRequest {
         run_id,
         source_type,
@@ -339,6 +396,10 @@ fn parse_request(
         source_ref: get("source_ref").to_string(),
         source_name: get("source_name").to_string(),
         source_sha256: get("source_sha256").to_ascii_lowercase(),
+        git_auth_type: git_auth_type.to_string(),
+        git_username,
+        git_credential,
+        git_ssh_known_hosts,
         runner_type,
         container_image,
         stages,
@@ -411,6 +472,7 @@ fn fetch_source(
             .current_dir(workspace)
             .env("GIT_TERMINAL_PROMPT", "0")
             .envs(&req.variables);
+        configure_git_auth(&mut command, req, workspace)?;
         run_with_timeout(
             command,
             Duration::from_secs(req.timeout_seconds),
@@ -455,6 +517,69 @@ fn fetch_source(
     extract_archive(&archive, source_name, &source_dir)?;
     logs.push(format!("[done] source {} {}", req.source_type, source_name));
     Ok(())
+}
+
+fn configure_git_auth(
+    command: &mut Command,
+    req: &BuildRequest,
+    workspace: &Path,
+) -> Result<(), String> {
+    match req.git_auth_type.as_str() {
+        "none" => Ok(()),
+        "basic" => {
+            #[cfg(unix)]
+            let askpass = workspace.join(".git-askpass.sh");
+            #[cfg(windows)]
+            let askpass = workspace.join("git-askpass.cmd");
+            #[cfg(unix)]
+            let script = "#!/bin/sh\ncase \"$1\" in *sername*) printf '%s\\n' \"$NANOLINK_GIT_USERNAME\" ;; *) printf '%s\\n' \"$NANOLINK_GIT_PASSWORD\" ;; esac\n";
+            #[cfg(windows)]
+            let script = "@echo off\r\necho %1| findstr /I username >nul\r\nif errorlevel 1 (echo %NANOLINK_GIT_PASSWORD%) else (echo %NANOLINK_GIT_USERNAME%)\r\n";
+            fs::write(&askpass, script)
+                .map_err(|e| format!("Create Git credential helper: {e}"))?;
+            #[cfg(unix)]
+            fs::set_permissions(&askpass, fs::Permissions::from_mode(0o700))
+                .map_err(|e| format!("Protect Git credential helper: {e}"))?;
+            command
+                .env("GIT_ASKPASS", &askpass)
+                .env("NANOLINK_GIT_USERNAME", &req.git_username)
+                .env("NANOLINK_GIT_PASSWORD", &req.git_credential);
+            Ok(())
+        }
+        "ssh" => {
+            let key_path = workspace.join(".git-deploy-key");
+            fs::write(&key_path, &req.git_credential)
+                .map_err(|e| format!("Create Git SSH deploy key: {e}"))?;
+            #[cfg(unix)]
+            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
+                .map_err(|e| format!("Protect Git SSH deploy key: {e}"))?;
+            let mut ssh_command = format!(
+                "ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -i {}",
+                shell_quote_path(&key_path)
+            );
+            if !req.git_ssh_known_hosts.is_empty() {
+                let known_hosts = workspace.join(".git-known-hosts");
+                fs::write(&known_hosts, &req.git_ssh_known_hosts)
+                    .map_err(|e| format!("Create Git SSH known_hosts file: {e}"))?;
+                #[cfg(unix)]
+                fs::set_permissions(&known_hosts, fs::Permissions::from_mode(0o600))
+                    .map_err(|e| format!("Protect Git SSH known_hosts file: {e}"))?;
+                ssh_command.push_str(" -o UserKnownHostsFile=");
+                ssh_command.push_str(&shell_quote_path(&known_hosts));
+            }
+            command.env("GIT_SSH_COMMAND", ssh_command);
+            Ok(())
+        }
+        _ => Err("Unsupported Git authentication mode".to_string()),
+    }
+}
+
+fn shell_quote_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    #[cfg(unix)]
+    return format!("'{}'", value.replace('\'', "'\\''"));
+    #[cfg(windows)]
+    return format!("\"{}\"", value.replace('"', "\\\""));
 }
 
 fn run_stage<F>(
@@ -1056,5 +1181,60 @@ mod tests {
             ensure_not_canceled(&cancel),
             Err("Build canceled".to_string())
         );
+    }
+
+    fn valid_git_params() -> HashMap<String, String> {
+        HashMap::from([
+			("run_id".into(), Uuid::new_v4().to_string()),
+			("source_type".into(), "git".into()),
+			("source_url".into(), "https://git.example.com/team/repo.git".into()),
+			("source_ref".into(), "main".into()),
+			("runner_type".into(), "docker".into()),
+			("container_image".into(), "node:22-alpine".into()),
+			("stages_json".into(), r#"[{"id":"build","name":"Build","command":"true","needs":[],"allowFailure":false,"timeoutSeconds":0}]"#.into()),
+			("variables_json".into(), "{}".into()),
+			("artifact_pattern".into(), "app.tar.gz".into()),
+			("artifact_name".into(), "app.tar.gz".into()),
+			("artifact_upload_url".into(), "https://server.example.com/upload".into()),
+			("log_update_url".into(), "https://server.example.com/log".into()),
+			("timeout_seconds".into(), "60".into()),
+		])
+    }
+
+    #[test]
+    fn validates_server_managed_git_authentication() {
+        let mut cfg = BuildsConfig::default();
+        cfg.enabled = true;
+        let mut params = valid_git_params();
+        params.insert("git_auth_type".into(), "basic".into());
+        params.insert("git_username".into(), "builder".into());
+        assert!(parse_request(&cfg, &params).is_err());
+        params.insert("git_password".into(), "secret-token".into());
+        let request = parse_request(&cfg, &params).expect("HTTPS credentials");
+        assert_eq!(request.git_auth_type, "basic");
+        assert_eq!(request.git_credential, "secret-token");
+
+        params.insert(
+            "source_url".into(),
+            "http://git.example.com/team/repo.git".into(),
+        );
+        assert!(parse_request(&cfg, &params).is_err());
+
+        params.insert(
+            "source_url".into(),
+            "ssh://git@git.example.com/team/repo.git".into(),
+        );
+        params.insert("git_auth_type".into(), "ssh".into());
+        params.insert(
+            "git_ssh_private_key".into(),
+            "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----\n".into(),
+        );
+        params.insert(
+            "git_ssh_known_hosts".into(),
+            "git.example.com ssh-ed25519 AAAA".into(),
+        );
+        let request = parse_request(&cfg, &params).expect("SSH deploy key");
+        assert_eq!(request.git_auth_type, "ssh");
+        assert!(request.git_ssh_known_hosts.starts_with("git.example.com"));
     }
 }

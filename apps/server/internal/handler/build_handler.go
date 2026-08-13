@@ -53,29 +53,31 @@ type buildVariable struct {
 }
 
 type buildPipelineRequest struct {
-	Name             string          `json:"name" binding:"required"`
-	Description      string          `json:"description"`
-	AgentID          string          `json:"agentId" binding:"required"`
-	SourceType       string          `json:"sourceType" binding:"required"`
-	SourceURL        string          `json:"sourceUrl"`
-	SourceRef        string          `json:"sourceRef"`
-	RunnerType       string          `json:"runnerType" binding:"required"`
-	ContainerImage   string          `json:"containerImage"`
-	Stages           []buildStage    `json:"stages" binding:"required"`
-	Variables        []buildVariable `json:"variables"`
-	ArtifactPattern  string          `json:"artifactPattern" binding:"required"`
-	ArtifactName     string          `json:"artifactName" binding:"required"`
-	KeepArtifacts    int             `json:"keepArtifacts"`
-	PublishProjectID *uint           `json:"publishProjectId"`
-	TimeoutSeconds   int             `json:"timeoutSeconds"`
-	Schedule         string          `json:"schedule"`
-	Enabled          *bool           `json:"enabled"`
+	Name             string                 `json:"name" binding:"required"`
+	Description      string                 `json:"description"`
+	AgentID          string                 `json:"agentId" binding:"required"`
+	SourceType       string                 `json:"sourceType" binding:"required"`
+	SourceURL        string                 `json:"sourceUrl"`
+	SourceRef        string                 `json:"sourceRef"`
+	SourceAuth       buildSourceAuthRequest `json:"sourceAuth"`
+	RunnerType       string                 `json:"runnerType" binding:"required"`
+	ContainerImage   string                 `json:"containerImage"`
+	Stages           []buildStage           `json:"stages" binding:"required"`
+	Variables        []buildVariable        `json:"variables"`
+	ArtifactPattern  string                 `json:"artifactPattern" binding:"required"`
+	ArtifactName     string                 `json:"artifactName" binding:"required"`
+	KeepArtifacts    int                    `json:"keepArtifacts"`
+	PublishProjectID *uint                  `json:"publishProjectId"`
+	TimeoutSeconds   int                    `json:"timeoutSeconds"`
+	Schedule         string                 `json:"schedule"`
+	Enabled          *bool                  `json:"enabled"`
 }
 
 type buildPipelineView struct {
 	database.BuildPipeline
 	Stages       []buildStage        `json:"stages"`
 	Variables    []buildVariable     `json:"variables"`
+	SourceAuth   buildSourceAuthView `json:"sourceAuth"`
 	Runs         []database.BuildRun `json:"runs,omitempty"`
 	WebhookToken string              `json:"webhookToken,omitempty"`
 }
@@ -181,6 +183,11 @@ func (h *BuildHandler) CreatePipeline(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	authView, sourceCredential, err := h.prepareSourceAuth(req, nil)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	stagesJSON, variablesJSON, err := h.encodeDefinition(req.Stages, req.Variables, nil)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -196,6 +203,8 @@ func (h *BuildHandler) CreatePipeline(c *gin.Context) {
 	row := database.BuildPipeline{
 		Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), AgentID: strings.TrimSpace(req.AgentID),
 		SourceType: strings.ToLower(strings.TrimSpace(req.SourceType)), SourceURL: strings.TrimSpace(req.SourceURL), SourceRef: strings.TrimSpace(req.SourceRef),
+		SourceAuthType: authView.Type, SourceUsername: authView.Username, SourceCredential: sourceCredential,
+		SourceSSHPublicKey: authView.SSHPublicKey, SourceSSHKnownHosts: authView.SSHKnownHosts,
 		RunnerType: strings.ToLower(strings.TrimSpace(req.RunnerType)), ContainerImage: strings.TrimSpace(req.ContainerImage),
 		StagesJSON: stagesJSON, VariablesJSON: variablesJSON, ArtifactPattern: strings.TrimSpace(req.ArtifactPattern), ArtifactName: strings.TrimSpace(req.ArtifactName), KeepArtifacts: req.KeepArtifacts,
 		PublishProjectID: req.PublishProjectID, TimeoutSeconds: req.TimeoutSeconds, Schedule: strings.TrimSpace(req.Schedule), Enabled: enabled,
@@ -236,6 +245,11 @@ func (h *BuildHandler) UpdatePipeline(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	authView, sourceCredential, err := h.prepareSourceAuth(req, &existing)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	var oldVariables []buildVariable
 	_ = json.Unmarshal([]byte(existing.VariablesJSON), &oldVariables)
 	stagesJSON, variablesJSON, err := h.encodeDefinition(req.Stages, req.Variables, oldVariables)
@@ -249,6 +263,11 @@ func (h *BuildHandler) UpdatePipeline(c *gin.Context) {
 	existing.SourceType = strings.ToLower(strings.TrimSpace(req.SourceType))
 	existing.SourceURL = strings.TrimSpace(req.SourceURL)
 	existing.SourceRef = strings.TrimSpace(req.SourceRef)
+	existing.SourceAuthType = authView.Type
+	existing.SourceUsername = authView.Username
+	existing.SourceCredential = sourceCredential
+	existing.SourceSSHPublicKey = authView.SSHPublicKey
+	existing.SourceSSHKnownHosts = authView.SSHKnownHosts
 	existing.RunnerType = strings.ToLower(strings.TrimSpace(req.RunnerType))
 	existing.ContainerImage = strings.TrimSpace(req.ContainerImage)
 	existing.StagesJSON = stagesJSON
@@ -422,7 +441,14 @@ func (h *BuildHandler) DownloadArtifact(c *gin.Context) {
 }
 
 func (h *BuildHandler) pipelineView(row database.BuildPipeline, withRuns bool) (buildPipelineView, error) {
-	view := buildPipelineView{BuildPipeline: row}
+	sourceAuthType := row.SourceAuthType
+	if sourceAuthType == "" {
+		sourceAuthType = database.BuildSourceAuthNone
+	}
+	view := buildPipelineView{BuildPipeline: row, SourceAuth: buildSourceAuthView{
+		Type: sourceAuthType, Username: row.SourceUsername, CredentialConfigured: row.SourceCredential != "",
+		SSHPublicKey: row.SourceSSHPublicKey, SSHKnownHosts: row.SourceSSHKnownHosts,
+	}}
 	if err := json.Unmarshal([]byte(row.StagesJSON), &view.Stages); err != nil {
 		return view, err
 	}

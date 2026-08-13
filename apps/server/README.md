@@ -95,6 +95,18 @@ pipelines; Docker is the default runner and direct host execution requires the
 separate `builds.allow_host_runner: true` opt-in. URL sources reject private and
 reserved addresses unless their exact hostname is listed in
 `build.allowed_source_hosts` (or `NANOLINK_BUILD_ALLOWED_SOURCE_HOSTS`).
+HTTPS Git credentials are encrypted with the server master secret and are never
+returned by the API. SSH pipelines use a server-generated deploy key: register
+the exposed public key as a read-only key in the Git service; the private key is
+encrypted at rest and sent only to the selected Agent for the active run. Supply
+an optional pinned `known_hosts` line, or preconfigure the Agent system
+`known_hosts`; host-key verification is never disabled.
+
+Static releases accept ZIP, TAR, TAR.GZ, TGZ, or a browser-selected directory.
+The upload form supports `extract` and `stripTopLevel`; directory uploads are
+packaged as a bounded TAR.GZ with the selected directory itself removed. The
+Agent command protocol uses `extract_artifact` and `strip_top_level` and keeps
+the previous static-release default (`extract_artifact=true`) when omitted.
 
 `tls_cert` and `tls_key` enable native TLS on the HTTP, WebSocket, and gRPC
 listeners. `grpc_client_ca` additionally enables mutual TLS on gRPC: Agents

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
@@ -45,6 +46,44 @@ func TestDeploymentArtifactSuffix(t *testing.T) {
 	}
 	if suffix, err := deploymentArtifactSuffix("static", "site.tar.gz"); err != nil || suffix != ".tar.gz" {
 		t.Fatalf("valid tarball rejected: suffix=%q err=%v", suffix, err)
+	}
+	if suffix, err := deploymentArtifactSuffix("static", "site.tar"); err != nil || suffix != ".tar" {
+		t.Fatalf("valid tar rejected: suffix=%q err=%v", suffix, err)
+	}
+}
+
+func TestDeploymentCommandUsesCanonicalExtractionParameters(t *testing.T) {
+	project := database.DeploymentProject{Type: database.DeploymentProjectStatic, DeployPath: "/var/www/nanolink/site", KeepReleases: 5}
+	release := database.DeploymentRelease{Version: "1.0.0", ArtifactName: "site.tar.gz", ArtifactSize: 12, SHA256: "digest", StripTopLevel: true}
+	params := deploymentCommandParams(project, release, true)
+	if params["extract_artifact"] != "true" || params["strip_top_level"] != "true" {
+		t.Fatalf("unexpected extraction params: %#v", params)
+	}
+	if _, legacy := params["extract"]; legacy {
+		t.Fatalf("legacy extraction key must not be emitted: %#v", params)
+	}
+
+	noExtract := false
+	release.Extract = &noExtract
+	params = deploymentCommandParams(project, release, true)
+	if params["extract_artifact"] != "false" {
+		t.Fatalf("explicit non-extract release ignored: %#v", params)
+	}
+}
+
+func TestNormalizeDeploymentDirectoryPaths(t *testing.T) {
+	paths, err := normalizeDeploymentDirectoryPaths([]string{"dist/index.html", "dist/assets/app.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"index.html", "assets/app.js"}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("unexpected paths: got %v want %v", paths, want)
+	}
+	for _, invalid := range [][]string{{"index.html"}, {"dist/../secret"}, {"a/index.html", "b/app.js"}, {"dist/a", "dist/a"}} {
+		if _, err := normalizeDeploymentDirectoryPaths(invalid); err == nil {
+			t.Fatalf("unsafe directory paths accepted: %v", invalid)
+		}
 	}
 }
 

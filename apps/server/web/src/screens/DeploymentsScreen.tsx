@@ -330,16 +330,21 @@ function UploadReleaseModal({ project, onClose, onUploaded }: { project: Deploym
   const { t } = useTranslation()
   const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
+  const [directoryFiles, setDirectoryFiles] = useState<File[]>([])
+  const [uploadKind, setUploadKind] = useState<"artifact" | "directory">("artifact")
+  const [extract, setExtract] = useState(project.type === "static")
+  const [stripTopLevel, setStripTopLevel] = useState(false)
   const [version, setVersion] = useState(guessVersion())
   const [notes, setNotes] = useState("")
   const [busy, setBusy] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   async function upload() {
-    if (!file || !version) return
+    if ((!file && uploadKind === "artifact") || (directoryFiles.length === 0 && uploadKind === "directory") || !version) return
     setBusy(true)
     try {
-      await deploymentsApi.uploadRelease(project.id, version, notes, file)
+      if (uploadKind === "directory") await deploymentsApi.uploadDirectory(project.id, version, notes, directoryFiles)
+      else await deploymentsApi.uploadRelease(project.id, version, notes, file!, extract, stripTopLevel)
       onUploaded()
     } catch (e) {
       setError(messageOf(e))
@@ -347,18 +352,22 @@ function UploadReleaseModal({ project, onClose, onUploaded }: { project: Deploym
       setBusy(false)
     }
   }
-  const accept = project.type === "java" ? ".jar" : ".zip,.tar.gz,.tgz"
+  const accept = project.type === "java" ? ".jar" : ".zip,.tar,.tar.gz,.tgz"
+  const ready = uploadKind === "directory" ? directoryFiles.length > 0 : !!file
+  const directorySize = directoryFiles.reduce((sum, item) => sum + item.size, 0)
   return (
-    <Modal title={t("deploy.uploadRelease")} subtitle={`${project.name} · ${project.type === "java" ? "JAR" : "ZIP / TAR.GZ"}`} onClose={onClose} width={620} footer={<><button className="btn btn-sm" onClick={onClose}>{t("common.cancel")}</button><button className="btn btn-primary btn-sm" disabled={!file || !version || busy} onClick={upload}>{busy && <span className="dot pulse ok" />}{t("deploy.upload")}</button></>}>
+    <Modal title={t("deploy.uploadRelease")} subtitle={`${project.name} · ${project.type === "java" ? "JAR" : "ZIP / TAR / DIST"}`} onClose={onClose} width={620} footer={<><button className="btn btn-sm" onClick={onClose}>{t("common.cancel")}</button><button className="btn btn-primary btn-sm" disabled={!ready || !version || busy} onClick={upload}>{busy && <span className="dot pulse ok" />}{t("deploy.upload")}</button></>}>
       <div className="col gap-4">
-        <button className={`deploy-drop ${dragging ? "dragging" : ""}`} onClick={() => inputRef.current?.click()} onDragOver={(e) => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); setFile(e.dataTransfer.files[0] ?? null) }}>
-          <input ref={inputRef} type="file" accept={accept} hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          <span className="deploy-drop-icon">{file ? I.check({ size: 20 }) : I.arrowUp({ size: 20 })}</span>
-          <strong>{file ? file.name : t("deploy.dropArtifact")}</strong>
-          <span>{file ? formatBytes(file.size) : t("deploy.dropArtifactHint", { type: accept })}</span>
+        {project.type === "static" && <div className="tabs"><button className={`tab ${uploadKind === "artifact" ? "active" : ""}`} onClick={() => { setUploadKind("artifact"); setDirectoryFiles([]) }}>{t("deploy.archiveUpload")}</button><button className={`tab ${uploadKind === "directory" ? "active" : ""}`} onClick={() => { setUploadKind("directory"); setFile(null); setExtract(true); setStripTopLevel(false) }}>{t("deploy.directoryUpload")}</button></div>}
+        <button className={`deploy-drop ${dragging ? "dragging" : ""}`} onClick={() => inputRef.current?.click()} onDragOver={(e) => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); if (uploadKind === "artifact") setFile(e.dataTransfer.files[0] ?? null) }}>
+          {uploadKind === "directory" ? <input ref={inputRef} type="file" hidden multiple {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={(e) => setDirectoryFiles(Array.from(e.target.files ?? []))} /> : <input ref={inputRef} type="file" accept={accept} hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />}
+          <span className="deploy-drop-icon">{ready ? I.check({ size: 20 }) : I.arrowUp({ size: 20 })}</span>
+          <strong>{uploadKind === "directory" ? (directoryFiles[0]?.webkitRelativePath.split("/")[0] || t("deploy.selectDirectory")) : (file?.name ?? t("deploy.dropArtifact"))}</strong>
+          <span>{uploadKind === "directory" ? (directoryFiles.length ? t("deploy.directorySummary", { count: directoryFiles.length, size: formatBytes(directorySize) }) : t("deploy.directoryHint")) : (file ? formatBytes(file.size) : t("deploy.dropArtifactHint", { type: accept }))}</span>
         </button>
         <div className="deploy-form-grid">
           <FormBlock label={t("deploy.version")} hint={t("deploy.versionHint")}><input className="input mono" value={version} onChange={(e) => setVersion(e.target.value)} /></FormBlock>
+          {project.type === "static" && uploadKind === "artifact" && <FormBlock label={t("deploy.publishMode")}><label className="build-check"><input type="checkbox" checked={extract} onChange={(e) => { setExtract(e.target.checked); if (!e.target.checked) setStripTopLevel(false) }} />{t("deploy.extractArtifact")}</label>{extract && <label className="build-check"><input type="checkbox" checked={stripTopLevel} onChange={(e) => setStripTopLevel(e.target.checked)} />{t("deploy.stripTopLevel")}</label>}</FormBlock>}
           <div className="deploy-form-wide"><FormBlock label={t("deploy.notes")}><textarea className="textarea" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("deploy.notesPlaceholder")} /></FormBlock></div>
         </div>
       </div>
