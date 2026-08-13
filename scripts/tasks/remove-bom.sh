@@ -9,7 +9,8 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TASK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(dirname "$TASK_DIR")"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 DRY_RUN=false
 
@@ -74,11 +75,11 @@ while IFS= read -r -d '' file; do
        [[ "$file" == */__pycache__/* ]]; then
         continue
     fi
-    
+
     if has_bom "$file"; then
         FOUND_COUNT=$((FOUND_COUNT + 1))
         REL_PATH="${file#$ROOT_DIR/}"
-        
+
         if $DRY_RUN; then
             echo "  [BOM] $REL_PATH"
         else

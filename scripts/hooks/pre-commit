@@ -5,7 +5,7 @@
 # - Checks code format and runs tests
 #
 # Installation:
-#   - Run: ./scripts/install-hooks.sh
+#   - Run: ./scripts/nanoops.sh install-hooks
 #   - Or manually: cp scripts/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 #
 # Skip hook: git commit --no-verify
@@ -15,6 +15,7 @@ set -e
 
 # Get the root directory of the repository
 ROOT_DIR="$(git rev-parse --show-toplevel)"
+STAGED_FILES="$(git diff --cached --name-only --diff-filter=ACMR)"
 
 echo "🔍 Running pre-commit checks..."
 echo ""
@@ -27,27 +28,28 @@ case "$(uname -s)" in
         # Windows (Git Bash, MSYS, Cygwin)
         if command -v powershell.exe &> /dev/null; then
             echo "📝 Running BOM removal (Windows PowerShell)..."
-            powershell.exe -ExecutionPolicy Bypass -File "$ROOT_DIR/scripts/remove-bom.ps1" || true
+            powershell.exe -ExecutionPolicy Bypass -File "$ROOT_DIR/scripts/nanoops.ps1" remove-bom || true
         fi
         ;;
     *)
         # Linux/macOS
-        if [ -f "$ROOT_DIR/scripts/remove-bom.sh" ]; then
+        if [ -f "$ROOT_DIR/scripts/nanoops.sh" ]; then
             echo "📝 Running BOM removal (Unix)..."
-            bash "$ROOT_DIR/scripts/remove-bom.sh" || true
+            bash "$ROOT_DIR/scripts/nanoops.sh" remove-bom || true
         fi
         ;;
 esac
 
-# Check if any files were modified by the BOM removal
-MODIFIED=$(git diff --name-only)
-if [ -n "$MODIFIED" ]; then
+# Re-stage only paths that were already staged before cleanup. Never pull
+# unrelated working-tree edits into the commit.
+if [ -n "$STAGED_FILES" ]; then
     echo ""
-    echo "The following files were modified by BOM removal:"
-    echo "$MODIFIED"
-    echo ""
-    echo "These changes have been auto-staged for your commit."
-    git add $MODIFIED
+    echo "Re-staging files that were already selected for this commit."
+    printf '%s\n' "$STAGED_FILES" | while IFS= read -r staged_file; do
+        if [ -f "$staged_file" ]; then
+            git add -- "$staged_file"
+        fi
+    done
 fi
 
 # ============================================================

@@ -25,7 +25,7 @@
 #>
 
 param(
-    [string]$Path = (Split-Path $PSScriptRoot -Parent),
+    [string]$Path = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent),
     [string[]]$Extensions = @("*.go", "*.py", "*.rs", "*.toml", "*.json", "*.yaml", "*.yml", "*.java", "*.tsx", "*.ts", "*.js"),
     [switch]$DryRun
 )
@@ -48,7 +48,7 @@ $fixedCount = 0
 
 function Test-HasBOM {
     param([string]$FilePath)
-    
+
     $bytes = [System.IO.File]::ReadAllBytes($FilePath)
     if ($bytes.Length -ge 3) {
         return ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
@@ -58,7 +58,7 @@ function Test-HasBOM {
 
 function Remove-BOMFromFile {
     param([string]$FilePath)
-    
+
     $bytes = [System.IO.File]::ReadAllBytes($FilePath)
     if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
         # Remove first 3 bytes (BOM)
@@ -73,12 +73,12 @@ function Remove-BOMFromFile {
 foreach ($ext in $Extensions) {
     $files = Get-ChildItem -Path $Path -Filter $ext -Recurse -File -ErrorAction SilentlyContinue |
              Where-Object { $_.FullName -notmatch '[\\/](node_modules|\.git|target|build|dist|__pycache__)[\\/]' }
-    
+
     foreach ($file in $files) {
         if (Test-HasBOM $file.FullName) {
             $foundCount++
             $relativePath = $file.FullName.Substring($Path.Length + 1)
-            
+
             if ($DryRun) {
                 Write-Host "  [BOM] $relativePath" -ForegroundColor Yellow
             } else {
@@ -97,7 +97,7 @@ foreach ($specificFile in $SpecificFiles) {
     if (Test-Path $filePath) {
         if (Test-HasBOM $filePath) {
             $foundCount++
-            
+
             if ($DryRun) {
                 Write-Host "  [BOM] $specificFile" -ForegroundColor Yellow
             } else {

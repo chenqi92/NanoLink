@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stop NanoLink development servers
+# Internal task: stop NanoLink development servers
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

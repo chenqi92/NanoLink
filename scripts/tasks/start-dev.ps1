@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $webRoot = Join-Path $repoRoot "apps\server\web"
 $serverRoot = Join-Path $repoRoot "apps\server"
 $buildRoot = Join-Path $repoRoot "build"
@@ -219,7 +219,7 @@ try {
         Write-Host "Account:    Use the credentials of the existing Server API"
     }
     Write-Host "Logs:       $runtimeRoot"
-    Write-Host "Stop:       Double-click stop-dev.bat"
+    Write-Host "Stop:       scripts\nanoops.bat stop"
 
     if (-not $NoBrowser) {
         Start-Process $dashboardUrl

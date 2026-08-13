@@ -13,7 +13,8 @@
 
 $ErrorActionPreference = "Stop"
 
-$ScriptDir = Split-Path $MyInvocation.MyCommand.Path -Parent
+$TaskDir = Split-Path $MyInvocation.MyCommand.Path -Parent
+$ScriptDir = Split-Path $TaskDir -Parent
 $RootDir = Split-Path $ScriptDir -Parent
 $HooksDir = Join-Path $RootDir ".git\hooks"
 $HooksSrc = Join-Path $ScriptDir "hooks"
@@ -37,7 +38,7 @@ $PreCommitDst = Join-Path $HooksDir "pre-commit"
 
 if (Test-Path $PreCommitSrc) {
     Copy-Item $PreCommitSrc $PreCommitDst -Force
-    Write-Host "✓ Installed pre-commit hook" -ForegroundColor Green
+    Write-Host "[OK] Installed pre-commit hook" -ForegroundColor Green
 }
 else {
     Write-Host "Error: pre-commit hook source not found at $PreCommitSrc" -ForegroundColor Red

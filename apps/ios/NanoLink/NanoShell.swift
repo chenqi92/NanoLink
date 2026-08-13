@@ -1,14 +1,46 @@
 import SwiftUI
 
-/// Main tab shell (iOS bottom tab bar). Ports `nano_shell.dart`'s 5 navigation
-/// destinations: overview / nodes / terminal / activity / settings. Each tab
-/// hosts its own `NavigationStack` so detail screens push independently.
+/// Navigation destinations of the main shell. Shared by the phone tab tags and
+/// the iPad sidebar so both read from one definition. Raw values keep the
+/// original tab order.
+enum ShellSection: Int, CaseIterable, Hashable, Identifiable {
+    case overview, nodes, terminal, activity, settings
+
+    var id: Int { rawValue }
+
+    var titleKey: String {
+        switch self {
+        case .overview: return "nav.overview"
+        case .nodes: return "nav.nodes"
+        case .terminal: return "nav.terminal"
+        case .activity: return "nav.activity"
+        case .settings: return "nav.settings"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .overview: return "square.grid.2x2"
+        case .nodes: return "server.rack"
+        case .terminal: return "terminal"
+        case .activity: return "bell"
+        case .settings: return "gearshape"
+        }
+    }
+}
+
+/// Main shell. On compact width it ports `nano_shell.dart`'s 5-destination bottom
+/// tab bar, each tab hosting its own `NavigationStack`. On regular width it is a
+/// `NavigationSplitView` whose Nodes section is a persistent list/detail
+/// workspace rather than a pushed stack.
 struct NanoShell: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var l10n: L10n
     @Environment(\.nano) private var t
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var selection: Int = 0
+    @EnvironmentObject private var router: ShellRouter
+
+    private var section: ShellSection { router.section }
 
     var body: some View {
         Group {
@@ -20,70 +52,83 @@ struct NanoShell: View {
         }
         .id(l10n.language)
         .tint(t.accent)
+        .sheet(isPresented: $router.showServerSwitch) { ServerSwitchSheet() }
+        .onChange(of: store.activeServerIdRaw) { _ in router.clearSelection() }
+        .onChange(of: router.refreshTick) { _ in
+            Task { @MainActor in await refreshServerData() }
+        }
+    }
+
+    /// Backing for the ⌘R menu command: reconnect dropped sessions and refetch
+    /// the server-sourced lists the screens read straight off the store.
+    private func refreshServerData() async {
+        store.applicationDidBecomeActive()
+        await store.fetchRecentActivity()
+        await store.fetchServerAlerts()
     }
 
     private var phoneShell: some View {
-        TabView(selection: $selection) {
+        TabView(selection: $router.section) {
             NavigationStack { DashboardScreen() }
-                .tabItem { Label(tr("nav.overview"), systemImage: "square.grid.2x2") }
-                .tag(0)
+                .tabItem { Label(tr("nav.overview"), systemImage: ShellSection.overview.icon) }
+                .tag(ShellSection.overview)
 
             NavigationStack { AgentsScreen() }
-                .tabItem { Label(tr("nav.nodes"), systemImage: "server.rack") }
-                .tag(1)
+                .tabItem { Label(tr("nav.nodes"), systemImage: ShellSection.nodes.icon) }
+                .tag(ShellSection.nodes)
 
             NavigationStack { TerminalScreen() }
-                .tabItem { Label(tr("nav.terminal"), systemImage: "terminal") }
-                .tag(2)
+                .tabItem { Label(tr("nav.terminal"), systemImage: ShellSection.terminal.icon) }
+                .tag(ShellSection.terminal)
 
             NavigationStack { AlertsScreen() }
-                .tabItem { Label(tr("nav.activity"), systemImage: "bell") }
-                .tag(3)
+                .tabItem { Label(tr("nav.activity"), systemImage: ShellSection.activity.icon) }
+                .tag(ShellSection.activity)
                 .badge(alertBadge)
 
             NavigationStack { SettingsScreen() }
-                .tabItem { Label(tr("nav.settings"), systemImage: "gearshape") }
-                .tag(4)
+                .tabItem { Label(tr("nav.settings"), systemImage: ShellSection.settings.icon) }
+                .tag(ShellSection.settings)
         }
     }
 
     private var iPadShell: some View {
         NavigationSplitView {
             List {
-                sidebarRow(tr("nav.overview"), icon: "square.grid.2x2", tag: 0)
-                sidebarRow(tr("nav.nodes"), icon: "server.rack", tag: 1)
-                sidebarRow(tr("nav.terminal"), icon: "terminal", tag: 2)
-                sidebarRow(tr("nav.activity"), icon: "bell", tag: 3, badge: alertBadge)
-                sidebarRow(tr("nav.settings"), icon: "gearshape", tag: 4)
+                ForEach(ShellSection.allCases) { item in sidebarRow(item) }
             }
             .navigationTitle(tr("app.title"))
             .listStyle(.sidebar)
         } detail: {
             NavigationStack {
                 selectedScreen
-                    .frame(maxWidth: 1_200, maxHeight: .infinity)
+                    .frame(maxWidth: section == .nodes ? .infinity : 1_200, maxHeight: .infinity)
                     .frame(maxWidth: .infinity)
             }
-            .id(selection)
+            .id(section)
         }
         .navigationSplitViewStyle(.balanced)
     }
 
     @ViewBuilder
     private var selectedScreen: some View {
-        switch selection {
-        case 1: AgentsScreen()
-        case 2: TerminalScreen()
-        case 3: AlertsScreen()
-        case 4: SettingsScreen()
-        default: DashboardScreen()
+        switch section {
+        case .overview:
+            DashboardScreen(onSelectAgent: { agent in
+                router.select(agentID: agent.id)
+            })
+        case .nodes: AgentsWorkspaceScreen(selectedAgentID: $router.selectedAgentID)
+        case .terminal: TerminalScreen()
+        case .activity: AlertsScreen()
+        case .settings: SettingsScreen()
         }
     }
 
-    private func sidebarRow(_ title: String, icon: String, tag: Int, badge: Int = 0) -> some View {
-        Button { selection = tag } label: {
+    private func sidebarRow(_ item: ShellSection) -> some View {
+        let badge = item == .activity ? alertBadge : 0
+        return Button { router.show(item) } label: {
             HStack {
-                Label(title, systemImage: icon)
+                Label(tr(item.titleKey), systemImage: item.icon)
                 Spacer()
                 if badge > 0 {
                     Text("\(badge)")
@@ -94,11 +139,11 @@ struct NanoShell: View {
                         .background(t.crit, in: Capsule())
                 }
             }
-            .foregroundColor(selection == tag ? t.accent : t.fg2)
+            .foregroundColor(section == item ? t.accent : t.fg2)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowBackground(selection == tag ? t.accent.opacity(0.12) : Color.clear)
+        .listRowBackground(section == item ? t.accent.opacity(0.12) : Color.clear)
     }
 
     /// Unacknowledged alert count for the active server, surfaced on the tab.

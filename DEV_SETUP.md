@@ -14,15 +14,15 @@ Development mode runs the frontend with hot-reload and proxies API requests to t
 
 **macOS/Linux:**
 ```bash
-./start-dev.sh
+./scripts/nanoops.sh start
 ```
 
 **Windows:**
 ```bat
-start-dev.bat
+scripts\nanoops.bat start
 ```
 
-You can also double-click `start-dev.bat`. It will automatically:
+You can also double-click `scripts\nanoops.bat` and choose **Start development environment**. It will automatically:
 
 - install or synchronize the Web dependencies;
 - rebuild and start the local Server when no healthy API is already running;
@@ -34,8 +34,8 @@ If port 8080 already exposes a healthy NanoOps API, the script safely reuses
 it. If port 5173 is occupied, Vite automatically uses the next free port up to
 5183 and the script opens the correct URL.
 
-Use `start-dev.bat -NoBrowser` when you do not want it to open a browser, or
-`start-dev.bat -SkipBackendBuild` to reuse the existing Server binary.
+Use `scripts\nanoops.bat start -NoBrowser` when you do not want it to open a browser, or
+`scripts\nanoops.bat start -SkipBackendBuild` to reuse the existing Server binary.
 
 Then open http://localhost:5173/dashboard
 
@@ -45,12 +45,12 @@ Then open http://localhost:5173/dashboard
 
 **macOS/Linux:**
 ```bash
-./stop-dev.sh
+./scripts/nanoops.sh stop
 ```
 
 **Windows:**
 ```bat
-stop-dev.bat
+scripts\nanoops.bat stop
 ```
 
 ## Production Build
@@ -177,9 +177,9 @@ NanoLink/
    - Production: Rebuild frontend + backend, restart server
 
 2. **Backend changes:**
-   - Stop server: `./stop-dev.sh` or Ctrl+C
+   - Stop server: `./scripts/nanoops.sh stop` or Ctrl+C
    - Rebuild: `cd apps/server && go build -o ../../build/nanolink-server ./cmd`
-   - Restart: `./start-dev.sh`
+   - Restart: `./scripts/nanoops.sh start`
 
 3. **Database schema changes:**
    - GORM auto-migrates on startup

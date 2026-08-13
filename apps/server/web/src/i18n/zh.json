@@ -505,6 +505,7 @@
     "query": "查询",
     "allAgents": "全部节点",
     "addTarget": "新增目标",
+    "hostTargetPlaceholder": "host:port / https://host",
     "addPath": "新增路径",
     "view": "查看",
     "valid": "有效",
@@ -1023,6 +1024,7 @@
   "assistant": {
     "name": "NanoLink 助手",
     "subtitle": "基于实时、权限过滤后的集群视图进行对话",
+    "requestFailed": "请求失败",
     "chatLabel": "AI 助手对话",
     "conversation": "对话",
     "defaultModel": "默认模型",

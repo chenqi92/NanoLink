@@ -198,7 +198,7 @@ jobs:
             VERSION=$(cat ../../VERSION | tr -d '[:space:]')
           fi
           mkdir -p release
-          hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/NanoLink.app -ov -format UDZO "release/NanoLink-macOS-Intel-$VERSION.dmg"
+          hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/NanoOps.app -ov -format UDZO "release/NanoLink-macOS-Intel-$VERSION.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -243,7 +243,7 @@ jobs:
             VERSION=$(cat ../../VERSION | tr -d '[:space:]')
           fi
           mkdir -p release
-          hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/NanoLink.app -ov -format UDZO "release/NanoLink-macOS-AppleSilicon-$VERSION.dmg"
+          hdiutil create -volname "NanoLink" -srcfolder build/macos/Build/Products/Release/NanoOps.app -ov -format UDZO "release/NanoLink-macOS-AppleSilicon-$VERSION.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

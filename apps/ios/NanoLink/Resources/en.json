@@ -71,6 +71,7 @@
     "dashboard": "Dashboard", "agents": "Agents", "terminal": "Terminal", "settings": "Settings",
     "overview": "Overview", "nodes": "Nodes", "activity": "Activity", "assistant": "AI Assistant"
   },
+  "menu": { "view": "View", "refresh": "Refresh" },
   "dashboard": {
     "totalAgents": "Total Agents", "avgCpu": "Avg CPU", "avgMemory": "Avg Memory", "alerts": "Alerts",
     "title": "Overview", "onlineNodes": "Online Nodes", "nodesOffline": "{n} offline",
@@ -98,7 +99,8 @@
     "title": "Nodes", "searchHint": "Search nodes, hostname, OS", "filterAll": "All",
     "filterOnline": "Online", "filterWarn": "Alerts", "filterOffline": "Offline",
     "noNodes": "No nodes on this server yet", "noMatch": "No matching nodes",
-    "offlineNoData": "Offline · No live data", "switchServer": "Switch Server", "filter": "Filter"
+    "offlineNoData": "Offline · No live data", "switchServer": "Switch Server", "filter": "Filter",
+    "selectNode": "Select a node to see its details"
   },
   "agentDetail": {
     "tabRealtime": "Realtime", "tabHistory": "History", "tabTerminal": "Terminal",
@@ -110,7 +112,7 @@
     "memAvailable": "Available", "vram": "VRAM", "power": "Power", "osLabel": "OS", "kernel": "Kernel",
     "uptime": "Uptime", "motherboard": "Motherboard", "systemModel": "System", "bios": "BIOS",
     "perCore": "Per-core", "load": "load {values}", "ghz": "{value} GHz", "mtps": "{value} MT/s",
-    "cacheBuffers": "Cache / Buffers", "chassis": "Chassis", "primaryIp": "Primary IP", "powerOf": "{used}W / {limit}W"
+    "cacheBuffers": "Cache / Buffers", "swap": "Swap", "chassis": "Chassis", "primaryIp": "Primary IP", "powerOf": "{used}W / {limit}W"
   },
   "history": {
     "loadFailed": "Failed to load history", "loadFailedSub": "Please check the connection to the server",

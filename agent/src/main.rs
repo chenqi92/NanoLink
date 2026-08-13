@@ -20,7 +20,7 @@ pub mod proto {
 }
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -48,7 +48,7 @@ const CONFIG_SEARCH_PATHS: &[&str] = &[
 #[command(name = "nanolink-agent")]
 #[command(author = "NanoLink Team")]
 #[command(version = "0.4.9")]
-#[command(about = "Lightweight server monitoring agent", long_about = None)]
+#[command(long_about = None)]
 struct Args {
     /// Path to configuration file (auto-detected if not specified)
     #[arg(short, long, global = true)]
@@ -108,6 +108,8 @@ enum ServiceAction {
     Start,
     /// Stop the Windows Service
     Stop,
+    /// Restart the Windows Service
+    Restart,
     /// Query Windows Service status
     Status,
     /// Run as Windows Service (called by SCM)
@@ -261,9 +263,39 @@ fn get_config_path(args: &Args) -> Option<PathBuf> {
     }
 }
 
+fn config_path_from_raw_args(args: &[std::ffi::OsString]) -> Option<PathBuf> {
+    let mut iter = args.iter().skip(1);
+    while let Some(arg) = iter.next() {
+        if arg == "-c" || arg == "--config" {
+            return iter.next().map(PathBuf::from);
+        }
+        if let Some(value) = arg
+            .to_str()
+            .and_then(|value| value.strip_prefix("--config="))
+        {
+            return Some(PathBuf::from(value));
+        }
+        if let Some(value) = arg.to_str().and_then(|value| value.strip_prefix("-c"))
+            && !value.is_empty()
+        {
+            return Some(PathBuf::from(value));
+        }
+    }
+    None
+}
+
+fn parse_args() -> Result<(Args, Lang)> {
+    let raw_args: Vec<_> = std::env::args_os().collect();
+    let config_path = config_path_from_raw_args(&raw_args).or_else(find_config);
+    let lang = crate::i18n::resolve_language(config_path.as_deref());
+    let matches = Args::command()
+        .about(t("cli.about", lang))
+        .get_matches_from(raw_args);
+    Ok((Args::from_arg_matches(&matches)?, lang))
+}
+
 /// Print help message when no config is found
-fn print_no_config_help() {
-    let lang = detect_language();
+fn print_no_config_help(lang: Lang) {
     eprintln!("{}", t("error.no_config", lang));
     eprintln!();
     eprintln!("{}:", t("cli.searched_locations", lang));
@@ -300,7 +332,7 @@ fn print_no_config_help() {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let (args, lang) = parse_args()?;
 
     // Initialize logging
     let log_level = match args.log_level.to_lowercase().as_str() {
@@ -332,7 +364,7 @@ fn main() -> Result<()> {
     // Handle subcommands - need async runtime
     if let Some(command) = &args.command {
         let rt = tokio::runtime::Runtime::new()?;
-        return rt.block_on(handle_command(command, &args));
+        return rt.block_on(handle_command(command, &args, lang));
     }
 
     // If no subcommand and not foreground mode, enter interactive mode
@@ -341,7 +373,7 @@ fn main() -> Result<()> {
     if !args.foreground {
         // Check if stdin is a TTY - if not, we're likely running as a service
         if std::io::stdin().is_terminal() {
-            return interactive_main_menu(&args);
+            return interactive_main_menu(&args, lang);
         }
         // Non-interactive environment (systemd, etc.) - run in foreground mode
     }
@@ -354,12 +386,12 @@ fn main() -> Result<()> {
             #[cfg(feature = "gui")]
             {
                 info!("No configuration file found. Launching configuration wizard...");
-                return gui::run_wizard();
+                return gui::run_wizard(lang);
             }
 
             #[cfg(not(feature = "gui"))]
             {
-                print_no_config_help();
+                print_no_config_help(lang);
                 std::process::exit(1);
             }
         }
@@ -370,8 +402,7 @@ fn main() -> Result<()> {
     rt.block_on(run_agent(config_path))
 }
 
-async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
-    let lang = detect_language();
+async fn handle_command(command: &Commands, args: &Args, lang: Lang) -> Result<()> {
     match command {
         #[cfg(target_os = "windows")]
         Commands::Service { action } => {
@@ -402,6 +433,12 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                     stop_service()
                         .map_err(|e| anyhow::anyhow!("{}: {e}", t("service.error", lang)))?;
                     println!("✓ {}", t("service.stopped", lang));
+                }
+                ServiceAction::Restart => {
+                    println!("{}", t("service.restarting", lang));
+                    crate::platform::restart_service()
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", t("service.error", lang)))?;
+                    println!("✓ {}", t("service.restarted", lang));
                 }
                 ServiceAction::Status => {
                     let status = query_service_status()
@@ -512,7 +549,7 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                         t("cli.not_found", lang)
                     );
                     println!();
-                    print_no_config_help();
+                    print_no_config_help(lang);
                 }
             }
             return Ok(());
@@ -522,7 +559,7 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
             let config_path = match get_config_path(args) {
                 Some(path) => path,
                 None => {
-                    print_no_config_help();
+                    print_no_config_help(lang);
                     std::process::exit(1);
                 }
             };
@@ -555,10 +592,11 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                         tls_server_name.clone(),
                         tls_client_cert.clone(),
                         tls_client_key.clone(),
+                        lang,
                     )?;
                 }
                 ServerAction::Remove { host, port } => {
-                    handle_server_remove(&mut config, &config_path, host.clone(), *port)?;
+                    handle_server_remove(&mut config, &config_path, host.clone(), *port, lang)?;
                 }
                 ServerAction::List => {
                     println!("{}:", t("server.configured_servers", lang));
@@ -603,6 +641,7 @@ async fn handle_command(command: &Commands, args: &Args) -> Result<()> {
                         tls_server_name.clone(),
                         tls_client_cert.clone(),
                         tls_client_key.clone(),
+                        lang,
                     )?;
                 }
             }
@@ -627,10 +666,10 @@ fn handle_server_add(
     tls_server_name: Option<String>,
     tls_client_cert: Option<String>,
     tls_client_key: Option<String>,
+    lang: Lang,
 ) -> Result<()> {
     use crate::config::ServerConfig;
     use dialoguer::{Confirm, Input, Password, Select};
-    let lang = detect_language();
 
     // Determine if we need interactive mode
     let needs_interactive = host.is_none() || token.is_none();
@@ -729,9 +768,9 @@ fn handle_server_remove(
     config_path: &Path,
     host: Option<String>,
     default_port: u16,
+    lang: Lang,
 ) -> Result<()> {
     use dialoguer::{Confirm, Select};
-    let lang = detect_language();
 
     let is_interactive = host.is_none();
 
@@ -814,9 +853,9 @@ fn handle_server_update(
     tls_server_name: Option<String>,
     tls_client_cert: Option<String>,
     tls_client_key: Option<String>,
+    lang: Lang,
 ) -> Result<()> {
     use dialoguer::{Confirm, Password, Select};
-    let lang = detect_language();
 
     let is_interactive = host.is_none();
 
@@ -975,27 +1014,13 @@ fn save_config(config: &Config, path: &Path) -> Result<()> {
 // Interactive Menu Functions
 // ============================================================================
 
-use crate::i18n::{Lang, detect_language, t};
+use crate::i18n::{Lang, t};
 
 /// Interactive main menu - entry point for interactive mode
-fn interactive_main_menu(args: &Args) -> Result<()> {
+fn interactive_main_menu(args: &Args, initial_lang: Lang) -> Result<()> {
     use dialoguer::{Select, theme::ColorfulTheme};
 
-    // Load language from config if available, otherwise detect from system
-    let mut lang = if let Some(config_path) = get_config_path(args) {
-        if let Ok(config) = Config::load(&config_path) {
-            config
-                .agent
-                .language
-                .as_ref()
-                .and_then(|s| Lang::from_str(s))
-                .unwrap_or_else(detect_language)
-        } else {
-            detect_language()
-        }
-    } else {
-        detect_language()
-    };
+    let mut lang = initial_lang;
     let theme = ColorfulTheme::default();
 
     loop {
@@ -1417,6 +1442,7 @@ fn interactive_server_action(
                         config_path,
                         Some(format!("{host}:{port}")),
                         port,
+                        lang,
                     )?;
                     println!("{}", t("status.server_deleted", lang));
                     // Prompt for restart
@@ -3719,4 +3745,39 @@ pub async fn run_agent(config_path: PathBuf) -> Result<()> {
 
     info!("NanoLink Agent stopped");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_config_path_from_raw_args() {
+        let args = ["nanolink-agent", "--config=config.toml", "--help"]
+            .into_iter()
+            .map(std::ffi::OsString::from)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            config_path_from_raw_args(&args),
+            Some(PathBuf::from("config.toml"))
+        );
+
+        let args = ["nanolink-agent", "-c", "config.yaml"]
+            .into_iter()
+            .map(std::ffi::OsString::from)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            config_path_from_raw_args(&args),
+            Some(PathBuf::from("config.yaml"))
+        );
+    }
+
+    #[test]
+    fn localizes_cli_about() {
+        let mut command = Args::command().about(t("cli.about", Lang::Zh));
+        let mut output = Vec::new();
+        command.write_long_help(&mut output).unwrap();
+        let help = String::from_utf8(output).unwrap();
+        assert!(help.contains("轻量级服务器监控 Agent"));
+    }
 }

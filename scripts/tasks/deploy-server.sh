@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-repo_root=$script_dir
+repo_root=$(cd -- "$script_dir/../.." && pwd)
 config_path="$repo_root/.env.deploy"
 allow_dirty_cli=0
 skip_checks=0
@@ -14,7 +14,7 @@ remote_script_path=''
 
 usage() {
   cat <<'EOF'
-Usage: ./deploy-server.sh [options]
+Usage: ./scripts/nanoops.sh deploy [options]
 
 Options:
   --config PATH    Use a different local deployment environment file.

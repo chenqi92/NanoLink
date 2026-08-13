@@ -4,6 +4,9 @@ import SwiftUI
 struct AgentDetailScreen: View {
     let agent: Agent
     var initialTab: Int = 0
+    /// Hidden when the detail is already the persistent pane of a split layout,
+    /// where there is nothing to dismiss back to.
+    var showsBackButton: Bool = true
 
     @EnvironmentObject private var store: AppStore
     @Environment(\.nano) private var t
@@ -11,9 +14,10 @@ struct AgentDetailScreen: View {
     @State private var tab: Int
     @State private var showActions = false
 
-    init(agent: Agent, initialTab: Int = 0) {
+    init(agent: Agent, initialTab: Int = 0, showsBackButton: Bool = true) {
         self.agent = agent
         self.initialTab = initialTab
+        self.showsBackButton = showsBackButton
         _tab = State(initialValue: initialTab == 2 && agent.permissionLevel < 3 ? 0 : initialTab)
     }
 
@@ -41,10 +45,12 @@ struct AgentDetailScreen: View {
     private var header: some View {
         VStack(spacing: 8) {
             HStack {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold)).foregroundColor(t.accent)
-                        .frame(width: 36, height: 36)
-                }.buttonStyle(.plain)
+                if showsBackButton {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold)).foregroundColor(t.accent)
+                            .frame(width: 36, height: 36)
+                    }.buttonStyle(.plain)
+                }
                 Spacer()
                 Button { showActions = true } label: {
                     Image(systemName: "ellipsis").font(.system(size: 20)).foregroundColor(t.accent).frame(width: 36, height: 36)
@@ -98,6 +104,14 @@ private struct AgentRealtimeView: View {
     let agent: Agent
     let metrics: AgentMetrics?
     @Environment(\.nano) private var t
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    /// Single column on phones; wide windows fit two or more headline cards.
+    private var headlineColumns: [GridItem] {
+        horizontalSizeClass == .compact
+            ? [GridItem(.flexible(), spacing: 12, alignment: .top)]
+            : [GridItem(.adaptive(minimum: 320), spacing: 12, alignment: .top)]
+    }
 
     var body: some View {
         if !agent.isOnline || metrics == nil {
@@ -110,8 +124,10 @@ private struct AgentRealtimeView: View {
         } else if let m = metrics {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    cpuCard(m)
-                    memoryCard(m).padding(.top, 12)
+                    LazyVGrid(columns: headlineColumns, spacing: 12) {
+                        cpuCard(m)
+                        memoryCard(m)
+                    }
 
                     if !m.disks.isEmpty {
                         NanoSectionLabel(tr("agentDetail.storage"))
@@ -232,7 +248,7 @@ private struct AgentRealtimeView: View {
                     keyValue(tr("agentDetail.cacheBuffers"), "\(String(format: "%.1f", Fmt.gib(Double(m.memory.cached)))) / \(String(format: "%.1f", Fmt.gib(Double(m.memory.buffers)))) GiB")
                 }
                 if m.memory.swapTotal > 0 {
-                    keyValue("Swap", "\(String(format: "%.1f", Fmt.gib(Double(m.memory.swapUsed)))) / \(String(format: "%.0f", Fmt.gib(Double(m.memory.swapTotal)))) GiB",
+                    keyValue(tr("agentDetail.swap"), "\(String(format: "%.1f", Fmt.gib(Double(m.memory.swapUsed)))) / \(String(format: "%.0f", Fmt.gib(Double(m.memory.swapTotal)))) GiB",
                              warn: Double(m.memory.swapUsed) / Double(m.memory.swapTotal) > 0.2)
                 }
             }
@@ -360,10 +376,18 @@ private struct AgentHistoryView: View {
     let metrics: AgentMetrics?
     @EnvironmentObject private var store: AppStore
     @Environment(\.nano) private var t
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var range = "1h"
     @State private var history: MetricsHistory?
     @State private var loading = false
     @State private var failed = false
+
+    /// Charts need more width than the headline cards before splitting.
+    private var chartColumns: [GridItem] {
+        horizontalSizeClass == .compact
+            ? [GridItem(.flexible(), spacing: 12, alignment: .top)]
+            : [GridItem(.adaptive(minimum: 380), spacing: 12, alignment: .top)]
+    }
 
     private struct RangeSpec { let seconds: TimeInterval; let interval: String; let labels: [String] }
     private let ranges = ["5m", "30m", "1h", "6h", "1d", "7d"]
@@ -414,19 +438,21 @@ private struct AgentHistoryView: View {
         let memPeak = maxValue(h.hasMaxBands && !h.memMax.isEmpty ? h.memMax : h.mem)
         return VStack(spacing: 12) {
             if cpuPeak > 90 || memPeak > 90 { anomaly(cpuPeak: cpuPeak, memPeak: memPeak) }
-            chartCard(tr("history.cpu"), stat: String(format: "%.0f%%", metrics?.cpuPercent ?? h.cpu.last ?? 0), peak: cpuPeak, unit: "%", yMax: 100,
-                      series: [NanoSeries(data: h.cpu, color: t.accent, fill: true, band: h.hasMaxBands ? h.cpuMax : nil)],
-                      thresholds: [NanoThreshold(value: 90, color: t.crit, label: "90%")], history: h)
-            chartCard(tr("history.memory"), stat: String(format: "%.0f%%", metrics?.memoryPercent ?? h.mem.last ?? 0), peak: memPeak, unit: "%", yMax: 100,
-                      series: [NanoSeries(data: h.mem, color: t.fg2, fill: true, band: h.hasMaxBands ? h.memMax : nil)],
-                      thresholds: [NanoThreshold(value: 90, color: t.crit, label: "90%")], history: h)
-            chartCard(tr("history.network"), stat: "↓\(last(h.netRx)) ↑\(last(h.netTx))", unit: " MB/s", yMax: nil,
-                      series: [NanoSeries(data: h.netRx, color: t.accent, fill: true, label: tr("history.rx")), NanoSeries(data: h.netTx, color: t.warn, dashed: true, label: tr("history.tx"))], history: h)
-            chartCard(tr("history.diskIo"), stat: "R \(last(h.diskRead)) · W \(last(h.diskWrite))", unit: " MB/s", yMax: nil,
-                      series: [NanoSeries(data: h.diskRead, color: t.ok, fill: true, label: tr("history.read")), NanoSeries(data: h.diskWrite, color: t.warn, dashed: true, label: tr("history.write"))], history: h)
-            if h.hasGpu {
-                chartCard(tr("history.gpu"), stat: "\(last(h.gpuUsage))%", unit: "%", yMax: 100,
-                          series: [NanoSeries(data: h.gpuUsage, color: t.tertiary, fill: true, label: tr("history.utilization")), NanoSeries(data: h.gpuTemp, color: t.crit, dashed: true, label: tr("history.temperature"))].filter { !$0.data.isEmpty }, history: h)
+            LazyVGrid(columns: chartColumns, spacing: 12) {
+                chartCard(tr("history.cpu"), stat: String(format: "%.0f%%", metrics?.cpuPercent ?? h.cpu.last ?? 0), peak: cpuPeak, unit: "%", yMax: 100,
+                          series: [NanoSeries(data: h.cpu, color: t.accent, fill: true, band: h.hasMaxBands ? h.cpuMax : nil)],
+                          thresholds: [NanoThreshold(value: 90, color: t.crit, label: "90%")], history: h)
+                chartCard(tr("history.memory"), stat: String(format: "%.0f%%", metrics?.memoryPercent ?? h.mem.last ?? 0), peak: memPeak, unit: "%", yMax: 100,
+                          series: [NanoSeries(data: h.mem, color: t.fg2, fill: true, band: h.hasMaxBands ? h.memMax : nil)],
+                          thresholds: [NanoThreshold(value: 90, color: t.crit, label: "90%")], history: h)
+                chartCard(tr("history.network"), stat: "↓\(last(h.netRx)) ↑\(last(h.netTx))", unit: " MB/s", yMax: nil,
+                          series: [NanoSeries(data: h.netRx, color: t.accent, fill: true, label: tr("history.rx")), NanoSeries(data: h.netTx, color: t.warn, dashed: true, label: tr("history.tx"))], history: h)
+                chartCard(tr("history.diskIo"), stat: "R \(last(h.diskRead)) · W \(last(h.diskWrite))", unit: " MB/s", yMax: nil,
+                          series: [NanoSeries(data: h.diskRead, color: t.ok, fill: true, label: tr("history.read")), NanoSeries(data: h.diskWrite, color: t.warn, dashed: true, label: tr("history.write"))], history: h)
+                if h.hasGpu {
+                    chartCard(tr("history.gpu"), stat: "\(last(h.gpuUsage))%", unit: "%", yMax: 100,
+                              series: [NanoSeries(data: h.gpuUsage, color: t.tertiary, fill: true, label: tr("history.utilization")), NanoSeries(data: h.gpuTemp, color: t.crit, dashed: true, label: tr("history.temperature"))].filter { !$0.data.isEmpty }, history: h)
+                }
             }
         }
     }

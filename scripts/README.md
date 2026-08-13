@@ -1,122 +1,70 @@
-# NanoLink Scripts
+# NanoOps Project Console
 
-## One-click Server deployment
+All operator-facing project commands are consolidated behind one multifunction
+entry point. Internal implementations live in `scripts/tasks/` and normally do
+not need to be called directly.
 
-Copy `.env.deploy.example` to `.env.deploy`, fill in the target host, and keep
-the resulting file local. It is ignored by Git. SSH authentication continues
-to use the normal OpenSSH agent/default private key; no SSH password is stored
-in the deployment configuration.
+## Interactive mode
 
-On Windows, double-click `deploy-server.bat` or run:
+Windows users can double-click `scripts\nanoops.bat`, or run:
 
 ```powershell
-.\deploy-server.bat
+.\scripts\nanoops.bat
 ```
 
-On Linux/macOS, make the script executable once and run:
+Linux/macOS users can run:
 
 ```bash
-chmod +x deploy-server.sh
-./deploy-server.sh
+./scripts/nanoops.sh
 ```
 
-The deployment script runs Server/Web checks, packages the exact Git commit,
-uploads it over SSH, builds an isolated Docker image, performs a smoke test,
-backs up the production Compose file, rolls out the container, and verifies
-health/public assets. A failed production health check automatically restores
-the previous Compose file and container image.
+The menu provides:
 
-The example configuration requires a clean working tree. To deliberately deploy
-the current uncommitted Server/Web state, either set `DEPLOY_ALLOW_DIRTY=true`
-in the ignored local `.env.deploy`, or use:
+1. Start development environment
+2. Stop development environment
+3. Deploy Server to production
+4. Validate deployment without remote changes
+5. Bump the project version
+6. Install Git hooks
+7. Scan and remove UTF-8 BOM
 
-```powershell
-.\deploy-server.bat -AllowDirty
+Production deployment requires typing `DEPLOY` before any upload or rollout.
+
+## Direct commands
+
+Interactive mode is optional. The same entry point supports automation:
+
+| Task | Windows | Linux/macOS |
+|---|---|---|
+| Start development | `.\scripts\nanoops.bat start` | `./scripts/nanoops.sh start` |
+| Stop development | `.\scripts\nanoops.bat stop` | `./scripts/nanoops.sh stop` |
+| Deployment DryRun | `.\scripts\nanoops.bat deploy-dry-run -SkipChecks` | `./scripts/nanoops.sh deploy-dry-run --skip-checks` |
+| Production deploy | `.\scripts\nanoops.bat deploy` | `./scripts/nanoops.sh deploy` |
+| Bump version | `.\scripts\nanoops.bat version -Version 0.5.0` | `./scripts/nanoops.sh version 0.5.0` |
+| Install hooks | `.\scripts\nanoops.bat install-hooks` | `./scripts/nanoops.sh install-hooks` |
+| Remove BOM | `.\scripts\nanoops.bat remove-bom` | `./scripts/nanoops.sh remove-bom` |
+
+Deployment options:
+
+- Windows: `-AllowDirty`, `-SkipChecks`, `-DryRun`, `-ConfigPath path`
+- Linux/macOS: `--allow-dirty`, `--skip-checks`, `--dry-run`, `--config path`
+
+For intentional non-interactive production automation, Windows supports
+`-Yes` and Linux/macOS supports `--yes`. Avoid these flags for normal manual
+deployments so the production confirmation remains active.
+
+Copy `.env.deploy.example` to the ignored local `.env.deploy` file before the
+first deployment. SSH authentication uses the normal OpenSSH key/agent lookup;
+no SSH password or private key is stored in this configuration.
+
+## Layout
+
+```text
+scripts/
+├── nanoops.bat       Windows double-click entry
+├── nanoops.ps1       Windows interactive console
+├── nanoops.sh        Linux/macOS interactive console
+├── tasks/            Internal task implementations
+├── hooks/            Git hook templates
+└── version.json      Version update configuration
 ```
-
-Useful options:
-
-- `-SkipChecks`: skip local Go and Web checks when they already ran in CI.
-- `-DryRun`: validate configuration and create the archive without connecting.
-- `-ConfigPath path`: use a different local deployment `.env` file.
-
-The Bash equivalents are `--skip-checks`, `--dry-run`, `--allow-dirty`, and
-`--config path`.
-
-Utility scripts for NanoLink project management.
-
-## Version Bump Script
-
-One-click version update for all project files.
-
-### Usage
-
-**Linux/macOS:**
-```bash
-cd scripts
-chmod +x bump-version.sh
-./bump-version.sh 0.2.0
-```
-
-**Windows (PowerShell):**
-```powershell
-cd scripts
-.\bump-version.ps1 0.2.0
-```
-
-### What it updates
-
-The script automatically updates version numbers in:
-
-| Component | File |
-|-----------|------|
-| Agent | `agent/Cargo.toml`, `agent/src/main.rs` |
-| Java SDK | `sdk/java/pom.xml` |
-| Go SDK | `sdk/go/nanolink/version.go` |
-| Python SDK | `sdk/python/pyproject.toml`, `sdk/python/nanolink/__init__.py` |
-| Dashboard | `dashboard/package.json` |
-| Server App | `apps/server/cmd/main.go`, `apps/server/web/package.json` |
-| Desktop App | `apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml`, `apps/desktop/src-tauri/tauri.conf.json` |
-| Demo | `demo/spring-boot/pom.xml` |
-
-### Version Format
-
-Uses [Semantic Versioning](https://semver.org/):
-
-```
-MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]
-```
-
-Examples:
-- `1.0.0` - Stable release
-- `1.0.0-alpha.1` - Alpha release
-- `1.0.0-beta.2` - Beta release
-- `1.0.0-rc.1` - Release candidate
-
-### Configuration
-
-Version tracking is stored in `version.json`:
-
-```json
-{
-  "version": "0.1.0",
-  "files": [...]
-}
-```
-
-### Workflow
-
-1. Run the bump script with new version
-2. Review changes: `git diff`
-3. Commit: `git commit -am "chore: bump version to x.x.x"`
-4. Tag: `git tag vx.x.x`
-5. Push: `git push && git push --tags`
-6. GitHub Actions will automatically build and release
-
-## Other Scripts
-
-| Script | Description |
-|--------|-------------|
-| `bump-version.sh` | Version bump (Linux/macOS) |
-| `bump-version.ps1` | Version bump (Windows) |
-| `version.json` | Version configuration |

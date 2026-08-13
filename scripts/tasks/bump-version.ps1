@@ -9,7 +9,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$TaskDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = Split-Path -Parent $TaskDir
 $RootDir = Split-Path -Parent $ScriptDir
 
 # Colors

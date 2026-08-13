@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "NanoOps 需要访问相机，以扫描网页控制台中的配对二维码。";
+"NSLocalNetworkUsageDescription" = "NanoOps 需要访问本地网络，以连接 NanoLink 服务器和受管设备。";
+"NSFaceIDUsageDescription" = "NanoOps 使用面容 ID 来保护已保存的服务器连接和运维数据。";

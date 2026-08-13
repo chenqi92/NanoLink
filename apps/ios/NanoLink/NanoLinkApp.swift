@@ -9,6 +9,7 @@ struct NanoLinkApp: App {
     @StateObject private var theme = ThemeStore.shared
     @StateObject private var l10n = L10n.shared
     @StateObject private var appLock = AppLockStore.shared
+    @StateObject private var router = ShellRouter.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -23,6 +24,7 @@ struct NanoLinkApp: App {
             .environmentObject(theme)
             .environmentObject(l10n)
             .environmentObject(appLock)
+            .environmentObject(router)
             .preferredColorScheme(theme.preferredColorScheme)
             .task { await store.start() }
             .onChange(of: scenePhase) { phase in
@@ -37,5 +39,6 @@ struct NanoLinkApp: App {
                 }
             }
         }
+        .commands { NanoShellCommands(router: router, l10n: l10n) }
     }
 }

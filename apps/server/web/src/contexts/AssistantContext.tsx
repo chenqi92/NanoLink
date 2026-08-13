@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { assistantApi, mcpApi, type AssistantStatus, type ChatMessage, type ChatResponse, type FindingDTO, type LLMProfile, type McpOverview } from "@/lib/api"
 import { useAuth } from "@/contexts/AuthContext"
+import i18n from "@/i18n"
 
 export type AssistantMessage = ChatMessage & {
   id: string
@@ -45,7 +46,7 @@ function messageId() {
 
 function errorMessage(error: unknown) {
   if (typeof error === "object" && error !== null && "error" in error) return String((error as { error: unknown }).error)
-  return "Request failed"
+  return i18n.t("assistant.requestFailed")
 }
 
 export function buildAssistantContext(messages: AssistantMessage[], maxMessages = 20, maxBytes = 20 * 1024) {

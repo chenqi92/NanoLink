@@ -505,6 +505,7 @@
     "query": "Query",
     "allAgents": "All agents",
     "addTarget": "Add target",
+    "hostTargetPlaceholder": "host:port / https://host",
     "addPath": "Add path",
     "view": "View",
     "valid": "valid",
@@ -1023,6 +1024,7 @@
   "assistant": {
     "name": "NanoLink Assistant",
     "subtitle": "Chat with a live, permission-filtered view of your fleet",
+    "requestFailed": "Request failed",
     "chatLabel": "AI assistant conversation",
     "conversation": "Conversation",
     "defaultModel": "Default model",

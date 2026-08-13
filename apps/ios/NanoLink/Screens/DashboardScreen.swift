@@ -3,6 +3,10 @@ import SwiftUI
 /// Aggregate overview for the active server: rolling KPIs, offline nodes, top CPU
 /// nodes and the most recent audit activity.
 struct DashboardScreen: View {
+    /// Set by the regular-width shell so node rows select in the Nodes workspace
+    /// instead of pushing a detail screen onto this stack.
+    var onSelectAgent: ((Agent) -> Void)? = nil
+
     @EnvironmentObject private var store: AppStore
     @Environment(\.nano) private var t
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -49,9 +53,16 @@ struct DashboardScreen: View {
                 } else {
                     NanoCard {
                         ForEach(Array(topCpu.prefix(4).enumerated()), id: \.element.id) { index, agent in
-                            NavigationLink(value: AgentRoute(agent: agent)) {
-                                topCpuRow(agent, divider: index < min(topCpu.count, 4) - 1)
-                            }.buttonStyle(.plain)
+                            let divider = index < min(topCpu.count, 4) - 1
+                            if let onSelectAgent = onSelectAgent {
+                                Button { onSelectAgent(agent) } label: {
+                                    topCpuRow(agent, divider: divider)
+                                }.buttonStyle(.plain)
+                            } else {
+                                NavigationLink(value: AgentRoute(agent: agent)) {
+                                    topCpuRow(agent, divider: divider)
+                                }.buttonStyle(.plain)
+                            }
                         }
                     }
                 }
@@ -106,9 +117,18 @@ struct DashboardScreen: View {
             Spacer()
             NavigationLink { AssistantScreen() } label: {
                 circleButton("sparkles", gradient: true)
-            }.buttonStyle(.plain)
-            NavigationLink { AgentsScreen() } label: { circleButton("magnifyingglass") }.buttonStyle(.plain)
-            Button { showServerSwitch = true } label: { circleButton("server.rack") }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(tr("nav.assistant"))
+            .help(tr("nav.assistant"))
+            NavigationLink { AgentsScreen() } label: { circleButton("magnifyingglass") }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("agents.searchHint"))
+                .help(tr("agents.searchHint"))
+            Button { showServerSwitch = true } label: { circleButton("server.rack") }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("agents.switchServer"))
+                .help(tr("agents.switchServer"))
         }
         .padding(.top, t.isIOS ? 32 : 4)
     }
