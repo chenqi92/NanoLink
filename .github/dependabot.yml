@@ -17,7 +17,9 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
     ignore:
-      # @eslint/js 10 requires eslint 10 and a coordinated toolchain upgrade.
+      # ESLint 10 requires a coordinated upgrade of eslint, @eslint/js, and plugins.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "@eslint/js"
         update-types: ["version-update:semver-major"]
 
