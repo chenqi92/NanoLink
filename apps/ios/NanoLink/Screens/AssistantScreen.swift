@@ -20,7 +20,7 @@ struct AssistantScreen: View {
                         ForEach(findings ?? []) { finding in findingCard(finding) }
                     }
                     .padding(EdgeInsets(top: 12, leading: 16, bottom: 32, trailing: 16))
-                }.refreshable { await load() }
+                }.nanoPullToRefresh(enabled: !t.desktop) { await load() }
             }
         }
         .background(t.bg.ignoresSafeArea())

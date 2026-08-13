@@ -17,10 +17,12 @@ struct TerminalScreen: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                Text(tr("terminal.navTitle"))
-                    .font(.system(size: t.isIOS ? 32 : 28, weight: t.displayWeight))
-                    .tracking(t.displayTracking).foregroundColor(t.fg)
-                    .padding(.top, t.isIOS ? 32 : 4)
+                if !t.desktop {
+                    Text(tr("terminal.navTitle"))
+                        .font(.system(size: t.titleSize, weight: t.displayWeight))
+                        .tracking(t.displayTracking).foregroundColor(t.fg)
+                        .padding(.top, t.titleTopPadding)
+                }
                 Text(tr("terminal.navDesc"))
                     .font(.system(size: 13.5)).foregroundColor(t.fg3).lineSpacing(5)
                     .padding(EdgeInsets(top: 6, leading: 4, bottom: 14, trailing: 4))
@@ -54,13 +56,13 @@ struct TerminalScreen: View {
                     }
                 }
             }
-            .padding(EdgeInsets(top: 8, leading: 16, bottom: 100, trailing: 16))
+            .padding(EdgeInsets(top: 8, leading: 16, bottom: t.contentBottomInset, trailing: 16))
             .frame(maxWidth: 900)
             .frame(maxWidth: .infinity)
         }
-        .refreshable { await load() }
+        .nanoPullToRefresh(enabled: !t.desktop) { await load() }
         .background(t.bg)
-        .navigationBarHidden(true)
+        .nanoNavigationBarHidden(!t.desktop)
         .task { await load() }
     }
 

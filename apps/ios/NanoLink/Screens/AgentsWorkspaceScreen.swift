@@ -58,19 +58,22 @@ struct AgentsWorkspaceScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(t.bg.ignoresSafeArea())
-        .navigationBarHidden(true)
+        .nanoNavigationBarHidden(!t.desktop)
         .sheet(isPresented: $showServerSwitch) { ServerSwitchSheet() }
     }
 
     private var header: some View {
         HStack(spacing: 8) {
             Text(tr("agents.title"))
-                .font(.system(size: 24, weight: t.displayWeight))
+                .font(.system(size: t.desktop ? 15 : 24,
+                              weight: t.desktop ? .semibold : t.displayWeight))
                 .tracking(t.displayTracking).foregroundColor(t.fg)
             Spacer()
             Button { showServerSwitch = true } label: {
-                Image(systemName: "server.rack").font(.system(size: 15)).foregroundColor(t.accent)
-                    .frame(width: 32, height: 32).background(t.card).clipShape(Circle())
+                Image(systemName: "server.rack")
+                    .font(.system(size: t.desktop ? 13 : 15)).foregroundColor(t.accent)
+                    .frame(width: t.desktop ? 26 : 32, height: t.desktop ? 26 : 32)
+                    .background(t.card).clipShape(Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(tr("agents.switchServer"))

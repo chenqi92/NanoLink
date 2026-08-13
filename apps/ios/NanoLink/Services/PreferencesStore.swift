@@ -41,8 +41,10 @@ enum PreferencesStore {
         set { d.set(newValue, forKey: Key.activeServer) }
     }
 
+    /// Stringified `AppThemeMode` raw value; defaults to `system` (2) so an
+    /// install with no stored preference follows the OS appearance.
     static var themeMode: String {
-        get { d.string(forKey: Key.themeMode) ?? "dark" }
+        get { d.string(forKey: Key.themeMode) ?? String(AppThemeMode.system.rawValue) }
         set { d.set(newValue, forKey: Key.themeMode) }
     }
 

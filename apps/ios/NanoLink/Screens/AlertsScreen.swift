@@ -15,8 +15,8 @@ struct AlertsScreen: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                header
-                stats.padding(.top, 12)
+                if !t.desktop { header }
+                stats.padding(.top, t.desktop ? 4 : 12)
                 NanoSectionLabel(tr("alerts.current"))
                 if alerts.isEmpty { emptyAlerts }
                 else {
@@ -41,20 +41,31 @@ struct AlertsScreen: View {
                     Text(message).font(.system(size: 12.5)).foregroundColor(t.fg3).padding(.top, 12)
                 }
             }
-            .padding(EdgeInsets(top: 8, leading: 16, bottom: 100, trailing: 16))
+            .padding(EdgeInsets(top: 8, leading: 16, bottom: t.contentBottomInset, trailing: 16))
             .frame(maxWidth: 900)
             .frame(maxWidth: .infinity)
         }
-        .refreshable { await refresh() }
+        .nanoPullToRefresh(enabled: !t.desktop) { await refresh() }
         .background(t.bg)
-        .navigationBarHidden(true)
+        .nanoNavigationBarHidden(!t.desktop)
+        .toolbar {
+            if t.desktop {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { acknowledgeAll() } label: {
+                        Label(tr("alerts.clearAll"), systemImage: "checkmark.circle")
+                    }
+                    .disabled(alerts.isEmpty || clearing)
+                    .help(tr("alerts.clearAll"))
+                }
+            }
+        }
         .task { await refresh() }
     }
 
     private var header: some View {
         HStack {
             Text(tr("alerts.title"))
-                .font(.system(size: t.isIOS ? 32 : 28, weight: t.displayWeight)).tracking(t.displayTracking).foregroundColor(t.fg)
+                .font(.system(size: t.titleSize, weight: t.displayWeight)).tracking(t.displayTracking).foregroundColor(t.fg)
             Spacer()
             if clearing { ProgressView().frame(width: 36, height: 36) }
             else {

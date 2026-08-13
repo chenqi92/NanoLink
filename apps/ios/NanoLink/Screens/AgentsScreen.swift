@@ -21,17 +21,17 @@ struct AgentsScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if !t.desktop { header }
             AgentListPane(query: $query, filter: $filter)
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: 900)
         .frame(maxWidth: .infinity)
         .background(t.bg.ignoresSafeArea())
-        .navigationBarHidden(true)
+        .nanoNavigationBarHidden(!t.desktop)
         .navigationDestination(for: AgentRoute.self) { AgentDetailScreen(agent: $0.agent) }
         .sheet(isPresented: $showServerSwitch) { ServerSwitchSheet() }
-        .safeAreaInset(edge: .bottom, alignment: .trailing) {
+        .nanoFloatingAction(enabled: !t.desktop) {
             Button { showServerSwitch = true } label: {
                 Label(tr("agents.switchServer"), systemImage: "server.rack")
                     .font(.system(size: 14, weight: .semibold)).foregroundColor(t.onAccent)
@@ -44,7 +44,7 @@ struct AgentsScreen: View {
     private var header: some View {
         HStack {
             Text(tr("agents.title"))
-                .font(.system(size: t.isIOS ? 32 : 28, weight: t.displayWeight))
+                .font(.system(size: t.titleSize, weight: t.displayWeight))
                 .tracking(t.displayTracking).foregroundColor(t.fg)
             Spacer()
             Image(systemName: filter == "all" ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")

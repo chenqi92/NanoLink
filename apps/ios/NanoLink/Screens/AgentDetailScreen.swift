@@ -36,7 +36,19 @@ struct AgentDetailScreen: View {
             }
         }
         .background(t.bg.ignoresSafeArea())
-        .navigationBarHidden(true)
+        .nanoNavigationBarHidden(!t.desktop)
+        .navigationTitle(t.desktop ? currentAgent.hostname : "")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if t.desktop {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showActions = true } label: {
+                        Label(tr("actions.title"), systemImage: "ellipsis.circle")
+                    }
+                    .help(tr("actions.title"))
+                }
+            }
+        }
         .sheet(isPresented: $showActions) {
             AgentActionsSheet(agent: currentAgent) { tab = 2 }
         }
@@ -44,17 +56,21 @@ struct AgentDetailScreen: View {
 
     private var header: some View {
         VStack(spacing: 8) {
-            HStack {
-                if showsBackButton {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold)).foregroundColor(t.accent)
-                            .frame(width: 36, height: 36)
+            // The Mac window supplies back navigation and the actions menu in its
+            // own chrome, so the in-content button row is touch-only.
+            if !t.desktop {
+                HStack {
+                    if showsBackButton {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold)).foregroundColor(t.accent)
+                                .frame(width: 36, height: 36)
+                        }.buttonStyle(.plain)
+                    }
+                    Spacer()
+                    Button { showActions = true } label: {
+                        Image(systemName: "ellipsis").font(.system(size: 20)).foregroundColor(t.accent).frame(width: 36, height: 36)
                     }.buttonStyle(.plain)
                 }
-                Spacer()
-                Button { showActions = true } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 20)).foregroundColor(t.accent).frame(width: 36, height: 36)
-                }.buttonStyle(.plain)
             }
             HStack(spacing: 10) {
                 NanoIconBox(icon: osIcon(currentAgent.os), size: 44, iconSize: 22)
@@ -413,7 +429,7 @@ private struct AgentHistoryView: View {
             }
             .padding(EdgeInsets(top: 4, leading: 16, bottom: 40, trailing: 16))
         }
-        .refreshable { await load() }
+        .nanoPullToRefresh(enabled: !t.desktop) { await load() }
         .task(id: range) { await load() }
     }
 

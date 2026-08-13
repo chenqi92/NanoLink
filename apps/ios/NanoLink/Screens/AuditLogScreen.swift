@@ -24,12 +24,22 @@ struct AuditLogScreen: View {
                     }
                     .padding(EdgeInsets(top: 4, leading: 16, bottom: 50, trailing: 16))
                 }
-                .refreshable { await load() }
+                .nanoPullToRefresh(enabled: !t.desktop) { await load() }
             }
         }
         .background(t.bg.ignoresSafeArea())
         .navigationTitle(tr("audit.title"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if t.desktop {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { Task { await load() } } label: {
+                        Label(tr("menu.refresh"), systemImage: "arrow.clockwise")
+                    }
+                    .help(tr("menu.refresh"))
+                }
+            }
+        }
         .task { await load() }
     }
 

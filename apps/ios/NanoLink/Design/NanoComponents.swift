@@ -197,7 +197,9 @@ struct NanoButton: View {
 
     private var isIOS: Bool { t.isIOS }
     private var height: CGFloat {
-        let regular: CGFloat = variant == .text ? (isIOS ? 44 : 40) : (isIOS ? 50 : 40)
+        let regular: CGFloat = t.desktop
+            ? (variant == .text ? 26 : t.controlHeight)
+            : (variant == .text ? (isIOS ? 44 : 40) : (isIOS ? 50 : 40))
         return compact ? regular - 6 : regular
     }
     private var fg: Color {
@@ -223,15 +225,16 @@ struct NanoButton: View {
                 if loading {
                     ProgressView().tint(fg)
                 } else if let icon {
-                    HStack(spacing: 8) {
-                        Image(systemName: icon).font(.system(size: isIOS ? 20 : 18))
+                    HStack(spacing: t.desktop ? 6 : 8) {
+                        Image(systemName: icon).font(.system(size: t.desktop ? 13 : (isIOS ? 20 : 18)))
                         Text(label)
                     }
                 } else {
                     Text(label)
                 }
             }
-            .font(.system(size: isIOS ? 17 : 14, weight: isIOS ? .semibold : .medium))
+            .font(.system(size: t.controlFontSize,
+                          weight: t.desktop ? .medium : (isIOS ? .semibold : .medium)))
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .frame(height: height)
             .padding(.horizontal, fullWidth ? 0 : 18)

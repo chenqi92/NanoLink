@@ -44,7 +44,9 @@ struct NanoShell: View {
 
     var body: some View {
         Group {
-            if horizontalSizeClass == .regular {
+            if t.desktop {
+                desktopShell
+            } else if horizontalSizeClass == .regular {
                 iPadShell
             } else {
                 phoneShell
@@ -89,6 +91,64 @@ struct NanoShell: View {
             NavigationStack { SettingsScreen() }
                 .tabItem { Label(tr("nav.settings"), systemImage: ShellSection.settings.icon) }
                 .tag(ShellSection.settings)
+        }
+    }
+
+    /// Mac window: a persistent source list plus a real window toolbar, instead of
+    /// the phone tab bar. Sections carry the window title, so the screens drop
+    /// their inline large titles and the toolbar owns the global actions.
+    private var desktopShell: some View {
+        NavigationSplitView {
+            List(selection: sidebarSelection) {
+                Section(tr("menu.view")) {
+                    ForEach(ShellSection.allCases) { item in
+                        desktopSidebarRow(item)
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .navigationTitle(tr("app.title"))
+            .navigationBarTitleDisplayMode(.inline)
+        } detail: {
+            NavigationStack {
+                selectedScreen
+                    .frame(maxWidth: section == .nodes ? .infinity : 1_100, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity)
+                    .navigationTitle(tr(section.titleKey))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { desktopToolbar }
+            }
+            .id(section)
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    /// Binding that keeps `List` selection and the router's section in step.
+    private var sidebarSelection: Binding<ShellSection?> {
+        Binding(get: { router.section }, set: { newValue in
+            if let newValue { router.show(newValue) }
+        })
+    }
+
+    private func desktopSidebarRow(_ item: ShellSection) -> some View {
+        let badge = item == .activity ? alertBadge : 0
+        return Label(tr(item.titleKey), systemImage: item.icon)
+            .badge(badge > 0 ? Text("\(badge)") : nil)
+            .tag(item)
+    }
+
+    @ToolbarContentBuilder
+    private var desktopToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button { router.requestRefresh() } label: {
+                Label(tr("menu.refresh"), systemImage: "arrow.clockwise")
+            }
+            .help(tr("menu.refresh"))
+
+            Button { router.showServerSwitch = true } label: {
+                Label(tr("agents.switchServer"), systemImage: "server.rack")
+            }
+            .help(tr("agents.switchServer"))
         }
     }
 

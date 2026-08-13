@@ -3,7 +3,8 @@ import SwiftUI
 import Combine
 
 /// App theme mode persisted as an integer under `theme_mode`
-/// (0=light, 1=dark, 2=system); default dark.
+/// (0=light, 1=dark, 2=system); default system, so a fresh install follows the
+/// OS appearance instead of pinning dark.
 enum AppThemeMode: Int, CaseIterable {
     case light = 0
     case dark = 1
@@ -28,8 +29,8 @@ final class ThemeStore: ObservableObject {
     }
 
     private init() {
-        let raw = Int(PreferencesStore.themeMode) ?? AppThemeMode.dark.rawValue
-        mode = AppThemeMode(rawValue: min(max(raw, 0), 2)) ?? .dark
+        let raw = Int(PreferencesStore.themeMode) ?? AppThemeMode.system.rawValue
+        mode = AppThemeMode(rawValue: min(max(raw, 0), 2)) ?? .system
         style = ThemeStyle(rawValue: PreferencesStore.themeStyle) ?? .ios
         let defaults = UserDefaults.standard
         if let value = defaults.object(forKey: "ui_compact") as? Bool {
