@@ -96,6 +96,7 @@ lerna-debug.log*
 # Build & Distribution
 # =========================
 /artifacts/
+/output/
 dist/
 !apps/server/web/dist/
 apps/server/web/dist/*
