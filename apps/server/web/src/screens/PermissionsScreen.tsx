@@ -5,6 +5,7 @@ import { usersApi, permissionsApi, groupsApi, auditApi, type UserDetail, type Us
 import { useData } from "@/contexts/DataContext"
 import { PageHeader, Perm } from "@/components/shell/primitives"
 import { agentStatus } from "@/lib/format"
+import { effectiveAgentPermission } from "@/lib/permissions"
 
 type Mode = "matrix" | "byUser" | "byGroup" | "changes"
 
@@ -149,7 +150,6 @@ export function PermissionsScreen() {
                   <div className="row gap-2" style={{ alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
                     <span style={{ fontWeight: 500 }}>{groupDetail?.name ?? "—"}</span>
                     {groupDetail?.perm != null && <Perm level={groupDetail.perm} />}
-                    {groupDetail?.scope && <span className="badge mono">{groupDetail.scope}</span>}
                     {groupDetail?.description && <span className="muted" style={{ fontSize: 11.5 }}>{groupDetail.description}</span>}
                   </div>
                   <div className="upper" style={{ color: "var(--fg-4)", marginBottom: 8 }}>{t("acc.members")}</div>
@@ -163,6 +163,27 @@ export function PermissionsScreen() {
                           <button className="btn btn-sm btn-ghost" onClick={() => { setMode("byUser"); setSelectedUser(u.id) }}>{t("acc.byUser")}</button>
                         </div>
                       ))
+                    )}
+                  </div>
+                  <div className="hr" />
+                  <div className="upper" style={{ color: "var(--fg-4)", marginBottom: 8 }}>{t("acc.authorizedAgents")}</div>
+                  <div className="col" style={{ gap: 6 }}>
+                    {(groupDetail?.agents ?? []).length === 0 ? (
+                      <div className="muted" style={{ fontSize: 12 }}>{t("acc.noAgentsGranted")}</div>
+                    ) : (
+                      (groupDetail?.agents ?? []).map((grant) => {
+                        const agent = agents.find((item) => item.id === grant.agentId)
+                        const effective = Math.min(grant.permissionLevel, agent?.permissionLevel ?? grant.permissionLevel)
+                        return (
+                          <div key={grant.agentId} className="row" style={{ alignItems: "center", justifyContent: "space-between", padding: "8px 10px", background: "var(--panel-2)", borderRadius: 4 }}>
+                            <span className="row gap-2" style={{ alignItems: "center", minWidth: 0 }}>
+                              <span className={`dot ${agent ? "ok" : "crit"}`} />
+                              <span className="mono truncate" style={{ fontSize: 12 }}>{agent?.hostname ?? grant.agentId}</span>
+                            </span>
+                            <Perm level={effective} />
+                          </div>
+                        )
+                      })
                     )}
                   </div>
                 </div>
@@ -195,7 +216,7 @@ export function PermissionsScreen() {
                       </span>
                     </td>
                     {agents.map((a) => {
-                      const lvl = u.isSuperAdmin ? 3 : permMap[u.id]?.[a.id]
+                      const lvl = effectiveAgentPermission(u, a, permMap[u.id]?.[a.id], groups)
                       return (
                         <td key={a.id} style={{ textAlign: "center" }}>
                           {lvl != null ? <span className={`perm perm-${lvl}`}>L{lvl}</span> : <span className="dim">{t("acc.noOverride")}</span>}
@@ -227,14 +248,19 @@ export function PermissionsScreen() {
                   <div className="col" style={{ gap: 6 }}>
                     {agents.map((a) => {
                       const lvl = permMap[selectedUser]?.[a.id]
-                      const su = users.find((x) => x.id === selectedUser)?.isSuperAdmin
+                      const selected = users.find((x) => x.id === selectedUser)
+                      const su = selected?.isSuperAdmin
+                      const effective = selected ? effectiveAgentPermission(selected, a, lvl, groups) : undefined
                       return (
                         <div key={a.id} className="row" style={{ alignItems: "center", justifyContent: "space-between", padding: "8px 10px", background: "var(--panel-2)", borderRadius: 4 }}>
                           <span className="mono truncate" style={{ fontSize: 12 }}>{a.hostname}</span>
                           <div className="row gap-1">
-                            {su ? <span className="perm perm-3">L3 · {t("acc.roleSuper")}</span> : [0, 1, 2, 3].map((l) => (
-                              <button key={l} className="btn btn-sm" onClick={() => setPerm(selectedUser, a.id, lvl === l ? null : l)} style={{ height: 22, padding: "0 8px", fontFamily: "var(--font-mono)", fontSize: 11, background: lvl === l ? "var(--panel)" : "transparent", border: lvl === l ? "1px solid var(--border-strong)" : "1px solid transparent", color: lvl === l ? "var(--fg)" : "var(--fg-4)" }}>L{l}</button>
-                            ))}
+                            {su ? <span className={`perm perm-${a.permissionLevel}`}>L{a.permissionLevel} · {t("acc.roleSuper")}</span> : <>
+                              {effective != null && effective !== lvl && <span className={`perm perm-${effective}`} title={t("acc.inheritedPermission")}>L{effective}</span>}
+                              {[0, 1, 2, 3].map((l) => (
+                                <button key={l} className="btn btn-sm" disabled={l > a.permissionLevel} title={l > a.permissionLevel ? t("acc.agentPermissionCeiling", { level: a.permissionLevel }) : undefined} onClick={() => setPerm(selectedUser, a.id, lvl === l ? null : l)} style={{ height: 22, padding: "0 8px", fontFamily: "var(--font-mono)", fontSize: 11, background: lvl === l ? "var(--panel)" : "transparent", border: lvl === l ? "1px solid var(--border-strong)" : "1px solid transparent", color: lvl === l ? "var(--fg)" : "var(--fg-4)" }}>L{l}</button>
+                              ))}
+                            </>}
                           </div>
                         </div>
                       )

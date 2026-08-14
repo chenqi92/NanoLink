@@ -462,6 +462,14 @@ export function SettingsScreen() {
               <FormBlock label={t("plat.agentAutoUpdate")}>
                 <Segmented value={(cfg.agentAutoUpdate as "enabled" | "manual") || "manual"} onChange={(v) => setCfgVal("agentAutoUpdate", v)} options={[{ v: "enabled", label: t("plat.autoUpdateOn") }, { v: "manual", label: t("plat.autoUpdateManual") }]} />
               </FormBlock>
+              <FormBlock label={t("plat.publicRegistration")}>
+                <Segmented
+                  value={cfg.registrationEnabled === "true" ? "true" : "false"}
+                  onChange={(v) => setCfgVal("registrationEnabled", v)}
+                  options={[{ v: "false", label: t("plat.registrationOff") }, { v: "true", label: t("plat.registrationOn") }]}
+                />
+                <div className="hint">{t("plat.publicRegistrationHint")}</div>
+              </FormBlock>
               <div className="row gap-2" style={{ alignItems: "center" }}>
                 <button className="btn btn-primary" onClick={saveSettings} disabled={cfgStatus === "busy"}>{cfgStatus === "busy" && <span className="dot pulse ok" />}{t("common.save")}</button>
                 {cfgStatus === "done" && <span className="badge ok">{t("plat.settingsSaved")}</span>}

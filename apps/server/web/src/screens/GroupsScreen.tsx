@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
-import { groupsApi, usersApi, type Group, type UserDetail } from "@/lib/api"
+import { groupsApi, usersApi, type Agent, type Group, type UserDetail } from "@/lib/api"
+import { useData } from "@/contexts/DataContext"
 import { PageHeader, KVRow, FormBlock, EmptyState, Perm } from "@/components/shell/primitives"
 import { Modal, ConfirmDialog } from "@/components/shell/Dialog"
 
@@ -15,6 +16,7 @@ function Avatar({ name, size = 18 }: { name: string; size?: number }) {
 
 export function GroupsScreen() {
   const { t } = useTranslation()
+  const { agents } = useData()
   const [groups, setGroups] = useState<Group[]>([])
   const [users, setUsers] = useState<UserDetail[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,6 +50,8 @@ export function GroupsScreen() {
             {groups.map((g) => {
               const members = membersOf(g.id)
               const count = g.userCount ?? members.length
+              const grants = g.agents ?? []
+              const agentNames = grants.map((grant) => agents.find((agent) => agent.id === grant.agentId)?.hostname ?? grant.agentId)
               return (
                 <div key={g.id} className="card" style={{ padding: 16 }}>
                   <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -62,7 +66,12 @@ export function GroupsScreen() {
                   </div>
                   <div className="hr" />
                   <KVRow label={t("acc.members")} value={count} />
-                  {g.scope && <KVRow label={t("dev.scope")} value={<span className="mono">{g.scope}</span>} />}
+                  <KVRow
+                    label={t("acc.scope")}
+                    value={grants.length > 0
+                      ? <span className="mono" title={agentNames.join(", ")}>{t("acc.agentCount", { count: grants.length })}</span>
+                      : <span className="dim">{t("acc.noAgentsGranted")}</span>}
+                  />
                   <div className="hr" />
                   <div className="col" style={{ gap: 6 }}>
                     <div className="upper" style={{ color: "var(--fg-4)" }}>{t("acc.memberPreview")}</div>
@@ -89,26 +98,32 @@ export function GroupsScreen() {
         )}
       </div>
 
-      {creating && <GroupEditor onClose={() => setCreating(false)} onDone={() => { setCreating(false); load() }} />}
-      {editing && <GroupEditor group={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load() }} />}
+      {creating && <GroupEditor agents={agents} onClose={() => setCreating(false)} onDone={() => { setCreating(false); load() }} />}
+      {editing && <GroupEditor agents={agents} group={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load() }} />}
       {deleting && <ConfirmDialog title={t("common.delete")} danger message={t("acc.deleteGroupConfirm", { name: deleting.name })} confirmLabel={t("common.delete")} onClose={() => setDeleting(null)} onConfirm={async () => { await groupsApi.delete(deleting.id); setDeleting(null); load() }} />}
       {managing && <MembersModal group={managing} users={users} memberIds={membersOf(managing.id).map((u) => u.id)} onClose={() => setManaging(null)} onChanged={load} />}
     </div>
   )
 }
 
-function GroupEditor({ group, onClose, onDone }: { group?: Group; onClose: () => void; onDone: () => void }) {
+function GroupEditor({ agents, group, onClose, onDone }: { agents: Agent[]; group?: Group; onClose: () => void; onDone: () => void }) {
   const { t } = useTranslation()
   const [name, setName] = useState(group?.name ?? "")
   const [desc, setDesc] = useState(group?.description ?? "")
   const [perm, setPerm] = useState(group?.perm ?? 0)
-  const [scope, setScope] = useState(group?.scope ?? "")
+  const [agentIds, setAgentIds] = useState<string[]>(() => (group?.agents ?? []).map((grant) => grant.agentId))
   const [busy, setBusy] = useState(false)
+
+  const assignedOffline = agentIds.filter((id) => !agents.some((agent) => agent.id === id))
+  const toggleAgent = (agentId: string) => {
+    setAgentIds((current) => current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId])
+  }
+
   async function submit() {
     setBusy(true)
     try {
-      if (group) await groupsApi.update(group.id, { name, description: desc, perm, scope })
-      else await groupsApi.create({ name, description: desc, perm, scope })
+      if (group) await groupsApi.update(group.id, { name, description: desc, perm, agentIds })
+      else await groupsApi.create({ name, description: desc, perm, agentIds })
       onDone()
     } finally { setBusy(false) }
   }
@@ -117,10 +132,42 @@ function GroupEditor({ group, onClose, onDone }: { group?: Group; onClose: () =>
       <div className="col gap-4">
         <FormBlock label={t("acc.groupName")}><input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus /></FormBlock>
         <FormBlock label={t("acc.description")}><input className="input" value={desc} onChange={(e) => setDesc(e.target.value)} /></FormBlock>
-        <div className="row gap-2">
-          <FormBlock label={t("admin.permissions")}><select className="select" value={perm} onChange={(e) => setPerm(Number(e.target.value))}>{[0, 1, 2, 3].map((l) => <option key={l} value={l}>L{l} · {t(`permission.l${l}`)}</option>)}</select></FormBlock>
-          <FormBlock label={t("dev.scope")}><input className="input" value={scope} onChange={(e) => setScope(e.target.value)} placeholder={t("dev.groupScopePlaceholder")} /></FormBlock>
-        </div>
+        <FormBlock label={t("admin.permissions")}><select className="select" value={perm} onChange={(e) => setPerm(Number(e.target.value))}>{[0, 1, 2, 3].map((l) => <option key={l} value={l}>L{l} · {t(`permission.l${l}`)}</option>)}</select></FormBlock>
+        <FormBlock label={t("acc.scope")}>
+          <div className="card" style={{ overflow: "hidden" }}>
+            <div className="row gap-2" style={{ justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderBottom: "1px solid var(--border)" }}>
+              <span className="muted" style={{ fontSize: 11.5 }}>{t("acc.selectedAgents", { count: agentIds.length })}</span>
+              <div className="row gap-1">
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setAgentIds((current) => Array.from(new Set([...current, ...agents.map((agent) => agent.id)])))}>{t("common.selectAll")}</button>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setAgentIds([])}>{t("common.clear")}</button>
+              </div>
+            </div>
+            <div className="col" style={{ maxHeight: 250, overflow: "auto" }}>
+              {agents.map((agent) => {
+                const selected = agentIds.includes(agent.id)
+                const effectiveLevel = Math.min(perm, agent.permissionLevel)
+                return (
+                  <label key={agent.id} className="row gap-2" style={{ alignItems: "center", padding: "9px 10px", cursor: "pointer", background: selected ? "var(--panel-2)" : "transparent", borderBottom: "1px solid var(--border)" }}>
+                    <input type="checkbox" checked={selected} onChange={() => toggleAgent(agent.id)} />
+                    <span className="dot ok" />
+                    <span className="mono truncate" style={{ flex: 1, fontSize: 12 }}>{agent.hostname}</span>
+                    <span className="mono dim" style={{ fontSize: 10.5 }}>L{effectiveLevel}</span>
+                  </label>
+                )
+              })}
+              {assignedOffline.map((agentId) => (
+                <label key={agentId} className="row gap-2" style={{ alignItems: "center", padding: "9px 10px", cursor: "pointer", background: "var(--panel-2)", borderBottom: "1px solid var(--border)" }}>
+                  <input type="checkbox" checked onChange={() => toggleAgent(agentId)} />
+                  <span className="dot crit" />
+                  <span className="mono truncate" style={{ flex: 1, fontSize: 11 }}>{agentId}</span>
+                  <span className="dim" style={{ fontSize: 10.5 }}>{t("status.offline")}</span>
+                </label>
+              ))}
+              {agents.length === 0 && assignedOffline.length === 0 && <div className="muted" style={{ padding: 14, textAlign: "center", fontSize: 12 }}>{t("acc.noAgentsAvailable")}</div>}
+            </div>
+          </div>
+          <div className="hint">{t("acc.groupScopeHint")}</div>
+        </FormBlock>
       </div>
     </Modal>
   )

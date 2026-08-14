@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -25,21 +26,40 @@ func NewGroupHandler(groupService *service.GroupService, logger *zap.SugaredLogg
 
 // CreateGroupRequest represents a create group request
 type CreateGroupRequest struct {
-	Name        string `json:"name" binding:"required,min=1,max=100"`
-	Description string `json:"description" binding:"max=500"`
-	Perm        int    `json:"perm" binding:"omitempty,min=0,max=3"`
-	Scope       string `json:"scope" binding:"max=200"`
+	Name        string   `json:"name" binding:"required,min=1,max=100"`
+	Description string   `json:"description" binding:"max=500"`
+	Perm        int      `json:"perm" binding:"omitempty,min=0,max=3"`
+	Scope       string   `json:"scope" binding:"max=200"`
+	AgentIDs    []string `json:"agentIds"`
+}
+
+// GroupAgentGrantResponse is a node included in a group's effective range.
+type GroupAgentGrantResponse struct {
+	AgentID         string `json:"agentId"`
+	PermissionLevel int    `json:"permissionLevel"`
 }
 
 // GroupResponse represents a group in API responses
 type GroupResponse struct {
-	ID          uint           `json:"id"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Perm        int            `json:"perm"`
-	Scope       string         `json:"scope,omitempty"`
-	UserCount   int            `json:"userCount,omitempty"`
-	Users       []UserResponse `json:"users,omitempty"`
+	ID          uint                      `json:"id"`
+	Name        string                    `json:"name"`
+	Description string                    `json:"description"`
+	Perm        int                       `json:"perm"`
+	Scope       string                    `json:"scope,omitempty"`
+	UserCount   int                       `json:"userCount,omitempty"`
+	Users       []UserResponse            `json:"users,omitempty"`
+	Agents      []GroupAgentGrantResponse `json:"agents"`
+}
+
+func groupAgentGrants(groupAgentGroups []database.AgentGroup) []GroupAgentGrantResponse {
+	result := make([]GroupAgentGrantResponse, 0, len(groupAgentGroups))
+	for _, assignment := range groupAgentGroups {
+		result = append(result, GroupAgentGrantResponse{
+			AgentID:         assignment.AgentID,
+			PermissionLevel: assignment.PermissionLevel,
+		})
+	}
+	return result
 }
 
 // CreateGroup creates a new group
@@ -50,7 +70,7 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	group, err := h.groupService.CreateGroup(req.Name, req.Description, req.Perm, req.Scope)
+	group, err := h.groupService.CreateGroup(req.Name, req.Description, req.Perm, req.Scope, req.AgentIDs)
 	if err != nil {
 		if err == service.ErrGroupExists {
 			c.JSON(http.StatusConflict, gin.H{"error": "group already exists"})
@@ -67,6 +87,7 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 		Description: group.Description,
 		Perm:        group.Perm,
 		Scope:       group.Scope,
+		Agents:      groupAgentGrants(group.AgentGroups),
 	})
 }
 
@@ -88,6 +109,7 @@ func (h *GroupHandler) ListGroups(c *gin.Context) {
 			Perm:        g.Perm,
 			Scope:       g.Scope,
 			UserCount:   len(g.Users),
+			Agents:      groupAgentGrants(g.AgentGroups),
 		}
 	}
 
@@ -118,7 +140,7 @@ func (h *GroupHandler) GetGroup(c *gin.Context) {
 		users[i] = UserResponse{
 			ID:           u.ID,
 			Username:     u.Username,
-			Email:        u.Email,
+			Email:        u.EmailString(),
 			IsSuperAdmin: u.IsSuperAdmin,
 		}
 	}
@@ -130,15 +152,17 @@ func (h *GroupHandler) GetGroup(c *gin.Context) {
 		Perm:        group.Perm,
 		Scope:       group.Scope,
 		Users:       users,
+		Agents:      groupAgentGrants(group.AgentGroups),
 	})
 }
 
 // UpdateGroupRequest represents an update group request
 type UpdateGroupRequest struct {
-	Name        string  `json:"name" binding:"omitempty,min=1,max=100"`
-	Description string  `json:"description" binding:"max=500"`
-	Perm        *int    `json:"perm" binding:"omitempty,min=0,max=3"`
-	Scope       *string `json:"scope"`
+	Name        string    `json:"name" binding:"omitempty,min=1,max=100"`
+	Description string    `json:"description" binding:"max=500"`
+	Perm        *int      `json:"perm" binding:"omitempty,min=0,max=3"`
+	Scope       *string   `json:"scope"`
+	AgentIDs    *[]string `json:"agentIds"`
 }
 
 // UpdateGroup updates a group
@@ -155,7 +179,7 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 		return
 	}
 
-	group, err := h.groupService.UpdateGroup(uint(groupID), req.Name, req.Description, req.Perm, req.Scope)
+	group, err := h.groupService.UpdateGroup(uint(groupID), req.Name, req.Description, req.Perm, req.Scope, req.AgentIDs)
 	if err != nil {
 		if err == service.ErrGroupNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
@@ -176,6 +200,7 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 		Description: group.Description,
 		Perm:        group.Perm,
 		Scope:       group.Scope,
+		Agents:      groupAgentGrants(group.AgentGroups),
 	})
 }
 

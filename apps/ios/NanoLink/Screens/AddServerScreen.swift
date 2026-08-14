@@ -1,6 +1,9 @@
 import SwiftUI
 import UIKit
 
+private let defaultServerName = "NanoOps"
+private let defaultServerURL = "https://nanoops.netok.cn"
+
 private enum ServerConnectionMethod: String, Identifiable {
     case qrCode, account, pairing, manual
     var id: String { rawValue }
@@ -13,8 +16,8 @@ struct AddServerScreen: View {
     @Environment(\.nano) private var t
 
     @State private var method: ServerConnectionMethod?
-    @State private var name = ""
-    @State private var url = ""
+    @State private var name = defaultServerName
+    @State private var url = defaultServerURL
     @State private var username = ""
     @State private var password = ""
     @State private var token = ""
@@ -176,7 +179,7 @@ struct AddServerScreen: View {
         formScroll {
             notice("person.crop.circle.badge.checkmark", tr("addServer.accountNotice"), color: t.info)
             field(tr("addServer.serverName"), text: $name, hint: tr("addServer.serverNameHint"), contentType: .organizationName)
-            field(tr("addServer.serverUrl"), text: $url, hint: "https://server.example.com", keyboard: .URL, contentType: .URL, capitalization: .never, autocorrectionDisabled: true)
+            field(tr("addServer.serverUrl"), text: $url, hint: defaultServerURL, keyboard: .URL, contentType: .URL, capitalization: .never, autocorrectionDisabled: true)
             field(tr("addServer.username"), text: $username, hint: tr("server.usernameHint"), contentType: .username, capitalization: .never, autocorrectionDisabled: true)
             field(tr("addServer.password"), text: $password, hint: tr("server.passwordHint"), secure: true, contentType: .password)
             if let error { errorBanner(error) }
@@ -196,7 +199,7 @@ struct AddServerScreen: View {
     private var manualForm: some View {
         formScroll {
             field(tr("addServer.serverName"), text: $name, hint: tr("addServer.serverNameHint"), contentType: .organizationName)
-            field(tr("addServer.serverUrl"), text: $url, hint: "https://server.example.com", keyboard: .URL, contentType: .URL, capitalization: .never, autocorrectionDisabled: true)
+            field(tr("addServer.serverUrl"), text: $url, hint: defaultServerURL, keyboard: .URL, contentType: .URL, capitalization: .never, autocorrectionDisabled: true)
             field(tr("addServer.deviceTokenOptional"), text: $token, hint: tr("addServer.deviceTokenHint"), secure: true, capitalization: .never, autocorrectionDisabled: true)
 
             Button { withAnimation { advanced.toggle() } } label: {
@@ -226,7 +229,7 @@ struct AddServerScreen: View {
         formScroll {
             notice("number.square", tr("addServer.pairingNotice"), color: t.info)
             field(tr("addServer.serverName"), text: $name, hint: tr("addServer.serverNameHint"), contentType: .organizationName)
-            field(tr("addServer.serverUrl"), text: $url, hint: "https://server.example.com", keyboard: .URL, contentType: .URL, capitalization: .never, autocorrectionDisabled: true)
+            field(tr("addServer.serverUrl"), text: $url, hint: defaultServerURL, keyboard: .URL, contentType: .URL, capitalization: .never, autocorrectionDisabled: true)
 
             VStack(spacing: 12) {
                 HStack(spacing: 7) {

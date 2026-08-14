@@ -11,8 +11,10 @@ type User struct {
 	ID           uint   `gorm:"primarykey" json:"id"`
 	Username     string `gorm:"uniqueIndex;size:50;not null" json:"username"`
 	PasswordHash string `gorm:"size:255;not null" json:"-"`
-	Email        string `gorm:"uniqueIndex;size:255" json:"email"`
-	IsSuperAdmin bool   `gorm:"default:false" json:"isSuperAdmin"`
+	// Pointer keeps an omitted email as SQL NULL. A unique index permits many
+	// NULL values, while still rejecting duplicate non-empty addresses.
+	Email        *string `gorm:"uniqueIndex;size:255" json:"email,omitempty"`
+	IsSuperAdmin bool    `gorm:"default:false" json:"isSuperAdmin"`
 	// TokenVersion is incremented whenever credentials change (e.g. password reset).
 	// JWTs embed the version at issue time; the auth middleware rejects any token whose
 	// version is older than the current row, providing a cheap revocation mechanism
@@ -24,6 +26,13 @@ type User struct {
 
 	// Relations
 	Groups []Group `gorm:"many2many:user_groups;" json:"groups,omitempty"`
+}
+
+func (u User) EmailString() string {
+	if u.Email == nil {
+		return ""
+	}
+	return *u.Email
 }
 
 // Group represents a user group for organizing access to agents
@@ -38,7 +47,8 @@ type Group struct {
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// Relations
-	Users []User `gorm:"many2many:user_groups;" json:"users,omitempty"`
+	Users       []User       `gorm:"many2many:user_groups;" json:"users,omitempty"`
+	AgentGroups []AgentGroup `gorm:"foreignKey:GroupID" json:"agentGroups,omitempty"`
 }
 
 // Setting is a key/value server setting editable from the admin UI
@@ -131,8 +141,8 @@ type AuditLog struct {
 	AgentHostname string    `gorm:"size:255" json:"agentHostname"`
 	CommandType   string    `gorm:"size:50;index" json:"commandType"`
 	CommandID     string    `gorm:"size:50;index" json:"commandId"`
-	Target        string    `gorm:"size:500" json:"target"`        // What was operated on (service name, file path, etc.)
-	Params        string    `gorm:"type:text" json:"params"`       // JSON params
+	Target        string    `gorm:"size:500" json:"target"`  // What was operated on (service name, file path, etc.)
+	Params        string    `gorm:"type:text" json:"params"` // JSON params
 	Success       bool      `gorm:"default:false" json:"success"`
 	Error         string    `gorm:"type:text" json:"error"`
 	DurationMs    int64     `gorm:"default:0" json:"durationMs"`

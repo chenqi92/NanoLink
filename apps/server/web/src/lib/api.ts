@@ -796,21 +796,90 @@ export interface DeploymentProjectInput {
   keepReleases: number
 }
 
+export interface DeploymentUploadSession {
+  id: string
+  projectId: number
+  version: string
+  artifactName: string
+  artifactSize: number
+  uploadOffset: number
+  chunkSize: number
+  expiresAt: string
+}
+
+async function deploymentUploadFetch<T>(url: string, options: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${url}`, { ...options, credentials: "include" })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    if (response.status === 401) announceExpiredSession(url, data)
+    throw apiError(data, response.status, "Upload failed")
+  }
+  return response.json()
+}
+
+function retryDelay(attempt: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, Math.min(5000, 400 * 2 ** attempt)))
+}
+
+async function uploadDeploymentArtifact(
+  projectId: number,
+  version: string,
+  notes: string,
+  artifact: File,
+  extract?: boolean,
+  stripTopLevel = false,
+  onProgress?: (uploaded: number, total: number) => void,
+) {
+  let session = await api.post<DeploymentUploadSession>(`/deployment-projects/${projectId}/upload-sessions`, {
+    version,
+    notes,
+    artifactName: artifact.name,
+    artifactSize: artifact.size,
+    extract,
+    stripTopLevel,
+  })
+  let offset = session.uploadOffset
+  onProgress?.(offset, artifact.size)
+  while (offset < artifact.size) {
+    const end = Math.min(artifact.size, offset + session.chunkSize)
+    let sent = false
+    for (let attempt = 0; attempt < 5 && !sent; attempt++) {
+      try {
+        session = await deploymentUploadFetch<DeploymentUploadSession>(`/deployment-upload-sessions/${session.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/octet-stream", "Upload-Offset": String(offset) },
+          body: artifact.slice(offset, end),
+        })
+        offset = session.uploadOffset
+        sent = true
+      } catch (error) {
+        // The response may have been lost after the Server durably accepted the
+        // chunk. Re-read the authoritative offset before retransmitting.
+        try {
+          session = await api.get<DeploymentUploadSession>(`/deployment-upload-sessions/${session.id}`)
+          offset = session.uploadOffset
+          if (offset >= end) sent = true
+        } catch {
+          // Preserve the original transfer error; the next retry may reconnect.
+        }
+        if (!sent) {
+          if (attempt === 4) throw error
+          await retryDelay(attempt)
+        }
+      }
+    }
+    onProgress?.(offset, artifact.size)
+  }
+  return api.post<DeploymentRelease>(`/deployment-upload-sessions/${session.id}/complete`)
+}
+
 export const deploymentsApi = {
   projects: () => api.get<DeploymentProject[]>("/deployment-projects"),
   project: (id: number) => api.get<DeploymentProjectDetail>(`/deployment-projects/${id}`),
   createProject: (body: DeploymentProjectInput) => api.post<DeploymentProject>("/deployment-projects", body),
   updateProject: (id: number, body: DeploymentProjectInput) => api.put<DeploymentProject>(`/deployment-projects/${id}`, body),
-  uploadRelease: (projectId: number, version: string, notes: string, artifact: File, extract?: boolean, stripTopLevel = false) => {
-    const form = new FormData()
-    form.set("version", version)
-    form.set("notes", notes)
-    form.set("artifact", artifact)
-    form.set("uploadKind", "artifact")
-    if (extract !== undefined) form.set("extract", String(extract))
-    form.set("stripTopLevel", String(stripTopLevel))
-    return api.upload<DeploymentRelease>(`/deployment-projects/${projectId}/releases`, form)
-  },
+  uploadRelease: (projectId: number, version: string, notes: string, artifact: File, extract?: boolean, stripTopLevel = false, onProgress?: (uploaded: number, total: number) => void) =>
+    uploadDeploymentArtifact(projectId, version, notes, artifact, extract, stripTopLevel, onProgress),
   uploadDirectory: (projectId: number, version: string, notes: string, files: File[]) => {
     const form = new FormData()
     form.set("version", version)
@@ -1020,6 +1089,12 @@ export interface Group {
   perm?: number
   scope?: string
   userCount?: number
+  agents?: GroupAgentGrant[]
+}
+
+export interface GroupAgentGrant {
+  agentId: string
+  permissionLevel: number
 }
 
 export interface GroupDetail extends Group {
@@ -1029,8 +1104,8 @@ export interface GroupDetail extends Group {
 export const groupsApi = {
   list: () => api.get<Group[]>("/groups"),
   get: (id: number) => api.get<GroupDetail>(`/groups/${id}`),
-  create: (data: { name: string; description?: string; perm?: number; scope?: string }) => api.post<Group>("/groups", data),
-  update: (id: number, data: { name?: string; description?: string; perm?: number; scope?: string }) => api.put(`/groups/${id}`, data),
+  create: (data: { name: string; description?: string; perm?: number; agentIds?: string[] }) => api.post<Group>("/groups", data),
+  update: (id: number, data: { name?: string; description?: string; perm?: number; agentIds?: string[] }) => api.put(`/groups/${id}`, data),
   delete: (id: number) => api.delete(`/groups/${id}`),
   addUser: (id: number, userId: number) => api.post(`/groups/${id}/users`, { userId }),
   removeUser: (id: number, userId: number) => api.delete(`/groups/${id}/users/${userId}`),

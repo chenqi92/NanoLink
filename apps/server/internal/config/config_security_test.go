@@ -57,3 +57,33 @@ func TestServerPortsLoadFromContainerEnvironment(t *testing.T) {
 		t.Fatalf("server port environment ignored: %#v", cfg.Server)
 	}
 }
+
+func TestPostgresConfigLoadsFromContainerEnvironment(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Setenv("NANOLINK_DATABASE_TYPE", "postgres")
+	t.Setenv("NANOLINK_DATABASE_HOST", "db.internal")
+	t.Setenv("NANOLINK_DATABASE_PORT", "15432")
+	t.Setenv("NANOLINK_DATABASE_NAME", "nanoops")
+	t.Setenv("NANOLINK_DATABASE_USERNAME", "nanoops_app")
+	t.Setenv("NANOLINK_DATABASE_PASSWORD", "secret-value")
+	t.Setenv("NANOLINK_DATABASE_SSLMODE", "require")
+	path := filepath.Join(t.TempDir(), "nanolink.yaml")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Database.Type != "postgres" || cfg.Database.Host != "db.internal" || cfg.Database.Port != 15432 {
+		t.Fatalf("database endpoint environment ignored: %#v", cfg.Database)
+	}
+	if cfg.Database.Database != "nanoops" || cfg.Database.Username != "nanoops_app" {
+		t.Fatalf("database identity environment ignored: %#v", cfg.Database)
+	}
+	if cfg.Database.Password != "secret-value" || cfg.Database.SSLMode != "require" {
+		t.Fatal("database credentials or TLS environment ignored")
+	}
+}

@@ -527,6 +527,14 @@ func (h *Handler) SendCommand(c *gin.Context) {
 
 	cmdType := pb.CommandType(cmdTypeVal)
 	requiredLevel := commandRequiredPermission(cmdType)
+	if agent.PermissionLevel < requiredLevel {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":         "agent token permission is insufficient",
+			"requiredLevel": database.PermissionLevelName(requiredLevel),
+			"agentLevel":    database.PermissionLevelName(agent.PermissionLevel),
+		})
+		return
+	}
 	user := GetCurrentUser(c)
 	if user == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})

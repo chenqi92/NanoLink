@@ -153,16 +153,9 @@ func (s *PermissionService) GetUserAgentPermission(userID uint, agentID string) 
 
 	// Super admin has max permission
 	if user.IsSuperAdmin {
-		// Get the agent's max granted permission from any group
-		var maxPerm int
-		err := s.db.Model(&database.AgentGroup{}).
-			Where("agent_id = ?", agentID).
-			Select("COALESCE(MAX(permission_level), 3)").
-			Scan(&maxPerm).Error
-		if err != nil {
-			return 3, nil // Default to system admin for superadmin
-		}
-		return maxPerm, nil
+		// A super admin bypasses user/group grants, but cannot exceed the
+		// permission ceiling of the token used by the node itself.
+		return s.GetAgentMaxPermissionLevel(agentID)
 	}
 
 	maxPermission := -1
@@ -275,16 +268,42 @@ func (s *PermissionService) GetUserPermissions(userID uint) ([]database.UserAgen
 	return perms, nil
 }
 
-// GetAgentMaxPermissionLevel returns the maximum permission level granted to any group for an agent
-// This determines the max permission a superadmin can delegate
+// GetAgentMaxPermissionLevel returns the permission ceiling of the node token.
+// Agent-group rows describe who may access a node; they are not the source of
+// truth for what the node itself is willing to execute.
 func (s *PermissionService) GetAgentMaxPermissionLevel(agentID string) (int, error) {
-	var maxPerm int
-	err := s.db.Model(&database.AgentGroup{}).
-		Where("agent_id = ?", agentID).
-		Select("COALESCE(MAX(permission_level), 0)").
-		Scan(&maxPerm).Error
-	if err != nil {
+	var token database.AgentToken
+	err := s.db.Where("agent_id = ?", agentID).
+		Order("permission DESC").
+		First(&token).Error
+	if err == nil {
+		if token.Permission < database.PermissionReadOnly {
+			return database.PermissionReadOnly, nil
+		}
+		if token.Permission > database.PermissionSystemAdmin {
+			return database.PermissionSystemAdmin, nil
+		}
+		return token.Permission, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, fmt.Errorf("database error: %w", err)
 	}
-	return maxPerm, nil
+
+	// Legacy static tokens may not have a persisted AgentToken row. Preserve an
+	// existing group ceiling when one is available; otherwise allow delegation
+	// and let the connected node enforce its own token ceiling.
+	var aggregate struct {
+		Count int64
+		Max   int
+	}
+	if err := s.db.Model(&database.AgentGroup{}).
+		Where("agent_id = ?", agentID).
+		Select("COUNT(*) AS count, COALESCE(MAX(permission_level), 0) AS max").
+		Scan(&aggregate).Error; err != nil {
+		return 0, fmt.Errorf("database error: %w", err)
+	}
+	if aggregate.Count > 0 {
+		return aggregate.Max, nil
+	}
+	return database.PermissionSystemAdmin, nil
 }

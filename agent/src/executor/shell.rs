@@ -314,30 +314,41 @@ mod tests {
 
     #[tokio::test]
     async fn captures_stdout_stderr_and_exit_status() {
-        let result = executor()
-            .run("printf out; printf err >&2; exit 7", 5, 0, 0)
-            .await;
+        let command = if cfg!(windows) {
+            "set /p =out<nul & set /p =err<nul 1>&2 & exit /b 7"
+        } else {
+            "printf out; printf err >&2; exit 7"
+        };
+        let result = executor().run(command, 5, 0, 0).await;
 
         assert!(!result.success);
-        assert_eq!(result.output, "out");
+        assert_eq!(result.output.trim_end(), "out");
         assert!(result.error.contains("err"));
         assert!(result.error.contains("exit status 7"));
     }
 
     #[tokio::test]
     async fn timeout_preserves_partial_output() {
-        let result = executor()
-            .run("printf before-timeout; sleep 5", 1, 0, 0)
-            .await;
+        let command = if cfg!(windows) {
+            "set /p =before-timeout<nul & ping -n 6 127.0.0.1 >nul"
+        } else {
+            "printf before-timeout; sleep 5"
+        };
+        let result = executor().run(command, 1, 0, 0).await;
 
         assert!(!result.success);
-        assert_eq!(result.output, "before-timeout");
+        assert_eq!(result.output.trim_end(), "before-timeout");
         assert!(result.error.contains("timed out after 1 seconds"));
     }
 
     #[tokio::test]
     async fn caps_runaway_output() {
-        let result = executor().run("yes x | head -c 1100000", 5, 0, 0).await;
+        let command = if cfg!(windows) {
+            "powershell -NoProfile -NonInteractive -EncodedCommand WwBDAG8AbgBzAG8AbABlAF0AOgA6AE8AdQB0AC4AVwByAGkAdABlACgAJwB4ACcAIAAqACAAMQAxADAAMAAwADAAMAApAA=="
+        } else {
+            "yes x | head -c 1100000"
+        };
+        let result = executor().run(command, 5, 0, 0).await;
 
         assert!(result.success);
         assert!(

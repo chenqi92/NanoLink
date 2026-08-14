@@ -338,6 +338,7 @@ function UploadReleaseModal({ project, onClose, onUploaded }: { project: Deploym
   const [version, setVersion] = useState(guessVersion())
   const [notes, setNotes] = useState("")
   const [busy, setBusy] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   async function upload() {
@@ -345,19 +346,20 @@ function UploadReleaseModal({ project, onClose, onUploaded }: { project: Deploym
     setBusy(true)
     try {
       if (uploadKind === "directory") await deploymentsApi.uploadDirectory(project.id, version, notes, directoryFiles)
-      else await deploymentsApi.uploadRelease(project.id, version, notes, file!, extract, stripTopLevel)
+      else await deploymentsApi.uploadRelease(project.id, version, notes, file!, extract, stripTopLevel, (uploaded, total) => setUploadProgress(total > 0 ? Math.round(uploaded * 100 / total) : 0))
       onUploaded()
     } catch (e) {
       setError(messageOf(e))
     } finally {
       setBusy(false)
+      setUploadProgress(null)
     }
   }
   const accept = project.type === "java" ? ".jar" : ".zip,.tar,.tar.gz,.tgz"
   const ready = uploadKind === "directory" ? directoryFiles.length > 0 : !!file
   const directorySize = directoryFiles.reduce((sum, item) => sum + item.size, 0)
   return (
-    <Modal title={t("deploy.uploadRelease")} subtitle={`${project.name} · ${project.type === "java" ? "JAR" : "ZIP / TAR / DIST"}`} onClose={onClose} width={620} footer={<><button className="btn btn-sm" onClick={onClose}>{t("common.cancel")}</button><button className="btn btn-primary btn-sm" disabled={!ready || !version || busy} onClick={upload}>{busy && <span className="dot pulse ok" />}{t("deploy.upload")}</button></>}>
+    <Modal title={t("deploy.uploadRelease")} subtitle={`${project.name} · ${project.type === "java" ? "JAR" : "ZIP / TAR / DIST"}`} onClose={onClose} width={620} footer={<><button className="btn btn-sm" onClick={onClose}>{t("common.cancel")}</button><button className="btn btn-primary btn-sm" disabled={!ready || !version || busy} onClick={upload}>{busy && <span className="dot pulse ok" />}{t("deploy.upload")}{uploadProgress !== null ? ` ${uploadProgress}%` : ""}</button></>}>
       <div className="col gap-4">
         {project.type === "static" && <div className="tabs"><button className={`tab ${uploadKind === "artifact" ? "active" : ""}`} onClick={() => { setUploadKind("artifact"); setDirectoryFiles([]) }}>{t("deploy.archiveUpload")}</button><button className={`tab ${uploadKind === "directory" ? "active" : ""}`} onClick={() => { setUploadKind("directory"); setFile(null); setExtract(true); setStripTopLevel(false) }}>{t("deploy.directoryUpload")}</button></div>}
         <button className={`deploy-drop ${dragging ? "dragging" : ""}`} onClick={() => inputRef.current?.click()} onDragOver={(e) => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); if (uploadKind === "artifact") setFile(e.dataTransfer.files[0] ?? null) }}>

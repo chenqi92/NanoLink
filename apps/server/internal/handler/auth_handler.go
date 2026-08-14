@@ -93,10 +93,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.authService.RegisterFirstSuperAdmin(req.Username, req.Password, req.Email)
+	user, err := h.authService.RegisterPublicUser(req.Username, req.Password, req.Email)
 	if err != nil {
 		if errors.Is(err, service.ErrRegistrationDisabled) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "public registration is disabled; bootstrap the admin via NANOLINK_ADMIN_USERNAME/PASSWORD or enable NANOLINK_ALLOW_PUBLIC_REGISTRATION"})
+			c.JSON(http.StatusForbidden, gin.H{"error": "public registration is disabled; ask an administrator to enable it, or bootstrap the first admin via NANOLINK_ADMIN_USERNAME/PASSWORD"})
 			return
 		}
 		if errors.Is(err, service.ErrRegistrationClosed) {
@@ -127,7 +127,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		User: UserResponse{
 			ID:           user.ID,
 			Username:     user.Username,
-			Email:        user.Email,
+			Email:        user.EmailString(),
 			IsSuperAdmin: user.IsSuperAdmin,
 		},
 		Token: responseToken(c, token),
@@ -164,7 +164,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		User: UserResponse{
 			ID:           user.ID,
 			Username:     user.Username,
-			Email:        user.Email,
+			Email:        user.EmailString(),
 			IsSuperAdmin: user.IsSuperAdmin,
 		},
 		Token: responseToken(c, token),
@@ -188,7 +188,7 @@ func (h *AuthHandler) GetMe(c *gin.Context) {
 	c.JSON(http.StatusOK, UserResponse{
 		ID:           user.ID,
 		Username:     user.Username,
-		Email:        user.Email,
+		Email:        user.EmailString(),
 		IsSuperAdmin: user.IsSuperAdmin && !IsDeviceSession(c),
 	})
 }
@@ -207,7 +207,7 @@ func (h *AuthHandler) ListUsers(c *gin.Context) {
 		result[i] = UserResponse{
 			ID:           u.ID,
 			Username:     u.Username,
-			Email:        u.Email,
+			Email:        u.EmailString(),
 			IsSuperAdmin: u.IsSuperAdmin,
 		}
 	}

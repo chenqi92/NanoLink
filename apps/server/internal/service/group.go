@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	"go.uber.org/zap"
@@ -30,7 +31,7 @@ var (
 )
 
 // CreateGroup creates a new group
-func (s *GroupService) CreateGroup(name, description string, perm int, scope string) (*database.Group, error) {
+func (s *GroupService) CreateGroup(name, description string, perm int, scope string, agentIDs []string) (*database.Group, error) {
 	// Check if group exists
 	var existing database.Group
 	if err := s.db.Where("name = ?", name).First(&existing).Error; err == nil {
@@ -49,18 +50,23 @@ func (s *GroupService) CreateGroup(name, description string, perm int, scope str
 		Scope:       scope,
 	}
 
-	if err := s.db.Create(group).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(group).Error; err != nil {
+			return err
+		}
+		return replaceGroupAgents(tx, group.ID, agentIDs, perm)
+	}); err != nil {
 		return nil, fmt.Errorf("failed to create group: %w", err)
 	}
 
 	s.logger.Infof("Group '%s' created successfully", name)
-	return group, nil
+	return s.GetGroup(group.ID)
 }
 
 // GetGroup retrieves a group by ID
 func (s *GroupService) GetGroup(groupID uint) (*database.Group, error) {
 	var group database.Group
-	if err := s.db.Preload("Users").First(&group, groupID).Error; err != nil {
+	if err := s.db.Preload("Users").Preload("AgentGroups").First(&group, groupID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrGroupNotFound
 		}
@@ -72,14 +78,14 @@ func (s *GroupService) GetGroup(groupID uint) (*database.Group, error) {
 // ListGroups returns all groups
 func (s *GroupService) ListGroups() ([]database.Group, error) {
 	var groups []database.Group
-	if err := s.db.Preload("Users").Find(&groups).Error; err != nil {
+	if err := s.db.Preload("Users").Preload("AgentGroups").Find(&groups).Error; err != nil {
 		return nil, fmt.Errorf("database error: %w", err)
 	}
 	return groups, nil
 }
 
 // UpdateGroup updates a group's information
-func (s *GroupService) UpdateGroup(groupID uint, name, description string, perm *int, scope *string) (*database.Group, error) {
+func (s *GroupService) UpdateGroup(groupID uint, name, description string, perm *int, scope *string, agentIDs *[]string) (*database.Group, error) {
 	var group database.Group
 	if err := s.db.First(&group, groupID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -113,12 +119,64 @@ func (s *GroupService) UpdateGroup(groupID uint, name, description string, perm 
 		group.Scope = *scope
 	}
 
-	if err := s.db.Save(&group).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&group).Error; err != nil {
+			return err
+		}
+
+		// Group.Perm is the permission granted on every node in its range. Keep
+		// existing associations in sync when only the permission is edited.
+		if perm != nil && agentIDs == nil {
+			if err := tx.Model(&database.AgentGroup{}).
+				Where("group_id = ?", groupID).
+				Update("permission_level", group.Perm).Error; err != nil {
+				return err
+			}
+		}
+		if agentIDs != nil {
+			return replaceGroupAgents(tx, groupID, *agentIDs, group.Perm)
+		}
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("failed to update group: %w", err)
 	}
 
 	s.logger.Infof("Group '%s' (ID: %d) updated", group.Name, groupID)
-	return &group, nil
+	return s.GetGroup(groupID)
+}
+
+// replaceGroupAgents makes the selected node range authoritative. AgentGroup
+// is the table consulted by permission checks; Group.Scope is retained only as
+// a legacy display field and must never be treated as authorization data.
+func replaceGroupAgents(tx *gorm.DB, groupID uint, agentIDs []string, permission int) error {
+	if err := tx.Unscoped().Where("group_id = ?", groupID).Delete(&database.AgentGroup{}).Error; err != nil {
+		return fmt.Errorf("failed to clear group agent range: %w", err)
+	}
+
+	seen := make(map[string]struct{}, len(agentIDs))
+	assignments := make([]database.AgentGroup, 0, len(agentIDs))
+	for _, rawID := range agentIDs {
+		agentID := strings.TrimSpace(rawID)
+		if agentID == "" {
+			continue
+		}
+		if _, exists := seen[agentID]; exists {
+			continue
+		}
+		seen[agentID] = struct{}{}
+		assignments = append(assignments, database.AgentGroup{
+			AgentID:         agentID,
+			GroupID:         groupID,
+			PermissionLevel: permission,
+		})
+	}
+	if len(assignments) == 0 {
+		return nil
+	}
+	if err := tx.Create(&assignments).Error; err != nil {
+		return fmt.Errorf("failed to save group agent range: %w", err)
+	}
+	return nil
 }
 
 // DeleteGroup deletes a group

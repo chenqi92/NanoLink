@@ -130,7 +130,6 @@ fun NanoShell(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     onOpenServer = { serverId -> navController.navigate(DetailRoute.server(serverId)) },
                     onOpenAssistant = { navController.navigate(DetailRoute.Assistant) },
                 )
-                )
             }
             composable(MainTab.Nodes.route) {
                 NodesScreen(

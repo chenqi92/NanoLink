@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nanolink.app.BuildConfig
 import com.nanolink.app.state.AppViewModel
 import com.nanolink.app.ui.design.NanoCard
 import com.nanolink.app.ui.design.nano
@@ -71,8 +72,8 @@ fun AddServerScreen(
     val t = nano
     val scope = rememberCoroutineScope()
     var mode by remember { mutableStateOf(AddServerMode.ACCOUNT) }
-    var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("NanoOps") }
+    var url by remember { mutableStateOf(BuildConfig.DEFAULT_SERVER_URL) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
@@ -205,7 +206,7 @@ fun AddServerScreen(
                             value = url,
                             onValueChange = { url = it; error = null },
                             label = { Text(tr("addServer.serverUrl")) },
-                            placeholder = { Text("https://server.example.com") },
+                            placeholder = { Text(BuildConfig.DEFAULT_SERVER_URL) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                             modifier = Modifier.fillMaxWidth(),

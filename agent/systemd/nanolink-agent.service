@@ -1,7 +1,8 @@
 [Unit]
 Description=NanoLink Monitoring Agent
 Documentation=https://github.com/chenqi92/nanolink
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -12,6 +13,11 @@ Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+RuntimeDirectory=nanolink
+RuntimeDirectoryMode=0750
+Environment=NANOLINK_RUNTIME_DIR=/run/nanolink
+ExecStartPre=/usr/bin/mkdir -p /run/nanolink
+ExecStartPre=/usr/bin/chmod 0750 /run/nanolink
 
 # Security hardening
 NoNewPrivileges=true
@@ -20,7 +26,7 @@ ProtectHome=true
 PrivateTmp=true
 # Optional deployment roots are writable only when they exist. Deployment is
 # still disabled by default in nanolink.yaml and restricted by allowed_roots.
-ReadWritePaths=/var/log/nanolink /usr/local/bin -/opt/nanolink/apps -/var/www/nanolink -/var/lib/nanolink/builds
+ReadWritePaths=/run/nanolink /var/log/nanolink /usr/local/bin -/opt/nanolink/apps -/var/www/nanolink -/var/lib/nanolink/builds
 ReadOnlyPaths=/etc/nanolink
 
 # Resource limits

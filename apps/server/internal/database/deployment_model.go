@@ -49,6 +49,25 @@ type DeploymentRelease struct {
 	CreatedAt     time.Time `json:"createdAt"`
 }
 
+// DeploymentUploadSession persists the confirmed offset of a browser artifact
+// upload. The corresponding .part file lives below the deployment storage root,
+// so an interrupted transfer can continue after a browser or Server restart.
+type DeploymentUploadSession struct {
+	ID            string    `gorm:"primaryKey;size:36" json:"id"`
+	ProjectID     uint      `gorm:"uniqueIndex:idx_deployment_upload_version;index;not null" json:"projectId"`
+	Version       string    `gorm:"uniqueIndex:idx_deployment_upload_version;size:64;not null" json:"version"`
+	ArtifactName  string    `gorm:"size:255;not null" json:"artifactName"`
+	ArtifactSize  int64     `gorm:"not null" json:"artifactSize"`
+	UploadedSize  int64     `gorm:"not null;default:0" json:"uploadOffset"`
+	Extract       *bool     `json:"extract,omitempty"`
+	StripTopLevel bool      `gorm:"not null;default:false" json:"stripTopLevel"`
+	Notes         string    `gorm:"type:text" json:"notes"`
+	CreatedBy     uint      `gorm:"index;not null" json:"createdBy"`
+	ExpiresAt     time.Time `gorm:"index;not null" json:"expiresAt"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
 // DeploymentTask persists every deploy/rollback attempt independently of the
 // short-lived gRPC command-result cache.
 type DeploymentTask struct {

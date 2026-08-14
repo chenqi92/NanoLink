@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow, bail};
+use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -7,13 +8,15 @@ use std::time::{Duration, Instant};
 /// its parent to release the instance lock. Normal interactive starts never set
 /// this variable and therefore fail fast with a helpful message.
 pub const RESTART_WAIT_ENV: &str = "NANOLINK_RESTART_WAIT_FOR_LOCK_MS";
+pub const RUNTIME_DIR_ENV: &str = "NANOLINK_RUNTIME_DIR";
 
 /// Keeps one NanoLink Agent process per canonical configuration file.
 ///
-/// The lock file intentionally lives next to the resolved configuration file.
-/// This makes `/etc/nanolink/nanolink.yaml` and a symlink to the installed
-/// configuration resolve to the same lock, without relying on a fixed TCP port
-/// or a writable system-wide runtime directory.
+/// By default the lock file lives next to the resolved configuration file, so
+/// aliases of the same config share one lock. Service managers can instead set
+/// `NANOLINK_RUNTIME_DIR` to a private writable runtime directory. This keeps an
+/// installed `/etc/nanolink` read-only while preserving a distinct lock per
+/// canonical configuration path.
 pub struct InstanceLock {
     #[allow(dead_code)]
     file: File,
@@ -74,6 +77,13 @@ impl InstanceLock {
 }
 
 fn lock_path_for(config_path: &Path) -> Result<PathBuf> {
+    if let Some(runtime_dir) = std::env::var_os(RUNTIME_DIR_ENV).filter(|value| !value.is_empty()) {
+        return runtime_lock_path(config_path, Path::new(&runtime_dir));
+    }
+    adjacent_lock_path(config_path)
+}
+
+fn adjacent_lock_path(config_path: &Path) -> Result<PathBuf> {
     let parent = config_path.parent().ok_or_else(|| {
         anyhow!(
             "Configuration path has no parent directory: {}",
@@ -85,6 +95,22 @@ fn lock_path_for(config_path: &Path) -> Result<PathBuf> {
         .and_then(|name| name.to_str())
         .ok_or_else(|| anyhow!("Configuration file name is not valid UTF-8"))?;
     Ok(parent.join(format!(".{file_name}.agent.lock")))
+}
+
+fn runtime_lock_path(config_path: &Path, runtime_dir: &Path) -> Result<PathBuf> {
+    if !runtime_dir.is_absolute() {
+        bail!(
+            "{} must be an absolute path: {}",
+            RUNTIME_DIR_ENV,
+            runtime_dir.display()
+        );
+    }
+    let digest = Sha256::digest(config_path.as_os_str().as_encoded_bytes());
+    let key = digest[..12]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok(runtime_dir.join(format!("agent-{key}.lock")))
 }
 
 fn restart_wait_duration() -> Duration {
@@ -204,5 +230,31 @@ mod tests {
         InstanceLock::acquire(&config_path).unwrap();
 
         std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[test]
+    fn runtime_locks_are_scoped_to_the_canonical_config_path() {
+        let runtime = std::env::temp_dir().join("nanolink-runtime-lock-test");
+        let first = runtime_lock_path(Path::new("/etc/nanolink/a.yaml"), &runtime).unwrap();
+        let same = runtime_lock_path(Path::new("/etc/nanolink/a.yaml"), &runtime).unwrap();
+        let second = runtime_lock_path(Path::new("/etc/nanolink/b.yaml"), &runtime).unwrap();
+
+        assert_eq!(first, same);
+        assert_ne!(first, second);
+        assert_eq!(first.parent(), Some(runtime.as_path()));
+        assert!(
+            first
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("agent-")
+        );
+    }
+
+    #[test]
+    fn runtime_lock_directory_must_be_absolute() {
+        let error = runtime_lock_path(Path::new("/etc/nanolink/a.yaml"), Path::new("run/nanolink"))
+            .unwrap_err();
+        assert!(error.to_string().contains("must be an absolute path"));
     }
 }

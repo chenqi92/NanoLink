@@ -103,19 +103,31 @@ fun AssistantScreen(
 
         scope.launch {
             val history = turns.map { ChatMessage(role = it.role, content = it.content) }
-            val result = viewModel.service.assistantChat(history)
+            val service = viewModel.activeServer?.id?.let(viewModel::serviceForServer)
+            if (service == null) {
+                sending = false
+                turns.add(
+                    AssistantTurn(
+                        role = "assistant",
+                        content = viewModel.localization.text("errors.serverNotConnected"),
+                        isError = true,
+                    ),
+                )
+                return@launch
+            }
+            val result = service.assistantChat(history)
             sending = false
 
             if (result.ok && result.reply != null) {
                 turns.add(AssistantTurn(role = result.reply.role, content = result.reply.content))
             } else {
                 val errorMsg = when (result.error) {
-                    AssistantChatError.NOT_CONFIGURED -> tr("assistant.error.notConfigured")
-                    AssistantChatError.BAD_REQUEST -> tr("assistant.error.badRequest")
-                    AssistantChatError.UPSTREAM_FAILED -> tr("assistant.error.upstreamFailed")
-                    AssistantChatError.SERVER_ERROR -> tr("assistant.error.serverError")
-                    AssistantChatError.NETWORK -> tr("assistant.error.network")
-                    else -> result.message ?: tr("assistant.error.unknown")
+                    AssistantChatError.NOT_CONFIGURED -> viewModel.localization.text("assistant.error.notConfigured")
+                    AssistantChatError.BAD_REQUEST -> viewModel.localization.text("assistant.error.badRequest")
+                    AssistantChatError.UPSTREAM_FAILED -> viewModel.localization.text("assistant.error.upstreamFailed")
+                    AssistantChatError.SERVER_ERROR -> viewModel.localization.text("assistant.error.serverError")
+                    AssistantChatError.NETWORK -> viewModel.localization.text("assistant.error.network")
+                    else -> result.message ?: viewModel.localization.text("assistant.error.unknown")
                 }
                 turns.add(AssistantTurn(role = "assistant", content = errorMsg, isError = true))
             }
@@ -123,7 +135,9 @@ fun AssistantScreen(
     }
 
     LaunchedEffect(Unit) {
-        val result = viewModel.service.fetchAssistantFindings()
+        val result = viewModel.activeServer?.id
+            ?.let(viewModel::serviceForServer)
+            ?.fetchAssistantFindings()
         if (result != null) findings = result
     }
 

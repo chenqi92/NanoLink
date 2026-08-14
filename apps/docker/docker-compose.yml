@@ -6,6 +6,8 @@ services:
     image: ghcr.io/chenqi92/nanolink-server:latest
     container_name: nanolink-server
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Loopback-only by default. Set NANOLINK_BIND_ADDRESS=0.0.0.0 only when a
     # firewall or TLS reverse proxy protects these ports.
     ports:
@@ -31,9 +33,15 @@ services:
       - "NANOLINK_ADMIN_PASSWORD=${NANOLINK_ADMIN_PASSWORD:?Set a strong NANOLINK_ADMIN_PASSWORD}"
       - "NANOLINK_JWT_SECRET=${NANOLINK_JWT_SECRET:?Set a random 32-byte-or-longer NANOLINK_JWT_SECRET}"
       - NANOLINK_JWT_EXPIRE_HOUR=24
-      # Database configuration (SQLite by default)
-      - NANOLINK_DATABASE_TYPE=sqlite
-      - NANOLINK_DATABASE_PATH=/app/data/nanolink.db
+      # Database configuration. Keep credentials in the uncommitted .env file.
+      - NANOLINK_DATABASE_TYPE=${NANOLINK_DATABASE_TYPE:-sqlite}
+      - NANOLINK_DATABASE_PATH=${NANOLINK_DATABASE_PATH:-/app/data/nanolink.db}
+      - NANOLINK_DATABASE_HOST=${NANOLINK_DATABASE_HOST:-}
+      - NANOLINK_DATABASE_PORT=${NANOLINK_DATABASE_PORT:-5432}
+      - NANOLINK_DATABASE_NAME=${NANOLINK_DATABASE_NAME:-}
+      - NANOLINK_DATABASE_USERNAME=${NANOLINK_DATABASE_USERNAME:-}
+      - NANOLINK_DATABASE_PASSWORD=${NANOLINK_DATABASE_PASSWORD:-}
+      - NANOLINK_DATABASE_SSLMODE=${NANOLINK_DATABASE_SSLMODE:-disable}
       # Required for remote application deployment artifact downloads.
       # Example: https://nanolink.example.com
       - NANOLINK_EXTERNAL_URL=${NANOLINK_EXTERNAL_URL:-}

@@ -3,6 +3,8 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unicode"
@@ -28,6 +30,8 @@ type AuthService struct {
 	// username enumeration via response timing.
 	dummyHash []byte
 }
+
+const publicRegistrationSettingKey = "registrationEnabled"
 
 // JWTClaims represents JWT claims
 type JWTClaims struct {
@@ -317,7 +321,46 @@ func (s *AuthService) RegisterUser(username, password, email string) (*database.
 	return s.registerUser(s.db, username, password, email, false)
 }
 
-// BootstrapStatus reports whether the browser may create the first account.
+// PublicRegistrationEnabled returns the persisted runtime switch when present,
+// falling back to the startup configuration for installations that have not
+// saved the setting yet.
+func (s *AuthService) PublicRegistrationEnabled() (bool, error) {
+	var setting database.Setting
+	if err := s.db.First(&setting, "key = ?", publicRegistrationSettingKey).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if !s.allowPublicRegistration {
+				return false, nil
+			}
+			// The environment/config flag is intentionally a one-time bootstrap
+			// fallback. Once an account exists, only an explicit persisted admin
+			// setting may reopen public registration.
+			var count int64
+			if err := s.db.Model(&database.User{}).Count(&count).Error; err != nil {
+				return false, fmt.Errorf("failed to inspect bootstrap state: %w", err)
+			}
+			return count == 0, nil
+		}
+		return false, fmt.Errorf("failed to read public registration setting: %w", err)
+	}
+	enabled, err := strconv.ParseBool(strings.TrimSpace(setting.Value))
+	if err != nil {
+		return false, fmt.Errorf("invalid public registration setting: %w", err)
+	}
+	return enabled, nil
+}
+
+// SetPublicRegistrationEnabled persists the switch used by both bootstrap
+// status and the unauthenticated registration endpoint.
+func (s *AuthService) SetPublicRegistrationEnabled(enabled bool) error {
+	s.bootstrapMu.Lock()
+	defer s.bootstrapMu.Unlock()
+	return s.db.Save(&database.Setting{
+		Key:   publicRegistrationSettingKey,
+		Value: strconv.FormatBool(enabled),
+	}).Error
+}
+
+// BootstrapStatus reports whether the browser may create an account.
 // It deliberately exposes only aggregate setup state, never the configured
 // bootstrap username or any credential material.
 func (s *AuthService) BootstrapStatus() (hasUsers, registrationEnabled bool, err error) {
@@ -326,21 +369,66 @@ func (s *AuthService) BootstrapStatus() (hasUsers, registrationEnabled bool, err
 		return false, false, err
 	}
 	hasUsers = count > 0
-	registrationEnabled = s.allowPublicRegistration && !hasUsers
+	registrationEnabled, err = s.PublicRegistrationEnabled()
 	return hasUsers, registrationEnabled, nil
+}
+
+// RegisterPublicUser creates the first public account as the super admin and
+// immediately closes registration. When an existing admin explicitly reopens
+// registration, subsequent public accounts are regular users.
+func (s *AuthService) RegisterPublicUser(username, password, email string) (*database.User, error) {
+	s.bootstrapMu.Lock()
+	defer s.bootstrapMu.Unlock()
+
+	enabled, err := s.PublicRegistrationEnabled()
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, ErrRegistrationDisabled
+	}
+
+	var created *database.User
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&database.User{}).Count(&count).Error; err != nil {
+			return fmt.Errorf("database error: %w", err)
+		}
+		isFirstAccount := count == 0
+		user, err := s.registerUser(tx, username, password, email, isFirstAccount)
+		if err != nil {
+			return err
+		}
+		if isFirstAccount {
+			// Preserve one-time bootstrap semantics even when startup configuration
+			// temporarily enabled registration.
+			if err := tx.Save(&database.Setting{Key: publicRegistrationSettingKey, Value: "false"}).Error; err != nil {
+				return fmt.Errorf("failed to close registration after bootstrap: %w", err)
+			}
+		}
+		created = user
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return created, nil
 }
 
 // RegisterFirstSuperAdmin creates the first user as a super admin and then closes public registration.
 func (s *AuthService) RegisterFirstSuperAdmin(username, password, email string) (*database.User, error) {
-	if !s.allowPublicRegistration {
+	s.bootstrapMu.Lock()
+	defer s.bootstrapMu.Unlock()
+	enabled, err := s.PublicRegistrationEnabled()
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
 		return nil, ErrRegistrationDisabled
 	}
 
-	s.bootstrapMu.Lock()
-	defer s.bootstrapMu.Unlock()
-
 	var created *database.User
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&database.User{}).Count(&count).Error; err != nil {
 			return fmt.Errorf("database error: %w", err)
@@ -358,6 +446,9 @@ func (s *AuthService) RegisterFirstSuperAdmin(username, password, email string) 
 		}
 		if count != 1 {
 			return ErrRegistrationClosed
+		}
+		if err := tx.Save(&database.Setting{Key: publicRegistrationSettingKey, Value: "false"}).Error; err != nil {
+			return fmt.Errorf("failed to close registration after bootstrap: %w", err)
 		}
 		created = user
 		return nil
@@ -391,10 +482,14 @@ func (s *AuthService) registerUser(db *gorm.DB, username, password, email string
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
+	var emailValue *string
+	if email != "" {
+		emailValue = &email
+	}
 	user := &database.User{
 		Username:     username,
 		PasswordHash: string(hash),
-		Email:        email,
+		Email:        emailValue,
 		IsSuperAdmin: isSuperAdmin,
 	}
 
