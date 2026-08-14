@@ -1108,7 +1108,14 @@ fn restore_previous(
             }
         };
     };
-    match activate_release(&req.deploy_path, previous) {
+    // read_link preserves the link target exactly. Resolve relative targets from
+    // the deployment root (where `current` lives), not from the agent's cwd.
+    let previous = if previous.is_absolute() {
+        previous.to_path_buf()
+    } else {
+        req.deploy_path.join(previous)
+    };
+    match activate_release(&req.deploy_path, &previous) {
         Ok(_) => {
             let restart = restart_or_reload(req);
             if let Err(error) = restart {
@@ -1322,6 +1329,50 @@ mod tests {
         assert_eq!(fs::read(stage.join("index.html")).unwrap(), b"ok");
         assert!(!top.exists());
         fs::remove_dir_all(stage).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn automatic_rollback_resolves_relative_current_link_from_deploy_root() {
+        use std::os::unix::fs::symlink;
+
+        let deploy_path =
+            std::env::temp_dir().join(format!("nanolink-relative-rollback-{}", Uuid::new_v4()));
+        let bootstrap = deploy_path.join("releases/bootstrap");
+        let next = deploy_path.join("releases/next");
+        fs::create_dir_all(&bootstrap).unwrap();
+        fs::create_dir_all(&next).unwrap();
+        fs::write(bootstrap.join("health.txt"), b"bootstrap-ok").unwrap();
+        fs::write(next.join("health.txt"), b"next-ok").unwrap();
+        symlink("releases/bootstrap", deploy_path.join("current")).unwrap();
+
+        let previous = activate_release(&deploy_path, &next)
+            .expect("activate next")
+            .expect("relative previous link");
+        assert_eq!(previous, PathBuf::from("releases/bootstrap"));
+
+        let req = DeploymentRequest {
+            project_type: "static".into(),
+            version: "next".into(),
+            deploy_path: deploy_path.clone(),
+            service_name: String::new(),
+            health_url: String::new(),
+            keep_releases: 3,
+            artifact_url: None,
+            artifact_sha256: None,
+            artifact_size: None,
+            artifact_name: None,
+            extract_artifact: true,
+            strip_top_level: false,
+            log_update_url: String::new(),
+        };
+        let mut logs = Vec::new();
+        assert!(restore_previous(&req, Some(&previous), &mut logs));
+        assert_eq!(
+            fs::canonicalize(deploy_path.join("current")).unwrap(),
+            fs::canonicalize(&bootstrap).unwrap()
+        );
+        fs::remove_dir_all(deploy_path).unwrap();
     }
 
     #[test]

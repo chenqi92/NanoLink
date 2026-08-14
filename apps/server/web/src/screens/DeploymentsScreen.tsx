@@ -6,6 +6,7 @@ import { ConfirmDialog, Modal } from "@/components/shell/Dialog"
 import { EmptyState, FormBlock, PageHeader } from "@/components/shell/primitives"
 import "./deployments.css"
 import { completedDeploymentSteps, DEPLOYMENT_STEPS } from "@/lib/fleet"
+import { findReconciledDeploymentTask } from "@/lib/deployment"
 
 const terminal = (status?: string) => status === "success" || status === "failed"
 
@@ -81,17 +82,46 @@ export function DeploymentsScreen() {
 
   async function runRelease() {
     if (!detail || !confirm) return
+    const requestedProject = detail
+    const requestedRelease = confirm.release
+    const requestedAction = confirm.action
+    const knownTaskIds = new Set(detail.deployments.map((task) => task.id))
     setBusy(true)
     try {
-      const task = confirm.action === "deploy"
-        ? await deploymentsApi.deploy(detail.id, confirm.release.id)
-        : await deploymentsApi.rollback(detail.id, confirm.release.id)
+      const task = requestedAction === "deploy"
+        ? await deploymentsApi.deploy(requestedProject.id, requestedRelease.id)
+        : await deploymentsApi.rollback(requestedProject.id, requestedRelease.id)
       setLiveTask(task)
-      setDetail({ ...detail, deployments: [task, ...detail.deployments] })
+      setDetail({ ...requestedProject, deployments: [task, ...requestedProject.deployments] })
       setConfirm(null)
       setError(null)
     } catch (e) {
-      setError(messageOf(e))
+      let reconciled: { project: DeploymentProjectDetail; task: DeploymentTask } | null = null
+      for (const delay of [0, 350, 900, 1800]) {
+        if (delay) await new Promise((resolve) => window.setTimeout(resolve, delay))
+        try {
+          const project = await deploymentsApi.project(requestedProject.id)
+          const task = findReconciledDeploymentTask(
+            project.deployments,
+            knownTaskIds,
+            requestedRelease.id,
+            requestedAction,
+          )
+          if (task) {
+            reconciled = { project, task }
+            break
+          }
+        } catch {
+          // Preserve the original dispatch error if state reconciliation also fails.
+        }
+      }
+      if (reconciled) {
+        setDetail(reconciled.project)
+        setLiveTask(reconciled.task)
+        setError(null)
+      } else {
+        setError(messageOf(e))
+      }
       setConfirm(null)
     } finally {
       setBusy(false)
