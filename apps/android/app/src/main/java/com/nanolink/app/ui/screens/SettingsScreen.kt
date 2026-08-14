@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Computer
@@ -59,6 +60,7 @@ fun SettingsScreen(
     viewModel: AppViewModel,
     onAddServer: () -> Unit,
     onOpenServer: (String) -> Unit,
+    onOpenAssistant: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val t = nano
@@ -116,6 +118,56 @@ fun SettingsScreen(
                                 Icon(Icons.Outlined.Add, contentDescription = null, tint = t.accent, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(12.dp))
                                 Text(tr("settings.addNewServer"), fontSize = 15.sp, color = t.accent)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Tools
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    tr("settings.tools"),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = t.fg4,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+                NanoCard {
+                    NanoListRow(divider = false, onClick = onOpenAssistant) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(t.accent, t.tertiary))),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Outlined.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = t.onAccent,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                            }
+                            Text(tr("settings.aiAssistant"), fontSize = 15.sp, color = t.fg, modifier = Modifier.weight(1f))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .height(18.dp)
+                                        .background(t.accent.copy(alpha = 0.14f), RoundedCornerShape(5.dp))
+                                        .padding(horizontal = 6.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text("MCP", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = t.accent)
+                                }
+                                Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = t.fg4, modifier = Modifier.size(16.dp))
                             }
                         }
                     }

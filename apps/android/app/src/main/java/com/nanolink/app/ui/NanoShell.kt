@@ -46,6 +46,7 @@ import com.nanolink.app.ui.design.nano
 import com.nanolink.app.ui.screens.ActivityScreen
 import com.nanolink.app.ui.screens.AddServerScreen
 import com.nanolink.app.ui.screens.AgentDetailScreen
+import com.nanolink.app.ui.screens.AssistantScreen
 import com.nanolink.app.ui.screens.DashboardScreen
 import com.nanolink.app.ui.screens.NodesScreen
 import com.nanolink.app.ui.screens.ServerDetailScreen
@@ -62,6 +63,7 @@ sealed class MainTab(val route: String, val labelKey: String) {
 
 private object DetailRoute {
     const val AddServer = "add-server"
+    const val Assistant = "assistant"
     const val Server = "server/{serverId}"
     const val Agent = "agent/{agentId}"
     const val AgentTerminal = "agent-terminal/{agentId}"
@@ -126,6 +128,8 @@ fun NanoShell(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     onNavigateToNodes = { navigateToTab(MainTab.Nodes) },
                     onNavigateToSettings = { navigateToTab(MainTab.Settings) },
                     onOpenServer = { serverId -> navController.navigate(DetailRoute.server(serverId)) },
+                    onOpenAssistant = { navController.navigate(DetailRoute.Assistant) },
+                )
                 )
             }
             composable(MainTab.Nodes.route) {
@@ -141,6 +145,15 @@ fun NanoShell(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     viewModel = viewModel,
                     onAddServer = { navController.navigate(DetailRoute.AddServer) },
                     onOpenServer = { serverId -> navController.navigate(DetailRoute.server(serverId)) },
+                    onOpenAssistant = { navController.navigate(DetailRoute.Assistant) },
+                )
+            }
+            composable(DetailRoute.Assistant) {
+                AssistantScreen(
+                    viewModel = viewModel,
+                    onBack = navController::navigateUp,
+                    onOpenAgent = { agentId -> navController.navigate(DetailRoute.agent(agentId)) },
+                    onOpenTerminal = { agentId -> navController.navigate(DetailRoute.terminal(agentId)) },
                 )
             }
             composable(DetailRoute.AddServer) {

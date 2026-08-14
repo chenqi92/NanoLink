@@ -1,136 +1,307 @@
 import SwiftUI
 
-/// Server-generated operational findings with direct links to the relevant node,
-/// history chart or remote terminal.
+private struct AssistantTurn: Identifiable {
+    let id = UUID()
+    let role: String
+    let content: String
+    let isError: Bool
+
+    var isUser: Bool { role == "user" }
+}
+
+/// Combined AI assistant screen with findings + chat.
 struct AssistantScreen: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.nano) private var t
-    @State private var findings: [AssistantFinding]?
-    @State private var loading = true
-    @State private var failed = false
+
+    @State private var findings: [AssistantFinding] = []
+    @State private var turns: [AssistantTurn] = []
+    @State private var input = ""
+    @State private var sending = false
+    @FocusState private var focused: Bool
 
     var body: some View {
-        Group {
-            if loading { ProgressView().controlSize(.large).frame(maxWidth: .infinity, maxHeight: .infinity) }
-            else if failed { errorView }
-            else {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 10) {
-                        intro.padding(.bottom, 4)
-                        ForEach(findings ?? []) { finding in findingCard(finding) }
+                    LazyVStack(spacing: 12, pinnedViews: []) {
+                        if !findings.isEmpty {
+                            findingsSection
+                        }
+
+                        if turns.isEmpty && !sending {
+                            emptyChatState
+                        }
+
+                        ForEach(turns) { turn in
+                            chatBubble(turn).id(turn.id)
+                        }
+
+                        if sending {
+                            thinkingBubble.id("thinking")
+                        }
                     }
                     .padding(EdgeInsets(top: 12, leading: 16, bottom: 32, trailing: 16))
-                }.nanoPullToRefresh(enabled: !t.desktop) { await load() }
+                }
+                .onChange(of: turns.count) { _ in scroll(proxy) }
+                .onChange(of: sending) { _ in scroll(proxy) }
             }
+
+            composer
         }
         .background(t.bg.ignoresSafeArea())
         .navigationTitle(tr("assistant.title"))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                NavigationLink { AssistantChatScreen() } label: { Image(systemName: "bubble.left.and.bubble.right") }
-                Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }
+        .task { await loadFindings() }
+    }
+
+    private var findingsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(tr("assistant.diagnosis"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(t.fg3)
+
+            FlowLayout(spacing: 8) {
+                ForEach(findings) { finding in
+                    findingCard(finding)
+                }
             }
         }
-        .task { await load() }
     }
 
-    private var intro: some View {
-        let actionable = (findings ?? []).filter { $0.kind != "ok" }.count
-        return VStack(alignment: .leading, spacing: 10) {
-            Label(tr("assistant.autoDiagnosis"), systemImage: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 15, weight: .semibold)).foregroundColor(t.fg)
-            Text(actionable == 0 ? tr("assistant.allHealthy") : tr("assistant.findingsCount", ["n": actionable]))
-                .font(.system(size: 13)).foregroundColor(t.fg2).lineSpacing(4)
-            NavigationLink { AssistantChatScreen() } label: {
-                Label(tr("assistant.askAssistant"), systemImage: "bubble.left.fill")
-                    .font(.system(size: 13.5, weight: .semibold)).foregroundColor(t.onAccent)
-                    .padding(.horizontal, 14).frame(height: 40)
-                    .background(LinearGradient(colors: [t.accent, t.tertiary], startPoint: .leading, endPoint: .trailing))
-                    .clipShape(RoundedRectangle(cornerRadius: t.buttonRadius, style: .continuous))
-            }.buttonStyle(.plain)
-        }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [t.accent.opacity(0.16), t.tertiary.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing))
-        .clipShape(RoundedRectangle(cornerRadius: t.cardRadius, style: .continuous))
-    }
-
-    @ViewBuilder
     private func findingCard(_ finding: AssistantFinding) -> some View {
-        let tone = findingTone(finding.kind)
-        let agent = finding.agentId.flatMap(store.agentById)
-        NanoCard(padding: EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14)) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: tone.icon).font(.system(size: 17)).foregroundColor(tone.color)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(finding.title).font(.system(size: 14.5, weight: .semibold)).foregroundColor(t.fg)
-                        Text(finding.detail).font(.system(size: 12.5)).foregroundColor(t.fg3).lineSpacing(4)
-                    }
+        let (icon, tone) = toneIcon(finding.kind)
+
+        return NanoCard {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.system(size: 16))
+                        .foregroundColor(tone)
+                    Text(finding.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(t.fg)
                 }
-                if let agent, !finding.actions.isEmpty {
-                    FlowLayout(spacing: 8) {
+
+                Text(finding.detail)
+                    .font(.system(size: 12))
+                    .foregroundColor(t.fg3)
+                    .lineSpacing(4)
+
+                if !finding.actions.isEmpty, let agentId = finding.agentId {
+                    FlowLayout(spacing: 6) {
                         ForEach(finding.actions, id: \.self) { action in
-                            NavigationLink { AgentDetailScreen(agent: agent, initialTab: tab(for: action)) } label: {
-                                Text(label(for: action)).font(.system(size: 12.5, weight: .medium)).foregroundColor(t.fg2)
-                                    .padding(.horizontal, 11).frame(height: 30).background(t.card2)
-                                    .overlay(Capsule().stroke(t.sep2, lineWidth: 0.5)).clipShape(Capsule())
-                            }.buttonStyle(.plain)
+                            actionChip(action, agentId: agentId)
                         }
                     }
-                } else if let agent {
-                    NavigationLink { AgentDetailScreen(agent: agent) } label: {
-                        Label(agent.hostname, systemImage: "chevron.right").font(.system(size: 12.5)).foregroundColor(t.accent)
-                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    private func actionChip(_ action: String, agentId: String) -> some View {
+        let agent = store.agents.first { $0.id == agentId }
+        let initialTab = action == "history" ? 1 : action == "shell" || action == "terminal" ? 2 : 0
+
+        return NavigationLink {
+            if let agent = agent {
+                AgentDetailScreen(agent: agent, initialTab: initialTab)
+            }
+        } label: {
+            Text(tr("assistant.action.\(action)"))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(t.accent)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(t.accent.opacity(0.14))
+                .clipShape(Capsule())
+        }
+    }
+
+    private var emptyChatState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 42))
+                .foregroundColor(t.fg4)
+
+            Text(tr("assistant.greeting"))
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(t.fg)
+
+            Text(tr("assistant.intro"))
+                .font(.system(size: 13))
+                .foregroundColor(t.fg3)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            Spacer().frame(height: 8)
+
+            Text(tr("assistant.tryThese"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(t.fg3)
+
+            FlowLayout(spacing: 8) {
+                ForEach(suggestions, id: \.self) { suggestion in
+                    Button { send(suggestion) } label: {
+                        Text(suggestion)
+                            .font(.system(size: 12))
+                            .foregroundColor(t.fg2)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(t.card2)
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.vertical, 32)
+    }
+
+    private var suggestions: [String] {
+        [
+            tr("assistant.suggestion.highCpu"),
+            tr("assistant.suggestion.diskSpace"),
+            tr("assistant.suggestion.offlineNodes"),
+            tr("assistant.suggestion.resourceTrend"),
+        ]
+    }
+
+    private func chatBubble(_ turn: AssistantTurn) -> some View {
+        HStack {
+            if turn.isUser { Spacer(minLength: 50) }
+
+            Text(turn.content)
+                .font(.system(size: 14))
+                .foregroundColor(turn.isUser ? t.fg : turn.isError ? t.crit : t.fg2)
+                .lineSpacing(5)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(turn.isUser ? t.accent.opacity(0.14) : turn.isError ? t.crit.opacity(0.12) : t.card2)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            if !turn.isUser { Spacer(minLength: 50) }
+        }
+    }
+
+    private var thinkingBubble: some View {
+        HStack {
+            HStack(spacing: 6) {
+                ForEach(0..<3, id: \.self) { _ in
+                    Circle()
+                        .fill(t.fg3)
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(t.card2)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            Spacer(minLength: 50)
+        }
+    }
+
+    private var composer: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField(tr("assistant.inputHint"), text: $input, axis: .vertical)
+                .font(.system(size: 14))
+                .focused($focused)
+                .lineLimit(1...5)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(t.card)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .submitLabel(.send)
+                .onSubmit { send(nil) }
+                .disabled(sending)
+
+            Button { send(nil) } label: {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 20))
+                    .foregroundColor(t.onAccent)
+            }
+            .frame(width: 40, height: 40)
+            .background(
+                (sending || input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) ?
+                    t.card2 : t.accent
+            )
+            .clipShape(Circle())
+            .disabled(sending || input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+        .background(t.bg)
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy) {
+        guard !turns.isEmpty || sending else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            withAnimation {
+                if sending {
+                    proxy.scrollTo("thinking", anchor: .bottom)
+                } else {
+                    proxy.scrollTo(turns.last?.id, anchor: .bottom)
                 }
             }
         }
     }
 
-    private var errorView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "icloud.slash").font(.system(size: 34)).foregroundColor(t.fg4)
-            Text(tr("assistant.loadError")).font(.system(size: 16, weight: .semibold)).foregroundColor(t.fg)
-            Text(tr("assistant.loadErrorDesc")).font(.system(size: 13)).foregroundColor(t.fg3).multilineTextAlignment(.center).lineSpacing(4)
-            NanoButton(tr("common.retry"), icon: "arrow.clockwise", variant: .text) { Task { await load() } }
-        }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
+    private func send(_ preset: String?) {
+        let message = preset ?? input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty, !sending else { return }
 
-    @MainActor private func load() async {
-        loading = true; failed = false
-        guard let id = store.activeServerId, let service = store.serviceForServer(id) else { loading = false; failed = true; return }
-        findings = await service.fetchAssistantFindings()
-        failed = findings == nil
-        loading = false
-    }
+        turns.append(AssistantTurn(role: "user", content: message, isError: false))
+        input = ""
+        sending = true
 
-    private func findingTone(_ kind: String) -> (color: Color, icon: String) {
-        switch kind { case "anomaly": return (t.crit, "bolt.fill"); case "warn": return (t.warn, "exclamationmark.triangle"); case "ok": return (t.ok, "checkmark.circle.fill"); default: return (t.info, "info.circle") }
-    }
-    private func tab(for action: String) -> Int { let a = action.lowercased(); return a.contains("history") ? 1 : ((a.contains("shell") || a.contains("terminal")) ? 2 : 0) }
-    private func label(for action: String) -> String { let a = action.lowercased(); if a.contains("history") { return tr("assistant.actHistory") }; if a.contains("shell") || a.contains("terminal") { return tr("assistant.actShell") }; if a.contains("process") { return tr("assistant.actProcesses") }; return action }
-}
+        Task {
+            guard let service = store.serviceForServer(store.activeServerId) else {
+                sending = false
+                turns.append(AssistantTurn(role: "assistant", content: tr("assistant.error.notConfigured"), isError: true))
+                return
+            }
 
-/// Simple wrapping layout for action chips, available on iOS 16.
-private struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 0
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x + size.width > width, x > 0 { x = 0; y += rowHeight + spacing; rowHeight = 0 }
-            x += size.width + spacing; rowHeight = max(rowHeight, size.height)
+            let history = turns.map { ChatMessage(role: $0.role, content: $0.content) }
+            let result = await service.assistantChat(messages: history)
+
+            await MainActor.run {
+                sending = false
+                if result.ok, let reply = result.reply {
+                    turns.append(AssistantTurn(role: reply.role, content: reply.content, isError: false))
+                } else {
+                    let errorMsg = errorText(result.error)
+                    turns.append(AssistantTurn(role: "assistant", content: errorMsg, isError: true))
+                }
+            }
         }
-        return CGSize(width: width, height: y + rowHeight)
     }
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x + size.width > bounds.maxX, x > bounds.minX { x = bounds.minX; y += rowHeight + spacing; rowHeight = 0 }
-            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing; rowHeight = max(rowHeight, size.height)
+
+    private func errorText(_ error: AssistantChatError?) -> String {
+        switch error {
+        case .notConfigured: return tr("assistant.error.notConfigured")
+        case .badRequest: return tr("assistant.error.badRequest")
+        case .upstreamFailed: return tr("assistant.error.upstreamFailed")
+        case .serverError: return tr("assistant.error.serverError")
+        case .network: return tr("assistant.error.network")
+        case .none: return tr("assistant.error.unknown")
+        }
+    }
+
+    private func loadFindings() async {
+        guard let service = store.serviceForServer(store.activeServerId) else { return }
+        if let result = await service.fetchAssistantFindings() {
+            await MainActor.run { findings = result }
+        }
+    }
+
+    private func toneIcon(_ kind: String) -> (String, Color) {
+        switch kind {
+        case "anomaly": return ("bolt.fill", t.crit)
+        case "warn": return ("exclamationmark.triangle.fill", t.warn)
+        case "info": return ("info.circle.fill", t.info)
+        case "ok": return ("checkmark.circle.fill", t.ok)
+        default: return ("info.circle.fill", t.fg3)
         }
     }
 }

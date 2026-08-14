@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Computer
@@ -77,6 +78,7 @@ fun DashboardScreen(
     onNavigateToNodes: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onOpenServer: (String) -> Unit,
+    onOpenAssistant: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val t = nano
@@ -139,6 +141,7 @@ fun DashboardScreen(
                     onNavigateToSettings = onNavigateToSettings,
                     onNavigateToNodes = onNavigateToNodes,
                     onOpenServer = activeServerId?.let { id -> { onOpenServer(id) } },
+                    onOpenAssistant = onOpenAssistant,
                 )
                 Spacer(Modifier.height(12.dp))
             }
@@ -261,6 +264,7 @@ private fun DashboardHeader(
     onNavigateToSettings: () -> Unit,
     onNavigateToNodes: () -> Unit,
     onOpenServer: (() -> Unit)?,
+    onOpenAssistant: () -> Unit,
 ) {
     val t = nano
     Row(
@@ -277,9 +281,14 @@ private fun DashboardHeader(
         )
         Spacer(Modifier.weight(1f))
         CircleButton(
+            icon = Icons.Outlined.AutoAwesome,
+            contentDescription = tr("nav.assistant"),
+            gradient = true,
+            onClick = onOpenAssistant,
+        )
+        CircleButton(
             icon = Icons.Outlined.Settings,
             contentDescription = tr("settings.title"),
-            gradient = true,
             onClick = onNavigateToSettings,
         )
         CircleButton(
