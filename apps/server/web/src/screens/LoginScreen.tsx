@@ -114,7 +114,7 @@ export function LoginScreen() {
               <h1 className="display" style={{ margin: 0, fontSize: 26, fontWeight: 500, letterSpacing: "-0.02em" }}>
                 {mode === "login" ? t("auth.welcomeBack") : t("auth.createAccountTitle")}
               </h1>
-              <div className="muted" style={{ fontSize: 12 }}>{mode === "register" ? t("auth.initialAdminDesc") : t("auth.continueMonitoring")}</div>
+              <div className="muted" style={{ fontSize: 12 }}>{mode === "register" ? t(bootstrap?.hasUsers ? "auth.publicRegistrationDesc" : "auth.initialAdminDesc") : t("auth.continueMonitoring")}</div>
             </div>
 
             <FormBlock label={t("auth.username")}>
@@ -157,7 +157,7 @@ export function LoginScreen() {
             {bootstrap?.registrationEnabled ? (
               <div className="row gap-2" style={{ justifyContent: "center", marginTop: -8 }}>
                 <button type="button" className="lnk muted" style={{ fontSize: 11.5, cursor: "pointer", border: 0, background: "none" }} onClick={() => { setMode(mode === "login" ? "register" : "login"); clearError() }}>
-                  {mode === "login" ? t("auth.createInitialAdmin") : t("auth.hasAccount")}
+                  {mode === "login" ? t(bootstrap.hasUsers ? "auth.createPublicAccount" : "auth.createInitialAdmin") : t("auth.hasAccount")}
                 </button>
               </div>
             ) : bootstrap && !bootstrap.hasUsers ? (

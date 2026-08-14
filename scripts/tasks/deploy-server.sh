@@ -336,7 +336,7 @@ sudo docker exec "$smoke_name" /app/nanolink-server -version
 sudo docker rm -fv "$smoke_name" >/dev/null
 
 cd "$compose_dir"
-image_lines=$(grep -Ec '^[[:space:]]+image:[[:space:]]*' docker-compose.yml)
+image_lines=$(sudo grep -Ec '^[[:space:]]+image:[[:space:]]*' docker-compose.yml)
 [[ $image_lines -eq 1 ]]
 sudo cp -a docker-compose.yml "$backup_file"
 rollback_needed=1

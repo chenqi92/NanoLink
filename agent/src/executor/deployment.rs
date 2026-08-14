@@ -28,6 +28,11 @@ struct ToolOutput {
     stderr: Vec<u8>,
 }
 
+struct DownloadOutcome {
+    size: u64,
+    resumed_from: u64,
+}
+
 fn run_tool(command: &mut Command, timeout: Duration) -> Result<ToolOutput, String> {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(unix)]
@@ -224,23 +229,41 @@ fn deploy_sync(
     }
 
     let artifact_name = req.artifact_name.as_deref().unwrap_or("artifact");
-    let artifact_path = releases.join(format!(".artifact-{}", Uuid::new_v4()));
+    // The checksum is immutable release metadata, so it is also a safe,
+    // deterministic identity for an interrupted download. Keeping the partial
+    // file across deployment attempts lets a newly dispatched task continue
+    // after an Agent restart or a longer network outage.
+    let artifact_path = releases.join(format!(
+        ".artifact-{}.part",
+        req.artifact_sha256.as_deref().unwrap_or_default()
+    ));
     let prepare = (|| -> Result<(), String> {
-        download_artifact(
+        let download = download_artifact(
             cfg,
             req.artifact_url.as_deref().unwrap_or_default(),
             &artifact_path,
+            req.artifact_size.unwrap_or_default(),
         )?;
-        logs.push(format!(
-            "[done] download {} bytes",
-            fs::metadata(&artifact_path).map(|m| m.len()).unwrap_or(0)
-        ));
+        logs.push(if download.resumed_from > 0 {
+            format!(
+                "[done] download {} bytes (resumed from byte {})",
+                download.size, download.resumed_from
+            )
+        } else {
+            format!("[done] download {} bytes", download.size)
+        });
         send_log_update(&req, &logs);
-        verify_artifact(
+        if let Err(error) = verify_artifact(
             &artifact_path,
             req.artifact_size.unwrap_or_default(),
             req.artifact_sha256.as_deref().unwrap_or_default(),
-        )?;
+        ) {
+            // A partial transfer is useful for a later Range request; a file
+            // that reached the advertised size but failed integrity checks is
+            // not and must never be reused.
+            let _ = fs::remove_file(&artifact_path);
+            return Err(error);
+        }
         logs.push("[done] verify sha256".to_string());
         send_log_update(&req, &logs);
 
@@ -266,7 +289,10 @@ fn deploy_sync(
         Ok(())
     })();
     if let Err(error) = prepare {
-        let _ = fs::remove_file(&artifact_path);
+        // Deliberately retain a regular partial artifact. A later deployment of
+        // the same immutable release resumes it using HTTP Range. Successful
+        // staging moves/removes this file, and integrity failures remove it
+        // above before returning.
         let _ = fs::remove_dir_all(&stage);
         return fail_with_update(&req, logs, error);
     }
@@ -594,56 +620,137 @@ fn validate_artifact_name(project_type: &str, name: &str) -> Result<(), String> 
     Ok(())
 }
 
-fn download_artifact(cfg: &DeploymentsConfig, url: &str, dest: &Path) -> Result<(), String> {
+fn download_artifact(
+    cfg: &DeploymentsConfig,
+    url: &str,
+    dest: &Path,
+    expected_size: u64,
+) -> Result<DownloadOutcome, String> {
+    if expected_size == 0 || expected_size > cfg.max_artifact_size {
+        return Err("Artifact size exceeds the configured limit".to_string());
+    }
+    let mut resume_from = match fs::symlink_metadata(dest) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            return Err("Partial artifact path is not a regular file".to_string());
+        }
+        Ok(metadata) => metadata.len(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+        Err(error) => return Err(format!("Failed to inspect partial artifact: {error}")),
+    };
+    if resume_from > expected_size || resume_from > cfg.max_artifact_size {
+        fs::remove_file(dest)
+            .map_err(|error| format!("Failed to discard oversized partial artifact: {error}"))?;
+        resume_from = 0;
+    }
+    if resume_from == expected_size {
+        return Ok(DownloadOutcome {
+            size: expected_size,
+            resumed_from: resume_from,
+        });
+    }
+
     let dest = dest
         .to_str()
         .ok_or_else(|| "Artifact path is not valid UTF-8".to_string())?;
     #[cfg(unix)]
-    let output = run_tool(
-        Command::new("curl").args([
-            "-fL",
-            "--silent",
-            "--show-error",
-            "--connect-timeout",
-            "15",
-            "--max-filesize",
-            &cfg.max_artifact_size.to_string(),
-            "--max-time",
-            &cfg.timeout_seconds.to_string(),
-            "-o",
-            dest,
-            url,
-        ]),
-        Duration::from_secs(cfg.timeout_seconds),
-    )?;
-
-    #[cfg(windows)]
-    let output = run_tool(
-        Command::new("powershell").args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri $args[0] -OutFile $args[1]",
-            url,
-            dest,
-        ]),
-        Duration::from_secs(cfg.timeout_seconds),
-    )?;
-
-    if !output.status.success() {
+    {
+        let started = Instant::now();
+        let timeout = Duration::from_secs(cfg.timeout_seconds);
+        let mut last_error = String::new();
+        for attempt in 1..=5 {
+            let remaining = timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                break;
+            }
+            let max_time = remaining.as_secs().max(1).to_string();
+            let output = run_tool(
+                Command::new("curl").args([
+                    "-fL",
+                    "--silent",
+                    "--show-error",
+                    "--connect-timeout",
+                    "15",
+                    "--continue-at",
+                    "-",
+                    "--max-filesize",
+                    &cfg.max_artifact_size.to_string(),
+                    "--max-time",
+                    &max_time,
+                    "-o",
+                    dest,
+                    url,
+                ]),
+                remaining,
+            )?;
+            let size = fs::metadata(dest)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            if size > expected_size || size > cfg.max_artifact_size {
+                let _ = fs::remove_file(dest);
+                return Err("Downloaded artifact exceeds the configured limit".to_string());
+            }
+            if output.status.success() && size == expected_size {
+                return Ok(DownloadOutcome {
+                    size,
+                    resumed_from: resume_from,
+                });
+            }
+            last_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            if output.status.success() {
+                last_error =
+                    format!("server ended the transfer at byte {size}, expected {expected_size}");
+            }
+            if attempt < 5 && started.elapsed() < timeout {
+                thread::sleep(Duration::from_secs(1));
+            }
+        }
         return Err(format!(
-            "Artifact download failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            "Artifact download failed after resumable retries{}{}",
+            if last_error.is_empty() { "" } else { ": " },
+            last_error
         ));
     }
-    let size = fs::metadata(dest)
-        .map_err(|e| format!("Failed to inspect downloaded artifact: {e}"))?
-        .len();
-    if size == 0 || size > cfg.max_artifact_size {
-        let _ = fs::remove_file(dest);
-        return Err("Downloaded artifact exceeds the configured limit".to_string());
+
+    #[cfg(windows)]
+    {
+        // Windows PowerShell's Invoke-WebRequest does not consistently support
+        // append-safe Range downloads across supported versions. Start clean
+        // there rather than risk concatenating a full response onto a partial
+        // file; Linux Agents use the resumable curl path above.
+        if resume_from > 0 {
+            fs::remove_file(dest)
+                .map_err(|error| format!("Failed to reset partial artifact: {error}"))?;
+            resume_from = 0;
+        }
+        let output = run_tool(
+            Command::new("powershell").args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri $args[0] -OutFile $args[1]",
+                url,
+                dest,
+            ]),
+            Duration::from_secs(cfg.timeout_seconds),
+        )?;
+        if !output.status.success() {
+            return Err(format!(
+                "Artifact download failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        let size = fs::metadata(dest)
+            .map_err(|e| format!("Failed to inspect downloaded artifact: {e}"))?
+            .len();
+        if size == 0 || size > cfg.max_artifact_size || size > expected_size {
+            let _ = fs::remove_file(dest);
+            return Err("Downloaded artifact exceeds the configured limit".to_string());
+        }
+        Ok(DownloadOutcome {
+            size,
+            resumed_from: resume_from,
+        })
     }
-    Ok(())
 }
 
 fn verify_artifact(path: &Path, expected_size: u64, expected_hash: &str) -> Result<(), String> {

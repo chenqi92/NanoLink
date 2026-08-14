@@ -1242,6 +1242,9 @@ Wants=network-online.target
 Type=simple
 User=root
 Group=root
+Environment=NANOLINK_RUNTIME_DIR=/run/nanolink
+ExecStartPre=/usr/bin/mkdir -p /run/nanolink
+ExecStartPre=/usr/bin/chmod 0750 /run/nanolink
 ExecStart=/usr/local/bin/nanolink-agent -c /etc/nanolink/nanolink.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
@@ -1262,7 +1265,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/log/nanolink /var/lib/nanolink /usr/local/bin -/opt/nanolink/apps -/var/www/nanolink
+ReadWritePaths=/run/nanolink /var/log/nanolink /var/lib/nanolink /usr/local/bin -/opt/nanolink/apps -/var/www/nanolink -/var/lib/nanolink/builds
 ReadOnlyPaths=/etc/nanolink
 
 # Resource limits
@@ -1272,6 +1275,15 @@ CPUQuota=10%
 [Install]
 WantedBy=multi-user.target
 EOF
+
+    # systemd before v232 (for example CentOS 7's v219) does not understand
+    # ProtectSystem=strict. Fall back to the strongest supported mode instead
+    # of silently dropping filesystem protection for the whole service.
+    local systemd_version
+    systemd_version="$(systemctl --version 2>/dev/null | awk 'NR == 1 { print $2 }')"
+    if [[ "$systemd_version" =~ ^[0-9]+$ ]] && (( systemd_version < 232 )); then
+        sed -i 's/^ProtectSystem=strict$/ProtectSystem=full/' /etc/systemd/system/nanolink-agent.service
+    fi
 
     systemctl daemon-reload
     systemctl enable nanolink-agent

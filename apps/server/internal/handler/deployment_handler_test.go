@@ -1,11 +1,17 @@
 package handler
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -173,6 +179,79 @@ func TestDeploymentTaskTokenExpires(t *testing.T) {
 	task.ArtifactTokenExpires = &expired
 	if validDeploymentTaskToken(&task, plain) {
 		t.Fatal("expired deployment task token was accepted")
+	}
+}
+
+func TestDeploymentArtifactSupportsRangeResume(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open("file:deployment-range-resume?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&database.DeploymentProject{}, &database.DeploymentRelease{}, &database.DeploymentTask{}); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "1")
+	if err := os.MkdirAll(projectDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	artifact := []byte("0123456789abcdef")
+	artifactPath := filepath.Join(projectDir, "release.jar")
+	if err := os.WriteFile(artifactPath, artifact, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	project := database.DeploymentProject{
+		Name: "range-test", Type: database.DeploymentProjectJava, AgentID: "agent-1",
+		DeployPath: "/opt/nanolink/apps/range-test", ServiceName: "range-test.service",
+		KeepReleases: 5, CreatedBy: 1,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	release := database.DeploymentRelease{
+		ID: "release-range", ProjectID: project.ID, Version: "1.0.0", ArtifactName: "release.jar",
+		ArtifactPath: artifactPath, ArtifactSize: int64(len(artifact)), SHA256: strings.Repeat("a", 64), CreatedBy: 1,
+	}
+	if err := db.Create(&release).Error; err != nil {
+		t.Fatal(err)
+	}
+	plain, hash, err := newArtifactToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Now().Add(time.Minute)
+	task := database.DeploymentTask{
+		ID: "task-range", ProjectID: project.ID, ReleaseID: release.ID, AgentID: "agent-1",
+		CommandID: "command-range", Action: database.DeploymentActionDeploy,
+		Status: database.DeploymentStatusRunning, ArtifactTokenHash: hash, ArtifactTokenExpires: &expires, CreatedBy: 1,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	h := &DeploymentHandler{db: db, storageRoot: root, logger: zap.NewNop().Sugar()}
+	router := gin.New()
+	router.GET("/artifact/:taskId", h.DownloadArtifact)
+	req := httptest.NewRequest(http.MethodGet, "/artifact/task-range?token="+plain, nil)
+	req.Header.Set("Range", "bytes=4-9")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, req)
+
+	if response.Code != http.StatusPartialContent {
+		t.Fatalf("range request status = %d, want %d; body=%s", response.Code, http.StatusPartialContent, response.Body.String())
+	}
+	if got := response.Body.String(); got != "456789" {
+		t.Fatalf("range response body = %q, want %q", got, "456789")
+	}
+	if got := response.Header().Get("Content-Range"); got != "bytes 4-9/16" {
+		t.Fatalf("Content-Range = %q", got)
+	}
+	if got := response.Header().Get("Accept-Ranges"); got != "bytes" {
+		t.Fatalf("Accept-Ranges = %q", got)
+	}
+	if got := response.Header().Get("ETag"); got != "\"sha256-"+release.SHA256+"\"" {
+		t.Fatalf("ETag = %q", got)
 	}
 }
 

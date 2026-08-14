@@ -5,7 +5,7 @@ import Security
 /// secrets. Each secret is
 /// stored under a per-server account string.
 enum KeychainStore {
-    private static let service = "com.nanolink.app.secrets"
+    private static let service = "cn.netok.nanoops.secrets"
 
     @discardableResult
     static func set(_ value: String?, for account: String) -> Bool {

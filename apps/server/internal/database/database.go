@@ -2,7 +2,11 @@ package database
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -25,6 +29,7 @@ type Config struct {
 	Database string // MySQL/PostgreSQL database name
 	Username string // MySQL/PostgreSQL username
 	Password string // MySQL/PostgreSQL password
+	SSLMode  string // PostgreSQL TLS mode
 }
 
 // Initialize initializes the database connection
@@ -39,10 +44,10 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		)
 		dialector = mysql.Open(dsn)
 	case "postgres":
-		dsn := fmt.Sprintf(
-			"host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=Asia/Shanghai",
-			cfg.Host, cfg.Username, cfg.Password, cfg.Database, cfg.Port,
-		)
+		dsn, err := postgresDSN(cfg)
+		if err != nil {
+			return err
+		}
 		dialector = postgres.Open(dsn)
 	case "sqlite", "":
 		// Default to SQLite
@@ -76,6 +81,20 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	// Keep the connection pool bounded. PostgreSQL benefits from a small pool,
+	// while SQLite must use a single writer connection to avoid lock storms.
+	if sqlDB, poolErr := db.DB(); poolErr == nil {
+		switch cfg.Type {
+		case "postgres":
+			sqlDB.SetMaxOpenConns(25)
+			sqlDB.SetMaxIdleConns(10)
+			sqlDB.SetConnMaxLifetime(30 * time.Minute)
+			sqlDB.SetConnMaxIdleTime(5 * time.Minute)
+		case "sqlite", "":
+			sqlDB.SetMaxOpenConns(1)
+		}
+	}
+
 	// Auto migrate schema
 	if err := db.AutoMigrate(
 		&User{},
@@ -92,6 +111,7 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		&Silence{},
 		&DeploymentProject{},
 		&DeploymentRelease{},
+		&DeploymentUploadSession{},
 		&DeploymentTask{},
 		&BuildPipeline{},
 		&BuildRun{},
@@ -109,6 +129,42 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 	DB = db
 	log.Info("Database initialized successfully")
 	return nil
+}
+
+func postgresDSN(cfg Config) (string, error) {
+	if strings.TrimSpace(cfg.Host) == "" {
+		return "", fmt.Errorf("postgres database host is required")
+	}
+	if cfg.Port <= 0 || cfg.Port > 65535 {
+		return "", fmt.Errorf("postgres database port must be between 1 and 65535")
+	}
+	if strings.TrimSpace(cfg.Database) == "" {
+		return "", fmt.Errorf("postgres database name is required")
+	}
+	if strings.TrimSpace(cfg.Username) == "" {
+		return "", fmt.Errorf("postgres database username is required")
+	}
+
+	sslMode := strings.ToLower(strings.TrimSpace(cfg.SSLMode))
+	if sslMode == "" {
+		sslMode = "disable"
+	}
+	switch sslMode {
+	case "disable", "allow", "prefer", "require", "verify-ca", "verify-full":
+	default:
+		return "", fmt.Errorf("unsupported postgres sslmode %q", cfg.SSLMode)
+	}
+
+	u := &url.URL{
+		Scheme: "postgresql",
+		User:   url.UserPassword(cfg.Username, cfg.Password),
+		Host:   net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
+		Path:   "/" + cfg.Database,
+	}
+	query := u.Query()
+	query.Set("sslmode", sslMode)
+	u.RawQuery = query.Encode()
+	return u.String(), nil
 }
 
 // Close closes the database connection

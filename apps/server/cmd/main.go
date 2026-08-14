@@ -73,6 +73,7 @@ func main() {
 		Database: cfg.Database.Database,
 		Username: cfg.Database.Username,
 		Password: cfg.Database.Password,
+		SSLMode:  cfg.Database.SSLMode,
 	}
 	if err := database.Initialize(dbCfg, sugar); err != nil {
 		sugar.Fatalf("Failed to initialize database: %v", err)
@@ -126,7 +127,11 @@ func main() {
 	// Bootstrap safety: if there is no admin to log in as and self-registration is
 	// off, the server is unreachable. Warn loudly with the remediation instead of
 	// silently leaving an unusable (or, if registration were on, hijackable) state.
-	if cfg.SuperAdmin.Username == "" && !cfg.Auth.AllowPublicRegistration {
+	registrationEnabled, registrationErr := authService.PublicRegistrationEnabled()
+	if registrationErr != nil {
+		sugar.Warnf("Unable to read public registration setting during bootstrap check: %v", registrationErr)
+	}
+	if cfg.SuperAdmin.Username == "" && !registrationEnabled {
 		var userCount int64
 		database.GetDB().Model(&database.User{}).Count(&userCount)
 		if userCount == 0 {
@@ -239,7 +244,7 @@ func main() {
 
 			// Editable server settings (read + write are super-admin only; routes
 			// registered under the admin group below, since values include secrets).
-			settingHandler := handler.NewSettingHandler(database.GetDB(), sugar)
+			settingHandler := handler.NewSettingHandler(database.GetDB(), authService, sugar)
 
 			// Permission check route
 			permHandler := handler.NewPermissionHandler(permService, auditService, sugar)
@@ -486,6 +491,11 @@ func main() {
 	deploymentUploadAPI := router.Group("/api")
 	deploymentUploadAPI.Use(handler.AuthMiddlewareWithDevices(authService, deviceService), handler.RequireSuperAdmin())
 	deploymentUploadAPI.POST("/deployment-projects/:id/releases", deploymentHandler.UploadRelease)
+	deploymentUploadAPI.POST("/deployment-projects/:id/upload-sessions", deploymentHandler.CreateUploadSession)
+	deploymentUploadAPI.GET("/deployment-upload-sessions/:sessionId", deploymentHandler.GetUploadSession)
+	deploymentUploadAPI.PATCH("/deployment-upload-sessions/:sessionId", deploymentHandler.AppendUploadChunk)
+	deploymentUploadAPI.POST("/deployment-upload-sessions/:sessionId/complete", deploymentHandler.CompleteUploadSession)
+	deploymentUploadAPI.DELETE("/deployment-upload-sessions/:sessionId", deploymentHandler.AbortUploadSession)
 
 	// Build agents use run-scoped, short-lived tokens for source download and
 	// artifact upload. Browser management remains super-admin only.

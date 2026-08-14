@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">NanoLink</string>
-    <string name="notification_channel_alerts">NanoLink alerts</string>
+    <string name="app_name">NanoOps</string>
+    <string name="notification_channel_alerts">NanoOps alerts</string>
     <string name="notification_channel_alerts_description">Node availability and resource alerts</string>
 </resources>

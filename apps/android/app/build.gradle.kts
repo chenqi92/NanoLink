@@ -1,4 +1,12 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+
+val releaseSigningPropertiesFile = rootProject.file("keystore.properties")
+val releaseSigningProperties = Properties().apply {
+    if (releaseSigningPropertiesFile.isFile) {
+        releaseSigningPropertiesFile.inputStream().use(::load)
+    }
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -12,19 +20,47 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.nanolink.app"
+        applicationId = "cn.netok.nanoops"
         minSdk = 26
         targetSdk = 35
         versionCode = 5
         versionName = providers.gradleProperty("versionName").getOrElse("0.5.0")
 
+        buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://nanoops.netok.cn\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+    }
+
+    signingConfigs {
+        if (releaseSigningPropertiesFile.isFile) {
+            create("release") {
+                storeFile = rootProject.file(
+                    requireNotNull(releaseSigningProperties.getProperty("storeFile")) {
+                        "storeFile is missing from keystore.properties"
+                    },
+                )
+                storePassword = requireNotNull(releaseSigningProperties.getProperty("storePassword")) {
+                    "storePassword is missing from keystore.properties"
+                }
+                keyAlias = requireNotNull(releaseSigningProperties.getProperty("keyAlias")) {
+                    "keyAlias is missing from keystore.properties"
+                }
+                keyPassword = requireNotNull(releaseSigningProperties.getProperty("keyPassword")) {
+                    "keyPassword is missing from keystore.properties"
+                }
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseSigningPropertiesFile.isFile) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                logger.warn("NanoOps release signing is not configured; the release output will be unsigned.")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

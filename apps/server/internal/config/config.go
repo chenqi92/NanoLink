@@ -50,8 +50,9 @@ type AuthConfig struct {
 	Enabled bool          `mapstructure:"enabled"`
 	Tokens  []TokenConfig `mapstructure:"tokens"`
 	// AllowPublicRegistration opens the unauthenticated /api/auth/register
-	// endpoint that bootstraps the first super admin. Disabled by default so a
-	// freshly exposed server cannot be hijacked by whoever registers first;
+	// endpoint. The first account bootstraps the super admin; later accounts are
+	// regular users. It is disabled by default so a freshly exposed server
+	// cannot be hijacked by whoever registers first;
 	// bootstrap the admin via NANOLINK_ADMIN_USERNAME/PASSWORD instead, or set
 	// NANOLINK_ALLOW_PUBLIC_REGISTRATION=true to opt in.
 	AllowPublicRegistration bool `mapstructure:"allow_public_registration"`
@@ -96,6 +97,7 @@ type DatabaseConfig struct {
 	Database string `mapstructure:"database"` // PostgreSQL database name
 	Username string `mapstructure:"username"` // PostgreSQL username
 	Password string `mapstructure:"password"` // PostgreSQL password
+	SSLMode  string `mapstructure:"sslmode"`  // PostgreSQL TLS mode
 }
 
 // TimeSeriesConfig holds time-series storage configuration
@@ -215,8 +217,10 @@ func Default() *Config {
 			MaxMemoryHistory:    600,
 		},
 		Database: DatabaseConfig{
-			Type: "sqlite",
-			Path: "./data/nanolink.db",
+			Type:    "sqlite",
+			Path:    "./data/nanolink.db",
+			Port:    5432,
+			SSLMode: "disable",
 		},
 		TimeSeries: TimeSeriesConfig{
 			Type:          "memory",
@@ -275,6 +279,7 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("server.mode", "release")
 	viper.SetDefault("server.max_request_body_bytes", 1024*1024)
 	viper.SetDefault("auth.enabled", false)
+	viper.SetDefault("auth.allow_public_registration", false)
 	viper.SetDefault("storage.type", "memory")
 	viper.SetDefault("storage.path", "./data/nanolink.db")
 	viper.SetDefault("metrics.retention_days", 7)
@@ -284,6 +289,8 @@ func Load(path string) (*Config, error) {
 	viper.SetDefault("metrics.persist_to_db", true)
 	viper.SetDefault("metrics.max_memory_history", 600)
 	viper.SetDefault("metrics.prometheus_enabled", false)
+	viper.SetDefault("database.port", 5432)
+	viper.SetDefault("database.sslmode", "disable")
 	viper.SetDefault("mcp.sse_bind_address", "127.0.0.1")
 	viper.SetDefault("llm.enabled", false)
 	viper.SetDefault("llm.provider", "anthropic")
@@ -317,6 +324,7 @@ func Load(path string) (*Config, error) {
 	_ = viper.BindEnv("database.database", "NANOLINK_DATABASE_NAME")
 	_ = viper.BindEnv("database.username", "NANOLINK_DATABASE_USERNAME")
 	_ = viper.BindEnv("database.password", "NANOLINK_DATABASE_PASSWORD")
+	_ = viper.BindEnv("database.sslmode", "NANOLINK_DATABASE_SSLMODE")
 	_ = viper.BindEnv("jwt.secret", "NANOLINK_JWT_SECRET")
 	_ = viper.BindEnv("jwt.expire_hour", "NANOLINK_JWT_EXPIRE_HOUR")
 	_ = viper.BindEnv("superadmin.username", "NANOLINK_ADMIN_USERNAME")
@@ -382,6 +390,29 @@ func Load(path string) (*Config, error) {
 	}
 	if dbPath := os.Getenv("NANOLINK_DATABASE_PATH"); dbPath != "" {
 		cfg.Database.Path = dbPath
+	}
+	if dbType := os.Getenv("NANOLINK_DATABASE_TYPE"); dbType != "" {
+		cfg.Database.Type = dbType
+	}
+	if dbHost := os.Getenv("NANOLINK_DATABASE_HOST"); dbHost != "" {
+		cfg.Database.Host = dbHost
+	}
+	if raw := os.Getenv("NANOLINK_DATABASE_PORT"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 65535 {
+			cfg.Database.Port = n
+		}
+	}
+	if dbName := os.Getenv("NANOLINK_DATABASE_NAME"); dbName != "" {
+		cfg.Database.Database = dbName
+	}
+	if dbUsername := os.Getenv("NANOLINK_DATABASE_USERNAME"); dbUsername != "" {
+		cfg.Database.Username = dbUsername
+	}
+	if dbPassword := os.Getenv("NANOLINK_DATABASE_PASSWORD"); dbPassword != "" {
+		cfg.Database.Password = dbPassword
+	}
+	if dbSSLMode := os.Getenv("NANOLINK_DATABASE_SSLMODE"); dbSSLMode != "" {
+		cfg.Database.SSLMode = dbSSLMode
 	}
 	if raw := os.Getenv("NANOLINK_SERVER_HTTP_PORT"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 65535 {

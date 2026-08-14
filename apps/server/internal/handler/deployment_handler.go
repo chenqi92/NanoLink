@@ -45,6 +45,7 @@ type DeploymentHandler struct {
 	downloadTTL time.Duration
 	logger      *zap.SugaredLogger
 	dispatchMu  sync.Mutex
+	uploadMu    sync.Mutex
 }
 
 type deploymentProjectRequest struct {
@@ -71,6 +72,9 @@ func NewDeploymentHandler(db *gorm.DB, grpcServer *grpcserver.Server, cfg config
 	}
 	if err := os.MkdirAll(root, 0o750); err != nil {
 		return nil, fmt.Errorf("create deployment storage: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".uploads"), 0o750); err != nil {
+		return nil, fmt.Errorf("create resumable upload storage: %w", err)
 	}
 	return &DeploymentHandler{
 		db:          db,
@@ -437,6 +441,9 @@ func (h *DeploymentHandler) DownloadArtifact(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid artifact path"})
 		return
 	}
+	c.Header("Accept-Ranges", "bytes")
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("ETag", fmt.Sprintf("\"sha256-%s\"", release.SHA256))
 	c.Header("X-Artifact-SHA256", release.SHA256)
 	c.FileAttachment(artifactPath, release.ArtifactName)
 }

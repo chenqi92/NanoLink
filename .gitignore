@@ -127,8 +127,17 @@ config.yml
 *.crt
 *.p12
 *.jks
+*.keystore
+*.p8
+*.mobileprovision
+*.provisionprofile
+keystore.properties
 credentials.json
 secrets.yaml
+
+# Generated icon exploration/review files (final platform assets are tracked)
+/apps/branding/*-concept.png
+/apps/branding/*-preview.png
 
 # =========================
 # Testing & Coverage
@@ -146,6 +155,7 @@ __pycache__/
 # =========================
 .codex-dev/
 .codex-cache/
+.codex-deploy/
 tmp/
 temp/
 *.tmp
@@ -161,3 +171,4 @@ website/
 *.db
 /design/
 docs
+apps/desktop

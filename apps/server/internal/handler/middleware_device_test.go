@@ -35,7 +35,7 @@ func newDeviceAuthFixture(t *testing.T, permission int) deviceAuthFixture {
 	owner := database.User{
 		Username:     "device-owner",
 		PasswordHash: "unused-test-hash",
-		Email:        "owner@example.test",
+		Email:        func() *string { value := "owner@example.test"; return &value }(),
 		IsSuperAdmin: true,
 		TokenVersion: 1,
 	}

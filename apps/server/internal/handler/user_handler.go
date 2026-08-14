@@ -175,7 +175,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 
 	// Update email if provided
 	if req.Email != "" {
-		user.Email = req.Email
+		user.Email = &req.Email
 	}
 
 	if err := h.db.Save(&user).Error; err != nil {
@@ -339,7 +339,7 @@ func (h *UserHandler) toUserDetailResponse(user database.User) UserDetailRespons
 	return UserDetailResponse{
 		ID:           user.ID,
 		Username:     user.Username,
-		Email:        user.Email,
+		Email:        user.EmailString(),
 		IsSuperAdmin: user.IsSuperAdmin,
 		CreatedAt:    user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		Groups:       groups,
