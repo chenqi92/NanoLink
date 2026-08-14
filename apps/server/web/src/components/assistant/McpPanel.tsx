@@ -50,11 +50,12 @@ export function McpPanel({ visible = true }: { visible?: boolean }) {
             {!overview?.enabled && overview && <div className="mcp-notice">{t("assistant.mcpDisabled")}</div>}
             {tools.map((tool) => {
               const required = Array.isArray(tool.inputSchema?.required) ? tool.inputSchema.required.map(String) : []
+              const translatedDesc = t(`assistant.mcpTools.${tool.name}`, { defaultValue: tool.description })
               return (
                 <details key={tool.name} className="mcp-tool">
                   <summary>
                     <span className="mcp-tool-icon">{I.bolt({ size: 12 })}</span>
-                    <span className="col flex-1" style={{ gap: 2 }}><span className="mono mcp-tool-name">{tool.name}</span><span className="dim mcp-tool-desc">{tool.description}</span></span>
+                    <span className="col flex-1" style={{ gap: 2 }}><span className="mono mcp-tool-name">{tool.name}</span><span className="dim mcp-tool-desc">{translatedDesc}</span></span>
                     {I.chev({ size: 11 })}
                   </summary>
                   <div className="mcp-tool-details">

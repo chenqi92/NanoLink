@@ -1137,6 +1137,17 @@
       "stopped": "Stopped",
       "unavailable": "Unavailable"
     },
+    "mcpTools": {
+      "list_agents": "List all connected monitoring agents with their basic information including hostname, OS, architecture, and connection status.",
+      "get_agent_metrics": "Get current metrics for a specific agent including CPU, memory, disk, and network usage.",
+      "get_system_summary": "Get a summary of the entire monitored cluster including total agents, average resource usage, and alerts.",
+      "find_high_cpu_agents": "Find agents with CPU usage above a specified threshold percentage.",
+      "find_low_disk_agents": "Find agents with disk usage above a specified threshold percentage.",
+      "get_agent_processes": "Get the list of running processes on a specific agent, sorted by CPU or memory usage.",
+      "query_audit_logs": "Query audit logs with optional filtering by user, agent, command type, or time range.",
+      "get_audit_stats": "Get audit log statistics including total commands, success/failure counts, and top command types.",
+      "request_agent_data": "Request specific data from an agent. Types: full, static, disk_usage, network_info, user_sessions, gpu_info, health."
+    },
     "mobileNavigation": "Navigation",
     "openNavigation": "Open navigation",
     "closeNavigation": "Close navigation"

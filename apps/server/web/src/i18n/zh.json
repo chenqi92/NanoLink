@@ -1137,6 +1137,17 @@
       "stopped": "已停止",
       "unavailable": "不可用"
     },
+    "mcpTools": {
+      "list_agents": "列出所有已连接的监控节点及其基本信息，包括主机名、操作系统、架构和连接状态。",
+      "get_agent_metrics": "获取特定节点的当前指标，包括 CPU、内存、磁盘和网络使用情况。",
+      "get_system_summary": "获取整个监控集群的摘要，包括节点总数、平均资源使用率和告警信息。",
+      "find_high_cpu_agents": "查找 CPU 使用率超过指定阈值百分比的节点。",
+      "find_low_disk_agents": "查找磁盘使用率超过指定阈值百分比的节点。",
+      "get_agent_processes": "获取特定节点上正在运行的进程列表，按 CPU 或内存使用排序。",
+      "query_audit_logs": "查询审计日志，可选按用户、节点、命令类型或时间范围过滤。",
+      "get_audit_stats": "获取审计日志统计信息，包括命令总数、成功/失败次数和高频命令类型。",
+      "request_agent_data": "从节点请求特定数据。类型：full（完整）、static（静态）、disk_usage（磁盘使用）、network_info（网络信息）、user_sessions（用户会话）、gpu_info（GPU 信息）、health（健康检查）。"
+    },
     "mobileNavigation": "导航",
     "openNavigation": "打开导航",
     "closeNavigation": "关闭导航"
