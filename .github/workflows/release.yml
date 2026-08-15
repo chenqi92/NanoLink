@@ -82,10 +82,14 @@ jobs:
             os: macos-latest
             name: macos-aarch64
             cross: false
-          # Windows - native build
+          # Windows - native x86_64 build and ARM64 cross-build
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: windows-x86_64
+            cross: false
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            name: windows-aarch64
             cross: false
 
     steps:
@@ -111,6 +115,12 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install protoc
 
+      - name: Configure MSVC for Windows ARM64
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        uses: TheMrMilchmann/setup-msvc-dev@79dac248aac9d0059f86eae9d8b5bfab4e95e97c # v4.0.0
+        with:
+          arch: amd64_arm64
+
       # Install zig and cargo-zigbuild for Linux musl static builds
       - name: Install Zig (Linux)
         if: matrix.cross == true
@@ -130,7 +140,7 @@ jobs:
         working-directory: agent
         run: cargo zigbuild --release --target ${{ matrix.target }}
 
-      # Native build for macOS/Windows
+      # Build macOS and Windows targets without zigbuild
       - name: Build Agent (Native)
         if: matrix.cross != true
         working-directory: agent
@@ -239,8 +249,8 @@ jobs:
   release:
     name: Create Release
     needs: [prepare, build-agent, build-dashboard, build-nas-packages]
-    # 桌面端或 Dashboard 可部分缺失，但 NAS 原生安装包必须完整生成。
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.build-nas-packages.result == 'success' }}
+    # 所有 Agent 架构与 NAS 原生安装包必须完整生成；Dashboard 可独立失败。
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.build-agent.result == 'success' && needs.build-nas-packages.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -330,7 +340,7 @@ jobs:
           |----------|--------------|----------|"
           
           # Get agent files from release
-          ASSETS=$(gh release view "$TAG" --json assets -q '.assets[].name' --repo ${{ github.repository }} 2>/dev/null | grep "nanolink-agent-" || true)
+          ASSETS=$(gh release view "$TAG" --json assets -q '.assets[].name' --repo ${{ github.repository }} 2>/dev/null | grep -E '^(nanolink-agent-|nanolink-agent_|NanoLinkAgent-|amd64_com\.nanoops\.nanolinkagent_|arm64_com\.nanoops\.nanolinkagent_)' || true)
           
           if [ -n "$ASSETS" ]; then
             for filename in $ASSETS; do
@@ -344,8 +354,22 @@ jobs:
           | macOS | x86_64 | [${filename}](${url}) |" ;;
                 *macos-aarch64*) AGENT_SECTION="$AGENT_SECTION
           | macOS | ARM64 (M1/M2) | [${filename}](${url}) |" ;;
-                *windows*.exe) AGENT_SECTION="$AGENT_SECTION
+                *windows-x86_64.exe) AGENT_SECTION="$AGENT_SECTION
           | Windows | x86_64 | [${filename}](${url}) |" ;;
+                *windows-aarch64.exe) AGENT_SECTION="$AGENT_SECTION
+          | Windows | ARM64 | [${filename}](${url}) |" ;;
+                *_x86.fpk) AGENT_SECTION="$AGENT_SECTION
+          | 飞牛 fnOS | x86_64 | [${filename}](${url}) |" ;;
+                *_arm.fpk) AGENT_SECTION="$AGENT_SECTION
+          | 飞牛 fnOS | ARM64 | [${filename}](${url}) |" ;;
+                *_x86_64.spk) AGENT_SECTION="$AGENT_SECTION
+          | 群晖 DSM | x86_64 | [${filename}](${url}) |" ;;
+                *_armv8.spk) AGENT_SECTION="$AGENT_SECTION
+          | 群晖 DSM | ARM64 | [${filename}](${url}) |" ;;
+                amd64_*.upk) AGENT_SECTION="$AGENT_SECTION
+          | 绿联 UGOS Pro | x86_64 | [${filename}](${url}) |" ;;
+                arm64_*.upk) AGENT_SECTION="$AGENT_SECTION
+          | 绿联 UGOS Pro | ARM64 | [${filename}](${url}) |" ;;
               esac
             done
           else

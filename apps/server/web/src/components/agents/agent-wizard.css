@@ -1,0 +1,32 @@
+.agent-wizard-platform-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agent-wizard-connection-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(110px, .7fr);
+  gap: 10px;
+}
+
+@media (max-width: 520px) {
+  .agent-wizard-platform-grid,
+  .agent-wizard-connection-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-wizard-package-header {
+    align-items: flex-start !important;
+    flex-wrap: wrap;
+  }
+
+  .agent-wizard-package-action {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .agent-wizard-copy-row > span:first-child {
+    width: 72px !important;
+  }
+}

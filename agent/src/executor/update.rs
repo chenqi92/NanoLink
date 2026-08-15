@@ -792,6 +792,7 @@ del /F "%~f0"
             ("macos", "x86_64") => Some("macos-x86_64"),
             ("macos", "aarch64") => Some("macos-aarch64"),
             ("windows", "x86_64") => Some("windows-x86_64"),
+            ("windows", "aarch64") => Some("windows-aarch64"),
             _ => None,
         }
     }

@@ -294,8 +294,11 @@ export interface ServerInfo {
   version: string
   serverUrl?: string
   wsUrl?: string
+  grpcUrl?: string
   grpcPort?: number
   wsPort?: number
+  agentHost?: string
+  agentReleaseUrl?: string
   serverName?: string
   externalUrl?: string
   retentionDays?: number
@@ -383,9 +386,29 @@ export interface GeneratedConfig {
   generatedToken?: string
   serverId?: string
 }
+
+export type NASPlatform = "fnos" | "synology" | "ugos"
+export type AgentArchitecture = "x86_64" | "arm64"
+export type NASArchitecture = AgentArchitecture
+
+export interface NASPackage {
+  platform: NASPlatform
+  arch: AgentArchitecture
+  filename: string
+  downloadUrl: string
+  sha256?: string
+}
+
+export interface NASPackageManifest {
+  version: string
+  releaseUrl?: string
+  packages: NASPackage[]
+}
+
 export const configApi = {
-  generate: (body: { serverUrl?: string; permission: number; tlsVerify: boolean; hostname?: string; shellEnabled: boolean; tlsCaCert?: string; tlsServerName?: string; tlsClientCert?: string; tlsClientKey?: string }) =>
+  generate: (body: { serverUrl?: string; token?: string; permission: number; tlsVerify: boolean; hostname?: string; shellEnabled: boolean; tlsCaCert?: string; tlsServerName?: string; tlsClientCert?: string; tlsClientKey?: string }) =>
     api.post<GeneratedConfig>("/config/generate", body),
+  nasPackages: () => api.get<NASPackageManifest>("/config/nas-packages"),
 }
 
 // Audit

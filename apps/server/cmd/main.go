@@ -385,6 +385,7 @@ func main() {
 				admin.POST("/settings/llm/models", llmProfileHandler.ListModels)
 
 				admin.POST("/config/generate", configGen.GenerateConfig)
+				admin.GET("/config/nas-packages", configGen.GetNASPackages)
 				admin.POST("/config/add-server", configGen.GenerateAddServerCommand)
 				admin.POST("/config/remove-server", configGen.GenerateRemoveServerCommand)
 				admin.GET("/config/tokens", configGen.ListTokens)

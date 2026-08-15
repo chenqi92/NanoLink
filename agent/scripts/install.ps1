@@ -162,6 +162,7 @@ $Script:EnMsgs = @{
     "downloading"         = "Downloading NanoLink Agent"
     "download_success"    = "Downloaded successfully"
     "download_failed"     = "Failed to download"
+    "unsupported_arch"    = "Unsupported Windows architecture"
     "installing_binary"   = "Installing Binary"
     "installed_to"        = "Installed to"
     "creating_dirs"       = "Creating Directories"
@@ -394,6 +395,7 @@ $Script:ZhMsgs = @{
     "downloading"         = "正在下载 NanoLink Agent"
     "download_success"    = "下载成功"
     "download_failed"     = "下载失败"
+    "unsupported_arch"    = "不支持的 Windows 处理器架构"
     "installing_binary"   = "安装二进制文件"
     "installed_to"        = "已安装到"
     "creating_dirs"       = "创建目录"
@@ -651,6 +653,34 @@ function Write-Success { param([string]$Message) Write-Host "[$(Get-Msg 'success
 function Write-Warn { param([string]$Message) Write-Host "[$(Get-Msg 'warn')] $Message" -ForegroundColor Yellow }
 function Write-Err { param([string]$Message) Write-Host "[$(Get-Msg 'error')] $Message" -ForegroundColor Red }
 function Write-Step { param([string]$Message) Write-Host "`n▶ $Message" -ForegroundColor Cyan }
+
+function Get-AgentArchitecture {
+    $machineArchitecture = ""
+    try {
+        $machineArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    }
+    catch {
+        $machineArchitecture = $env:PROCESSOR_ARCHITEW6432
+    }
+    if ([string]::IsNullOrWhiteSpace($machineArchitecture)) {
+        $machineArchitecture = $env:PROCESSOR_ARCHITECTURE
+    }
+    if ([string]::IsNullOrWhiteSpace($machineArchitecture)) {
+        $machineArchitecture = "unknown"
+    }
+
+    switch ($machineArchitecture.ToUpperInvariant()) {
+        "AMD64" { return "x86_64" }
+        "X64" { return "x86_64" }
+        "X86_64" { return "x86_64" }
+        "ARM64" { return "aarch64" }
+        "AARCH64" { return "aarch64" }
+        default {
+            Write-Err "$(Get-Msg 'unsupported_arch'): $machineArchitecture"
+            exit 1
+        }
+    }
+}
 
 function Read-PromptValue {
     param(
@@ -967,7 +997,7 @@ function New-Directories {
 function Get-Binary {
     Write-Step (Get-Msg "downloading")
 
-    $arch = if ([Environment]::Is64BitOperatingSystem) { "x86_64" } else { "x86" }
+    $arch = Get-AgentArchitecture
     $downloadUrl = "https://github.com/$Script:GitHubRepo/releases/latest/download/nanolink-agent-windows-$arch.exe"
     $binaryPath = Join-Path $Script:InstallDir $Script:BinaryName
 
@@ -1683,8 +1713,9 @@ function Main {
         Write-Banner
     }
 
-    $arch = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
-    Write-Info "$(Get-Msg 'detected'): Windows $([Environment]::OSVersion.Version) ($arch)"
+    $arch = Get-AgentArchitecture
+    $displayArch = if ($arch -eq 'aarch64') { 'ARM64' } else { 'x64' }
+    Write-Info "$(Get-Msg 'detected'): Windows $([Environment]::OSVersion.Version) ($displayArch)"
 
     # Check for existing installation (only in interactive mode)
     $Script:UpdateMode = $false

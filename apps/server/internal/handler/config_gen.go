@@ -1,17 +1,21 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chenqi92/NanoLink/apps/server/internal/config"
@@ -24,6 +28,8 @@ import (
 const (
 	defaultAgentGRPCPort  = 39100
 	agentInstallScriptURL = "https://agent.download.kkape.com/newest/install.sh"
+	nasPackageMaxBytes    = 1 << 20
+	nasPackageCacheTTL    = 15 * time.Minute
 )
 
 // ConfigGenHandler handles agent configuration generation
@@ -31,13 +37,18 @@ type ConfigGenHandler struct {
 	cfg          *config.Config
 	logger       *zap.SugaredLogger
 	tokenService *service.AgentTokenService
+	nasClient    *http.Client
+	nasMu        sync.Mutex
+	nasCached    *NASPackageManifest
+	nasCachedAt  time.Time
 }
 
 // NewConfigGenHandler creates a new configuration generator handler
 func NewConfigGenHandler(cfg *config.Config, logger *zap.SugaredLogger, tokenServices ...*service.AgentTokenService) *ConfigGenHandler {
 	h := &ConfigGenHandler{
-		cfg:    cfg,
-		logger: logger,
+		cfg:       cfg,
+		logger:    logger,
+		nasClient: &http.Client{Timeout: 10 * time.Second},
 	}
 	if len(tokenServices) > 0 {
 		h.tokenService = tokenServices[0]
@@ -80,6 +91,22 @@ type GenerateConfigResponse struct {
 	GeneratedToken string `json:"generatedToken,omitempty"`
 	// Server ID (hash of URL for identification)
 	ServerID string `json:"serverId"`
+}
+
+// NASPackage describes one native NAS package published with the current Agent release.
+type NASPackage struct {
+	Platform    string `json:"platform"`
+	Arch        string `json:"arch"`
+	Filename    string `json:"filename"`
+	DownloadURL string `json:"downloadUrl"`
+	SHA256      string `json:"sha256,omitempty"`
+}
+
+// NASPackageManifest is the dashboard-facing package index.
+type NASPackageManifest struct {
+	Version    string       `json:"version"`
+	ReleaseURL string       `json:"releaseUrl"`
+	Packages   []NASPackage `json:"packages"`
 }
 
 // GenerateConfig generates agent configuration
@@ -282,12 +309,18 @@ func (h *ConfigGenHandler) GenerateRemoveServerCommand(c *gin.Context) {
 func (h *ConfigGenHandler) GetServerURLInfo(c *gin.Context) {
 	// Get the request host (could be IP or domain)
 	host := c.Request.Host
+	agentHost := stripPort(host)
+	if externalURL := strings.TrimSpace(h.cfg.Server.ExternalURL); externalURL != "" {
+		if parsed, err := url.Parse(externalURL); err == nil && parsed.Hostname() != "" {
+			agentHost = parsed.Hostname()
+		}
+	}
 
 	// Use gRPC port for agent connection
 	grpcPort := h.cfg.Server.GRPCPort
 
 	// Build gRPC connection URL (host:port format for gRPC)
-	grpcURL := fmt.Sprintf("%s:%d", stripPort(host), grpcPort)
+	grpcURL := net.JoinHostPort(agentHost, strconv.Itoa(grpcPort))
 
 	c.JSON(http.StatusOK, gin.H{
 		"wsUrl":       grpcURL, // Keep field name for backward compatibility
@@ -296,17 +329,250 @@ func (h *ConfigGenHandler) GetServerURLInfo(c *gin.Context) {
 		"wsPort":      h.cfg.Server.WSPort, // Deprecated, kept for compatibility
 		"httpPort":    h.cfg.Server.HTTPPort,
 		"host":        host,
+		"agentHost":   agentHost,
 		"authEnabled": h.cfg.Auth.Enabled,
 		// Read-only server configuration surfaced in the Settings screen.
 		"serverName":          "NanoOps",
 		"version":             version.Version,
 		"externalUrl":         h.cfg.Server.ExternalURL,
+		"agentReleaseUrl":     h.currentAgentReleaseURL(),
 		"retentionDays":       h.cfg.Metrics.RetentionDays,
 		"hourlyRetentionDays": h.cfg.Metrics.HourlyRetentionDays,
 		"dailyRetentionDays":  h.cfg.Metrics.DailyRetentionDays,
 		"tlsEnabled":          h.cfg.Server.TLSCert != "",
 		"grpcVersion":         "1.68.1", // gRPC version
 	})
+}
+
+// GetNASPackages returns native fnOS, Synology DSM and UGOS Pro packages for
+// the Agent version that matches this server build.
+func (h *ConfigGenHandler) GetNASPackages(c *gin.Context) {
+	manifest, err := h.loadNASPackages(c.Request.Context())
+	if err != nil {
+		h.logger.Warnf("Failed to load NAS package manifest: %v", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to load NAS package downloads"})
+		return
+	}
+	c.JSON(http.StatusOK, manifest)
+}
+
+func (h *ConfigGenHandler) loadNASPackages(ctx context.Context) (*NASPackageManifest, error) {
+	h.nasMu.Lock()
+	defer h.nasMu.Unlock()
+	if h.nasCached != nil && time.Since(h.nasCachedAt) < nasPackageCacheTTL {
+		return h.nasCached, nil
+	}
+
+	var (
+		manifest *NASPackageManifest
+		err      error
+	)
+	if strings.EqualFold(strings.TrimSpace(h.cfg.Update.Source), "custom") && strings.TrimSpace(h.cfg.Update.CustomURL) != "" {
+		manifest, err = h.fetchCustomNASPackages(ctx)
+	} else {
+		manifest, err = h.fetchGitHubNASPackages(ctx)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := validateNASPackageManifest(manifest); err != nil {
+		return nil, err
+	}
+	h.nasCached = manifest
+	h.nasCachedAt = time.Now()
+	return manifest, nil
+}
+
+func (h *ConfigGenHandler) fetchGitHubNASPackages(ctx context.Context) (*NASPackageManifest, error) {
+	repo := strings.Trim(strings.TrimSpace(h.cfg.Update.Repo), "/")
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, fmt.Errorf("invalid GitHub update repo %q", repo)
+	}
+	tag := "v" + version.Version
+	apiURL := fmt.Sprintf(
+		"https://api.github.com/repos/%s/%s/releases/tags/%s",
+		url.PathEscape(parts[0]),
+		url.PathEscape(parts[1]),
+		url.PathEscape(tag),
+	)
+	var release struct {
+		HTMLURL string `json:"html_url"`
+		Assets  []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := h.fetchNASJSON(ctx, apiURL, &release); err != nil {
+		return nil, err
+	}
+
+	manifest := &NASPackageManifest{
+		Version:    version.Version,
+		ReleaseURL: release.HTMLURL,
+		Packages:   make([]NASPackage, 0, 6),
+	}
+	if manifest.ReleaseURL == "" {
+		manifest.ReleaseURL = h.currentAgentReleaseURL()
+	}
+	packagesByTarget := make(map[string]NASPackage, 6)
+	for _, asset := range release.Assets {
+		platform, arch, ok := classifyNASPackageAsset(asset.Name)
+		if !ok {
+			continue
+		}
+		pkg := NASPackage{
+			Platform:    platform,
+			Arch:        arch,
+			Filename:    asset.Name,
+			DownloadURL: asset.BrowserDownloadURL,
+		}
+		key := platform + "/" + arch
+		if existing, found := packagesByTarget[key]; !found || pkg.Filename > existing.Filename {
+			packagesByTarget[key] = pkg
+		}
+	}
+	for _, pkg := range packagesByTarget {
+		manifest.Packages = append(manifest.Packages, pkg)
+	}
+	sortNASPackages(manifest.Packages)
+	return manifest, nil
+}
+
+func (h *ConfigGenHandler) currentAgentReleaseURL() string {
+	if strings.EqualFold(strings.TrimSpace(h.cfg.Update.Source), "custom") {
+		return strings.TrimRight(strings.TrimSpace(h.cfg.Update.CustomURL), "/")
+	}
+	repo := strings.Trim(strings.TrimSpace(h.cfg.Update.Repo), "/")
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://github.com/%s/releases/tag/v%s", repo, version.Version)
+}
+
+func (h *ConfigGenHandler) fetchCustomNASPackages(ctx context.Context) (*NASPackageManifest, error) {
+	baseURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(h.cfg.Update.CustomURL), "/") + "/")
+	if err != nil || baseURL.Scheme != "https" || baseURL.Host == "" {
+		return nil, fmt.Errorf("invalid custom update URL")
+	}
+	manifestURL := baseURL.ResolveReference(&url.URL{Path: "nas-packages.json"}).String()
+	manifest := &NASPackageManifest{}
+	if err := h.fetchNASJSON(ctx, manifestURL, manifest); err != nil {
+		return nil, err
+	}
+	if manifest.Version == "" {
+		manifest.Version = version.Version
+	}
+	for i := range manifest.Packages {
+		packageURL, parseErr := url.Parse(strings.TrimSpace(manifest.Packages[i].DownloadURL))
+		if parseErr == nil && !packageURL.IsAbs() {
+			manifest.Packages[i].DownloadURL = baseURL.ResolveReference(packageURL).String()
+		}
+	}
+	sortNASPackages(manifest.Packages)
+	return manifest, nil
+}
+
+func (h *ConfigGenHandler) fetchNASJSON(ctx context.Context, sourceURL string, target any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json, application/json")
+	req.Header.Set("User-Agent", "NanoLink-Server/"+version.Version)
+	resp, err := h.nasClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("package source returned HTTP %d", resp.StatusCode)
+	}
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, nasPackageMaxBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(payload) > nasPackageMaxBytes {
+		return fmt.Errorf("package manifest exceeds %d bytes", nasPackageMaxBytes)
+	}
+	if err := json.Unmarshal(payload, target); err != nil {
+		return fmt.Errorf("decode package manifest: %w", err)
+	}
+	return nil
+}
+
+func classifyNASPackageAsset(filename string) (platform string, arch string, ok bool) {
+	name := strings.ToLower(strings.TrimSpace(filename))
+	switch {
+	case strings.HasSuffix(name, "_x86.fpk"):
+		return "fnos", "x86_64", true
+	case strings.HasSuffix(name, "_arm.fpk"):
+		return "fnos", "arm64", true
+	case strings.HasSuffix(name, "_x86_64.spk"):
+		return "synology", "x86_64", true
+	case strings.HasSuffix(name, "_armv8.spk"):
+		return "synology", "arm64", true
+	case strings.HasPrefix(name, "amd64_com.nanoops.nanolinkagent_") && strings.HasSuffix(name, ".upk"):
+		return "ugos", "x86_64", true
+	case strings.HasPrefix(name, "arm64_com.nanoops.nanolinkagent_") && strings.HasSuffix(name, ".upk"):
+		return "ugos", "arm64", true
+	default:
+		return "", "", false
+	}
+}
+
+func sortNASPackages(packages []NASPackage) {
+	order := map[string]int{
+		"fnos/x86_64":     0,
+		"fnos/arm64":      1,
+		"synology/x86_64": 2,
+		"synology/arm64":  3,
+		"ugos/x86_64":     4,
+		"ugos/arm64":      5,
+	}
+	sort.Slice(packages, func(i, j int) bool {
+		return order[packages[i].Platform+"/"+packages[i].Arch] < order[packages[j].Platform+"/"+packages[j].Arch]
+	})
+}
+
+func validateNASPackageManifest(manifest *NASPackageManifest) error {
+	if manifest == nil || len(manifest.Packages) == 0 {
+		return fmt.Errorf("release contains no supported NAS packages")
+	}
+	if strings.TrimPrefix(strings.TrimSpace(manifest.Version), "v") != version.Version {
+		return fmt.Errorf("NAS package version %q does not match server version %q", manifest.Version, version.Version)
+	}
+	allowed := map[string]struct{}{
+		"fnos/x86_64":     {},
+		"fnos/arm64":      {},
+		"synology/x86_64": {},
+		"synology/arm64":  {},
+		"ugos/x86_64":     {},
+		"ugos/arm64":      {},
+	}
+	seen := make(map[string]struct{}, len(manifest.Packages))
+	for _, pkg := range manifest.Packages {
+		key := pkg.Platform + "/" + pkg.Arch
+		if _, supported := allowed[key]; !supported {
+			return fmt.Errorf("unsupported NAS package %s", key)
+		}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate NAS package %s", key)
+		}
+		seen[key] = struct{}{}
+		parsed, err := url.Parse(strings.TrimSpace(pkg.DownloadURL))
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+			return fmt.Errorf("invalid download URL for %s", key)
+		}
+	}
+	if manifest.ReleaseURL != "" {
+		parsed, err := url.Parse(strings.TrimSpace(manifest.ReleaseURL))
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+			return fmt.Errorf("invalid release URL")
+		}
+	}
+	return nil
 }
 
 // TokenInfo represents token information for the UI

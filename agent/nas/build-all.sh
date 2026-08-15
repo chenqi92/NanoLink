@@ -32,8 +32,8 @@ UGOS_BUILD="$(printf '%04d' "$BUILD_NUMBER")"
 for package in \
   "$OUTPUT_DIR/nanolink-agent_${VERSION}_x86.fpk" \
   "$OUTPUT_DIR/nanolink-agent_${VERSION}_arm.fpk" \
-  "$OUTPUT_DIR/NanoLinkAgent-${VERSION}-1_x86_64.spk" \
-  "$OUTPUT_DIR/NanoLinkAgent-${VERSION}-1_armv8.spk" \
+  "$OUTPUT_DIR/NanoLinkAgent-${VERSION}-2_x86_64.spk" \
+  "$OUTPUT_DIR/NanoLinkAgent-${VERSION}-2_armv8.spk" \
   "$OUTPUT_DIR/amd64_com.nanoops.nanolinkagent_${VERSION}.${UGOS_BUILD}.upk" \
   "$OUTPUT_DIR/arm64_com.nanoops.nanolinkagent_${VERSION}.${UGOS_BUILD}.upk"
 do
@@ -43,8 +43,8 @@ done
 (cd "$OUTPUT_DIR" && sha256sum \
   "nanolink-agent_${VERSION}_x86.fpk" \
   "nanolink-agent_${VERSION}_arm.fpk" \
-  "NanoLinkAgent-${VERSION}-1_x86_64.spk" \
-  "NanoLinkAgent-${VERSION}-1_armv8.spk" \
+  "NanoLinkAgent-${VERSION}-2_x86_64.spk" \
+  "NanoLinkAgent-${VERSION}-2_armv8.spk" \
   "amd64_com.nanoops.nanolinkagent_${VERSION}.${UGOS_BUILD}.upk" \
   "arm64_com.nanoops.nanolinkagent_${VERSION}.${UGOS_BUILD}.upk" \
   > SHA256SUMS.txt)

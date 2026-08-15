@@ -40,6 +40,11 @@ on:
         required: false
         type: boolean
         default: true
+      upload_agent_windows_arm64:
+        description: '上传 Agent Windows ARM64'
+        required: false
+        type: boolean
+        default: true
       # 其他选项
       update_release_notes:
         description: '更新 Release 说明（添加 R2 下载链接）'
@@ -83,6 +88,11 @@ on:
         default: true
       upload_agent_windows_x64:
         description: '上传 Agent Windows x64'
+        required: false
+        type: boolean
+        default: true
+      upload_agent_windows_arm64:
+        description: '上传 Agent Windows ARM64'
         required: false
         type: boolean
         default: true
@@ -225,6 +235,14 @@ jobs:
             gh release download "v${VERSION}" \
               --pattern "nanolink-agent-windows-x86_64.exe" \
               --repo ${{ github.repository }} || echo "⚠️ Agent Windows x64 not found"
+          fi
+
+          # Windows ARM64
+          if [[ "${{ inputs.upload_agent_windows_arm64 }}" == "true" ]]; then
+            echo "📦 Downloading Agent Windows ARM64..."
+            gh release download "v${VERSION}" \
+              --pattern "nanolink-agent-windows-aarch64.exe" \
+              --repo ${{ github.repository }} || echo "⚠️ Agent Windows ARM64 not found"
           fi
           
           # List downloaded files
@@ -418,6 +436,9 @@ jobs:
                 *windows-x86_64*)
                   platform="Windows"; arch="x64"
                   ;;
+                *windows-aarch64*)
+                  platform="Windows"; arch="ARM64"
+                  ;;
                 *)
                   platform="Unknown"; arch="Unknown"
                   ;;
@@ -455,5 +476,4 @@ jobs:
             
             echo "✅ R2 download links appended to release notes"
           fi
-
 

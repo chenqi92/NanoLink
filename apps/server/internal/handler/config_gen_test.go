@@ -3,6 +3,8 @@ package handler
 import (
 	"strings"
 	"testing"
+
+	"github.com/chenqi92/NanoLink/apps/server/internal/version"
 )
 
 func TestParseServerEndpoint(t *testing.T) {
@@ -152,5 +154,48 @@ func TestGenerateUnixInstallUsesCanonicalDomain(t *testing.T) {
 	}
 	if strings.Contains(command, "kkape.cn") {
 		t.Fatalf("generated command contains the retired domain: %s", command)
+	}
+}
+
+func TestClassifyNASPackageAsset(t *testing.T) {
+	tests := []struct {
+		filename string
+		platform string
+		arch     string
+	}{
+		{"nanolink-agent_0.4.9_x86.fpk", "fnos", "x86_64"},
+		{"nanolink-agent_0.4.9_arm.fpk", "fnos", "arm64"},
+		{"NanoLinkAgent-0.4.9-2_x86_64.spk", "synology", "x86_64"},
+		{"NanoLinkAgent-0.4.9-2_armv8.spk", "synology", "arm64"},
+		{"amd64_com.nanoops.nanolinkagent_0.4.9.0123.upk", "ugos", "x86_64"},
+		{"arm64_com.nanoops.nanolinkagent_0.4.9.0123.upk", "ugos", "arm64"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.filename, func(t *testing.T) {
+			platform, arch, ok := classifyNASPackageAsset(tt.filename)
+			if !ok || platform != tt.platform || arch != tt.arch {
+				t.Fatalf("got %q/%q (%t), want %q/%q", platform, arch, ok, tt.platform, tt.arch)
+			}
+		})
+	}
+	if _, _, ok := classifyNASPackageAsset("nanolink-server-linux-x86_64"); ok {
+		t.Fatal("server binary must not be classified as a NAS package")
+	}
+}
+
+func TestValidateNASPackageManifestRejectsUnsafeURL(t *testing.T) {
+	for _, downloadURL := range []string{"javascript:alert(1)", "http://downloads.example.com/agent.fpk"} {
+		manifest := &NASPackageManifest{
+			Version: version.Version,
+			Packages: []NASPackage{{
+				Platform:    "fnos",
+				Arch:        "x86_64",
+				Filename:    "agent.fpk",
+				DownloadURL: downloadURL,
+			}},
+		}
+		if err := validateNASPackageManifest(manifest); err == nil {
+			t.Fatalf("expected unsafe package URL %q to be rejected", downloadURL)
+		}
 	}
 }

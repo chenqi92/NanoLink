@@ -19,6 +19,7 @@ case "$ARCH" in
 esac
 
 VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$SCRIPT_DIR/../../Cargo.toml" | sed -n '1p')"
+REVISION=2
 WORK_DIR="$(mktemp -d)"
 cleanup() { rm -rf "$WORK_DIR"; }
 trap cleanup EXIT HUP INT TERM
@@ -29,14 +30,19 @@ cp -R "$SCRIPT_DIR/package/." "$WORK_DIR/spk/"
 cp -R "$SCRIPT_DIR/payload/." "$WORK_DIR/payload/"
 install -m 0755 "$BINARY" "$WORK_DIR/payload/bin/nanolink-agent"
 
-awk -v version="$VERSION" -v arch="$ARCH" '
-  { gsub(/@VERSION@/, version); gsub(/@ARCH@/, arch); print }
+awk -v version="$VERSION" -v revision="$REVISION" -v arch="$ARCH" '
+  { gsub(/@VERSION@/, version); gsub(/@REVISION@/, revision); gsub(/@ARCH@/, arch); print }
 ' "$WORK_DIR/spk/INFO" > "$WORK_DIR/spk/INFO.new"
 mv "$WORK_DIR/spk/INFO.new" "$WORK_DIR/spk/INFO"
 chmod 0755 "$WORK_DIR/spk/scripts/"*
 
 tar -czf "$WORK_DIR/spk/package.tgz" -C "$WORK_DIR/payload" bin ui port_conf
-DESTINATION="$OUTPUT_DIR/NanoLinkAgent-${VERSION}-1_${ARCH}.spk"
-tar -cf "$DESTINATION" -C "$WORK_DIR/spk" \
-  INFO package.tgz scripts conf WIZARD_UIFILES PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG
+# Keep security metadata ahead of the payload for DSM upload-preflight compatibility.
+DESTINATION="$OUTPUT_DIR/NanoLinkAgent-${VERSION}-${REVISION}_${ARCH}.spk"
+set -- INFO conf package.tgz scripts WIZARD_UIFILES PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG
+if tar --help 2>&1 | grep -q -- '--format'; then
+  tar --format=ustar -cf "$DESTINATION" -C "$WORK_DIR/spk" "$@"
+else
+  tar -cf "$DESTINATION" -C "$WORK_DIR/spk" "$@"
+fi
 echo "$DESTINATION"
