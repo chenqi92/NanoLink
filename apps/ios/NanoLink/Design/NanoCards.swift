@@ -35,7 +35,9 @@ struct NanoCard<Content: View>: View {
             .clipShape(shape)
 
         if let onTap {
-            Button(action: onTap) { inner }.buttonStyle(.plain)
+            Button(action: onTap) { inner }
+                .buttonStyle(NanoCardButtonStyle())
+                .hoverEffect(.highlight)
         } else {
             inner
         }
@@ -95,7 +97,9 @@ struct NanoListRow<Leading: View, Content: View, Trailing: View>: View {
         .contentShape(Rectangle())
 
         if let onTap {
-            Button(action: onTap) { row }.buttonStyle(.plain)
+            Button(action: onTap) { row }
+                .buttonStyle(NanoRowButtonStyle())
+                .hoverEffect(.highlight)
         } else {
             row
         }
@@ -107,6 +111,27 @@ struct NanoListRow<Leading: View, Content: View, Trailing: View>: View {
         guard compact else { return base }
         return EdgeInsets(top: max(5, base.top - 3), leading: base.leading,
                           bottom: max(5, base.bottom - 3), trailing: base.trailing)
+    }
+}
+
+/// Visible press feedback for full-card navigation and selection controls.
+struct NanoCardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .scaleEffect(configuration.isPressed ? 0.995 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Press feedback for rows embedded in a shared card surface.
+private struct NanoRowButtonStyle: ButtonStyle {
+    @Environment(\.nano) private var t
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? t.card2 : Color.clear)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

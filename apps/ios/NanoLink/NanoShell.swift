@@ -75,7 +75,8 @@ struct NanoShell: View {
                 .tabItem { Label(tr("nav.overview"), systemImage: ShellSection.overview.icon) }
                 .tag(ShellSection.overview)
 
-            NavigationStack { AgentsScreen() }
+            NavigationStack { AgentsScreen(initialFilter: router.nodesFilter) }
+                .id(router.nodesFilter)
                 .tabItem { Label(tr("nav.nodes"), systemImage: ShellSection.nodes.icon) }
                 .tag(ShellSection.nodes)
 
@@ -112,8 +113,7 @@ struct NanoShell: View {
         } detail: {
             NavigationStack {
                 selectedScreen
-                    .frame(maxWidth: section == .nodes ? .infinity : 1_100, maxHeight: .infinity)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .navigationTitle(tr(section.titleKey))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { desktopToolbar }
@@ -141,13 +141,17 @@ struct NanoShell: View {
     private var desktopToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Button { router.requestRefresh() } label: {
-                Label(tr("menu.refresh"), systemImage: "arrow.clockwise")
+                Image(systemName: "arrow.clockwise")
             }
+            .buttonStyle(NanoToolbarButtonStyle())
+            .accessibilityLabel(tr("menu.refresh"))
             .help(tr("menu.refresh"))
 
             Button { router.showServerSwitch = true } label: {
-                Label(tr("agents.switchServer"), systemImage: "server.rack")
+                Image(systemName: "server.rack")
             }
+            .buttonStyle(NanoToolbarButtonStyle())
+            .accessibilityLabel(tr("agents.switchServer"))
             .help(tr("agents.switchServer"))
         }
     }
@@ -177,7 +181,9 @@ struct NanoShell: View {
             DashboardScreen(onSelectAgent: { agent in
                 router.select(agentID: agent.id)
             })
-        case .nodes: AgentsWorkspaceScreen(selectedAgentID: $router.selectedAgentID)
+        case .nodes:
+            AgentsWorkspaceScreen(selectedAgentID: $router.selectedAgentID,
+                                  filter: $router.nodesFilter)
         case .terminal: TerminalScreen()
         case .activity: AlertsScreen()
         case .settings: SettingsScreen()

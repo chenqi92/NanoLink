@@ -4,7 +4,7 @@ import UIKit
 private let defaultServerName = "NanoOps"
 private let defaultServerURL = "https://nanoops.netok.cn"
 
-private enum ServerConnectionMethod: String, Identifiable {
+private enum ServerConnectionMethod: String, CaseIterable, Identifiable {
     case qrCode, account, pairing, manual
     var id: String { rawValue }
 }
@@ -14,6 +14,8 @@ struct AddServerScreen: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.nano) private var t
+
+    private let onClose: (() -> Void)?
 
     @State private var method: ServerConnectionMethod?
     @State private var name = defaultServerName
@@ -38,7 +40,21 @@ struct AddServerScreen: View {
 
     private enum PairingState { case input, verifying, success, invalid }
 
+    init(onClose: (() -> Void)? = nil) {
+        self.onClose = onClose
+    }
+
     var body: some View {
+        Group {
+            if t.desktop { desktopBody } else { touchBody }
+        }
+        .onDisappear {
+            countdownTask?.cancel()
+            qrRestartTask?.cancel()
+        }
+    }
+
+    private var touchBody: some View {
         Group {
             if let method {
                 methodContent(method)
@@ -52,7 +68,7 @@ struct AddServerScreen: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button {
-                    if method == nil { dismiss() } else { resetMethod() }
+                    if method == nil { close() } else { resetMethod() }
                 } label: {
                     if method == nil { Text(tr("common.cancel")) }
                     else { Image(systemName: "chevron.left") }
@@ -66,19 +82,164 @@ struct AddServerScreen: View {
                 }
             }
         }
-        .onDisappear {
-            countdownTask?.cancel()
-            qrRestartTask?.cancel()
+    }
+
+    private var desktopBody: some View {
+        VStack(spacing: 0) {
+            desktopHeader
+            Rectangle().fill(t.sep2).frame(height: 0.5)
+            HStack(spacing: 0) {
+                desktopMethodRail
+                Rectangle().fill(t.sep2).frame(width: 0.5)
+                VStack(spacing: 0) {
+                    HStack {
+                        Text(methodTitle(desktopMethod))
+                            .font(.system(size: 22, weight: .semibold))
+                            .tracking(-0.3)
+                            .foregroundColor(t.fg)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 24)
+                    .frame(height: 62)
+                    Rectangle().fill(t.sep2).frame(height: 0.5)
+                    methodContent(desktopMethod)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
+        .frame(minWidth: 760, minHeight: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(t.bg.ignoresSafeArea())
+    }
+
+    private var desktopHeader: some View {
+        HStack(spacing: 12) {
+            BrandMark(size: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("addServer.title"))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(t.fg)
+                Text(methodTitle(desktopMethod))
+                    .font(.system(size: 12))
+                    .foregroundColor(t.fg3)
+            }
+            Spacer()
+            if desktopMethod == .qrCode {
+                Button { torchOn.toggle() } label: {
+                    Image(systemName: torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(torchOn ? t.accent : t.fg2)
+                        .frame(width: 34, height: 34)
+                        .background(t.card)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("addServer.headerScanQr"))
+                .help(tr("addServer.headerScanQr"))
+            }
+            Button { close() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(t.fg2)
+                    .frame(width: 34, height: 34)
+                    .background(t.card)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(tr("common.cancel"))
+            .help(tr("common.cancel"))
+        }
+        .padding(.horizontal, 20)
+        .frame(height: 68)
+    }
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
+    }
+
+    private var desktopMethod: ServerConnectionMethod { method ?? .account }
+
+    private var desktopMethodRail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(tr("server.chooseMethodDesc"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(t.fg3)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 12)
+
+            VStack(spacing: 8) {
+                ForEach(ServerConnectionMethod.allCases) { value in
+                    desktopMethodButton(value)
+                }
+            }
+
+            Spacer(minLength: 18)
+            Text(tr("addServer.chooseMethodHint"))
+                .font(.system(size: 11.5))
+                .foregroundColor(t.fg4)
+                .lineSpacing(4)
+        }
+        .padding(18)
+            .frame(width: 250)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(t.bg2)
+    }
+
+    private func desktopMethodButton(_ value: ServerConnectionMethod) -> some View {
+        let info = methodInfo(value)
+        let selected = desktopMethod == value
+        return Button { selectMethod(value) } label: {
+            HStack(spacing: 11) {
+                NanoIconBox(icon: info.icon, size: 38, iconSize: 18,
+                            bg: selected ? t.accent.opacity(0.14) : t.card2,
+                            fg: selected ? t.accent : t.fg3)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr(info.title))
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .foregroundColor(t.fg)
+                    Text(tr(info.sub))
+                        .font(.system(size: 10.5))
+                        .foregroundColor(t.fg4)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: selected ? "checkmark.circle.fill" : "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(selected ? t.accent : t.fg4)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 58)
+            .background(selected ? t.card : Color.clear)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(selected ? t.accent.opacity(0.32) : Color.clear, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(NanoCardButtonStyle())
+        .hoverEffect(.highlight)
     }
 
     private var title: String {
+        method.map(methodTitle) ?? tr("addServer.title")
+    }
+
+    private func methodTitle(_ method: ServerConnectionMethod) -> String {
         switch method {
         case .qrCode: return tr("addServer.headerScanQr")
         case .account: return tr("addServer.headerAccount")
         case .pairing: return tr("addServer.headerPairing")
         case .manual: return tr("addServer.headerManual")
-        case nil: return tr("addServer.title")
+        }
+    }
+
+    private func methodInfo(_ method: ServerConnectionMethod) -> (icon: String, title: String, sub: String) {
+        switch method {
+        case .qrCode: return ("qrcode.viewfinder", "addServer.methodScanQr", "addServer.methodScanQrDesc")
+        case .account: return ("person.crop.circle.badge.checkmark", "addServer.methodAccount", "addServer.methodAccountDesc")
+        case .pairing: return ("number.square", "addServer.methodPairing", "addServer.methodPairingDesc")
+        case .manual: return ("slider.horizontal.3", "addServer.methodManual", "addServer.methodManualDesc")
         }
     }
 
@@ -109,11 +270,7 @@ struct AddServerScreen: View {
 
     private func methodRow(_ value: ServerConnectionMethod, icon: String,
                            title: String, sub: String, divider: Bool = true) -> some View {
-        NanoListRow(divider: divider, onTap: {
-            error = nil
-            method = value
-            if value == .pairing { startCountdown() }
-        }) {
+        NanoListRow(divider: divider, onTap: { selectMethod(value) }) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(tr(title)).font(.system(size: 15, weight: .medium)).foregroundColor(t.fg)
                 Text(tr(sub)).font(.system(size: 12.5)).foregroundColor(t.fg3)
@@ -155,10 +312,13 @@ struct AddServerScreen: View {
             .padding(20)
 
             if let qrIdentity {
-                Text("✓ \(qrIdentity)")
-                    .font(NanoFont.mono(12, weight: .medium))
-                    .foregroundColor(t.ok)
-                    .padding(.bottom, 10)
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                    Text(qrIdentity)
+                }
+                .font(NanoFont.mono(12, weight: .medium))
+                .foregroundColor(t.ok)
+                .padding(.bottom, 10)
             }
             Text(tr("addServer.qrHint"))
                 .font(.system(size: 13))
@@ -189,7 +349,12 @@ struct AddServerScreen: View {
             HStack {
                 Button(tr("addServer.forgotPassword")) { error = tr("addServer.forgotPasswordHint") }
                 Spacer()
-                Button(tr("addServer.ssoLogin")) { error = tr("addServer.ssoHint") }
+                Button { error = tr("addServer.ssoHint") } label: {
+                    HStack(spacing: 5) {
+                        Text(tr("addServer.ssoLogin"))
+                        Image(systemName: "arrow.right")
+                    }
+                }
             }
             .font(.system(size: 12.5))
             .foregroundColor(t.accent)
@@ -264,7 +429,11 @@ struct AddServerScreen: View {
         case .verifying:
             HStack(spacing: 8) { ProgressView(); Text(tr("addServer.pairingVerifying")) }.foregroundColor(t.fg3)
         case .success:
-            Text(tr("addServer.pairingPaired")).foregroundColor(t.ok)
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                Text(tr("addServer.pairingPaired"))
+            }
+            .foregroundColor(t.ok)
         case .invalid:
             Text(tr("addServer.pairingInvalid")).foregroundColor(t.crit)
         case .input:
@@ -276,13 +445,21 @@ struct AddServerScreen: View {
     private var numberPad: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
         return LazyVGrid(columns: columns, spacing: 10) {
-            ForEach(["1","2","3","4","5","6","7","8","9","","0","⌫"], id: \.self) { value in
+            ForEach(["1","2","3","4","5","6","7","8","9","","0","delete"], id: \.self) { value in
                 if value.isEmpty { Color.clear.frame(height: 48) }
                 else {
                     Button { numberTapped(value) } label: {
-                        Text(value).font(.system(size: value == "⌫" ? 20 : 22, weight: .medium)).foregroundColor(t.fg)
-                            .frame(maxWidth: .infinity).frame(height: 48).background(t.card)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        Group {
+                            if value == "delete" {
+                                Image(systemName: "delete.left")
+                                    .font(.system(size: 18, weight: .medium))
+                            } else {
+                                Text(value).font(.system(size: 22, weight: .medium))
+                            }
+                        }
+                        .foregroundColor(t.fg)
+                        .frame(maxWidth: .infinity).frame(height: 48).background(t.card)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }.buttonStyle(.plain).disabled(pairingState == .verifying)
                 }
             }
@@ -291,9 +468,9 @@ struct AddServerScreen: View {
 
     private func formScroll<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) { content() }
-                .padding(20)
-                .frame(maxWidth: 680)
+            VStack(alignment: .leading, spacing: t.desktop ? 18 : 16) { content() }
+                .padding(t.desktop ? 24 : 20)
+                .frame(maxWidth: t.desktop ? 560 : 680)
                 .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
@@ -314,10 +491,10 @@ struct AddServerScreen: View {
             .textContentType(contentType)
             .textInputAutocapitalization(capitalization)
             .autocorrectionDisabled(autocorrectionDisabled)
-            .font(.system(size: t.desktop ? 13 : 15))
+            .font(.system(size: t.desktop ? 14 : 15))
             .foregroundColor(t.fg)
-            .padding(.horizontal, t.desktop ? 9 : 14)
-            .frame(height: t.desktop ? 28 : 48)
+            .padding(.horizontal, t.desktop ? 12 : 14)
+            .frame(height: t.desktop ? t.controlHeight : 48)
             .background(t.card)
             .overlay(RoundedRectangle(cornerRadius: t.fieldRadius)
                 .stroke(t.desktop ? t.sep : (t.isIOS ? .clear : t.sep), lineWidth: 1))
@@ -327,12 +504,12 @@ struct AddServerScreen: View {
 
     private func toggleRow(_ label: String, value: Binding<Bool>) -> some View {
         HStack {
-            Text(label).font(.system(size: t.desktop ? 13 : 14)).foregroundColor(t.fg2)
+            Text(label).font(.system(size: t.desktop ? 14 : 14)).foregroundColor(t.fg2)
             Spacer()
             Toggle("", isOn: value).labelsHidden()
         }
-        .padding(.horizontal, t.desktop ? 10 : 14)
-        .frame(height: t.desktop ? 32 : 48)
+        .padding(.horizontal, t.desktop ? 12 : 14)
+        .frame(height: t.desktop ? t.controlHeight : 48)
         .background(t.card)
         .clipShape(RoundedRectangle(cornerRadius: t.fieldRadius, style: .continuous))
     }
@@ -365,6 +542,17 @@ struct AddServerScreen: View {
         qrIdentity = nil
         pairingState = .input
         pairingCode = ""
+    }
+
+    private func selectMethod(_ value: ServerConnectionMethod) {
+        error = nil
+        if value != .pairing { countdownTask?.cancel() }
+        if value != .qrCode {
+            qrRestartTask?.cancel()
+            torchOn = false
+        }
+        method = value
+        if value == .pairing { startCountdown() }
     }
 
     private func validatedBasics(needsName: Bool = true) -> Bool {
@@ -457,7 +645,7 @@ struct AddServerScreen: View {
     }
 
     private func numberTapped(_ key: String) {
-        if key == "⌫" {
+        if key == "delete" {
             if !pairingCode.isEmpty { pairingCode.removeLast() }
             pairingState = .input
             return

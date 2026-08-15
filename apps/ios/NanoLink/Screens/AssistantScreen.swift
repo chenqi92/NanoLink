@@ -101,7 +101,7 @@ struct AssistantScreen: View {
     }
 
     private func actionChip(_ action: String, agentId: String) -> some View {
-        let agent = store.agents.first { $0.id == agentId }
+        let agent = store.agentById(agentId)
         let initialTab = action == "history" ? 1 : action == "shell" || action == "terminal" ? 2 : 0
 
         return NavigationLink {
@@ -256,14 +256,15 @@ struct AssistantScreen: View {
         sending = true
 
         Task {
-            guard let service = store.serviceForServer(store.activeServerId) else {
+            guard let serverId = store.activeServerId,
+                  let service = store.serviceForServer(serverId) else {
                 sending = false
                 turns.append(AssistantTurn(role: "assistant", content: tr("assistant.error.notConfigured"), isError: true))
                 return
             }
 
             let history = turns.map { ChatMessage(role: $0.role, content: $0.content) }
-            let result = await service.assistantChat(messages: history)
+            let result = await service.assistantChat(history)
 
             await MainActor.run {
                 sending = false
@@ -289,7 +290,8 @@ struct AssistantScreen: View {
     }
 
     private func loadFindings() async {
-        guard let service = store.serviceForServer(store.activeServerId) else { return }
+        guard let serverId = store.activeServerId,
+              let service = store.serviceForServer(serverId) else { return }
         if let result = await service.fetchAssistantFindings() {
             await MainActor.run { findings = result }
         }
@@ -302,6 +304,57 @@ struct AssistantScreen: View {
         case "info": return ("info.circle.fill", t.info)
         case "ok": return ("checkmark.circle.fill", t.ok)
         default: return ("info.circle.fill", t.fg3)
+        }
+    }
+}
+
+/// Wrapping layout used by finding actions and suggested prompts.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let width = proposal.width ?? 0
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x + size.width > width, x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: width, height: y + rowHeight)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX, x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
         }
     }
 }

@@ -63,11 +63,13 @@ func agentVisible(agentID string, visible map[string]struct{}, all bool) bool {
 }
 
 type findingDTO struct {
-	Kind    string   `json:"kind"` // anomaly | warn | info | ok
-	Title   string   `json:"title"`
-	Detail  string   `json:"detail"`
-	AgentID string   `json:"agentId,omitempty"`
-	Actions []string `json:"actions"`
+	Kind    string         `json:"kind"` // anomaly | warn | info | ok
+	Code    string         `json:"code"`
+	Params  map[string]any `json:"params,omitempty"`
+	Title   string         `json:"title"`
+	Detail  string         `json:"detail"`
+	AgentID string         `json:"agentId,omitempty"`
+	Actions []string       `json:"actions"`
 }
 
 // GET /assistant/findings
@@ -98,23 +100,23 @@ func (h *AssistantHandler) Findings(c *gin.Context) {
 		}
 		cpu := m.CPU.UsagePercent
 		if cpu > 90 {
-			findings = append(findings, findingDTO{Kind: "anomaly", AgentID: id, Title: fmt.Sprintf("%s CPU sustained at %.0f%%", host, cpu), Detail: "CPU above 90% — check top processes for a runaway job.", Actions: []string{"List processes", "View history"}})
+			findings = append(findings, findingDTO{Kind: "anomaly", Code: "cpuHigh", Params: map[string]any{"host": host, "value": fmt.Sprintf("%.0f", cpu)}, AgentID: id, Title: fmt.Sprintf("%s CPU sustained at %.0f%%", host, cpu), Detail: "CPU above 90% — check top processes for a runaway job.", Actions: []string{"processes", "history"}})
 		}
 		if m.Memory.Total > 0 {
 			memPct := float64(m.Memory.Used) / float64(m.Memory.Total) * 100
 			if memPct > 90 {
-				findings = append(findings, findingDTO{Kind: "warn", AgentID: id, Title: fmt.Sprintf("%s memory pressure at %.0f%%", host, memPct), Detail: "Memory above 90% — risk of OOM. Consider checking processes or swap.", Actions: []string{"List processes", "View history"}})
+				findings = append(findings, findingDTO{Kind: "warn", Code: "memoryHigh", Params: map[string]any{"host": host, "value": fmt.Sprintf("%.0f", memPct)}, AgentID: id, Title: fmt.Sprintf("%s memory pressure at %.0f%%", host, memPct), Detail: "Memory above 90% — risk of OOM. Consider checking processes or swap.", Actions: []string{"processes", "history"}})
 			}
 		}
 		for _, d := range m.Disks {
 			if d.UsagePercent > 90 {
-				findings = append(findings, findingDTO{Kind: "warn", AgentID: id, Title: fmt.Sprintf("%s %s at %.0f%% full", host, d.MountPoint, d.UsagePercent), Detail: "Disk above 90% — archive or extend the volume before it fills.", Actions: []string{"Open shell"}})
+				findings = append(findings, findingDTO{Kind: "warn", Code: "diskHigh", Params: map[string]any{"host": host, "mount": d.MountPoint, "value": fmt.Sprintf("%.0f", d.UsagePercent)}, AgentID: id, Title: fmt.Sprintf("%s %s at %.0f%% full", host, d.MountPoint, d.UsagePercent), Detail: "Disk above 90% — archive or extend the volume before it fills.", Actions: []string{"shell"}})
 				break
 			}
 		}
 		for _, g := range m.GPUs {
 			if g.UsagePercent > 90 {
-				findings = append(findings, findingDTO{Kind: "anomaly", AgentID: id, Title: fmt.Sprintf("%s GPU sustained at %.0f%%", host, g.UsagePercent), Detail: "GPU above 90% — likely a long-running job; check VRAM headroom.", Actions: []string{"View history"}})
+				findings = append(findings, findingDTO{Kind: "anomaly", Code: "gpuHigh", Params: map[string]any{"host": host, "value": fmt.Sprintf("%.0f", g.UsagePercent)}, AgentID: id, Title: fmt.Sprintf("%s GPU sustained at %.0f%%", host, g.UsagePercent), Detail: "GPU above 90% — likely a long-running job; check VRAM headroom.", Actions: []string{"history"}})
 				break
 			}
 		}
@@ -131,14 +133,14 @@ func (h *AssistantHandler) Findings(c *gin.Context) {
 		if host == "" {
 			host = tk.AgentID
 		}
-		findings = append(findings, findingDTO{Kind: "info", AgentID: tk.AgentID, Title: fmt.Sprintf("%s is offline", host), Detail: "No recent heartbeat — the agent may be down or unreachable.", Actions: []string{"View history"}})
+		findings = append(findings, findingDTO{Kind: "info", Code: "offline", Params: map[string]any{"host": host}, AgentID: tk.AgentID, Title: fmt.Sprintf("%s is offline", host), Detail: "No recent heartbeat — the agent may be down or unreachable.", Actions: []string{"history"}})
 	}
 
 	if len(findings) == 0 {
 		if !all && len(visible) == 0 {
-			findings = append(findings, findingDTO{Kind: "info", Title: "No agents assigned", Detail: "This account does not currently have access to any agents.", Actions: []string{}})
+			findings = append(findings, findingDTO{Kind: "info", Code: "noAgents", Title: "No agents assigned", Detail: "This account does not currently have access to any agents.", Actions: []string{}})
 		} else {
-			findings = append(findings, findingDTO{Kind: "ok", Title: "Fleet healthy", Detail: "All visible monitored agents are within thresholds.", Actions: []string{}})
+			findings = append(findings, findingDTO{Kind: "ok", Code: "fleetHealthy", Title: "Fleet healthy", Detail: "All visible monitored agents are within thresholds.", Actions: []string{}})
 		}
 	}
 

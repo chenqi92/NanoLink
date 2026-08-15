@@ -106,7 +106,7 @@
   },
   "agentDetail": {
     "tabRealtime": "Realtime", "tabHistory": "History", "tabTerminal": "Terminal",
-    "tabTerminalLocked": "Terminal 🔒", "agentVersion": "Agent {version}", "heartbeat": "heartbeat {ago} ago",
+    "tabTerminalLocked": "Terminal", "agentVersion": "Agent {version}", "heartbeat": "heartbeat {ago} ago",
     "lastHeartbeat": "Last heartbeat {ago} ago", "nodeOffline": "Node offline", "cpu": "CPU",
     "memory": "Memory", "storage": "Storage", "networkInterfaces": "Network Interfaces", "gpu": "GPU",
     "gpuCount": "{n}", "aiAccelerator": "AI Accelerator", "utilization": "Utilization",
@@ -165,6 +165,7 @@
     "allHealthy": "All nodes are within thresholds — fleet healthy.", "loadError": "Unable to load diagnostics",
     "loadErrorDesc": "Check the connection to the server; auto-diagnosis needs reachable live metrics.",
     "actHistory": "View history", "actShell": "Open terminal", "actProcesses": "List processes",
+    "action": { "history": "View history", "shell": "Open terminal", "processes": "View processes" },
     "chatTitle": "Assistant Chat", "askAssistant": "Ask the assistant",
     "noServer": "No server connected. Add a server first.", "errLabel": "Error",
     "errNotConfigured": "The AI assistant is not configured on this server. Ask an admin to enable the LLM integration.",
@@ -239,10 +240,10 @@
     "forceTls": "Force TLS", "ignoreCert": "Ignore certificate errors",
     "ignoreCertWarning": "Certificate and hostname verification will be disabled for this server. Use only on a trusted network.",
     "forgotPassword": "Forgot password?",
-    "forgotPasswordHint": "Reset your password from the web dashboard.", "ssoLogin": "SSO login →",
+    "forgotPasswordHint": "Reset your password from the web dashboard.", "ssoLogin": "SSO login",
     "ssoHint": "Single sign-on is configured on the server.", "qrSaving": "Saving and connecting…",
     "pairingEnterHint": "Generate a pairing code in the web dashboard, then enter the 6 digits below.",
-    "pairingVerifying": "Verifying…", "pairingPaired": "✓ Paired", "pairingInvalid": "Invalid pairing code",
+    "pairingVerifying": "Verifying…", "pairingPaired": "Paired", "pairingInvalid": "Invalid pairing code",
     "pairingValid60s": "Valid for 60s", "pairingNeedsServer": "Enter the server name and URL first"
   },
   "pairing": {

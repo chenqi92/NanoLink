@@ -104,7 +104,7 @@
   },
   "agentDetail": {
     "tabRealtime": "Realtime", "tabHistory": "History", "tabTerminal": "Terminal",
-    "tabTerminalLocked": "Terminal 🔒", "agentVersion": "Agent {version}", "heartbeat": "heartbeat {ago} ago",
+    "tabTerminalLocked": "Terminal", "agentVersion": "Agent {version}", "heartbeat": "heartbeat {ago} ago",
     "lastHeartbeat": "Last heartbeat {ago} ago", "nodeOffline": "Node offline", "cpu": "CPU",
     "memory": "Memory", "storage": "Storage", "networkInterfaces": "Network Interfaces", "gpu": "GPU",
     "gpuCount": "{n}", "aiAccelerator": "AI Accelerator", "utilization": "Utilization",
@@ -151,8 +151,30 @@
   "assistant": {
     "title": "AI Ops Assistant", "greeting": "Hi, I'm the NanoOps assistant",
     "intro": "Connected over the MCP protocol, I can help you query node metrics, diagnose anomalies, and generate ops recommendations.",
-    "tryThese": "Try these", "suggestTopCpu": "Which nodes have the highest CPU?",
+    "diagnosis": "Diagnostics", "tryThese": "Try these", "suggestTopCpu": "Which nodes have the highest CPU?",
     "suggestDiskFull": "Any servers running low on disk?", "suggestHealth": "Summarize the current cluster health",
+    "suggestion": {
+      "highCpu": "Which nodes have the highest CPU?", "diskSpace": "Which nodes are running low on disk space?",
+      "offlineNodes": "Why are some nodes offline?", "resourceTrend": "Summarize recent resource trends"
+    },
+    "action": { "history": "View history", "shell": "Open terminal", "processes": "View processes" },
+    "finding": {
+      "cpuHigh": { "title": "{host} CPU sustained at {value}%", "detail": "CPU is above 90%. Check running processes for a runaway job." },
+      "memoryHigh": { "title": "{host} memory pressure at {value}%", "detail": "Memory is above 90%, with a risk of OOM. Check processes and swap usage." },
+      "diskHigh": { "title": "{host} {mount} is {value}% full", "detail": "Disk usage is above 90%. Archive data or extend the volume before it fills." },
+      "gpuHigh": { "title": "{host} GPU sustained at {value}%", "detail": "GPU usage is above 90%. Check long-running jobs and VRAM headroom." },
+      "offline": { "title": "{host} is offline", "detail": "No recent heartbeat was received. The agent may be stopped or unreachable." },
+      "noAgents": { "title": "No agents assigned", "detail": "This account does not currently have access to any agents." },
+      "fleetHealthy": { "title": "Fleet healthy", "detail": "All visible monitored agents are within thresholds." }
+    },
+    "error": {
+      "notConfigured": "The AI assistant is not configured on this server. Ask an admin to enable the LLM integration.",
+      "badRequest": "The request was rejected. Try shortening your message.",
+      "upstreamFailed": "The assistant's AI backend failed to respond. Please try again.",
+      "serverError": "The server returned an error. Please try again later.",
+      "network": "Network error. Check the connection to the server and try again.",
+      "unknown": "The assistant could not complete the request. Please try again."
+    },
     "inputHint": "Ask the ops assistant…", "comingSoon": "AI assistant is coming soon",
     "autoDiagnosis": "Auto-diagnosis", "findingsCount": "{n} findings",
     "allHealthy": "All nodes are within thresholds — fleet healthy.", "loadError": "Unable to load diagnostics",
@@ -230,10 +252,10 @@
     "login": "Sign In", "urlRequired": "Please enter the server URL", "urlInvalid": "Invalid URL format (must include http(s)://)",
     "advanced": "Advanced", "deviceName": "Device Name", "deviceNameHint": "e.g. Alice's iPhone",
     "forceTls": "Force TLS", "ignoreCert": "Ignore certificate errors", "forgotPassword": "Forgot password?",
-    "forgotPasswordHint": "Reset your password from the web dashboard.", "ssoLogin": "SSO login →",
+    "forgotPasswordHint": "Reset your password from the web dashboard.", "ssoLogin": "SSO login",
     "ssoHint": "Single sign-on is configured on the server.", "qrSaving": "Saving and connecting…",
     "pairingEnterHint": "Generate a pairing code in the web dashboard, then enter the 6 digits below.",
-    "pairingVerifying": "Verifying…", "pairingPaired": "✓ Paired", "pairingInvalid": "Invalid pairing code",
+    "pairingVerifying": "Verifying…", "pairingPaired": "Paired", "pairingInvalid": "Invalid pairing code",
     "pairingValid60s": "Valid for 60s", "pairingNeedsServer": "Enter the server name and URL first"
   },
   "security": {

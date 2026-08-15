@@ -3,7 +3,7 @@
   "common": {
     "loading": "加载中...", "cancel": "取消", "remove": "删除", "connect": "连接",
     "online": "在线", "offline": "离线", "retry": "重试", "copy": "复制",
-    "add": "添加", "login": "登录", "dismiss": "撤销", "unknown": "未知"
+    "add": "添加", "login": "登录", "dismiss": "关闭", "unknown": "未知"
   },
   "errors": {
     "connectionFailed": "连接失败", "loginMissingToken": "登录成功，但服务器未返回令牌。",
@@ -84,7 +84,7 @@
     "offlineNoData": "离线 · 无实时数据", "switchServer": "切换服务器", "filter": "筛选", "total": "总计"
   },
   "agentDetail": {
-    "tabRealtime": "实时", "tabHistory": "历史", "tabTerminal": "终端", "tabTerminalLocked": "终端 🔒",
+    "tabRealtime": "实时", "tabHistory": "历史", "tabTerminal": "终端", "tabTerminalLocked": "终端",
     "agentVersion": "Agent 版本 {version}", "heartbeat": "心跳 {ago} 前", "lastHeartbeat": "最后心跳 {ago} 前",
     "nodeOffline": "节点离线", "cpu": "CPU", "memory": "内存", "storage": "存储", "networkInterfaces": "网络接口",
     "gpu": "GPU", "gpuCount": "{n} 个", "aiAccelerator": "AI 加速器", "utilization": "利用率", "loginSessions": "登录会话",
@@ -130,7 +130,8 @@
     "inputHint": "询问运维助手…", "comingSoon": "AI 助手即将上线", "autoDiagnosis": "自动诊断", "findingsCount": "{n} 项发现",
     "allHealthy": "所有节点均在阈值范围内，集群健康。", "loadError": "无法加载诊断",
     "loadErrorDesc": "请确认与服务器的连接，自动诊断依赖可访问的实时指标。", "actHistory": "查看历史", "actShell": "打开终端",
-    "actProcesses": "查看进程", "chatTitle": "助手对话", "askAssistant": "向助手提问", "noServer": "未连接服务器，请先添加服务器。",
+    "actProcesses": "查看进程", "action": { "history": "查看历史", "shell": "打开终端", "processes": "查看进程" },
+    "chatTitle": "助手对话", "askAssistant": "向助手提问", "noServer": "未连接服务器，请先添加服务器。",
     "errLabel": "出错", "errNotConfigured": "助手未配置：该服务器尚未启用 LLM 集成，请联系管理员开启。",
     "errUpstream": "助手的 AI 后端响应失败，请稍后重试。", "errBadRequest": "请求被拒绝，请尝试缩短消息内容。",
     "errNetwork": "网络错误，请检查与服务器的连接后重试。", "errServer": "服务器返回错误，请稍后重试。"
@@ -184,8 +185,8 @@
     "forceTls": "强制 TLS", "ignoreCert": "忽略证书错误",
     "ignoreCertWarning": "将停用此服务器的证书与主机名校验，请仅在可信网络中使用。",
     "forgotPassword": "忘记密码？", "forgotPasswordHint": "请在 Web 后台重置密码。",
-    "ssoLogin": "SSO 登录 →", "ssoHint": "单点登录需在服务器端配置。", "qrSaving": "正在保存并连接…",
-    "pairingEnterHint": "在 Web 后台生成配对码后，输入下方 6 位。", "pairingVerifying": "正在验证…", "pairingPaired": "✓ 已配对",
+    "ssoLogin": "SSO 登录", "ssoHint": "单点登录需在服务器端配置。", "qrSaving": "正在保存并连接…",
+    "pairingEnterHint": "在 Web 后台生成配对码后，输入下方 6 位。", "pairingVerifying": "正在验证…", "pairingPaired": "已配对",
     "pairingInvalid": "无效配对码", "pairingValid60s": "有效 60s", "pairingNeedsServer": "请先填写服务器名称和地址"
   },
   "pairing": {

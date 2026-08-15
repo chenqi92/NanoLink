@@ -13,6 +13,7 @@ final class ShellRouter: ObservableObject {
 
     @Published var section: ShellSection = .overview
     @Published var selectedAgentID: String?
+    @Published var nodesFilter = "all"
 
     /// Bumped by the Refresh command. The shell reloads server-sourced data on
     /// change instead of every screen wiring its own command handler.
@@ -28,11 +29,23 @@ final class ShellRouter: ObservableObject {
         self.section = section
     }
 
+    /// Opens the node workspace with an explicit inventory filter. Dashboard
+    /// summaries use this instead of pushing a second phone-style node screen
+    /// into the current navigation stack.
+    func showNodes(filter: String = "all") {
+        nodesFilter = filter
+        selectedAgentID = nil
+        section = .nodes
+    }
+
     /// Selecting a node also lands on the Nodes section, matching what a
     /// dashboard row tap does on regular width.
     func select(agentID: String?) {
         selectedAgentID = agentID
-        if agentID != nil { section = .nodes }
+        if agentID != nil {
+            nodesFilter = "all"
+            section = .nodes
+        }
     }
 
     func clearSelection() {

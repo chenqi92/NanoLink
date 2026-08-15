@@ -49,7 +49,7 @@ struct AgentListPane: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: compact ? 5 : 10) {
+                    LazyVStack(spacing: compact ? 8 : 12) {
                         ForEach(filtered) { agent in row(agent) }
                     }
                     .padding(.bottom, compact ? 20 : 100)
@@ -61,28 +61,46 @@ struct AgentListPane: View {
 
     @ViewBuilder
     private func row(_ agent: Agent) -> some View {
-        if let onSelect = onSelect {
-            Button { onSelect(agent) } label: { rowBody(agent) }
-                .buttonStyle(.plain)
-                .contextMenu { rowActions(agent) }
-        } else {
-            ZStack(alignment: .topTrailing) {
-                NavigationLink(value: AgentRoute(agent: agent)) { rowBody(agent) }
-                    .buttonStyle(.plain)
-                    .contextMenu { rowActions(agent) }
-                Button { actionAgent = agent } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 18))
-                        .foregroundColor(t.fg4)
-                        .frame(width: 36, height: 36)
+        ZStack(alignment: compact ? .trailing : .topTrailing) {
+            if let onSelect = onSelect {
+                Button { onSelect(agent) } label: {
+                    rowBody(agent).frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tr("actions.title"))
-                .help(tr("actions.title"))
-                .padding(.top, 8)
-                .padding(.trailing, 6)
+                    .buttonStyle(NanoCardButtonStyle())
+                    .hoverEffect(.highlight)
+                    .contextMenu { rowActions(agent) }
+                    .frame(maxWidth: .infinity)
+            } else {
+                NavigationLink(value: AgentRoute(agent: agent)) {
+                    rowBody(agent).frame(maxWidth: .infinity)
+                }
+                    .buttonStyle(NanoCardButtonStyle())
+                    .hoverEffect(.highlight)
+                    .contextMenu { rowActions(agent) }
+                    .frame(maxWidth: .infinity)
             }
+
+            Button { actionAgent = agent } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(t.fg3)
+                    .frame(width: 32, height: 30)
+                    .background(t.card2)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(t.sep2, lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(tr("actions.title"))
+            .help(tr("actions.title"))
+            .padding(.trailing, compact ? 10 : 13)
+            .padding(.top, compact ? 0 : 13)
+            .zIndex(1)
         }
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -92,7 +110,7 @@ struct AgentListPane: View {
 
     @ViewBuilder
     private func rowActions(_ agent: Agent) -> some View {
-        Button { actionAgent = agent } label: { Label(tr("actions.title"), systemImage: "ellipsis.circle") }
+        Button { actionAgent = agent } label: { Label(tr("actions.title"), systemImage: "slider.horizontal.3") }
         Button { UIPasteboard.general.string = agent.id } label: { Label(tr("actions.copyAgentId"), systemImage: "doc.on.doc") }
     }
 
@@ -157,7 +175,7 @@ struct AgentListPane: View {
                 }
             }
         }
-        .padding(.horizontal, 11).padding(.vertical, 9)
+        .padding(.leading, 12).padding(.trailing, 52).padding(.vertical, t.desktop ? 12 : 10)
         .background(selected ? t.accent.opacity(0.14) : t.card)
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
             .stroke(selected ? t.accent.opacity(0.45) : Color.clear, lineWidth: 1))
@@ -166,10 +184,10 @@ struct AgentListPane: View {
     }
 
     private func agentCard(_ agent: Agent) -> some View {
-        NanoCard(padding: EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 8)) {
-            VStack(alignment: .leading, spacing: 4) {
+        NanoCard(padding: EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 56)) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top, spacing: 10) {
-                    NanoIconBox(icon: osIcon(agent.os))
+                    NanoIconBox(icon: osIcon(agent.os), size: 40, iconSize: 19)
                     VStack(alignment: .leading, spacing: 2) {
                         NanoMono(agent.hostname, size: 14, color: t.fg, weight: .semibold).lineLimit(1)
                         Text("\(agent.os) · \(agent.arch)").font(.system(size: 11.5)).foregroundColor(t.fg4).lineLimit(1)
@@ -177,13 +195,24 @@ struct AgentListPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .trailing, spacing: 5) {
                         NanoStatusLabel(status: agent.isOnline ? "online" : "offline")
-                        NanoPermPill(level: agent.permissionLevel)
+                        permissionLabel(agent.permissionLevel)
                     }
-                    Spacer().frame(width: 36)
                 }
-                summary(agent).padding(.leading, 46).padding(.trailing, 6)
+                summary(agent).padding(.leading, 50)
             }
         }
+    }
+
+    private func permissionLabel(_ level: Int) -> some View {
+        let lv = min(max(level, 0), 3)
+        let labels = [tr("perm.l0"), tr("perm.l1"), tr("perm.l2"), tr("perm.l3")]
+        return HStack(spacing: 4) {
+            Image(systemName: "lock.shield")
+                .font(.system(size: 10, weight: .semibold))
+            Text("L\(lv) · \(labels[lv])")
+                .font(NanoFont.mono(10.5, weight: .semibold))
+        }
+        .foregroundColor(t.permColor(lv))
     }
 
     @ViewBuilder

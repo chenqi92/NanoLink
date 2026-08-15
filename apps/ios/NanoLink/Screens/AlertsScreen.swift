@@ -139,8 +139,13 @@ struct AlertsScreen: View {
                     NanoMono(entry.type, size: 13, color: t.fg, weight: .medium)
                     Text(Fmt.ago(entry.at)).font(.system(size: 11)).foregroundColor(t.fg4)
                 }
-                Text("\(entry.user.isEmpty ? "—" : entry.user)  →  \(entry.agentHostname.isEmpty ? "—" : entry.agentHostname)")
-                    .font(.system(size: 12)).foregroundColor(t.fg3).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(entry.user.isEmpty ? "—" : entry.user)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(entry.agentHostname.isEmpty ? "—" : entry.agentHostname)
+                }
+                .font(.system(size: 12)).foregroundColor(t.fg3).lineLimit(1)
             }
         } leading: { NanoStatusDot(color: entry.ok ? t.ok : t.crit, size: 8) }
     }

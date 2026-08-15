@@ -9,6 +9,7 @@ struct SettingsScreen: View {
     @EnvironmentObject private var l10n: L10n
     @EnvironmentObject private var appLock: AppLockStore
     @Environment(\.nano) private var t
+    @Environment(\.openURL) private var openURL
 
     @AppStorage(AppPreferenceKey.notifyAudit) private var notifyAudit = false
     @AppStorage(AppPreferenceKey.terminalTheme) private var terminalTheme = "phosphor"
@@ -256,13 +257,13 @@ struct SettingsScreen: View {
                 copy(appVersion, notice: tr("settings.copied"))
             }
             settingsRow(tr("settings.sourceCodeLabel"), value: "github.com/chenqi92/NanoLink") {
-                copy("https://github.com/chenqi92/NanoLink", notice: tr("settings.copied"))
+                open("https://github.com/chenqi92/NanoLink")
             }
             settingsRow(tr("settings.docsHelp")) {
-                copy("https://github.com/chenqi92/NanoLink#readme", notice: tr("settings.docsCopied"))
+                open("https://github.com/chenqi92/NanoLink#readme")
             }
             settingsRow(tr("settings.sendFeedback"), divider: false) {
-                copy("mailto:feedback@nanolink.io", notice: tr("settings.feedbackCopied"))
+                open("mailto:feedback@nanolink.io")
             }
         }
     }
@@ -416,6 +417,11 @@ struct SettingsScreen: View {
     private func copy(_ value: String, notice: String) {
         UIPasteboard.general.string = value
         showNotice(notice)
+    }
+
+    private func open(_ value: String) {
+        guard let url = URL(string: value) else { return }
+        openURL(url)
     }
 
     private func showNotice(_ message: String) {

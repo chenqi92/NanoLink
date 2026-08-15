@@ -189,10 +189,10 @@ private struct NanoTerminalConsole: View {
                 terminalKey("Tab") { applyInput(.insert("\t")) }
                 terminalKey("Ctrl+C") { interruptCommand() }
                 terminalKey("Alt") { applyInput(.toggleHomeEnd) }
-                terminalKey("↑") { previousCommand() }
-                terminalKey("↓") { nextCommand() }
-                terminalKey("←") { applyInput(.move(-1)) }
-                terminalKey("→") { applyInput(.move(1)) }
+                terminalIconKey("arrow.up") { previousCommand() }
+                terminalIconKey("arrow.down") { nextCommand() }
+                terminalIconKey("arrow.left") { applyInput(.move(-1)) }
+                terminalIconKey("arrow.right") { applyInput(.move(1)) }
                 terminalKey("/") { applyInput(.insert("/")) }
                 terminalKey("|") { applyInput(.insert("|")) }
                 terminalKey("-") { applyInput(.insert("-")) }
@@ -209,6 +209,18 @@ private struct NanoTerminalConsole: View {
             NanoMono(label, size: 11.5, color: session.status == .connected ? palette.subtle : palette.disabled, weight: .medium)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
+                .background(palette.background.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(session.status != .connected)
+    }
+
+    private func terminalIconKey(_ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundColor(session.status == .connected ? palette.subtle : palette.disabled)
+                .frame(width: 34, height: 30)
                 .background(palette.background.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)

@@ -16,6 +16,23 @@ final class NanoLinkCoreTests: XCTestCase {
         XCTAssertEqual(json.string("missing", "fallbackName"), "nano-node")
     }
 
+    func testAssistantFindingLocalizesLegacyPayloadAndNormalizesActions() {
+        let originalLanguage = L10n.shared.language
+        L10n.shared.setLanguage("zh")
+        defer { L10n.shared.setLanguage(originalLanguage) }
+
+        let finding = AssistantFinding.from(JSON([
+            "kind": "ok",
+            "title": "Fleet healthy",
+            "detail": "All visible monitored agents are within thresholds.",
+            "actions": ["View history", "List processes"],
+        ]))
+
+        XCTAssertEqual(finding.title, "节点运行正常")
+        XCTAssertEqual(finding.detail, "所有可见监控节点的指标均处于阈值范围内。")
+        XCTAssertEqual(finding.actions, ["history"])
+    }
+
     func testAccountTokenTakesPriorityOverDeviceToken() {
         let connection = ServerConnection(
             name: "Local",
@@ -86,6 +103,7 @@ final class NanoLinkCoreTests: XCTestCase {
         router.select(agentID: "agent-1")
         XCTAssertEqual(router.selectedAgentID, "agent-1")
         XCTAssertEqual(router.section, .nodes)
+        XCTAssertEqual(router.nodesFilter, "all")
 
         router.show(.terminal)
         XCTAssertEqual(router.selectedAgentID, "agent-1", "section switch keeps the selected node")
@@ -93,6 +111,17 @@ final class NanoLinkCoreTests: XCTestCase {
         router.clearSelection()
         XCTAssertNil(router.selectedAgentID)
         XCTAssertEqual(router.section, .terminal, "clearing selection must not move the section")
+    }
+
+    func testShellRouterShowsFilteredNodeWorkspaceWithoutSelection() {
+        let router = ShellRouter()
+        router.select(agentID: "agent-1")
+
+        router.showNodes(filter: "offline")
+
+        XCTAssertEqual(router.section, .nodes)
+        XCTAssertEqual(router.nodesFilter, "offline")
+        XCTAssertNil(router.selectedAgentID)
     }
 
     func testShellRouterSelectingNilDoesNotSwitchSection() {

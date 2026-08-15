@@ -14,6 +14,12 @@ Actions:
   menu             Open the interactive project console (default).
   start            Start the development environment.
   stop             Stop the development environment.
+  install          Select an iPhone/iPad and install the Apple app.
+  ios-overwrite    Build and overwrite-install while preserving app data.
+  ios-clean        Build, uninstall, and reinstall after explicit confirmation.
+  devices          List physical iPhone/iPad development devices.
+  mac              Build and launch the Mac Catalyst app.
+  mac-build        Build the Mac Catalyst app without launching it.
   deploy           Deploy Server to production after confirmation.
   deploy-dry-run   Validate and package without touching the server.
   version VERSION  Update the project semantic version.
@@ -23,6 +29,9 @@ Actions:
 Deployment options are passed through, including --allow-dirty,
 --skip-checks, --config PATH, and --dry-run. Use --yes only for intentional
 non-interactive production automation.
+
+Apple app aliases: iphone-overwrite and iphone-clean. Set DEVICE_ID to select
+a device non-interactively; run an Apple action with --help for all overrides.
 EOF
 }
 
@@ -51,6 +60,16 @@ run_action() {
       ;;
     stop)
       run_task stop-dev.sh "$@"
+      ;;
+    install|ios-overwrite|ios-clean|iphone-overwrite|iphone-clean|devices|mac|mac-build)
+      if [[ ${1-} == -h || ${1-} == --help || ${1-} == help ]]; then
+        run_task apple-dev.sh --help
+      elif (( $# > 0 )); then
+        echo "Apple app action does not accept positional arguments: $*" >&2
+        return 1
+      else
+        run_task apple-dev.sh "$action"
+      fi
       ;;
     deploy)
       local assume_yes=0
@@ -108,6 +127,9 @@ show_menu() {
     printf '  5. Bump project version\n'
     printf '  6. Install Git hooks\n'
     printf '  7. Scan and remove BOM\n'
+    printf '  8. Install Apple app on iPhone/iPad\n'
+    printf '  9. Build and launch Mac Catalyst app\n'
+    printf ' 10. List iPhone/iPad development devices\n'
     printf '  0. Exit\n'
     read -r -p 'Select: ' choice
     case "$choice" in
@@ -118,6 +140,9 @@ show_menu() {
       5) action=version ;;
       6) action=install-hooks ;;
       7) action=remove-bom ;;
+      8) action=install ;;
+      9) action=mac ;;
+      10) action=devices ;;
       0) return 0 ;;
       *) echo 'Invalid selection.'; continue ;;
     esac
@@ -131,5 +156,10 @@ if (( $# > 0 )); then shift; fi
 if [[ $action == menu ]]; then
   show_menu
 else
-  run_action "$action" "$@"
+  if run_action "$action" "$@"; then
+    exit 0
+  else
+    status=$?
+    exit "$status"
+  fi
 fi

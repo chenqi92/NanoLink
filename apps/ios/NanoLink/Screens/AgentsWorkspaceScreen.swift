@@ -14,19 +14,12 @@ enum AgentSelection {
 /// the selected node's detail rendered in place instead of pushed onto a stack.
 struct AgentsWorkspaceScreen: View {
     @Binding var selectedAgentID: String?
-    var initialFilter: String? = nil
+    @Binding var filter: String
 
     @EnvironmentObject private var store: AppStore
     @Environment(\.nano) private var t
     @State private var query = ""
-    @State private var filter: String
     @State private var showServerSwitch = false
-
-    init(selectedAgentID: Binding<String?>, initialFilter: String? = nil) {
-        _selectedAgentID = selectedAgentID
-        self.initialFilter = initialFilter
-        _filter = State(initialValue: initialFilter ?? "all")
-    }
 
     private var resolvedID: String? {
         AgentSelection.resolve(selectedAgentID, in: store.agentsForServer())

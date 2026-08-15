@@ -20,7 +20,7 @@ private struct NanoCompactKey: EnvironmentKey {
 enum NanoIdiom {
     static let isDesktop: Bool = {
         #if targetEnvironment(macCatalyst)
-        return UIDevice.current.userInterfaceIdiom == .mac
+        return true
         #else
         return false
         #endif

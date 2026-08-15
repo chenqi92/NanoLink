@@ -173,6 +173,25 @@ extension NanoSectionLabel where Trailing == EmptyView {
 
 enum NanoButtonVariant { case primary, secondary, danger, outlined, text }
 
+/// Compact icon-only control used in the Mac window toolbar. Drawing the
+/// surface here avoids Catalyst stretching native toolbar buttons into pills.
+struct NanoToolbarButtonStyle: ButtonStyle {
+    @Environment(\.nano) private var t
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundColor(t.fg2)
+            .frame(width: 38, height: 38)
+            .background(configuration.isPressed ? t.card2 : t.card)
+            .overlay(Circle().stroke(t.sep2, lineWidth: 1))
+            .clipShape(Circle())
+            .contentShape(Circle())
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 /// Shared button primitive. Heights/radii/typography follow the active platform
 /// look. Ports `NanoButton`.
 struct NanoButton: View {

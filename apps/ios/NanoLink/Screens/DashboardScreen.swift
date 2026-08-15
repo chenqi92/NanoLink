@@ -8,6 +8,7 @@ struct DashboardScreen: View {
     var onSelectAgent: ((Agent) -> Void)? = nil
 
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var router: ShellRouter
     @Environment(\.nano) private var t
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var cpuSpark: [Double] = []
@@ -97,8 +98,10 @@ struct DashboardScreen: View {
             if t.desktop {
                 ToolbarItem(placement: .primaryAction) {
                     Button { showAddServer = true } label: {
-                        Label(tr("dashboard.newNode"), systemImage: "plus")
+                        Image(systemName: "plus")
                     }
+                    .buttonStyle(NanoToolbarButtonStyle())
+                    .accessibilityLabel(tr("dashboard.newNode"))
                     .help(tr("dashboard.newNode"))
                 }
             }
@@ -203,7 +206,7 @@ struct DashboardScreen: View {
     }
 
     private var offlineBanner: some View {
-        NavigationLink { AgentsScreen(initialFilter: "offline") } label: {
+        Button { router.showNodes(filter: "offline") } label: {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle").foregroundColor(t.crit)
                 VStack(alignment: .leading, spacing: 2) {
@@ -216,7 +219,9 @@ struct DashboardScreen: View {
             .padding(12).background(t.crit.opacity(0.1))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(t.crit.opacity(0.25), lineWidth: 0.5))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(tr("dashboard.offlineBanner", ["n": offline.count]))
     }
 
     private func topCpuRow(_ agent: Agent, divider: Bool) -> some View {

@@ -27,6 +27,9 @@ The menu provides:
 5. Bump the project version
 6. Install Git hooks
 7. Scan and remove UTF-8 BOM
+8. Install the Apple app on a connected iPhone/iPad
+9. Build and launch the Mac Catalyst app
+10. List available iPhone/iPad development devices
 
 Production deployment requires typing `DEPLOY` before any upload or rollout.
 
@@ -43,6 +46,21 @@ Interactive mode is optional. The same entry point supports automation:
 | Bump version | `.\scripts\nanoops.bat version -Version 0.5.0` | `./scripts/nanoops.sh version 0.5.0` |
 | Install hooks | `.\scripts\nanoops.bat install-hooks` | `./scripts/nanoops.sh install-hooks` |
 | Remove BOM | `.\scripts\nanoops.bat remove-bom` | `./scripts/nanoops.sh remove-bom` |
+| List Apple devices | — | `./scripts/nanoops.sh devices` |
+| Overwrite-install on iOS/iPadOS | — | `./scripts/nanoops.sh ios-overwrite` |
+| Clean-install on iOS/iPadOS | — | `./scripts/nanoops.sh ios-clean` |
+| Build and launch on macOS | — | `./scripts/nanoops.sh mac` |
+| Build for macOS without launching | — | `./scripts/nanoops.sh mac-build` |
+
+Apple development commands require macOS and Xcode. `install` provides an
+interactive device and installation-mode picker. Set `DEVICE_ID` to a device
+name, CoreDevice ID, or hardware UDID for non-interactive selection. The script
+defaults to development team `2U97K3U27A`; override `DEVELOPMENT_TEAM` or
+`BUNDLE_ID` when using another signing setup. Device builds default to offline
+manual signing: the script selects a non-expired provisioning profile that
+contains the device, then matches its certificate against the login keychain.
+Set `IOS_SIGNING_MODE=automatic` on a Mac signed in to an Xcode account. Run
+`./scripts/nanoops.sh install --help` for all Apple-specific options.
 
 Deployment options:
 
@@ -70,6 +88,7 @@ scripts/
 ├── nanoops.ps1       Windows interactive console
 ├── nanoops.sh        Linux/macOS interactive console
 ├── tasks/            Internal task implementations
+│   └── apple-dev.sh  iPhone/iPad install and Mac Catalyst launcher
 ├── hooks/            Git hook templates
 └── version.json      Version update configuration
 ```

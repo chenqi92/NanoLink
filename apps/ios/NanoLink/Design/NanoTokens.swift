@@ -67,9 +67,9 @@ struct NanoTokens {
 
     // MARK: Corner radius conventions per platform
 
-    var cardRadius: CGFloat { desktop ? 8 : (isIOS ? 14 : 16) }
-    var fieldRadius: CGFloat { desktop ? 6 : (isIOS ? 12 : 8) }
-    var buttonRadius: CGFloat { desktop ? 6 : (isIOS ? 14 : 100) }
+    var cardRadius: CGFloat { desktop ? 10 : (isIOS ? 14 : 16) }
+    var fieldRadius: CGFloat { desktop ? 8 : (isIOS ? 12 : 8) }
+    var buttonRadius: CGFloat { desktop ? 9 : (isIOS ? 14 : 100) }
 
     // MARK: Display title weight (iOS is heavier/tighter than Material You)
 
@@ -84,23 +84,23 @@ struct NanoTokens {
 
     /// Size of an inline page heading. Desktop windows carry the title in their
     /// own chrome, so this only applies where a heading is still drawn in content.
-    var titleSize: CGFloat { desktop ? 20 : (isIOS ? 32 : 28) }
+    var titleSize: CGFloat { desktop ? 24 : (isIOS ? 32 : 28) }
 
     /// Top inset above an inline page heading.
     var titleTopPadding: CGFloat { desktop ? 2 : (isIOS ? 32 : 4) }
 
     /// Height of a standard push button.
-    var controlHeight: CGFloat { desktop ? 30 : (isIOS ? 50 : 40) }
+    var controlHeight: CGFloat { desktop ? 40 : (isIOS ? 50 : 40) }
 
     /// Font size inside a standard push button.
-    var controlFontSize: CGFloat { desktop ? 13 : (isIOS ? 17 : 14) }
+    var controlFontSize: CGFloat { desktop ? 14 : (isIOS ? 17 : 14) }
 
     /// Vertical padding of a list row inside a grouped card.
-    var rowVerticalPadding: CGFloat { desktop ? 7 : 11 }
+    var rowVerticalPadding: CGFloat { desktop ? 10 : 11 }
 
     /// Bottom inset of a scrollable screen. Phones reserve room for the floating
     /// tab bar; a desktop window has none.
-    var contentBottomInset: CGFloat { desktop ? 24 : 100 }
+    var contentBottomInset: CGFloat { desktop ? 32 : 100 }
 
     // MARK: shared status palette
 

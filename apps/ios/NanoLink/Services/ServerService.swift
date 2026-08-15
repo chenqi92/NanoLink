@@ -50,13 +50,73 @@ struct AssistantFinding: Identifiable {
     var actions: [String]
 
     static func from(_ j: JSON) -> AssistantFinding {
-        AssistantFinding(
+        let fallbackTitle = j.string("title")
+        let (code, legacyParams) = legacyCodeAndParams(for: fallbackTitle)
+        let findingCode = j.string("code", default: code)
+        let params = j.obj("params")
+        let named: [String: CustomStringConvertible] = [
+            "host": params?.string("host", default: legacyParams["host"] ?? "") ?? legacyParams["host"] ?? "",
+            "mount": params?.string("mount", default: legacyParams["mount"] ?? "") ?? legacyParams["mount"] ?? "",
+            "value": params?.string("value", default: legacyParams["value"] ?? "") ?? legacyParams["value"] ?? "",
+        ]
+        let titleKey = findingCode.isEmpty ? "" : "assistant.finding.\(findingCode).title"
+        let translatedTitle = titleKey.isEmpty ? fallbackTitle : tr(titleKey, named)
+        let localizedTitle = translatedTitle == titleKey ? fallbackTitle : translatedTitle
+        let detailKey = findingCode.isEmpty ? "" : "assistant.finding.\(findingCode).detail"
+        let fallbackDetail = j.string("detail")
+        let translatedDetail = detailKey.isEmpty ? fallbackDetail : tr(detailKey, named)
+        let localizedDetail = translatedDetail == detailKey ? fallbackDetail : translatedDetail
+        let actions = j.stringList("actions").compactMap(normalizedAction)
+
+        return AssistantFinding(
             kind: j.string("kind", default: "info"),
-            title: j.string("title"),
-            detail: j.string("detail"),
+            title: localizedTitle,
+            detail: localizedDetail,
             agentId: j.stringOrNil("agentId"),
-            actions: j.stringList("actions")
+            actions: actions
         )
+    }
+
+    private static func normalizedAction(_ raw: String) -> String? {
+        switch raw.lowercased() {
+        case "view history", "history": return "history"
+        case "open shell", "shell", "terminal": return "shell"
+        // The iOS detail screen has no process-list destination yet; hiding the
+        // unsupported shortcut is better than opening an unrelated tab.
+        case "list processes", "processes": return nil
+        default: return nil
+        }
+    }
+
+    private static func legacyCodeAndParams(for title: String) -> (String, [String: String]) {
+        if title == "Fleet healthy" { return ("fleetHealthy", [:]) }
+        if title == "No agents assigned" { return ("noAgents", [:]) }
+        if let values = captures(#"^(.+) CPU sustained at ([0-9.]+)%$"#, in: title) {
+            return ("cpuHigh", ["host": values[0], "value": values[1]])
+        }
+        if let values = captures(#"^(.+) memory pressure at ([0-9.]+)%$"#, in: title) {
+            return ("memoryHigh", ["host": values[0], "value": values[1]])
+        }
+        if let values = captures(#"^(.+) (/.+) at ([0-9.]+)% full$"#, in: title) {
+            return ("diskHigh", ["host": values[0], "mount": values[1], "value": values[2]])
+        }
+        if let values = captures(#"^(.+) GPU sustained at ([0-9.]+)%$"#, in: title) {
+            return ("gpuHigh", ["host": values[0], "value": values[1]])
+        }
+        if let values = captures(#"^(.+) is offline$"#, in: title) {
+            return ("offline", ["host": values[0]])
+        }
+        return ("", [:])
+    }
+
+    private static func captures(_ pattern: String, in value: String) -> [String]? {
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) else {
+            return nil
+        }
+        return (1..<match.numberOfRanges).compactMap { index in
+            Range(match.range(at: index), in: value).map { String(value[$0]) }
+        }
     }
 }
 

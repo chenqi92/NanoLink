@@ -43,8 +43,10 @@ struct AgentDetailScreen: View {
             if t.desktop {
                 ToolbarItem(placement: .primaryAction) {
                     Button { showActions = true } label: {
-                        Label(tr("actions.title"), systemImage: "ellipsis.circle")
+                        Image(systemName: "ellipsis")
                     }
+                    .buttonStyle(NanoToolbarButtonStyle())
+                    .accessibilityLabel(tr("actions.title"))
                     .help(tr("actions.title"))
                 }
             }
@@ -103,12 +105,18 @@ struct AgentDetailScreen: View {
                 Button {
                     if !locked { tab = index }
                 } label: {
-                    Text(locked ? tr("agentDetail.tabTerminalLocked") : titles[index])
-                        .font(.system(size: 13.5, weight: tab == index ? .semibold : .medium))
-                        .foregroundColor(tab == index ? t.fg : (locked ? t.fg5 : t.fg2))
-                        .frame(maxWidth: .infinity).frame(height: 34)
-                        .background(tab == index ? t.card : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    HStack(spacing: 5) {
+                        Text(titles[index])
+                        if locked {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                    }
+                    .font(.system(size: 13.5, weight: tab == index ? .semibold : .medium))
+                    .foregroundColor(tab == index ? t.fg : (locked ? t.fg5 : t.fg2))
+                    .frame(maxWidth: .infinity).frame(height: 34)
+                    .background(tab == index ? t.card : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }.buttonStyle(.plain)
             }
         }
@@ -308,9 +316,16 @@ private struct AgentRealtimeView: View {
             }
             if !net.ipAddresses.isEmpty { NanoMono(net.ipAddresses.joined(separator: " · "), size: 11.5, color: t.fg3).lineLimit(1) }
             HStack(spacing: 14) {
-                NanoMono("↓ \(Fmt.rate(net.rxBytesPerSec))", size: 12, color: t.fg2)
-                NanoMono("↑ \(Fmt.rate(net.txBytesPerSec))", size: 12, color: t.fg2)
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.down").font(.system(size: 10, weight: .semibold))
+                    NanoMono(Fmt.rate(net.rxBytesPerSec), size: 12, color: t.fg2)
+                }
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up").font(.system(size: 10, weight: .semibold))
+                    NanoMono(Fmt.rate(net.txBytesPerSec), size: 12, color: t.fg2)
+                }
             }
+            .foregroundColor(t.fg3)
         }
         .padding(14)
         .overlay(alignment: .bottom) { if divider { Rectangle().fill(t.sep2).frame(height: 0.5) } }
@@ -461,7 +476,7 @@ private struct AgentHistoryView: View {
                 chartCard(tr("history.memory"), stat: String(format: "%.0f%%", metrics?.memoryPercent ?? h.mem.last ?? 0), peak: memPeak, unit: "%", yMax: 100,
                           series: [NanoSeries(data: h.mem, color: t.fg2, fill: true, band: h.hasMaxBands ? h.memMax : nil)],
                           thresholds: [NanoThreshold(value: 90, color: t.crit, label: "90%")], history: h)
-                chartCard(tr("history.network"), stat: "↓\(last(h.netRx)) ↑\(last(h.netTx))", unit: " MB/s", yMax: nil,
+                chartCard(tr("history.network"), stat: "RX \(last(h.netRx)) · TX \(last(h.netTx))", unit: " MB/s", yMax: nil,
                           series: [NanoSeries(data: h.netRx, color: t.accent, fill: true, label: tr("history.rx")), NanoSeries(data: h.netTx, color: t.warn, dashed: true, label: tr("history.tx"))], history: h)
                 chartCard(tr("history.diskIo"), stat: "R \(last(h.diskRead)) · W \(last(h.diskWrite))", unit: " MB/s", yMax: nil,
                           series: [NanoSeries(data: h.diskRead, color: t.ok, fill: true, label: tr("history.read")), NanoSeries(data: h.diskWrite, color: t.warn, dashed: true, label: tr("history.write"))], history: h)

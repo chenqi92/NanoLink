@@ -42,14 +42,10 @@ struct AgentsScreen: View {
     }
 
     private var header: some View {
-        HStack {
-            Text(tr("agents.title"))
-                .font(.system(size: t.titleSize, weight: t.displayWeight))
-                .tracking(t.displayTracking).foregroundColor(t.fg)
-            Spacer()
-            Image(systemName: filter == "all" ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
-                .font(.system(size: 19)).foregroundColor(filter == "all" ? t.fg2 : t.accent)
-        }
+        Text(tr("agents.title"))
+            .font(.system(size: t.titleSize, weight: t.displayWeight))
+            .tracking(t.displayTracking).foregroundColor(t.fg)
+            .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, t.isIOS ? 40 : 8)
     }
 }

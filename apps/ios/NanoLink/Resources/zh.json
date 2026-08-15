@@ -3,7 +3,7 @@
   "common": {
     "loading": "加载中...", "cancel": "取消", "remove": "删除", "connect": "连接",
     "online": "在线", "offline": "离线", "retry": "重试", "copy": "复制",
-    "add": "添加", "login": "登录", "dismiss": "撤销", "unknown": "未知"
+    "add": "添加", "login": "登录", "dismiss": "关闭", "unknown": "未知"
   },
   "errors": {
     "connectionFailed": "连接失败", "loginMissingToken": "登录成功，但服务器未返回令牌。",
@@ -82,7 +82,7 @@
     "selectNode": "选择一个节点查看详情"
   },
   "agentDetail": {
-    "tabRealtime": "实时", "tabHistory": "历史", "tabTerminal": "终端", "tabTerminalLocked": "终端 🔒",
+    "tabRealtime": "实时", "tabHistory": "历史", "tabTerminal": "终端", "tabTerminalLocked": "终端",
     "agentVersion": "Agent 版本 {version}", "heartbeat": "心跳 {ago} 前", "lastHeartbeat": "最后心跳 {ago} 前",
     "nodeOffline": "节点离线", "cpu": "CPU", "memory": "内存", "storage": "存储", "networkInterfaces": "网络接口",
     "gpu": "GPU", "gpuCount": "{n} 个", "aiAccelerator": "AI 加速器", "utilization": "利用率", "loginSessions": "登录会话",
@@ -118,8 +118,30 @@
   },
   "assistant": {
     "title": "AI 运维助手", "greeting": "你好，我是 NanoOps 助手",
-    "intro": "通过 MCP 协议连接，我可以帮你查询节点指标、诊断异常、生成运维建议。", "tryThese": "试试这些",
+    "intro": "通过 MCP 协议连接，我可以帮你查询节点指标、诊断异常、生成运维建议。", "diagnosis": "诊断结果", "tryThese": "试试这些",
     "suggestTopCpu": "哪些节点 CPU 最高？", "suggestDiskFull": "有没有磁盘快满的服务器？", "suggestHealth": "汇总当前集群健康状况",
+    "suggestion": {
+      "highCpu": "哪些节点的 CPU 使用率最高？", "diskSpace": "哪些节点的磁盘空间不足？",
+      "offlineNodes": "分析节点离线的可能原因", "resourceTrend": "汇总近期资源使用趋势"
+    },
+    "action": { "history": "查看历史", "shell": "打开终端", "processes": "查看进程" },
+    "finding": {
+      "cpuHigh": { "title": "{host} 的 CPU 持续达到 {value}%", "detail": "CPU 使用率超过 90%，请检查是否存在异常占用的进程。" },
+      "memoryHigh": { "title": "{host} 的内存使用率达到 {value}%", "detail": "内存使用率超过 90%，存在 OOM 风险，请检查进程与交换空间。" },
+      "diskHigh": { "title": "{host} 的 {mount} 已使用 {value}%", "detail": "磁盘使用率超过 90%，请在写满前归档数据或扩展容量。" },
+      "gpuHigh": { "title": "{host} 的 GPU 持续达到 {value}%", "detail": "GPU 使用率超过 90%，请检查长时间运行的任务与显存余量。" },
+      "offline": { "title": "{host} 已离线", "detail": "近期未收到心跳，Agent 可能已停止或网络不可达。" },
+      "noAgents": { "title": "未分配节点", "detail": "当前账号暂时没有可访问的节点。" },
+      "fleetHealthy": { "title": "节点运行正常", "detail": "所有可见监控节点的指标均处于阈值范围内。" }
+    },
+    "error": {
+      "notConfigured": "该服务器尚未配置 AI 助手，请联系管理员启用 LLM 集成。",
+      "badRequest": "请求被拒绝，请尝试缩短消息内容。",
+      "upstreamFailed": "AI 后端响应失败，请稍后重试。",
+      "serverError": "服务器返回错误，请稍后重试。",
+      "network": "网络错误，请检查与服务器的连接后重试。",
+      "unknown": "助手暂时无法完成请求，请稍后重试。"
+    },
     "inputHint": "询问运维助手…", "comingSoon": "AI 助手即将上线", "autoDiagnosis": "自动诊断", "findingsCount": "{n} 项发现",
     "allHealthy": "所有节点均在阈值范围内，集群健康。", "loadError": "无法加载诊断",
     "loadErrorDesc": "请确认与服务器的连接，自动诊断依赖可访问的实时指标。", "actHistory": "查看历史", "actShell": "打开终端",
@@ -174,8 +196,8 @@
     "password": "密码", "passwordRequired": "请输入密码", "login": "登录", "urlRequired": "请输入服务器地址",
     "urlInvalid": "地址格式无效（需含 http(s)://）", "advanced": "高级", "deviceName": "设备名称", "deviceNameHint": "例如：Alice 的 iPhone",
     "forceTls": "强制 TLS", "ignoreCert": "忽略证书错误", "forgotPassword": "忘记密码？", "forgotPasswordHint": "请在 Web 后台重置密码。",
-    "ssoLogin": "SSO 登录 →", "ssoHint": "单点登录需在服务器端配置。", "qrSaving": "正在保存并连接…",
-    "pairingEnterHint": "在 Web 后台生成配对码后，输入下方 6 位。", "pairingVerifying": "正在验证…", "pairingPaired": "✓ 已配对",
+    "ssoLogin": "SSO 登录", "ssoHint": "单点登录需在服务器端配置。", "qrSaving": "正在保存并连接…",
+    "pairingEnterHint": "在 Web 后台生成配对码后，输入下方 6 位。", "pairingVerifying": "正在验证…", "pairingPaired": "已配对",
     "pairingInvalid": "无效配对码", "pairingValid60s": "有效 60s", "pairingNeedsServer": "请先填写服务器名称和地址"
   },
   "security": {
