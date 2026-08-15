@@ -1,0 +1,98 @@
+spec_version: "2.1"
+app_id: com.nanoops.nanolinkagent
+version: 0.4.9
+support_arch:
+  - amd64
+  - arm64
+supports:
+  - pc
+start_cmd: bin/nanolink-agent nas-run --status-port 29091 --status-bind 0.0.0.0
+port: 29091
+proxy_path: api
+open_type: inner
+tag_types:
+  - system
+  - utility
+depend_fw_version: 1.13.0.0000
+support_migration: true
+allow_add_access_path: false
+only_admin: true
+permissions:
+  - NETWORK.ACCESS_INTERNET
+license_agreement_link:
+  - https://github.com/chenqi92/NanoLink/blob/main/LICENSE
+source_code_link:
+  - https://github.com/chenqi92/NanoLink
+technical_support_link:
+  - https://github.com/chenqi92/NanoLink/issues
+parameters:
+  - key: NANOLINK_SERVER_HOST
+    type: string
+    required: true
+    changeable: true
+    i18n:
+      en-US:
+        name: Server address
+        description: NanoLink server hostname or IP address
+      zh-CN:
+        name: 服务端地址
+        description: NanoLink 服务端域名或 IP 地址
+  - key: NANOLINK_SERVER_PORT
+    type: number
+    required: true
+    changeable: true
+    i18n:
+      en-US:
+        name: gRPC port
+        description: NanoLink gRPC port, normally 39100
+      zh-CN:
+        name: gRPC 端口
+        description: NanoLink gRPC 端口，通常为 39100
+  - key: NANOLINK_SERVER_TOKEN
+    type: password
+    required: true
+    changeable: true
+    i18n:
+      en-US:
+        name: Agent token
+        description: Authentication token issued by the NanoLink server
+      zh-CN:
+        name: Agent 认证令牌
+        description: 由 NanoLink 服务端签发的认证令牌
+  - key: NANOLINK_TLS_ENABLED
+    type: string
+    required: false
+    changeable: true
+    i18n:
+      en-US:
+        name: Enable TLS
+        description: Enter true or false; an empty value defaults to true
+      zh-CN:
+        name: 启用 TLS
+        description: 填写 true 或 false；留空默认启用
+  - key: NANOLINK_HOSTNAME
+    type: string
+    required: false
+    changeable: true
+    i18n:
+      en-US:
+        name: Device name
+        description: Optional name shown in NanoLink
+      zh-CN:
+        name: 设备名称
+        description: 可选，显示在 NanoLink 中的设备名称
+i18n:
+  en-US:
+    name: NanoLink Agent
+    description: Reports NAS metrics and answers safe inventory queries in remote read-only mode. Shell, file/log access, configuration changes, service control, updates, and deployments are blocked.
+    author: NanoLink Team
+    help: https://github.com/chenqi92/NanoLink
+    publisher: NanoLink Team
+    publisher_link: https://github.com/chenqi92/NanoLink
+  zh-CN:
+    name: NanoLink Agent
+    description: 以远程只读模式采集 NAS 指标并响应安全清单查询，始终拒绝 Shell、文件与日志读取、配置修改、服务控制、更新和部署。
+    author: NanoLink Team
+    help: https://github.com/chenqi92/NanoLink
+    publisher: NanoLink Team
+    publisher_link: https://github.com/chenqi92/NanoLink

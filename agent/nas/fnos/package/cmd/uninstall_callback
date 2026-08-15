@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+. "$(dirname "$0")/package-common"
+if [ "${wizard_delete_data:-false}" = "true" ] && [ -d "$DATA_DIR" ]; then
+  find "$DATA_DIR" -mindepth 1 -delete
+fi

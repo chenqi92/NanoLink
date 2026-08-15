@@ -10,13 +10,15 @@ pub mod token;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::OnceLock;
+use std::time::Instant;
 
 use axum::{
     Json, Router,
     extract::{ConnectInfo, Query, State},
     http::{HeaderMap, Method, StatusCode},
     middleware::{self, Next},
-    response::Response,
+    response::{Html, Response},
     routing::{delete, get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -26,6 +28,8 @@ use tracing::{error, info, warn};
 use crate::buffer::RingBuffer;
 use crate::config::{Config, DEFAULT_GRPC_PORT, ServerConfig};
 use crate::connection::{ConnectionSignal, ConnectionStatus};
+
+static MANAGEMENT_START: OnceLock<Instant> = OnceLock::new();
 
 /// Server change event for dynamic server management
 #[derive(Debug, Clone)]
@@ -141,12 +145,15 @@ impl ManagementServer {
 
     /// Run the management server
     pub async fn run(self) {
+        MANAGEMENT_START.get_or_init(Instant::now);
+
         // Get config for middleware setup
-        let (rate_limit_config, audit_config) = {
+        let (rate_limit_config, audit_config, remote_read_only) = {
             let config = self.state.config.read().await;
             (
                 config.management.rate_limit.clone(),
                 config.management.audit.clone(),
+                config.agent.remote_read_only,
             )
         };
 
@@ -180,10 +187,15 @@ impl ManagementServer {
             ));
 
         // All routes with rate limiting layer
-        let rate_limited_routes = Router::new()
+        let public_routes = Router::new()
             .route("/api/health", get(health))
-            .route("/api/status", get(status))
-            .merge(protected_routes)
+            .route("/api/status", get(status));
+        let routes = if remote_read_only {
+            public_routes.route("/", get(nas_status_page))
+        } else {
+            public_routes.merge(protected_routes)
+        };
+        let rate_limited_routes = routes
             .layer(middleware::from_fn_with_state(
                 rate_limit_state,
                 rate_limit::rate_limit_middleware,
@@ -524,29 +536,52 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
+async fn nas_status_page() -> Html<&'static str> {
+    Html(include_str!("nas_status.html"))
+}
+
 #[derive(Debug, Serialize)]
 struct StatusResponse {
     status: String,
     version: String,
     uptime_seconds: u64,
     hostname: Option<String>,
+    remote_read_only: bool,
+    configured_servers: usize,
+    connected_servers: usize,
 }
 
 async fn status(State(state): State<Arc<ManagementState>>) -> Json<StatusResponse> {
-    let config = state.config.read().await;
-    let hostname = config.agent.hostname.clone();
-
-    // Calculate uptime (approximate since we don't track start time)
-    let uptime = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let (hostname, remote_read_only, configured_servers) = {
+        let config = state.config.read().await;
+        (
+            config.agent.hostname.clone(),
+            config.agent.remote_read_only,
+            config.servers.len(),
+        )
+    };
+    let connected_servers = match &state.connection_status {
+        Some(status) => status
+            .read()
+            .await
+            .iter()
+            .filter(|server| server.connected)
+            .count(),
+        None => 0,
+    };
+    let uptime = MANAGEMENT_START
+        .get_or_init(Instant::now)
+        .elapsed()
+        .as_secs();
 
     Json(StatusResponse {
         status: "running".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         uptime_seconds: uptime,
         hostname,
+        remote_read_only,
+        configured_servers,
+        connected_servers,
     })
 }
 

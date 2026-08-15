@@ -7,6 +7,21 @@ use tracing::warn;
 use crate::config::Config;
 use crate::proto::CommandType;
 
+/// Remote queries that are safe for the NAS read-only runtime. Keep this list
+/// deliberately narrower than permission level 0: filesystem/log/config reads
+/// and arbitrary connectivity probes can still expose sensitive NAS data.
+pub(crate) fn remote_read_only_allows(command_type: CommandType) -> bool {
+    matches!(
+        command_type,
+        CommandType::ProcessList
+            | CommandType::ServiceStatus
+            | CommandType::ServiceList
+            | CommandType::DockerList
+            | CommandType::AgentGetVersion
+            | CommandType::PackageList
+    )
+}
+
 /// 常量时间字符串比较，防止时序攻击
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {

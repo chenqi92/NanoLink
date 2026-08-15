@@ -131,7 +131,9 @@ impl ConnectionManager {
         }
 
         // Spawn gRPC connection tasks for each server
-        let mut handles = Vec::new();
+        // JoinSet aborts all still-running connection tasks when this manager
+        // future is cancelled by the service shutdown path.
+        let mut handles = tokio::task::JoinSet::new();
 
         for (idx, server_config) in self.config.servers.iter().enumerate() {
             let shared_config = self.shared_config.clone();
@@ -150,7 +152,7 @@ impl ConnectionManager {
                 server_identity.host, server_identity.port
             );
 
-            let handle = tokio::spawn(async move {
+            handles.spawn(async move {
                 Self::manage_grpc_connection(
                     shared_config,
                     config_path,
@@ -163,14 +165,10 @@ impl ConnectionManager {
                 )
                 .await;
             });
-
-            handles.push(handle);
         }
 
         // Wait for all connections to complete (they shouldn't unless shutdown)
-        for handle in handles {
-            let _ = handle.await;
-        }
+        while handles.join_next().await.is_some() {}
     }
 
     /// Manage a gRPC connection with reconnection logic

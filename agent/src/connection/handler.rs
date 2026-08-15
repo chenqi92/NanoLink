@@ -14,7 +14,7 @@ use crate::executor::{
 };
 use crate::management::audit::{AuditState, CommandAuditEntry};
 use crate::proto::{Command, CommandResult, CommandType};
-use crate::security::PermissionChecker;
+use crate::security::{PermissionChecker, remote_read_only_allows};
 
 /// Truncate a string to at most `max` characters (char-boundary safe) for audit
 /// fields, so a large target/error cannot bloat the audit log.
@@ -125,6 +125,21 @@ impl MessageHandler {
     pub async fn handle_command(&self, command: Command) -> CommandResult {
         let command_type =
             CommandType::try_from(command.r#type).unwrap_or(CommandType::Unspecified);
+
+        if self.config.agent.remote_read_only && !remote_read_only_allows(command_type) {
+            warn!(
+                "Rejected command {:?}: remote read-only mode is enabled",
+                command_type
+            );
+            return CommandResult {
+                command_id: command.command_id,
+                success: false,
+                error:
+                    "Command is unavailable because this NAS Agent enforces remote read-only mode"
+                        .to_string(),
+                ..Default::default()
+            };
+        }
 
         if command_type == CommandType::ShellExecute {
             info!(

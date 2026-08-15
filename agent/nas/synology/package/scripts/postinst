@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+. "$(dirname "$0")/package-common"
+if [ ! -f "$CONFIG" ]; then
+  write_config
+fi

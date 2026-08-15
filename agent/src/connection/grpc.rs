@@ -22,10 +22,11 @@ use crate::collector::layered::{DataRequest, LayeredCollector, LayeredMetricsMes
 use crate::config::{Config, ServerConfig};
 use crate::connection::ConnectionSignal;
 use crate::proto::{
-    AgentInit, AuthRequest, AuthResponse, Command, CommandResult, DataRequestType, Heartbeat,
-    Metrics, MetricsStreamRequest, MetricsStreamResponse, metrics_stream_request,
+    AgentInit, AuthRequest, AuthResponse, Command, CommandResult, CommandType, DataRequestType,
+    Heartbeat, Metrics, MetricsStreamRequest, MetricsStreamResponse, metrics_stream_request,
     metrics_stream_response, nano_link_service_client::NanoLinkServiceClient,
 };
+use crate::security::remote_read_only_allows;
 
 /// Process start time, captured the first time `agent_uptime_seconds` is called.
 ///
@@ -35,6 +36,24 @@ use crate::proto::{
 /// reconnects.
 static AGENT_START: OnceLock<Instant> = OnceLock::new();
 const MAX_PENDING_COMMAND_RESULTS: usize = 128;
+
+fn accepts_remote_command(remote_read_only: bool, command_type: CommandType) -> bool {
+    if !remote_read_only {
+        return true;
+    }
+
+    remote_read_only_allows(command_type)
+}
+
+fn read_only_rejection(command: Command) -> CommandResult {
+    CommandResult {
+        command_id: command.command_id,
+        success: false,
+        error: "Command is unavailable because this NAS Agent enforces remote read-only mode"
+            .to_string(),
+        ..Default::default()
+    }
+}
 
 pub type PendingCommandResults = Arc<Mutex<HashMap<String, CommandResult>>>;
 
@@ -324,6 +343,7 @@ impl GrpcClient {
             agent_version: env!("CARGO_PKG_VERSION").to_string(),
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
+            remote_read_only: self.config.agent.remote_read_only,
         });
 
         let response = self
@@ -371,6 +391,7 @@ impl GrpcClient {
             .context("Failed to start metrics stream")?;
 
         let mut response_stream: Streaming<MetricsStreamResponse> = response.into_inner();
+        let remote_read_only = self.config.agent.remote_read_only;
         replay_pending_command_results(&tx, &pending_results).await?;
 
         // Spawn task to send metrics with cleanup guard
@@ -423,7 +444,17 @@ impl GrpcClient {
         while let Some(response) = response_stream.message().await? {
             match response.response {
                 Some(metrics_stream_response::Response::Command(cmd)) => {
-                    info!("Received command: {:?}", cmd.r#type);
+                    let command_type =
+                        CommandType::try_from(cmd.r#type).unwrap_or(CommandType::Unspecified);
+                    let accepted = accepts_remote_command(remote_read_only, command_type);
+                    if accepted {
+                        info!("Received command: {:?}", cmd.r#type);
+                    } else {
+                        warn!(
+                            "Rejected server command {:?}: remote read-only mode is enabled",
+                            cmd.r#type
+                        );
+                    }
                     // Long-running builds must not pause metrics, heartbeats, or
                     // a later BUILD_CANCEL command on the same stream.
                     let handler = command_handler.clone();
@@ -434,7 +465,11 @@ impl GrpcClient {
                     // timeout/cancellation boundary and releases its active-run
                     // registration even if this transport reconnects.
                     let _command_task = tokio::spawn(async move {
-                        let result = handler(cmd).await;
+                        let result = if accepted {
+                            handler(cmd).await
+                        } else {
+                            read_only_rejection(cmd)
+                        };
                         remember_command_result(&pending_results, &result).await;
                         let request = MetricsStreamRequest {
                             request: Some(metrics_stream_request::Request::CommandResult(result)),
@@ -446,6 +481,10 @@ impl GrpcClient {
                     debug!("Heartbeat acknowledged: {}", ack.timestamp);
                 }
                 Some(metrics_stream_response::Response::ConfigUpdate(new_cfg)) => {
+                    if remote_read_only {
+                        warn!("Ignored server config update: remote read-only mode is enabled");
+                        continue;
+                    }
                     info!(
                         "Received config_update from server: metrics_interval_ms={}, \
                          heartbeat_interval_ms={}, enable_detailed_metrics={}, enabled_collectors={:?}",
@@ -546,6 +585,7 @@ impl GrpcClient {
             agent_version: env!("CARGO_PKG_VERSION").to_string(),
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
+            remote_read_only: false,
         });
 
         let response = client
@@ -598,6 +638,7 @@ impl GrpcClient {
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
             agent_version: env!("CARGO_PKG_VERSION").to_string(),
+            remote_read_only: self.config.agent.remote_read_only,
         };
         info!("Sending AgentInit with agent_id: {}", agent_init.agent_id);
         tx.send(MetricsStreamRequest {
@@ -615,6 +656,7 @@ impl GrpcClient {
             .context("Failed to start metrics stream")?;
 
         let mut response_stream: Streaming<MetricsStreamResponse> = response.into_inner();
+        let remote_read_only = self.config.agent.remote_read_only;
         replay_pending_command_results(&tx, &pending_results).await?;
 
         // Create layered collector with cleanup guard
@@ -698,12 +740,26 @@ impl GrpcClient {
         while let Some(response) = response_stream.message().await? {
             match response.response {
                 Some(metrics_stream_response::Response::Command(cmd)) => {
-                    info!("Received command: {:?}", cmd.r#type);
+                    let command_type =
+                        CommandType::try_from(cmd.r#type).unwrap_or(CommandType::Unspecified);
+                    let accepted = accepts_remote_command(remote_read_only, command_type);
+                    if accepted {
+                        info!("Received command: {:?}", cmd.r#type);
+                    } else {
+                        warn!(
+                            "Rejected server command {:?}: remote read-only mode is enabled",
+                            cmd.r#type
+                        );
+                    }
                     let handler = command_handler.clone();
                     let result_tx = tx.clone();
                     let pending_results = pending_results.clone();
                     let _command_task = tokio::spawn(async move {
-                        let result = handler(cmd).await;
+                        let result = if accepted {
+                            handler(cmd).await
+                        } else {
+                            read_only_rejection(cmd)
+                        };
                         remember_command_result(&pending_results, &result).await;
                         let request = MetricsStreamRequest {
                             request: Some(metrics_stream_request::Request::CommandResult(result)),
@@ -715,6 +771,10 @@ impl GrpcClient {
                     debug!("Heartbeat acknowledged: {}", ack.timestamp);
                 }
                 Some(metrics_stream_response::Response::ConfigUpdate(new_cfg)) => {
+                    if remote_read_only {
+                        warn!("Ignored server config update: remote read-only mode is enabled");
+                        continue;
+                    }
                     info!(
                         "Received config_update from server: metrics_interval_ms={}, \
                          heartbeat_interval_ms={}, enable_detailed_metrics={}, enabled_collectors={:?}",
@@ -751,6 +811,49 @@ impl GrpcClient {
 #[cfg(test)]
 mod pending_result_tests {
     use super::*;
+
+    #[test]
+    fn nas_read_only_mode_keeps_inventory_queries_and_rejects_remote_control() {
+        for command in [
+            CommandType::ProcessList,
+            CommandType::ServiceStatus,
+            CommandType::ServiceList,
+            CommandType::DockerList,
+            CommandType::AgentGetVersion,
+            CommandType::PackageList,
+        ] {
+            assert!(accepts_remote_command(true, command), "{command:?}");
+        }
+
+        for command in [
+            CommandType::ShellExecute,
+            CommandType::FileList,
+            CommandType::ServiceLogs,
+            CommandType::ConnectivityTest,
+            CommandType::ServiceRestart,
+            CommandType::AgentApplyUpdate,
+            CommandType::ConfigRead,
+            CommandType::PackageUpdate,
+            CommandType::DeployExecute,
+            CommandType::BuildExecute,
+        ] {
+            assert!(!accepts_remote_command(true, command), "{command:?}");
+        }
+
+        assert!(accepts_remote_command(false, CommandType::ShellExecute));
+    }
+
+    #[test]
+    fn rejected_commands_return_an_explicit_result() {
+        let result = read_only_rejection(Command {
+            command_id: "write-attempt".to_string(),
+            r#type: CommandType::ShellExecute as i32,
+            ..Default::default()
+        });
+        assert_eq!(result.command_id, "write-attempt");
+        assert!(!result.success);
+        assert!(result.error.contains("remote read-only"));
+    }
 
     #[tokio::test]
     async fn pending_results_survive_until_acknowledged() {

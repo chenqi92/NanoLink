@@ -583,14 +583,15 @@ func (*Envelope_HeartbeatAck) isEnvelope_Payload() {}
 
 // ========== Authentication ==========
 type AuthRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
-	Hostname      string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`
-	AgentVersion  string                 `protobuf:"bytes,3,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
-	Os            string                 `protobuf:"bytes,4,opt,name=os,proto3" json:"os,omitempty"`
-	Arch          string                 `protobuf:"bytes,5,opt,name=arch,proto3" json:"arch,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Token          string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Hostname       string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	AgentVersion   string                 `protobuf:"bytes,3,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
+	Os             string                 `protobuf:"bytes,4,opt,name=os,proto3" json:"os,omitempty"`
+	Arch           string                 `protobuf:"bytes,5,opt,name=arch,proto3" json:"arch,omitempty"`
+	RemoteReadOnly bool                   `protobuf:"varint,6,opt,name=remote_read_only,json=remoteReadOnly,proto3" json:"remote_read_only,omitempty"` // Agent-enforced ceiling: never accept remote mutations
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AuthRequest) Reset() {
@@ -656,6 +657,13 @@ func (x *AuthRequest) GetArch() string {
 		return x.Arch
 	}
 	return ""
+}
+
+func (x *AuthRequest) GetRemoteReadOnly() bool {
+	if x != nil {
+		return x.RemoteReadOnly
+	}
+	return false
 }
 
 type AuthResponse struct {
@@ -4814,14 +4822,15 @@ func (x *HeartbeatAck) GetTimestamp() uint64 {
 // AgentInit is sent as the first message when agent connects
 // Contains the persistent agent ID for data continuity
 type AgentInit struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`                // Agent's persistent UUID (generated once, stored in config)
-	Hostname      string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`                             // Machine hostname
-	Os            string                 `protobuf:"bytes,3,opt,name=os,proto3" json:"os,omitempty"`                                         // Operating system name
-	Arch          string                 `protobuf:"bytes,4,opt,name=arch,proto3" json:"arch,omitempty"`                                     // Architecture (x86_64, aarch64, etc.)
-	AgentVersion  string                 `protobuf:"bytes,5,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"` // Agent software version
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	AgentId        string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`                         // Agent's persistent UUID (generated once, stored in config)
+	Hostname       string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`                                      // Machine hostname
+	Os             string                 `protobuf:"bytes,3,opt,name=os,proto3" json:"os,omitempty"`                                                  // Operating system name
+	Arch           string                 `protobuf:"bytes,4,opt,name=arch,proto3" json:"arch,omitempty"`                                              // Architecture (x86_64, aarch64, etc.)
+	AgentVersion   string                 `protobuf:"bytes,5,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`          // Agent software version
+	RemoteReadOnly bool                   `protobuf:"varint,6,opt,name=remote_read_only,json=remoteReadOnly,proto3" json:"remote_read_only,omitempty"` // Cap this connection at READ_ONLY regardless of token level
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AgentInit) Reset() {
@@ -4887,6 +4896,13 @@ func (x *AgentInit) GetAgentVersion() string {
 		return x.AgentVersion
 	}
 	return ""
+}
+
+func (x *AgentInit) GetRemoteReadOnly() bool {
+	if x != nil {
+		return x.RemoteReadOnly
+	}
+	return false
 }
 
 // MetricsStreamRequest is sent by agent in the bidirectional stream
@@ -6106,13 +6122,14 @@ const file_nanolink_proto_rawDesc = "" +
 	"\x0ecommand_result\x18\x1f \x01(\v2\x17.nanolink.CommandResultH\x00R\rcommandResult\x123\n" +
 	"\theartbeat\x18( \x01(\v2\x13.nanolink.HeartbeatH\x00R\theartbeat\x12=\n" +
 	"\rheartbeat_ack\x18) \x01(\v2\x16.nanolink.HeartbeatAckH\x00R\fheartbeatAckB\t\n" +
-	"\apayload\"\x88\x01\n" +
+	"\apayload\"\xb2\x01\n" +
 	"\vAuthRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1a\n" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\x12#\n" +
 	"\ragent_version\x18\x03 \x01(\tR\fagentVersion\x12\x0e\n" +
 	"\x02os\x18\x04 \x01(\tR\x02os\x12\x12\n" +
-	"\x04arch\x18\x05 \x01(\tR\x04arch\"x\n" +
+	"\x04arch\x18\x05 \x01(\tR\x04arch\x12(\n" +
+	"\x10remote_read_only\x18\x06 \x01(\bR\x0eremoteReadOnly\"x\n" +
 	"\fAuthResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12)\n" +
 	"\x10permission_level\x18\x02 \x01(\x05R\x0fpermissionLevel\x12#\n" +
@@ -6560,13 +6577,14 @@ const file_nanolink_proto_rawDesc = "" +
 	"\ttimestamp\x18\x01 \x01(\x04R\ttimestamp\x12%\n" +
 	"\x0euptime_seconds\x18\x02 \x01(\x04R\ruptimeSeconds\",\n" +
 	"\fHeartbeatAck\x12\x1c\n" +
-	"\ttimestamp\x18\x01 \x01(\x04R\ttimestamp\"\x8b\x01\n" +
+	"\ttimestamp\x18\x01 \x01(\x04R\ttimestamp\"\xb5\x01\n" +
 	"\tAgentInit\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1a\n" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x0e\n" +
 	"\x02os\x18\x03 \x01(\tR\x02os\x12\x12\n" +
 	"\x04arch\x18\x04 \x01(\tR\x04arch\x12#\n" +
-	"\ragent_version\x18\x05 \x01(\tR\fagentVersion\"\xa5\x03\n" +
+	"\ragent_version\x18\x05 \x01(\tR\fagentVersion\x12(\n" +
+	"\x10remote_read_only\x18\x06 \x01(\bR\x0eremoteReadOnly\"\xa5\x03\n" +
 	"\x14MetricsStreamRequest\x12-\n" +
 	"\ametrics\x18\x01 \x01(\v2\x11.nanolink.MetricsH\x00R\ametrics\x123\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x13.nanolink.HeartbeatH\x00R\theartbeat\x12@\n" +

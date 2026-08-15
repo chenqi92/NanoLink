@@ -1,0 +1,14 @@
+{
+  ".url": {
+    "nanolink-agent.Agent": {
+      "title": "NanoLink Agent",
+      "desc": "NAS 只读 Agent 状态",
+      "icon": "images/{0}.png",
+      "type": "url",
+      "protocol": "http",
+      "port": "29091",
+      "url": "/",
+      "allUsers": false
+    }
+  }
+}

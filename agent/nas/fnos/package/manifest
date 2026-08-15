@@ -1,0 +1,14 @@
+appname                = nanolink-agent
+version                = 0.4.9
+display_name           = NanoLink Agent
+platform               = x86
+maintainer             = NanoLink Team
+maintainer_url         = https://github.com/chenqi92/NanoLink
+distributor            = NanoLink Team
+distributor_url        = https://github.com/chenqi92/NanoLink
+desktop_uidir          = ui
+desktop_applaunchname  = nanolink-agent.Agent
+service_port           = 29091
+desc                   = 采集 NAS 指标并提供受限的远程只读清单查询
+source                 = thirdparty
+checksum               =

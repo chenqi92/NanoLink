@@ -28,6 +28,7 @@ message AuthRequest {
   string agent_version = 3;
   string os = 4;
   string arch = 5;
+  bool remote_read_only = 6;  // Agent-enforced ceiling: never accept remote mutations
 }
 
 message AuthResponse {
@@ -640,6 +641,7 @@ message AgentInit {
   string os = 3;                 // Operating system name
   string arch = 4;               // Architecture (x86_64, aarch64, etc.)
   string agent_version = 5;      // Agent software version
+  bool remote_read_only = 6;     // Cap this connection at READ_ONLY regardless of token level
 }
 
 // MetricsStreamRequest is sent by agent in the bidirectional stream

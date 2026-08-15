@@ -1,0 +1,73 @@
+[
+  {
+    "step_title": "Connect to NanoLink",
+    "items": [
+      {
+        "type": "textfield",
+        "desc": "Enter the NanoLink server connection.",
+        "subitems": [
+          {
+            "key": "wizard_server_host",
+            "desc": "Server hostname or IP address",
+            "defaultValue": "",
+            "validator": { "allowBlank": false }
+          },
+          {
+            "key": "wizard_server_port",
+            "desc": "gRPC port",
+            "defaultValue": "39100",
+            "validator": {
+              "allowBlank": false,
+              "regex": {
+                "expr": "/^[0-9]+$/",
+                "errorText": "Port must be numeric"
+              }
+            }
+          },
+          {
+            "key": "wizard_hostname",
+            "desc": "Device name (optional)",
+            "defaultValue": ""
+          }
+        ]
+      },
+      {
+        "type": "password",
+        "desc": "Agent authentication token",
+        "subitems": [
+          {
+            "key": "wizard_server_token",
+            "desc": "Authentication token",
+            "validator": { "allowBlank": false }
+          }
+        ]
+      },
+      {
+        "type": "combobox",
+        "desc": "Transport encryption",
+        "subitems": [
+          {
+            "key": "wizard_tls_enabled",
+            "desc": "TLS",
+            "defaultValue": "true",
+            "editable": false,
+            "mode": "local",
+            "displayField": "display",
+            "valueField": "value",
+            "store": {
+              "xtype": "arraystore",
+              "fields": ["display", "value"],
+              "data": [
+                ["Enable TLS (recommended)", "true"],
+                ["Disable TLS", "false"]
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "desc": "This package is locked to remote read-only mode: metrics and safe inventory queries are available; shell, file/log access, configuration changes, service control, updates, and deployments are blocked."
+      }
+    ]
+  }
+]

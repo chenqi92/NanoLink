@@ -19,7 +19,7 @@ pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/nanolink.rs"));
 }
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -30,7 +30,7 @@ use tracing_subscriber::FmtSubscriber;
 
 use crate::buffer::RingBuffer;
 use crate::collector::MetricsCollector;
-use crate::config::Config;
+use crate::config::{Config, ServerConfig};
 use crate::connection::ConnectionManager;
 use crate::management::ManagementServer;
 
@@ -94,6 +94,57 @@ enum Commands {
     },
     /// Show agent status and configuration
     Status,
+    /// Generate a least-privilege, read-only configuration for a NAS package
+    #[command(hide = true)]
+    NasConfig {
+        /// Output configuration path
+        #[arg(short, long)]
+        output: PathBuf,
+        /// NanoLink server hostname or IP address
+        #[arg(long)]
+        host: String,
+        /// NanoLink gRPC port
+        #[arg(long, default_value = "39100")]
+        port: u16,
+        /// Authentication token (prefer --token-env in package scripts)
+        #[arg(long, conflicts_with = "token_env")]
+        token: Option<String>,
+        /// Environment variable containing the authentication token
+        #[arg(long)]
+        token_env: Option<String>,
+        /// Use TLS for the gRPC connection
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        tls_enabled: bool,
+        /// Optional hostname shown by the server
+        #[arg(long)]
+        hostname: Option<String>,
+        /// Read-only local status page port
+        #[arg(long)]
+        status_port: Option<u16>,
+        /// Status page bind address
+        #[arg(long, default_value = "127.0.0.1")]
+        status_bind: String,
+    },
+    /// Start a package-managed NAS Agent with an immutable remote read-only ceiling
+    #[command(hide = true)]
+    NasStart {
+        /// Configuration path written by the NAS package
+        #[arg(long)]
+        config_path: PathBuf,
+    },
+    /// Run from UGOS Pro native application environment variables
+    #[command(hide = true)]
+    NasRun {
+        /// Persistent data directory (defaults to UGAPP_DATA_DIR)
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        /// Read-only status page port
+        #[arg(long, default_value = "29091")]
+        status_port: u16,
+        /// Status page bind address
+        #[arg(long, default_value = "0.0.0.0")]
+        status_bind: String,
+    },
 }
 
 /// Windows Service actions
@@ -479,6 +530,72 @@ async fn handle_command(command: &Commands, args: &Args, lang: Lang) -> Result<(
             );
             println!("  2. {}:    nanolink-agent", t("cli.run_agent", lang));
             return Ok(());
+        }
+
+        Commands::NasConfig {
+            output,
+            host,
+            port,
+            token,
+            token_env,
+            tls_enabled,
+            hostname,
+            status_port,
+            status_bind,
+        } => {
+            let token = resolve_nas_token(token.as_deref(), token_env.as_deref())?;
+            write_nas_config(
+                output,
+                host,
+                *port,
+                &token,
+                *tls_enabled,
+                hostname.as_deref(),
+                *status_port,
+                status_bind,
+            )?;
+            println!("NAS read-only configuration written: {}", output.display());
+            return Ok(());
+        }
+
+        Commands::NasRun {
+            data_dir,
+            status_port,
+            status_bind,
+        } => {
+            let data_dir = match data_dir.clone() {
+                Some(path) => path,
+                None => std::env::var_os("UGAPP_DATA_DIR")
+                    .map(PathBuf::from)
+                    .ok_or_else(|| anyhow::anyhow!("UGAPP_DATA_DIR is not set"))?,
+            };
+            let host = required_env("NANOLINK_SERVER_HOST")?;
+            let port = required_env("NANOLINK_SERVER_PORT")?
+                .parse::<u16>()
+                .context("NANOLINK_SERVER_PORT must be a valid port")?;
+            let token = required_env("NANOLINK_SERVER_TOKEN")?;
+            let tls_enabled = parse_nas_bool(
+                &std::env::var("NANOLINK_TLS_ENABLED").unwrap_or_else(|_| "true".to_string()),
+            )?;
+            let hostname = std::env::var("NANOLINK_HOSTNAME")
+                .ok()
+                .filter(|value| !value.trim().is_empty());
+            let config_path = data_dir.join("nanolink.yaml");
+            write_nas_config(
+                &config_path,
+                &host,
+                port,
+                &token,
+                tls_enabled,
+                hostname.as_deref(),
+                Some(*status_port),
+                status_bind,
+            )?;
+            return run_agent_remote_read_only(config_path).await;
+        }
+
+        Commands::NasStart { config_path } => {
+            return run_agent_remote_read_only(config_path.clone()).await;
         }
 
         Commands::Status => {
@@ -1007,6 +1124,122 @@ fn save_config(config: &Config, path: &Path) -> Result<()> {
     };
 
     std::fs::write(path, content)?;
+    Ok(())
+}
+
+fn resolve_nas_token(token: Option<&str>, token_env: Option<&str>) -> Result<String> {
+    let value = match (token, token_env) {
+        (Some(value), None) => value.to_string(),
+        (None, Some(name)) => std::env::var(name)
+            .with_context(|| format!("Token environment variable {name} is not set"))?,
+        (None, None) => anyhow::bail!("Either --token or --token-env is required"),
+        (Some(_), Some(_)) => anyhow::bail!("Use only one of --token or --token-env"),
+    };
+    if value.trim().is_empty() {
+        anyhow::bail!("NAS server token cannot be empty");
+    }
+    Ok(value)
+}
+
+fn required_env(name: &str) -> Result<String> {
+    let value = std::env::var(name).with_context(|| format!("{name} is not set"))?;
+    if value.trim().is_empty() {
+        anyhow::bail!("{name} cannot be empty");
+    }
+    Ok(value)
+}
+
+fn parse_nas_bool(value: &str) -> Result<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" | "enabled" => Ok(true),
+        "0" | "false" | "no" | "off" | "disabled" => Ok(false),
+        _ => anyhow::bail!("Expected true/false or 1/0, got {value}"),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_nas_config(
+    output: &Path,
+    host: &str,
+    port: u16,
+    token: &str,
+    tls_enabled: bool,
+    hostname: Option<&str>,
+    status_port: Option<u16>,
+    status_bind: &str,
+) -> Result<()> {
+    let host = host.trim();
+    if host.is_empty() {
+        anyhow::bail!("NAS server host cannot be empty");
+    }
+    status_bind
+        .parse::<std::net::IpAddr>()
+        .with_context(|| format!("Invalid status bind address: {status_bind}"))?;
+
+    let server = ServerConfig {
+        host: host.to_string(),
+        port,
+        token: token.to_string(),
+        management_token: None,
+        permission: 0,
+        tls_enabled,
+        tls_verify: true,
+        tls_ca_cert: None,
+        tls_server_name: None,
+        tls_client_cert: None,
+        tls_client_key: None,
+    };
+    let hostname = hostname
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let mut config = Config::nas_read_only(server, hostname, status_port, status_bind.to_string())?;
+
+    if let Ok(content) = std::fs::read_to_string(output) {
+        let previous = if output
+            .extension()
+            .is_some_and(|extension| extension == "toml")
+        {
+            toml::from_str::<Config>(&content).ok()
+        } else {
+            serde_yaml::from_str::<Config>(&content).ok()
+        };
+        if let Some(agent_id) = previous.and_then(|config| config.agent.agent_id) {
+            config.agent.agent_id = Some(agent_id);
+        }
+    }
+
+    if let Some(parent) = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    let file_name = output
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("nanolink.yaml");
+    let temporary = output.with_file_name(format!(".{file_name}.tmp"));
+    let content = if output
+        .extension()
+        .is_some_and(|extension| extension == "toml")
+    {
+        toml::to_string_pretty(&config)?
+    } else {
+        serde_yaml::to_string(&config)?
+    };
+    std::fs::write(&temporary, content)
+        .with_context(|| format!("Failed to write {}", temporary.display()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o600))?;
+    }
+
+    std::fs::rename(&temporary, output)
+        .with_context(|| format!("Failed to replace {}", output.display()))?;
     Ok(())
 }
 
@@ -3633,6 +3866,14 @@ fn interactive_export_config(args: &Args, lang: Lang) -> Result<()> {
 
 /// Run the agent (public for Windows service support)
 pub async fn run_agent(config_path: PathBuf) -> Result<()> {
+    run_agent_with_mode(config_path, false).await
+}
+
+async fn run_agent_remote_read_only(config_path: PathBuf) -> Result<()> {
+    run_agent_with_mode(config_path, true).await
+}
+
+async fn run_agent_with_mode(config_path: PathBuf, enforce_remote_read_only: bool) -> Result<()> {
     // Hold this guard for the lifetime of the agent. A second process using the
     // same canonical config exits before it can create competing gRPC streams.
     let _instance_lock = instance_lock::InstanceLock::acquire(&config_path)?;
@@ -3640,7 +3881,10 @@ pub async fn run_agent(config_path: PathBuf) -> Result<()> {
     info!("NanoLink Agent v{} starting...", env!("CARGO_PKG_VERSION"));
 
     // Load configuration
-    let config = Config::load(&config_path)?;
+    let mut config = Config::load(&config_path)?;
+    if enforce_remote_read_only {
+        config.enforce_remote_read_only();
+    }
     info!("Configuration loaded from {:?}", config_path);
 
     // Create shared state with RwLock for runtime updates
@@ -3727,12 +3971,9 @@ pub async fn run_agent(config_path: PathBuf) -> Result<()> {
         info!("  Management API: http://localhost:{}/api", management_port);
     }
 
-    // Wait for shutdown signal
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            info!("Received Ctrl+C, shutting down...");
-        }
-    }
+    // NAS package managers stop services with SIGTERM; interactive runs use Ctrl+C.
+    let signal = wait_for_shutdown_signal().await?;
+    info!("Received {}, shutting down...", signal);
 
     // Send shutdown signal
     let _ = shutdown_tx.send(());
@@ -3745,6 +3986,24 @@ pub async fn run_agent(config_path: PathBuf) -> Result<()> {
 
     info!("NanoLink Agent stopped");
     Ok(())
+}
+
+#[cfg(unix)]
+async fn wait_for_shutdown_signal() -> Result<&'static str> {
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => {
+            result?;
+            Ok("Ctrl+C")
+        }
+        _ = terminate.recv() => Ok("SIGTERM"),
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_shutdown_signal() -> Result<&'static str> {
+    tokio::signal::ctrl_c().await?;
+    Ok("Ctrl+C")
 }
 
 #[cfg(test)]

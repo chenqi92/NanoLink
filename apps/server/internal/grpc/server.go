@@ -36,6 +36,7 @@ type GrpcAgent struct {
 	Arch            string
 	Version         string
 	RemoteIP        string
+	RemoteReadOnly  bool
 	PermissionLevel int32
 	ConnectedAt     time.Time
 	LastMetricsAt   time.Time
@@ -214,6 +215,13 @@ const commandDispatchTTL = 10 * time.Minute
 // belong to the requested agent/user.
 var ErrCommandResultAccessDenied = errors.New("command result access denied")
 
+func effectiveAgentPermission(permissionLevel int, remoteReadOnly bool) int {
+	if remoteReadOnly {
+		return database.PermissionReadOnly
+	}
+	return permissionLevel
+}
+
 // NewServer creates a new gRPC server (without auth interceptor for backward compatibility)
 func NewServer(
 	cfg *config.Config,
@@ -378,6 +386,7 @@ func (s *Server) Authenticate(ctx context.Context, req *pb.AuthRequest) (*pb.Aut
 		}, nil
 	}
 
+	permissionLevel = effectiveAgentPermission(permissionLevel, req.RemoteReadOnly)
 	s.logger.Infof("Agent %s authenticated with permission level %d", req.Hostname, permissionLevel)
 
 	return &pb.AuthResponse{
@@ -444,6 +453,7 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		agent.OS = req.AgentInit.Os
 		agent.Arch = req.AgentInit.Arch
 		agent.Version = req.AgentInit.AgentVersion
+		agent.RemoteReadOnly = req.AgentInit.RemoteReadOnly
 	case *pb.MetricsStreamRequest_Metrics:
 		// Legacy: old agent without AgentInit support
 		agentID = uuid.New().String()
@@ -489,6 +499,7 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		s.logger.Warnf("StreamMetrics: authentication failed for agent %s (%s): %v", agent.Hostname, agentID, err)
 		return err
 	}
+	permissionLevel = effectiveAgentPermission(permissionLevel, agent.RemoteReadOnly)
 	agent.PermissionLevel = int32(permissionLevel)
 
 	// Send immediate HeartbeatAck after authentication to prevent client-side timeout

@@ -1,0 +1,73 @@
+#!/bin/sh
+
+APP_NAME="${TRIM_APPNAME:-nanolink-agent}"
+APP_DIR="${TRIM_APPDEST:?TRIM_APPDEST is not set}"
+DATA_DIR="${TRIM_PKGVAR:?TRIM_PKGVAR is not set}"
+BIN="${APP_DIR}/bin/nanolink-agent"
+CONFIG="${DATA_DIR}/nanolink.yaml"
+PID_FILE="${DATA_DIR}/${APP_NAME}.pid"
+LOG_FILE="${DATA_DIR}/${APP_NAME}.log"
+
+write_error() {
+  message="$1"
+  if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+    printf '%s\n' "$message" > "${TRIM_TEMP_LOGFILE}"
+  fi
+  printf '%s\n' "$message" >&2
+}
+
+is_running() {
+  [ -f "$PID_FILE" ] || return 1
+  pid="$(sed -n '1p' "$PID_FILE" 2>/dev/null)"
+  case "$pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  kill -0 "$pid" 2>/dev/null || return 1
+  if [ -r "/proc/${pid}/cmdline" ]; then
+    tr '\000' ' ' < "/proc/${pid}/cmdline" | grep -q 'nanolink-agent' || return 1
+  fi
+}
+
+write_config() {
+  server_host="${wizard_server_host:-}"
+  server_port="${wizard_server_port:-39100}"
+  server_token="${wizard_server_token:-}"
+  tls_enabled="${wizard_tls_enabled:-true}"
+  agent_hostname="${wizard_hostname:-}"
+
+  [ -n "$server_host" ] || { write_error "请填写 NanoLink 服务端地址"; return 1; }
+  [ -n "$server_token" ] || { write_error "请填写 Agent 认证令牌"; return 1; }
+  case "$server_port" in
+    ''|*[!0-9]*) write_error "服务端端口必须是数字"; return 1 ;;
+  esac
+
+  mkdir -p "$DATA_DIR"
+  NANOLINK_SETUP_TOKEN="$server_token" "$BIN" nas-config \
+    --output "$CONFIG" \
+    --host "$server_host" \
+    --port "$server_port" \
+    --token-env NANOLINK_SETUP_TOKEN \
+    --tls-enabled "$tls_enabled" \
+    --hostname "$agent_hostname" \
+    --status-port 29091 \
+    --status-bind 0.0.0.0
+  chmod 600 "$CONFIG"
+}
+
+stop_service() {
+  if ! is_running; then
+    rm -f "$PID_FILE"
+    return 0
+  fi
+  pid="$(sed -n '1p' "$PID_FILE")"
+  kill -TERM "$pid" 2>/dev/null || true
+  remaining=10
+  while kill -0 "$pid" 2>/dev/null && [ "$remaining" -gt 0 ]; do
+    sleep 1
+    remaining=$((remaining - 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+  rm -f "$PID_FILE"
+}

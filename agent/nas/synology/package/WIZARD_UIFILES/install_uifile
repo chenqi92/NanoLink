@@ -1,0 +1,73 @@
+[
+  {
+    "step_title": "连接 NanoLink",
+    "items": [
+      {
+        "type": "textfield",
+        "desc": "填写 NanoLink 服务端连接信息。",
+        "subitems": [
+          {
+            "key": "wizard_server_host",
+            "desc": "服务端域名或 IP 地址",
+            "defaultValue": "",
+            "validator": { "allowBlank": false }
+          },
+          {
+            "key": "wizard_server_port",
+            "desc": "gRPC 端口",
+            "defaultValue": "39100",
+            "validator": {
+              "allowBlank": false,
+              "regex": {
+                "expr": "/^[0-9]+$/",
+                "errorText": "端口必须是数字"
+              }
+            }
+          },
+          {
+            "key": "wizard_hostname",
+            "desc": "设备名称（可选）",
+            "defaultValue": ""
+          }
+        ]
+      },
+      {
+        "type": "password",
+        "desc": "Agent 认证令牌",
+        "subitems": [
+          {
+            "key": "wizard_server_token",
+            "desc": "认证令牌",
+            "validator": { "allowBlank": false }
+          }
+        ]
+      },
+      {
+        "type": "combobox",
+        "desc": "连接加密",
+        "subitems": [
+          {
+            "key": "wizard_tls_enabled",
+            "desc": "TLS",
+            "defaultValue": "true",
+            "editable": false,
+            "mode": "local",
+            "displayField": "display",
+            "valueField": "value",
+            "store": {
+              "xtype": "arraystore",
+              "fields": ["display", "value"],
+              "data": [
+                ["启用 TLS（推荐）", "true"],
+                ["不启用 TLS", "false"]
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "desc": "此套件固定使用远程只读模式：支持指标与安全清单查询，始终拒绝 Shell、文件与日志读取、配置修改、服务控制、更新和部署。"
+      }
+    ]
+  }
+]

@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NanoLink Agent</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #e8f2f5;
+      --muted: #91a8b1;
+      --deep: #071318;
+      --panel: #0d2028;
+      --line: #24404a;
+      --cyan: #63d7e5;
+      --amber: #ffc56e;
+      --danger: #ff8e83;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        linear-gradient(115deg, rgba(99, 215, 229, .07), transparent 38%),
+        radial-gradient(circle at 88% 8%, rgba(255, 197, 110, .08), transparent 24%),
+        var(--deep);
+      color: var(--ink);
+      font-family: Inter, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    main {
+      width: min(980px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: clamp(36px, 8vw, 88px) 0 48px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 12px minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: stretch;
+      padding-bottom: 36px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .data-rail {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #2d5965;
+      border-radius: 999px;
+      background: #091b21;
+    }
+
+    .packet {
+      position: absolute;
+      left: 2px;
+      width: 6px;
+      height: 18px;
+      border-radius: 999px;
+      background: var(--cyan);
+      box-shadow: 0 0 16px rgba(99, 215, 229, .9);
+      animation: transmit 2.8s linear infinite;
+    }
+
+    .packet:nth-child(2) { animation-delay: -1.4s; }
+
+    @keyframes transmit {
+      from { transform: translateY(180px); opacity: 0; }
+      15%, 85% { opacity: 1; }
+      to { transform: translateY(-28px); opacity: 0; }
+    }
+
+    .eyebrow,
+    dt,
+    .mode {
+      color: var(--muted);
+      font: 600 12px/1.4 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 720px;
+      margin: 10px 0 12px;
+      font: 520 clamp(38px, 7vw, 70px)/.98 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: -.06em;
+    }
+
+    .intro {
+      max-width: 620px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    .badge {
+      align-self: start;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 120px;
+      padding: 10px 13px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(13, 32, 40, .72);
+      color: var(--muted);
+      font: 600 13px/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--amber);
+      box-shadow: 0 0 12px rgba(255, 197, 110, .7);
+    }
+
+    .badge.online { color: var(--ink); border-color: #32717d; }
+    .badge.online .dot { background: var(--cyan); box-shadow: 0 0 12px rgba(99, 215, 229, .8); }
+    .badge.error .dot { background: var(--danger); box-shadow: 0 0 12px rgba(255, 142, 131, .7); }
+
+    .readout {
+      display: grid;
+      grid-template-columns: 1.35fr repeat(3, minmax(120px, .65fr));
+      margin-top: 32px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      background: rgba(13, 32, 40, .78);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .22);
+    }
+
+    .readout > div {
+      min-height: 146px;
+      padding: 24px;
+      border-right: 1px solid var(--line);
+    }
+
+    .readout > div:last-child { border-right: 0; }
+    dl { margin: 0; }
+    dd { margin: 18px 0 0; }
+
+    .primary-value {
+      font: 540 clamp(24px, 4vw, 38px)/1.1 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: -.04em;
+    }
+
+    .value {
+      font: 520 22px/1.2 ui-monospace, "SFMono-Regular", Consolas, monospace;
+      letter-spacing: -.03em;
+    }
+
+    .mode {
+      display: inline-block;
+      margin-top: 8px;
+      color: var(--cyan);
+    }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: center;
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    button {
+      border: 0;
+      border-bottom: 1px solid var(--cyan);
+      padding: 7px 0;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:hover { color: var(--cyan); }
+    button:focus-visible { outline: 2px solid var(--amber); outline-offset: 5px; }
+
+    @media (max-width: 760px) {
+      header { grid-template-columns: 10px 1fr; }
+      .badge { grid-column: 2; justify-self: start; }
+      .readout { grid-template-columns: 1fr 1fr; }
+      .readout > div { min-height: 126px; }
+      .readout > div:nth-child(2) { border-right: 0; }
+      .readout > div:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+    }
+
+    @media (max-width: 470px) {
+      .readout { grid-template-columns: 1fr; }
+      .readout > div { border-right: 0; border-bottom: 1px solid var(--line); }
+      .readout > div:last-child { border-bottom: 0; }
+      footer { align-items: flex-start; flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .packet { animation: none; top: 20%; }
+      .packet:nth-child(2) { top: 66%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="data-rail" aria-hidden="true"><i class="packet"></i><i class="packet"></i></div>
+      <div>
+        <div class="eyebrow">NAS READ ONLY / NANOLINK</div>
+        <h1>设备可见，远程操作受控。</h1>
+        <p class="intro">此 NAS 以远程只读模式运行。它会上报设备指标，并响应进程、服务、容器、软件包等安全清单查询；Shell、文件与日志读取、配置修改、服务控制、更新和部署始终被拒绝。</p>
+      </div>
+      <div id="badge" class="badge" role="status" aria-live="polite"><span class="dot"></span><span id="badgeText">正在检查</span></div>
+    </header>
+
+    <section class="readout" aria-label="Agent 状态">
+      <div>
+        <dl><dt>设备</dt><dd id="hostname" class="primary-value">—</dd></dl>
+        <span class="mode">REMOTE READ ONLY</span>
+      </div>
+      <div><dl><dt>服务端连接</dt><dd id="connections" class="value">—</dd></dl></div>
+      <div><dl><dt>运行时长</dt><dd id="uptime" class="value">—</dd></dl></div>
+      <div><dl><dt>版本</dt><dd id="version" class="value">—</dd></dl></div>
+    </section>
+
+    <footer>
+      <span>连接参数请在 NAS 的应用配置入口中修改；若系统仅在安装时提供配置，请重新安装套件。</span>
+      <button id="retry" type="button">重新检查</button>
+    </footer>
+  </main>
+
+  <script>
+    const badge = document.querySelector('#badge');
+    const badgeText = document.querySelector('#badgeText');
+
+    function formatUptime(seconds) {
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      if (days) return `${days}天 ${hours}小时`;
+      if (hours) return `${hours}小时 ${minutes}分钟`;
+      return `${minutes}分钟`;
+    }
+
+    async function refresh() {
+      badge.className = 'badge';
+      badgeText.textContent = '正在检查';
+      try {
+        const response = await fetch('/api/status', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const connected = Number(data.connected_servers || 0);
+        const configured = Number(data.configured_servers || 0);
+        document.querySelector('#hostname').textContent = data.hostname || '当前 NAS';
+        document.querySelector('#connections').textContent = `${connected} / ${configured}`;
+        document.querySelector('#uptime').textContent = formatUptime(Number(data.uptime_seconds || 0));
+        document.querySelector('#version').textContent = `v${data.version || '—'}`;
+        badge.className = connected > 0 ? 'badge online' : 'badge';
+        badgeText.textContent = connected > 0 ? '正在传输' : '等待连接';
+      } catch (error) {
+        badge.className = 'badge error';
+        badgeText.textContent = '状态不可用';
+      }
+    }
+
+    document.querySelector('#retry').addEventListener('click', refresh);
+    refresh();
+    window.setInterval(refresh, 10000);
+  </script>
+</body>
+</html>

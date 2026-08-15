@@ -1,0 +1,13 @@
+{
+  "defaults": {
+    "run-as": "package"
+  },
+  "username": "nanolinkagent",
+  "groupname": "nanolinkagent",
+  "executable": [
+    {
+      "relpath": "bin/nanolink-agent",
+      "run-as": "package"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+if [ "${wizard_delete_data:-false}" = "true" ] && [ -n "${SYNOPKG_PKGVAR:-}" ] && [ -d "$SYNOPKG_PKGVAR" ]; then
+  find "$SYNOPKG_PKGVAR" -mindepth 1 -delete
+fi

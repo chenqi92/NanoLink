@@ -570,6 +570,13 @@ pub struct AgentConfig {
     /// Preferred language (en/zh). If not set, auto-detect from system locale.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+
+    /// Enforce a local read-only ceiling for all remote operations. Autonomous
+    /// telemetry, on-demand metrics, and a small inventory-query allowlist remain
+    /// available; remote writes, shell access, file/log reads, and config pushes
+    /// are rejected regardless of the server token's permission level.
+    #[serde(default)]
+    pub remote_read_only: bool,
 }
 
 impl Default for AgentConfig {
@@ -581,6 +588,7 @@ impl Default for AgentConfig {
             reconnect_delay: default_reconnect_delay(),
             max_reconnect_delay: default_max_reconnect_delay(),
             language: None,
+            remote_read_only: false,
         }
     }
 }
@@ -1156,7 +1164,10 @@ impl Config {
 
         // Auto-disable Management API if enabled but api_token is not set
         // This ensures backward compatibility with old configs
-        if config.management.enabled && config.management.api_token.is_none() {
+        if config.management.enabled
+            && config.management.api_token.is_none()
+            && !config.agent.remote_read_only
+        {
             eprintln!(
                 "Warning: Management API was enabled but api_token is not set. \
                  Disabling Management API for security. \
@@ -1208,6 +1219,83 @@ impl Config {
             .with_context(|| format!("Failed to write config file: {path:?}"))?;
 
         Ok(())
+    }
+
+    /// Build a least-privilege configuration for NAS packages.
+    pub fn nas_read_only(
+        mut server: ServerConfig,
+        hostname: Option<String>,
+        status_port: Option<u16>,
+        status_bind: String,
+    ) -> Result<Self> {
+        if server.port == 0 {
+            anyhow::bail!("NAS server port must be greater than zero");
+        }
+        server.permission = 0;
+        server.management_token = None;
+        server.validate_tls_security().map_err(anyhow::Error::msg)?;
+
+        let mut management = ManagementConfig::default();
+        if let Some(port) = status_port {
+            if port == 0 {
+                anyhow::bail!("NAS status port must be greater than zero");
+            }
+            management.enabled = true;
+            management.port = port;
+            management.bind_address = status_bind;
+        }
+
+        let mut config = Self {
+            config_version: CONFIG_VERSION,
+            agent: AgentConfig {
+                hostname,
+                remote_read_only: true,
+                ..AgentConfig::default()
+            },
+            servers: vec![server],
+            collector: CollectorConfig::default(),
+            buffer: BufferConfig::default(),
+            shell: ShellConfig::default(),
+            logging: LoggingConfig::default(),
+            management,
+            security: SecurityConfig::default(),
+            update: UpdateConfig::default(),
+            scripts: ScriptsConfig::default(),
+            config_management: ConfigManagementConfig::default(),
+            package_management: PackageManagementConfig {
+                enabled: true,
+                allow_update: false,
+                allow_system_update: false,
+            },
+            deployments: DeploymentsConfig::default(),
+            builds: BuildsConfig::default(),
+        };
+        config.enforce_remote_read_only();
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// Apply the NAS safety ceiling at runtime so editing the persisted config
+    /// cannot re-enable remote mutation through a package-managed service.
+    pub fn enforce_remote_read_only(&mut self) {
+        self.agent.remote_read_only = true;
+        for server in &mut self.servers {
+            server.permission = 0;
+            server.management_token = None;
+        }
+        self.shell = ShellConfig::default();
+        self.scripts = ScriptsConfig::default();
+        self.config_management = ConfigManagementConfig::default();
+        self.package_management = PackageManagementConfig {
+            enabled: true,
+            allow_update: false,
+            allow_system_update: false,
+        };
+        self.deployments = DeploymentsConfig::default();
+        self.builds = BuildsConfig::default();
+        self.update.auto_check = false;
+        self.update.auto_download = false;
+        self.update.auto_apply = false;
     }
 
     /// Generate a sample configuration
@@ -1417,5 +1505,80 @@ mod tls_config_tests {
         cfg.tls_enabled = false;
         cfg.tls_ca_cert = Some("/etc/nanolink/tls/ca.crt".to_string());
         assert!(cfg.validate_tls_security().is_err());
+    }
+
+    #[test]
+    fn nas_read_only_config_disables_remote_control_surfaces() {
+        let mut remote_server = server();
+        remote_server.permission = 3;
+        remote_server.management_token = Some("management-token".to_string());
+
+        let config = Config::nas_read_only(
+            remote_server,
+            Some("storage-room".to_string()),
+            Some(29091),
+            "0.0.0.0".to_string(),
+        )
+        .unwrap();
+
+        assert!(config.agent.remote_read_only);
+        assert_eq!(config.servers[0].permission, 0);
+        assert!(config.servers[0].management_token.is_none());
+        assert!(!config.shell.enabled);
+        assert!(!config.scripts.enabled);
+        assert!(!config.config_management.enabled);
+        assert!(config.package_management.enabled);
+        assert!(!config.package_management.allow_update);
+        assert!(!config.package_management.allow_system_update);
+        assert!(!config.deployments.enabled);
+        assert!(!config.builds.enabled);
+        assert!(!config.update.auto_check);
+        assert!(!config.update.auto_download);
+        assert!(!config.update.auto_apply);
+        assert!(config.management.enabled);
+        assert_eq!(config.management.port, 29091);
+        assert_eq!(config.management.bind_address, "0.0.0.0");
+    }
+
+    #[test]
+    fn nas_read_only_config_rejects_zero_server_port() {
+        let mut remote_server = server();
+        remote_server.port = 0;
+        assert!(Config::nas_read_only(remote_server, None, None, "127.0.0.1".to_string()).is_err());
+    }
+
+    #[test]
+    fn runtime_read_only_ceiling_overrides_persisted_privileges() {
+        let mut config = Config::sample();
+        config.agent.remote_read_only = false;
+        config.servers[0].permission = 3;
+        config.servers[0].management_token = Some("management-token".to_string());
+        config.shell.enabled = true;
+        config.scripts.enabled = true;
+        config.config_management.enabled = true;
+        config.package_management.allow_update = true;
+        config.package_management.allow_system_update = true;
+        config.deployments.enabled = true;
+        config.builds.enabled = true;
+        config.update.auto_check = true;
+        config.update.auto_download = true;
+        config.update.auto_apply = true;
+
+        config.enforce_remote_read_only();
+
+        assert!(config.agent.remote_read_only);
+        assert_eq!(config.servers[0].permission, 0);
+        assert!(config.servers[0].management_token.is_none());
+        assert!(!config.shell.enabled);
+        assert!(!config.scripts.enabled);
+        assert!(!config.config_management.enabled);
+        assert!(config.package_management.enabled);
+        assert!(!config.package_management.allow_update);
+        assert!(!config.package_management.allow_system_update);
+        assert!(!config.deployments.enabled);
+        assert!(!config.builds.enabled);
+        assert!(!config.update.auto_check);
+        assert!(!config.update.auto_download);
+        assert!(!config.update.auto_apply);
     }
 }

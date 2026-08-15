@@ -217,6 +217,11 @@ jobs:
         working-directory: agent
         run: cargo fmt --all -- --check
 
+      - name: Validate NAS package sources
+        if: runner.os == 'Linux'
+        working-directory: agent
+        run: ./nas/validate.sh
+
       - name: Clippy
         working-directory: agent
         shell: bash

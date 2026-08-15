@@ -1,0 +1,55 @@
+[
+  {
+    "stepTitle": "NanoLink Agent 设置",
+    "items": [
+      {
+        "type": "text",
+        "field": "wizard_server_host",
+        "label": "服务端地址",
+        "initValue": "",
+        "rules": [
+          { "required": true, "message": "请输入域名或 IP 地址" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_server_port",
+        "label": "gRPC 端口",
+        "initValue": "39100",
+        "rules": [
+          { "required": true, "message": "请输入端口" },
+          { "pattern": "^[0-9]+$", "message": "端口必须是数字" }
+        ]
+      },
+      {
+        "type": "password",
+        "field": "wizard_server_token",
+        "label": "Agent 认证令牌",
+        "initValue": "",
+        "rules": [
+          { "required": true, "message": "请输入认证令牌" }
+        ]
+      },
+      {
+        "type": "radio",
+        "field": "wizard_tls_enabled",
+        "label": "连接加密",
+        "initValue": "true",
+        "options": [
+          { "label": "启用 TLS（推荐）", "value": "true" },
+          { "label": "不启用 TLS", "value": "false" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_hostname",
+        "label": "设备名称（可选）",
+        "initValue": ""
+      },
+      {
+        "type": "tips",
+        "helpText": "保存后请在应用中心重启 NanoLink Agent。"
+      }
+    ]
+  }
+]

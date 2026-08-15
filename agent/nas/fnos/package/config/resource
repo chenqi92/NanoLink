@@ -1,0 +1,6 @@
+{
+  "port-config": {
+    "protocol-file": "NanoLink.sc"
+  },
+  "systemd-unit": {}
+}
