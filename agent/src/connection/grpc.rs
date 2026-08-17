@@ -834,6 +834,7 @@ mod pending_result_tests {
             CommandType::AgentApplyUpdate,
             CommandType::ConfigRead,
             CommandType::PackageUpdate,
+            CommandType::PackageInstall,
             CommandType::DeployExecute,
             CommandType::BuildExecute,
         ] {

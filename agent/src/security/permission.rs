@@ -93,6 +93,7 @@ impl PermissionChecker {
             CommandType::PackageList => 0, // Read-only, all levels
             CommandType::PackageCheckUpdates => 0, // Read-only, all levels
             CommandType::PackageUpdate => 3, // SYSTEM_ADMIN only
+            CommandType::PackageInstall => 3, // SYSTEM_ADMIN only
             CommandType::SystemUpdate => 3, // SYSTEM_ADMIN only
 
             // Script execution commands

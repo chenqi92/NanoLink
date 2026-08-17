@@ -25,6 +25,9 @@ function MiniStat({ label, value, color }: { label: string; value: number; color
 function State({ loading, error, empty, msg, onRetry }: { loading: boolean; error: unknown; empty: boolean; msg?: string; onRetry?: () => void }) {
   const { t } = useTranslation()
   if (loading) return <LoadingState compact />
+  if (error instanceof Error && /(?:Package management|Script execution|Config management) is disabled/i.test(error.message)) {
+    return <ContentState kind="admin" title={t("dev.capabilityDisabled")} description={t("dev.capabilityDisabledDesc")} compact action={onRetry ? <button className="btn btn-sm" onClick={onRetry}>{I.refresh({ size: 12 })}<span>{t("access.retry")}</span></button> : undefined} />
+  }
   if (error != null) return <RequestState error={error} onRetry={onRetry} compact />
   if (empty) return <ContentState kind="empty" title={msg ?? t("common.noData")} compact />
   return null
@@ -56,15 +59,17 @@ function PackagesPanel({ agentId, permission }: { agentId: string; permission: n
   const { data, loading, error, reload } = useAgentCommand(agentId, "PACKAGE_LIST", { enabled: !!agentId })
   const [busy, setBusy] = useState<string | null>(null)
   const [flash, setFlash] = useState<{ kind: "ok" | "crit"; text: string } | null>(null)
+  const [installName, setInstallName] = useState("nginx")
+  const [installConfirm, setInstallConfirm] = useState<string | null>(null)
   const pkgs = data?.packages ?? []
   const updates = pkgs.filter((p) => p.updateAvailable)
-  const canUpdate = permission >= 3
+  const canAdmin = permission >= 3
 
-  const act = useCallback(async (key: string, type: string, target?: string, after?: boolean) => {
+  const act = useCallback(async (key: string, type: string, params?: Record<string, string>, after?: boolean) => {
     setBusy(key)
     setFlash(null)
     try {
-      await runAgentCommand(agentId, type, { target })
+      await runAgentCommand(agentId, type, { params, timeoutMs: 180_000 })
       setFlash({ kind: "ok", text: t("dev.cmdSent") })
       if (after) reload()
     } catch (e) {
@@ -74,12 +79,47 @@ function PackagesPanel({ agentId, permission }: { agentId: string; permission: n
     }
   }, [agentId, reload, t])
 
+  async function installPackage() {
+    const name = installConfirm?.trim()
+    setInstallConfirm(null)
+    if (!name) return
+    setBusy(`install-${name}`)
+    setFlash(null)
+    try {
+      const result = await runAgentCommand(agentId, "PACKAGE_INSTALL", {
+        params: { package: name, refresh: "true", start: name === "nginx" ? "true" : "false" },
+        timeoutMs: 300_000,
+      })
+      const summary = result.output?.trim().split("\n").filter(Boolean).slice(-1)[0]
+      setFlash({ kind: "ok", text: summary || t("dev.packageInstalled", { name }) })
+      reload()
+    } catch (error) {
+      setFlash({ kind: "crit", text: userErrorMessage(error, t) })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <div className="col gap-4">
+      <div className="card" style={{ padding: 14 }}>
+        <div className="row gap-2" style={{ alignItems: "flex-end", flexWrap: "wrap" }}>
+          <label className="col gap-1" style={{ flex: 1, minWidth: 240 }}>
+            <span className="upper">{t("dev.installPackage")}</span>
+            <input className="input mono" value={installName} onChange={(event) => setInstallName(event.target.value)} placeholder="nginx" />
+          </label>
+          <button className="btn btn-sm" disabled={!!busy || !canAdmin} onClick={() => setInstallName("java-11-openjdk-headless")}>Java 11</button>
+          <button className="btn btn-sm" disabled={!!busy || !canAdmin} onClick={() => setInstallName("nginx")}>Nginx</button>
+          <button className="btn btn-sm btn-primary" disabled={!!busy || !canAdmin || !installName.trim()} title={canAdmin ? undefined : t("access.permissionLevelDesc", { level: "L3" })} onClick={() => setInstallConfirm(installName.trim())}>
+            {busy?.startsWith("install-") ? <span className="dot pulse ok" /> : I.plus({ size: 12 })}<span>{t("dev.install")}</span>
+          </button>
+        </div>
+        <div className="hint" style={{ marginTop: 8 }}>{t("dev.installPackageHint")}</div>
+      </div>
       <div className="row gap-2" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
         <Flash flash={flash} onClose={() => setFlash(null)} />
         <button className="btn btn-sm" disabled={!!busy} onClick={() => act("check", "PACKAGE_CHECK_UPDATES", undefined, true)}>{busy === "check" ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}<span>{t("dev.checkNow")}</span></button>
-        <button className="btn btn-sm btn-primary" disabled={!!busy || updates.length === 0 || !canUpdate} title={canUpdate ? undefined : t("access.permissionLevelDesc", { level: "L3" })} onClick={() => act("all", "SYSTEM_UPDATE", undefined, true)}>{busy === "all" ? <span className="dot pulse ok" /> : I.arrowUp({ size: 13 })}<span>{t("dev.updateAll")}</span></button>
+        <button className="btn btn-sm btn-primary" disabled={!!busy || updates.length === 0 || !canAdmin} title={canAdmin ? undefined : t("access.permissionLevelDesc", { level: "L3" })} onClick={() => act("all", "SYSTEM_UPDATE", undefined, true)}>{busy === "all" ? <span className="dot pulse ok" /> : I.arrowUp({ size: 13 })}<span>{t("dev.updateAll")}</span></button>
         <button className="btn btn-sm btn-ghost" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button>
       </div>
       <State loading={loading && !data} error={error} empty={!!data && pkgs.length === 0} onRetry={reload} />
@@ -99,10 +139,10 @@ function PackagesPanel({ agentId, permission }: { agentId: string; permission: n
                     <td className="mono dim" style={{ fontSize: 11 }}>{p.version}</td>
                     <td className="mono" style={{ fontSize: 11, color: p.updateAvailable ? "var(--fg)" : "var(--fg-4)" }}>{p.newVersion || "—"}</td>
                     <td>{p.updateAvailable ? <span className="badge warn">{t("dev.regular")}</span> : <span className="badge">{t("dev.upToDate")}</span>}</td>
-                    <td className="mono num dim" style={{ fontSize: 11 }}>{p.installedSize ? formatBytes(p.installedSize) : "—"}</td>
+                    <td className="mono num dim" style={{ fontSize: 11 }}>{Number(p.installedSize) > 0 ? formatBytes(Number(p.installedSize)) : "—"}</td>
                     <td style={{ textAlign: "right" }}>
                       {p.updateAvailable && (
-                        <button className="btn btn-sm btn-ghost" disabled={!!busy || !canUpdate} title={canUpdate ? undefined : t("access.permissionLevelDesc", { level: "L3" })} onClick={() => act(`pkg-${p.name}`, "PACKAGE_UPDATE", p.name)}>{busy === `pkg-${p.name}` ? <span className="dot pulse ok" /> : I.arrowUp({ size: 11 })}<span style={{ fontSize: 11 }}>{t("dev.update")}</span></button>
+                        <button className="btn btn-sm btn-ghost" disabled={!!busy || !canAdmin} title={canAdmin ? undefined : t("access.permissionLevelDesc", { level: "L3" })} onClick={() => act(`pkg-${p.name}`, "PACKAGE_UPDATE", { package: p.name }, true)}>{busy === `pkg-${p.name}` ? <span className="dot pulse ok" /> : I.arrowUp({ size: 11 })}<span style={{ fontSize: 11 }}>{t("dev.update")}</span></button>
                       )}
                     </td>
                   </tr>
@@ -112,6 +152,7 @@ function PackagesPanel({ agentId, permission }: { agentId: string; permission: n
           </div>
         </>
       )}
+      {installConfirm && <ConfirmDialog title={t("dev.confirmPackageInstall")} message={t("dev.confirmPackageInstallDesc", { name: installConfirm })} confirmLabel={t("dev.install")} busy={busy === `install-${installConfirm}`} onConfirm={installPackage} onClose={() => setInstallConfirm(null)} />}
     </div>
   )
 }
@@ -129,7 +170,7 @@ function ScriptsPanel({ agentId, permission }: { agentId: string; permission: nu
     setBusy(name)
     setFlash(null)
     try {
-      const res = await runAgentCommand(agentId, "SCRIPT_EXECUTE", { target: name })
+      const res = await runAgentCommand(agentId, "SCRIPT_EXECUTE", { params: { name }, timeoutMs: 90_000 })
       setFlash({ kind: "ok", text: res.output ? `${name}: ${res.output.slice(0, 200)}` : t("dev.cmdSent") })
     } catch (e) {
       setFlash({ kind: "crit", text: userErrorMessage(e, t) })
@@ -250,12 +291,24 @@ function HealthPanel({ agentId }: { agentId: string }) {
 
 interface CfgRow { path: string; valid?: boolean; error?: string; running?: boolean }
 
+function configFormat(path: string) {
+  const normalized = path.toLowerCase()
+  if (normalized.includes("/nginx/") || normalized.endsWith("/nginx.conf")) return "nginx"
+  if (/\.ya?ml$/.test(normalized)) return "yaml"
+  if (normalized.endsWith(".json")) return "json"
+  if (normalized.endsWith(".toml")) return "toml"
+  return "text"
+}
+
 function ConfigsPanel({ agentId, permission }: { agentId: string; permission: number }) {
   const { t } = useTranslation()
-  const [paths, setPaths] = useStoredList("nanolink_managed_configs", ["/etc/nginx/nginx.conf", "/etc/hosts"])
+  const [paths, setPaths] = useStoredList("nanolink_managed_configs", ["/etc/nginx/nginx.conf", "/etc/nginx/conf.d/jingzhou.conf"])
   const [rows, setRows] = useState<Record<string, CfgRow>>({})
   const [input, setInput] = useState("")
   const [viewing, setViewing] = useState<{ path: string; result: AgentConfigResult } | null>(null)
+  const [editing, setEditing] = useState<{ path: string; content: string; sanitized: boolean } | null>(null)
+  const [editorBusy, setEditorBusy] = useState<"validate" | "save" | null>(null)
+  const [editorStatus, setEditorStatus] = useState<{ kind: "ok" | "crit"; text: string } | null>(null)
 
   const validate = useCallback(async (path: string) => {
     setRows((r) => ({ ...r, [path]: { path, running: true } }))
@@ -282,6 +335,62 @@ function ConfigsPanel({ agentId, permission }: { agentId: string; permission: nu
     }
   }
 
+  async function edit(path: string) {
+    setFlash(null)
+    setEditorStatus(null)
+    try {
+      const res = await runAgentCommand(agentId, "CONFIG_READ", { params: { path } })
+      const result = res.configResult ?? { path, content: res.output }
+      setEditing({ path, content: result.content ?? "", sanitized: !!result.sanitized })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (/No such file|cannot find|not found/i.test(message)) {
+        setEditing({ path, content: "", sanitized: false })
+      } else {
+        setFlash({ kind: "crit", text: userErrorMessage(error, t) })
+      }
+    }
+  }
+
+  async function validateEditor() {
+    if (!editing) return
+    setEditorBusy("validate")
+    setEditorStatus(null)
+    try {
+      await runAgentCommand(agentId, "CONFIG_VALIDATE", { params: { path: editing.path, content: editing.content, format: configFormat(editing.path) } })
+      setEditorStatus({ kind: "ok", text: t("dev.configValid") })
+    } catch (error) {
+      setEditorStatus({ kind: "crit", text: userErrorMessage(error, t) })
+    } finally {
+      setEditorBusy(null)
+    }
+  }
+
+  async function saveEditor() {
+    if (!editing || editing.sanitized) return
+    setEditorBusy("save")
+    setEditorStatus(null)
+    try {
+      await runAgentCommand(agentId, "CONFIG_WRITE", {
+        params: {
+          path: editing.path,
+          content: editing.content,
+          validate: "true",
+          reload: configFormat(editing.path) === "nginx" ? "true" : "false",
+        },
+        timeoutMs: 60_000,
+      })
+      const path = editing.path
+      setEditing(null)
+      setFlash({ kind: "ok", text: t("dev.configSaved") })
+      validate(path)
+    } catch (error) {
+      setEditorStatus({ kind: "crit", text: userErrorMessage(error, t) })
+    } finally {
+      setEditorBusy(null)
+    }
+  }
+
   async function openBackups(path: string) {
     setFlash(null)
     try {
@@ -295,7 +404,7 @@ function ConfigsPanel({ agentId, permission }: { agentId: string; permission: nu
   async function rollback(path: string, backupPath: string) {
     setBackupsFor(null)
     try {
-      await runAgentCommand(agentId, "CONFIG_ROLLBACK", { params: { path, backup: backupPath } })
+      await runAgentCommand(agentId, "CONFIG_ROLLBACK", { params: { path, backup: backupPath, reload: configFormat(path) === "nginx" ? "true" : "false" } })
       setFlash({ kind: "ok", text: t("dev.cmdSent") })
       validate(path)
     } catch (e) {
@@ -332,6 +441,7 @@ function ConfigsPanel({ agentId, permission }: { agentId: string; permission: nu
                     <td style={{ textAlign: "right" }}>
                       <div className="row gap-1" style={{ justifyContent: "flex-end" }}>
                         <button className="btn btn-sm btn-ghost" onClick={() => view(p)}>{I.search({ size: 11 })}<span>{t("dev.view")}</span></button>
+                        <button className="btn btn-sm btn-ghost" disabled={permission < 2} title={permission < 2 ? t("access.permissionLevelDesc", { level: "L2" }) : undefined} onClick={() => edit(p)}>{I.edit({ size: 11 })}<span>{t("common.edit")}</span></button>
                         <button className="btn btn-sm btn-ghost" onClick={() => openBackups(p)}>{I.history({ size: 11 })}<span>{t("dev.backups")}</span></button>
                         <button className="btn btn-sm btn-ghost" onClick={() => validate(p)}>{I.refresh({ size: 11 })}</button>
                         <button className="btn btn-sm btn-ghost btn-icon" onClick={() => setPaths(paths.filter((x) => x !== p))}><span style={{ color: "var(--crit)" }}>{I.trash({ size: 11 })}</span></button>
@@ -345,8 +455,19 @@ function ConfigsPanel({ agentId, permission }: { agentId: string; permission: nu
         </div>
       )}
       {viewing && (
-        <Modal title={viewing.path} onClose={() => setViewing(null)} width={680} footer={<button className="btn btn-sm" onClick={() => setViewing(null)}>{t("common.cancel")}</button>}>
+        <Modal title={viewing.path} onClose={() => setViewing(null)} width={680} footer={<><button className="btn btn-sm" onClick={() => setViewing(null)}>{t("common.cancel")}</button><button className="btn btn-sm btn-primary" disabled={permission < 2 || !!viewing.result.sanitized} onClick={() => { const next = viewing; setViewing(null); setEditing({ path: next.path, content: next.result.content ?? "", sanitized: !!next.result.sanitized }) }}>{t("common.edit")}</button></>}>
+          {viewing.result.sanitized && <div className="inline-issue inline-issue--failed" style={{ marginBottom: 10 }}>{t("dev.sanitizedReadOnly")}</div>}
           <div className="code" style={{ whiteSpace: "pre-wrap" }}>{viewing.result.content || t("common.noData")}</div>
+        </Modal>
+      )}
+      {editing && (
+        <Modal title={`${t("common.edit")} · ${editing.path}`} onClose={() => !editorBusy && setEditing(null)} width={820} footer={<><button className="btn btn-sm" disabled={!!editorBusy} onClick={() => setEditing(null)}>{t("common.cancel")}</button><button className="btn btn-sm" disabled={!!editorBusy} onClick={validateEditor}>{editorBusy === "validate" && <span className="dot pulse ok" />}{t("dev.validate")}</button><button className="btn btn-sm btn-primary" disabled={!!editorBusy || editing.sanitized} onClick={saveEditor}>{editorBusy === "save" && <span className="dot pulse ok" />}{t("common.save")}</button></>}>
+          <div className="col gap-2">
+            {editing.sanitized && <div className="inline-issue inline-issue--failed">{t("dev.sanitizedReadOnly")}</div>}
+            {editorStatus && <Flash flash={editorStatus} onClose={() => setEditorStatus(null)} />}
+            <textarea className="input mono" aria-label={t("dev.configContent")} value={editing.content} disabled={editing.sanitized} onChange={(event) => setEditing({ ...editing, content: event.target.value })} spellCheck={false} style={{ minHeight: 420, resize: "vertical", lineHeight: 1.55, padding: 12 }} />
+            {configFormat(editing.path) === "nginx" && <div className="hint">{t("dev.nginxSaveHint")}</div>}
+          </div>
         </Modal>
       )}
       {backupsFor && (

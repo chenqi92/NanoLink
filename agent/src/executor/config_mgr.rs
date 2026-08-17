@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use tracing::{info, warn};
+use uuid::Uuid;
 
 use crate::config::Config;
-use crate::proto::CommandResult;
+use crate::proto::{CommandResult, ConfigBackup, ConfigResult};
 
 /// Config file manager with backup and rollback support
 pub struct ConfigManager {
@@ -138,13 +140,21 @@ impl ConfigManager {
                 // Always sanitize: a client-supplied sanitize=false must not be
                 // able to exfiltrate secrets (passwords, keys, tokens) verbatim.
                 let output = self.sanitize_content(&content);
+                let sanitized = output != content;
 
                 info!("Read config file: {}", path);
                 CommandResult {
                     command_id: String::new(),
                     success: true,
-                    output,
+                    output: output.clone(),
                     error: String::new(),
+                    config_result: Some(ConfigResult {
+                        path: path.to_string(),
+                        content: output,
+                        sanitized,
+                        valid: true,
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }
             }
@@ -208,38 +218,130 @@ impl ConfigManager {
             };
         }
 
-        // Create backup if enabled and file exists
-        if self.config.config_management.backup_on_change && Path::new(path).exists() {
-            if let Err(e) = self.create_backup(path) {
-                warn!("Failed to create backup for {}: {}", path, e);
-                // Continue anyway - backup failure shouldn't block the write
-            }
-        }
-
-        // Write file
-        match fs::write(path, content) {
-            Ok(()) => {
-                info!("Wrote config file: {}", path);
-                CommandResult {
-                    command_id: String::new(),
-                    success: true,
-                    output: format!("Config written successfully: {path}"),
-                    error: String::new(),
-                    ..Default::default()
+        let existed = Path::new(path).exists();
+        let backup_path = if self.config.config_management.backup_on_change && existed {
+            match self.create_backup(path) {
+                Ok(backup) => Some(backup),
+                Err(error) => {
+                    return CommandResult {
+                        command_id: String::new(),
+                        success: false,
+                        output: String::new(),
+                        error: format!("Failed to create config backup: {error}"),
+                        ..Default::default()
+                    };
                 }
             }
-            Err(e) => CommandResult {
+        } else {
+            None
+        };
+
+        if let Err(error) = self.write_atomically(path, content) {
+            return CommandResult {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
-                error: format!("Failed to write config: {e}"),
+                error,
                 ..Default::default()
-            },
+            };
+        }
+
+        let should_validate = params
+            .get("validate")
+            .map(|value| value.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if should_validate {
+            if let Err(error) = self.validate_written_config(path) {
+                let restore_error =
+                    self.restore_failed_write(path, backup_path.as_deref(), existed);
+                return CommandResult {
+                    command_id: String::new(),
+                    success: false,
+                    output: String::new(),
+                    error: match restore_error {
+                        Ok(()) => {
+                            format!("Config validation failed; previous content restored: {error}")
+                        }
+                        Err(restore) => format!(
+                            "Config validation failed and automatic restore also failed: {error}; {restore}"
+                        ),
+                    },
+                    ..Default::default()
+                };
+            }
+        }
+
+        let should_reload = params
+            .get("reload")
+            .map(|value| value.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if should_reload {
+            if let Err(error) = self.reload_managed_service(path) {
+                let restore_error =
+                    self.restore_failed_write(path, backup_path.as_deref(), existed);
+                if restore_error.is_ok() {
+                    let _ = self.reload_managed_service(path);
+                }
+                return CommandResult {
+                    command_id: String::new(),
+                    success: false,
+                    output: String::new(),
+                    error: match restore_error {
+                        Ok(()) => {
+                            format!("Service reload failed; previous content restored: {error}")
+                        }
+                        Err(restore) => format!(
+                            "Service reload failed and automatic restore also failed: {error}; {restore}"
+                        ),
+                    },
+                    ..Default::default()
+                };
+            }
+        }
+
+        info!("Wrote config file: {}", path);
+        CommandResult {
+            command_id: String::new(),
+            success: true,
+            output: format!("Config written successfully: {path}"),
+            error: String::new(),
+            config_result: Some(ConfigResult {
+                path: path.to_string(),
+                backup_path: backup_path
+                    .as_ref()
+                    .map(|backup| backup.display().to_string())
+                    .unwrap_or_default(),
+                valid: true,
+                ..Default::default()
+            }),
+            ..Default::default()
         }
     }
 
     /// Validate config syntax (basic validation)
     pub async fn validate_config(&self, params: &HashMap<String, String>) -> CommandResult {
+        if !self.config.config_management.enabled {
+            return CommandResult {
+                command_id: String::new(),
+                success: false,
+                output: String::new(),
+                error: "Config management is disabled".to_string(),
+                ..Default::default()
+            };
+        }
+        let path = params.get("path").cloned().unwrap_or_default();
+        let supplied_content = params.contains_key("content");
+        if !path.is_empty() {
+            if let Err(error) = self.validate_config_path(&path, false) {
+                return CommandResult {
+                    command_id: String::new(),
+                    success: false,
+                    output: String::new(),
+                    error,
+                    ..Default::default()
+                };
+            }
+        }
         let content = match params.get("content") {
             Some(c) => c.clone(),
             None => {
@@ -270,7 +372,12 @@ impl ConfigManager {
             }
         };
 
-        let format = params.get("format").map(|s| s.as_str()).unwrap_or("auto");
+        let format = params
+            .get("format")
+            .map(|s| s.as_str())
+            .filter(|format| *format != "auto")
+            .or_else(|| Self::format_for_path(&path))
+            .unwrap_or("text");
 
         // Try to parse based on format
         // Map all success values to () since we only care about parse success
@@ -284,18 +391,12 @@ impl ConfigManager {
             "toml" => toml::from_str::<toml::Value>(&content)
                 .map(|_| ())
                 .map_err(|e| format!("Invalid TOML: {e}")),
-            _ => {
-                // Try each format (auto-detect)
-                let is_yaml = serde_yaml::from_str::<serde_yaml::Value>(&content).is_ok();
-                let is_json = serde_json::from_str::<serde_json::Value>(&content).is_ok();
-                let is_toml = toml::from_str::<toml::Value>(&content).is_ok();
-
-                if is_yaml || is_json || is_toml {
-                    Ok(())
-                } else {
-                    Err("Content is not valid YAML, JSON, or TOML".to_string())
-                }
-            }
+            "nginx" if !supplied_content => self.validate_written_config(&path),
+            "nginx" => self.validate_nginx_content(&content),
+            // Plain-text configs such as /etc/hosts have no parser here. They
+            // are still valid managed files; service-specific validation runs
+            // after an atomic write when requested.
+            _ => Ok(()),
         };
 
         match result {
@@ -304,13 +405,24 @@ impl ConfigManager {
                 success: true,
                 output: "Config syntax is valid".to_string(),
                 error: String::new(),
+                config_result: Some(ConfigResult {
+                    path,
+                    valid: true,
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             Err(e) => CommandResult {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
-                error: e,
+                error: e.clone(),
+                config_result: Some(ConfigResult {
+                    path,
+                    valid: false,
+                    validation_error: e,
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
         }
@@ -352,8 +464,16 @@ impl ConfigManager {
             };
         }
 
-        // Find the latest backup
-        let backup_path = match self.find_latest_backup(path) {
+        // Use the explicitly selected backup when supplied, otherwise the
+        // latest one. The selected path must belong to this config's backup set.
+        let available_backups = self.find_all_backups(path);
+        let selected_backup = params.get("backup").map(PathBuf::from);
+        let backup_path = match selected_backup {
+            Some(selected) if available_backups.contains(&selected) => Some(selected),
+            Some(_) => None,
+            None => available_backups.last().cloned(),
+        };
+        let backup_path = match backup_path {
             Some(p) => p,
             None => {
                 return CommandResult {
@@ -380,34 +500,81 @@ impl ConfigManager {
             }
         };
 
-        // Restore
-        match fs::write(path, &backup_content) {
-            Ok(()) => {
-                info!(
-                    "Rolled back config {} from backup {}",
-                    path,
-                    backup_path.display()
-                );
-                CommandResult {
-                    command_id: String::new(),
-                    success: true,
-                    output: format!("Config rolled back from: {}", backup_path.display()),
-                    error: String::new(),
-                    ..Default::default()
-                }
-            }
-            Err(e) => CommandResult {
+        let guard_backup = if Path::new(path).exists() {
+            self.create_backup(path).ok()
+        } else {
+            None
+        };
+        if let Err(error) = self.write_atomically(path, &backup_content) {
+            return CommandResult {
                 command_id: String::new(),
                 success: false,
                 output: String::new(),
-                error: format!("Failed to restore config: {e}"),
+                error,
                 ..Default::default()
-            },
+            };
+        }
+        let should_reload = params
+            .get("reload")
+            .map(|value| value.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if should_reload {
+            let post_action = self
+                .validate_written_config(path)
+                .and_then(|_| self.reload_managed_service(path));
+            if let Err(error) = post_action {
+                let restore = self.restore_failed_write(path, guard_backup.as_deref(), true);
+                if restore.is_ok() {
+                    let _ = self.reload_managed_service(path);
+                }
+                return CommandResult {
+                    command_id: String::new(),
+                    success: false,
+                    output: String::new(),
+                    error: match restore {
+                        Ok(()) => format!(
+                            "Rollback validation failed; original content restored: {error}"
+                        ),
+                        Err(restore_error) => format!(
+                            "Rollback validation failed and original content could not be restored: {error}; {restore_error}"
+                        ),
+                    },
+                    ..Default::default()
+                };
+            }
+        }
+
+        info!(
+            "Rolled back config {} from backup {}",
+            path,
+            backup_path.display()
+        );
+        CommandResult {
+            command_id: String::new(),
+            success: true,
+            output: format!("Config rolled back from: {}", backup_path.display()),
+            error: String::new(),
+            config_result: Some(ConfigResult {
+                path: path.to_string(),
+                backup_path: backup_path.display().to_string(),
+                valid: true,
+                ..Default::default()
+            }),
+            ..Default::default()
         }
     }
 
     /// List available backups for a config
     pub async fn list_backups(&self, params: &HashMap<String, String>) -> CommandResult {
+        if !self.config.config_management.enabled {
+            return CommandResult {
+                command_id: String::new(),
+                success: false,
+                output: String::new(),
+                error: "Config management is disabled".to_string(),
+                ..Default::default()
+            };
+        }
         let path = match params.get("path") {
             Some(p) => p,
             None => {
@@ -421,24 +588,198 @@ impl ConfigManager {
             }
         };
 
-        let backups = self.find_all_backups(path);
+        let backup_paths = self.find_all_backups(path);
 
-        let output = if backups.is_empty() {
+        let output = if backup_paths.is_empty() {
             "No backups found".to_string()
         } else {
-            backups
+            backup_paths
                 .iter()
                 .map(|p| p.display().to_string())
                 .collect::<Vec<_>>()
                 .join("\n")
         };
+        let backups = backup_paths
+            .iter()
+            .map(|backup| {
+                let metadata = fs::metadata(backup).ok();
+                ConfigBackup {
+                    path: backup.display().to_string(),
+                    created_at: metadata
+                        .as_ref()
+                        .and_then(|value| value.modified().ok())
+                        .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+                        .and_then(|value| {
+                            chrono::DateTime::from_timestamp(value.as_secs() as i64, 0)
+                        })
+                        .map(|value| value.to_rfc3339())
+                        .unwrap_or_default(),
+                    size: metadata.map(|value| value.len() as i64).unwrap_or_default(),
+                    checksum: String::new(),
+                }
+            })
+            .collect();
 
         CommandResult {
             command_id: String::new(),
             success: true,
             output,
             error: String::new(),
+            config_result: Some(ConfigResult {
+                path: path.to_string(),
+                backups,
+                valid: true,
+                ..Default::default()
+            }),
             ..Default::default()
+        }
+    }
+
+    fn format_for_path(path: &str) -> Option<&'static str> {
+        let normalized = path.replace('\\', "/").to_ascii_lowercase();
+        if normalized.contains("/nginx/") || normalized.ends_with("/nginx.conf") {
+            return Some("nginx");
+        }
+        match Path::new(&normalized)
+            .extension()
+            .and_then(|extension| extension.to_str())
+        {
+            Some("yaml" | "yml") => Some("yaml"),
+            Some("json") => Some("json"),
+            Some("toml") => Some("toml"),
+            _ => None,
+        }
+    }
+
+    fn validate_nginx_content(&self, content: &str) -> Result<(), String> {
+        if content.contains('\0') {
+            return Err("Nginx config contains a NUL byte".to_string());
+        }
+        let mut depth = 0i32;
+        for line in content.lines() {
+            let code = line.split('#').next().unwrap_or_default();
+            for character in code.chars() {
+                match character {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth < 0 {
+                            return Err("Nginx config has an unmatched closing brace".to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if depth == 0 {
+            Ok(())
+        } else {
+            Err("Nginx config has unbalanced braces".to_string())
+        }
+    }
+
+    fn write_atomically(&self, path: &str, content: &str) -> Result<(), String> {
+        let target = Path::new(path);
+        let parent = target
+            .parent()
+            .ok_or_else(|| "Config path has no parent directory".to_string())?;
+        if !parent.is_dir() {
+            return Err("Config parent directory does not exist".to_string());
+        }
+        let name = target
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| "Config file name is invalid".to_string())?;
+        let temporary = parent.join(format!(".{name}.nanolink-{}.tmp", Uuid::new_v4()));
+        let previous_permissions = fs::metadata(target).ok().map(|value| value.permissions());
+        let write_result = (|| {
+            fs::write(&temporary, content)
+                .map_err(|error| format!("Failed to write temporary config: {error}"))?;
+            if let Some(permissions) = previous_permissions {
+                fs::set_permissions(&temporary, permissions)
+                    .map_err(|error| format!("Failed to preserve config permissions: {error}"))?;
+            }
+            #[cfg(windows)]
+            if target.exists() {
+                fs::remove_file(target)
+                    .map_err(|error| format!("Failed to replace config: {error}"))?;
+            }
+            fs::rename(&temporary, target)
+                .map_err(|error| format!("Failed to activate config atomically: {error}"))
+        })();
+        if write_result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        write_result
+    }
+
+    fn validate_written_config(&self, path: &str) -> Result<(), String> {
+        match Self::format_for_path(path) {
+            Some("nginx") => {
+                let output = Command::new("nginx")
+                    .arg("-t")
+                    .output()
+                    .map_err(|error| format!("Failed to run nginx -t: {error}"))?;
+                if output.status.success() {
+                    Ok(())
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    Err(stderr.trim().to_string())
+                }
+            }
+            Some("yaml") => serde_yaml::from_str::<serde_yaml::Value>(
+                &fs::read_to_string(path).map_err(|error| error.to_string())?,
+            )
+            .map(|_| ())
+            .map_err(|error| format!("Invalid YAML: {error}")),
+            Some("json") => serde_json::from_str::<serde_json::Value>(
+                &fs::read_to_string(path).map_err(|error| error.to_string())?,
+            )
+            .map(|_| ())
+            .map_err(|error| format!("Invalid JSON: {error}")),
+            Some("toml") => toml::from_str::<toml::Value>(
+                &fs::read_to_string(path).map_err(|error| error.to_string())?,
+            )
+            .map(|_| ())
+            .map_err(|error| format!("Invalid TOML: {error}")),
+            _ => Ok(()),
+        }
+    }
+
+    fn reload_managed_service(&self, path: &str) -> Result<(), String> {
+        if Self::format_for_path(path) != Some("nginx") {
+            return Err("Automatic reload is only supported for Nginx configs".to_string());
+        }
+        let output = Command::new("systemctl")
+            .args(["reload", "nginx"])
+            .output()
+            .map_err(|error| format!("Failed to reload nginx: {error}"))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(stderr.trim().to_string())
+        }
+    }
+
+    fn restore_failed_write(
+        &self,
+        path: &str,
+        backup: Option<&Path>,
+        existed: bool,
+    ) -> Result<(), String> {
+        match (backup, existed) {
+            (Some(backup), true) => fs::copy(backup, path)
+                .map(|_| ())
+                .map_err(|error| format!("Failed to restore backup: {error}")),
+            (_, false) => {
+                if Path::new(path).exists() {
+                    fs::remove_file(path)
+                        .map_err(|error| format!("Failed to remove invalid new config: {error}"))?;
+                }
+                Ok(())
+            }
+            (None, true) => Err("No backup is available for restore".to_string()),
         }
     }
 
@@ -548,7 +889,7 @@ impl ConfigManager {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
-        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S_%3f");
         let backup_filename = format!("{filename}_{timestamp}.bak");
         let backup_path = backup_dir.join(&backup_filename);
 
@@ -560,12 +901,6 @@ impl ConfigManager {
 
         info!("Created backup: {}", backup_path.display());
         Ok(backup_path)
-    }
-
-    /// Find the latest backup for a config file
-    fn find_latest_backup(&self, path: &str) -> Option<PathBuf> {
-        let backups = self.find_all_backups(path);
-        backups.into_iter().last()
     }
 
     /// Find all backups for a config file
@@ -580,12 +915,13 @@ impl ConfigManager {
             .and_then(|n| n.to_str())
             .unwrap_or("");
 
-        // Match only this file's backups exactly: "{filename}_YYYYMMDD_HHMMSS.bak".
+        // Match only this file's backups exactly. Milliseconds avoid collisions
+        // when validation/rollback creates more than one backup in a second.
         // A plain starts_with(filename) would mismatch configs that share a
         // prefix (querying "app" would match "app.conf_*.bak"), which on
         // rollback could restore the wrong file's contents.
         let re = regex::Regex::new(&format!(
-            r"^{}_\d{{8}}_\d{{6}}\.bak$",
+            r"^{}_\d{{8}}_\d{{6}}(?:_\d{{3}})?\.bak$",
             regex::escape(filename)
         ))
         .ok();
@@ -630,5 +966,65 @@ impl ConfigManager {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manager() -> ConfigManager {
+        ConfigManager::new(Arc::new(Config::sample()))
+    }
+
+    #[test]
+    fn config_format_uses_path_context() {
+        assert_eq!(
+            ConfigManager::format_for_path("/etc/nginx/nginx.conf"),
+            Some("nginx")
+        );
+        assert_eq!(
+            ConfigManager::format_for_path("/etc/nginx/conf.d/app.conf"),
+            Some("nginx")
+        );
+        assert_eq!(
+            ConfigManager::format_for_path("/opt/app/application.yaml"),
+            Some("yaml")
+        );
+        assert_eq!(ConfigManager::format_for_path("/etc/hosts"), None);
+    }
+
+    #[test]
+    fn nginx_preflight_rejects_unbalanced_braces() {
+        let manager = manager();
+        assert!(
+            manager
+                .validate_nginx_content("server { listen 80; }")
+                .is_ok()
+        );
+        assert!(
+            manager
+                .validate_nginx_content("server { listen 80;")
+                .is_err()
+        );
+        assert!(
+            manager
+                .validate_nginx_content("server } listen 80;")
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn validation_honors_the_config_allowlist() {
+        let mut config = Config::sample();
+        config.config_management.enabled = true;
+        config.config_management.allowed_configs = vec!["/etc/nginx/*.conf".to_string()];
+        let manager = ConfigManager::new(Arc::new(config));
+        let params = HashMap::from([("path".to_string(), "/etc/hosts".to_string())]);
+
+        let result = manager.validate_config(&params).await;
+
+        assert!(!result.success);
+        assert_eq!(result.error, "Path not in allowed list");
     }
 }

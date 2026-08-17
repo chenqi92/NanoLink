@@ -41,9 +41,17 @@ class CommandType(IntEnum):
     # Shell command (requires SuperToken)
     SHELL_EXECUTE = 50
 
+    # Package management
+    PACKAGE_INSTALL = 84
+
     # Application deployment
     DEPLOY_EXECUTE = 120
     DEPLOY_ROLLBACK = 121
+
+    # Build execution
+    BUILD_EXECUTE = 130
+    BUILD_CANCEL = 131
+    BUILD_GIT_STATUS = 132
 
 
 @dataclass

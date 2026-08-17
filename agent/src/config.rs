@@ -379,7 +379,7 @@ fn default_backup_dir() -> String {
     return "C:\\ProgramData\\nanolink\\backups".to_string();
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PackageManagementConfig {
     /// Enable package management
     #[serde(default)]
@@ -392,6 +392,15 @@ pub struct PackageManagementConfig {
     /// Allow system updates (very dangerous)
     #[serde(default)]
     pub allow_system_update: bool,
+
+    /// Allow installing packages that are not currently present.
+    #[serde(default)]
+    pub allow_install: bool,
+
+    /// Optional install allowlist. Empty means any syntactically valid package
+    /// is accepted once allow_install has been explicitly enabled.
+    #[serde(default)]
+    pub allowed_install_packages: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1266,6 +1275,7 @@ impl Config {
                 enabled: true,
                 allow_update: false,
                 allow_system_update: false,
+                ..PackageManagementConfig::default()
             },
             deployments: DeploymentsConfig::default(),
             builds: BuildsConfig::default(),
@@ -1290,6 +1300,7 @@ impl Config {
             enabled: true,
             allow_update: false,
             allow_system_update: false,
+            ..PackageManagementConfig::default()
         };
         self.deployments = DeploymentsConfig::default();
         self.builds = BuildsConfig::default();

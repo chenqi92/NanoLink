@@ -313,6 +313,9 @@ impl MessageHandler {
             CommandType::PackageUpdate => {
                 self.package_manager.update_package(&command.params).await
             }
+            CommandType::PackageInstall => {
+                self.package_manager.install_package(&command.params).await
+            }
             CommandType::SystemUpdate => self.package_manager.system_update(&command.params).await,
 
             // Health / connectivity probes

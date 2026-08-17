@@ -15,6 +15,7 @@ func TestRequiredPermissionMatchesAgentForOperationalCommands(t *testing.T) {
 		{pb.CommandType_SERVICE_LIST, database.PermissionReadOnly},
 		{pb.CommandType_FILE_LIST, database.PermissionReadOnly},
 		{pb.CommandType_FILE_UPLOAD, database.PermissionSystemAdmin},
+		{pb.CommandType_PACKAGE_INSTALL, database.PermissionSystemAdmin},
 		{pb.CommandType_AGENT_APPLY_UPDATE, database.PermissionSystemAdmin},
 		{pb.CommandType_DEPLOY_EXECUTE, database.PermissionSystemAdmin},
 	}

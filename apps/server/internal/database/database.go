@@ -58,7 +58,10 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		if err := os.MkdirAll("./data", 0755); err != nil {
 			return fmt.Errorf("failed to create data directory: %w", err)
 		}
-		dialector = sqlite.Open(cfg.Path)
+		// WAL lets readers continue while a writer commits. The busy timeout
+		// absorbs short write bursts from metrics, deployments, and audit logs,
+		// while foreign-key enforcement keeps relational data consistent.
+		dialector = sqlite.Open(sqliteDSN(cfg.Path))
 	default:
 		return fmt.Errorf("unsupported database type: %s (supported: sqlite, mysql, postgres)", cfg.Type)
 	}
@@ -91,7 +94,11 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 			sqlDB.SetConnMaxLifetime(30 * time.Minute)
 			sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 		case "sqlite", "":
-			sqlDB.SetMaxOpenConns(1)
+			// WAL supports concurrent readers with a single SQLite writer. Keep
+			// the pool deliberately small so a busy server cannot create a lock
+			// storm while still allowing read-heavy API requests to overlap.
+			sqlDB.SetMaxOpenConns(4)
+			sqlDB.SetMaxIdleConns(2)
 		}
 	}
 
@@ -129,6 +136,15 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 	DB = db
 	log.Info("Database initialized successfully")
 	return nil
+}
+
+func sqliteDSN(path string) string {
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	return path + separator +
+		"_busy_timeout=10000&_foreign_keys=on&_journal_mode=WAL&_synchronous=NORMAL"
 }
 
 func postgresDSN(cfg Config) (string, error) {

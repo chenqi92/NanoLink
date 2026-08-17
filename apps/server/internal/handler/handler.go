@@ -694,6 +694,7 @@ func commandRequiredPermission(cmdType pb.CommandType) int {
 		return database.PermissionServiceControl
 	case pb.CommandType_AGENT_PROCESS_RESTART,
 		pb.CommandType_FILE_UPLOAD,
+		pb.CommandType_PACKAGE_INSTALL,
 		pb.CommandType_DEPLOY_EXECUTE,
 		pb.CommandType_DEPLOY_ROLLBACK,
 		pb.CommandType_BUILD_EXECUTE,

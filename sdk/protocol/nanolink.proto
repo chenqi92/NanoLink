@@ -408,6 +408,7 @@ enum CommandType {
   PACKAGE_CHECK_UPDATES = 81; // Check for available updates
   PACKAGE_UPDATE = 82;        // Update specific package (SYSTEM_ADMIN)
   SYSTEM_UPDATE = 83;         // Full system update (SYSTEM_ADMIN)
+  PACKAGE_INSTALL = 84;       // Install a specific package (SYSTEM_ADMIN)
 
   // Script Execution Commands
   SCRIPT_LIST = 90;           // List available scripts

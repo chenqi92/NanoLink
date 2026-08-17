@@ -8,9 +8,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
  * Dispatch an agent command and poll for its structured result (imperative).
  * Throws on agent error or timeout.
  */
-export async function runAgentCommand(agentId: string, type: string, opts: { target?: string; params?: Record<string, string> } = {}): Promise<CommandResultData> {
+export async function runAgentCommand(agentId: string, type: string, opts: { target?: string; params?: Record<string, string>; timeoutMs?: number } = {}): Promise<CommandResultData> {
   const { commandId } = await commandsApi.send(agentId, { type, target: opts.target, params: opts.params })
-  for (let i = 0; i < 30; i++) {
+  const deadline = Date.now() + (opts.timeoutMs ?? 15_000)
+  while (Date.now() < deadline) {
     await sleep(500)
     const res = await commandsApi.result(agentId, commandId)
     if (res && !("status" in res)) {

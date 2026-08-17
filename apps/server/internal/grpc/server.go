@@ -1344,7 +1344,8 @@ func requiredPermissionForCommand(cmdType pb.CommandType) int {
 		pb.CommandType_CONFIG_WRITE,
 		pb.CommandType_CONFIG_ROLLBACK:
 		return database.PermissionServiceControl
-	case pb.CommandType_FILE_UPLOAD:
+	case pb.CommandType_FILE_UPLOAD,
+		pb.CommandType_PACKAGE_INSTALL:
 		return database.PermissionSystemAdmin
 	default:
 		return database.PermissionSystemAdmin

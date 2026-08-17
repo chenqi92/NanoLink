@@ -206,6 +206,123 @@ impl PackageManager {
         }
     }
 
+    /// Install a package that is not currently present. This is deliberately
+    /// separate from updates so policy, audit logs, and UI confirmations can
+    /// distinguish adding new host software from patching an existing package.
+    pub async fn install_package(&self, params: &HashMap<String, String>) -> CommandResult {
+        if !self.config.package_management.enabled {
+            return CommandResult {
+                command_id: String::new(),
+                success: false,
+                output: String::new(),
+                error: "Package management is disabled".to_string(),
+                ..Default::default()
+            };
+        }
+        if !self.config.package_management.allow_install {
+            warn!("Package install attempted but allow_install is disabled");
+            return CommandResult {
+                command_id: String::new(),
+                success: false,
+                output: String::new(),
+                error: "Package installation is disabled in configuration".to_string(),
+                ..Default::default()
+            };
+        }
+
+        let package_name = match params.get("package") {
+            Some(package) => package,
+            None => {
+                return CommandResult {
+                    command_id: String::new(),
+                    success: false,
+                    output: String::new(),
+                    error: "Package name is required".to_string(),
+                    ..Default::default()
+                };
+            }
+        };
+        if !Self::is_valid_package_name(package_name) {
+            return CommandResult {
+                command_id: String::new(),
+                success: false,
+                output: String::new(),
+                error: "Invalid package name".to_string(),
+                ..Default::default()
+            };
+        }
+        let allowlist = &self.config.package_management.allowed_install_packages;
+        if !allowlist.is_empty() && !allowlist.iter().any(|allowed| allowed == package_name) {
+            warn!("Package is not in install allowlist: {}", package_name);
+            return CommandResult {
+                command_id: String::new(),
+                success: false,
+                output: String::new(),
+                error: "Package is not in the configured install allowlist".to_string(),
+                ..Default::default()
+            };
+        }
+
+        let refresh = params
+            .get("refresh")
+            .map(|value| value.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        info!("Installing package: {}", package_name);
+        let result = match self.package_manager_type {
+            PackageManagerType::Apt => self.install_apt_package(package_name, refresh),
+            PackageManagerType::Yum | PackageManagerType::Dnf => {
+                self.install_yum_package(package_name)
+            }
+            PackageManagerType::Pacman => self.install_pacman_package(package_name),
+            PackageManagerType::Brew => self.install_brew_package(package_name),
+            PackageManagerType::Winget => self.install_winget_package(package_name),
+            PackageManagerType::Choco => self.install_choco_package(package_name),
+            PackageManagerType::Unknown => Err("No supported package manager found".to_string()),
+        };
+
+        match result {
+            Ok(mut output) => {
+                let start = params
+                    .get("start")
+                    .map(|value| value.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false);
+                if start {
+                    match self.start_installed_service(package_name) {
+                        Ok(service_output) => {
+                            if !output.ends_with('\n') {
+                                output.push('\n');
+                            }
+                            output.push_str(&service_output);
+                        }
+                        Err(error) => {
+                            return CommandResult {
+                                command_id: String::new(),
+                                success: false,
+                                output,
+                                error,
+                                ..Default::default()
+                            };
+                        }
+                    }
+                }
+                CommandResult {
+                    command_id: String::new(),
+                    success: true,
+                    output,
+                    error: String::new(),
+                    ..Default::default()
+                }
+            }
+            Err(error) => CommandResult {
+                command_id: String::new(),
+                success: false,
+                output: String::new(),
+                error,
+                ..Default::default()
+            },
+        }
+    }
+
     /// Update a specific package (dangerous operation, requires SYSTEM_ADMIN)
     pub async fn update_package(&self, params: &HashMap<String, String>) -> CommandResult {
         if !self.config.package_management.enabled {
@@ -405,6 +522,36 @@ impl PackageManager {
             .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
     }
 
+    fn command_output(output: std::process::Output, action: &str) -> Result<String, String> {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if output.status.success() {
+            Ok(if stdout.is_empty() { stderr } else { stdout })
+        } else {
+            let detail = if stderr.is_empty() { stdout } else { stderr };
+            Err(format!("{action} failed: {detail}"))
+        }
+    }
+
+    fn start_installed_service(&self, package_name: &str) -> Result<String, String> {
+        if package_name != "nginx" {
+            return Err(format!(
+                "Automatic service start is not supported for package '{package_name}'"
+            ));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let output = Command::new("systemctl")
+                .args(["enable", "--now", "nginx"])
+                .output()
+                .map_err(|e| format!("Failed to start nginx: {e}"))?;
+            Self::command_output(output, "Starting nginx")?;
+            return Ok("nginx enabled and started".to_string());
+        }
+        #[cfg(not(target_os = "linux"))]
+        Err("Automatic nginx startup is only supported on Linux".to_string())
+    }
+
     // ========== APT (Debian/Ubuntu) ==========
     fn list_apt_packages(
         &self,
@@ -502,6 +649,23 @@ impl PackageManager {
         } else {
             Err(String::from_utf8_lossy(&output.stderr).to_string())
         }
+    }
+
+    fn install_apt_package(&self, name: &str, refresh: bool) -> Result<String, String> {
+        if refresh {
+            let update = Command::new("apt-get")
+                .env("DEBIAN_FRONTEND", "noninteractive")
+                .args(["update", "-qq"])
+                .output()
+                .map_err(|e| format!("Failed to refresh package lists: {e}"))?;
+            Self::command_output(update, "Refreshing package lists")?;
+        }
+        let output = Command::new("apt-get")
+            .env("DEBIAN_FRONTEND", "noninteractive")
+            .args(["install", "-y", "--no-install-recommends", name])
+            .output()
+            .map_err(|e| format!("Failed to install package: {e}"))?;
+        Self::command_output(output, "Package installation")
     }
 
     fn system_update_apt(&self) -> Result<String, String> {
@@ -619,6 +783,36 @@ impl PackageManager {
         }
     }
 
+    fn install_yum_package(&self, name: &str) -> Result<String, String> {
+        let cmd = if matches!(self.package_manager_type, PackageManagerType::Dnf) {
+            "dnf"
+        } else {
+            "yum"
+        };
+        let install = || {
+            Command::new(cmd)
+                .args(["install", "-y", name])
+                .output()
+                .map_err(|e| format!("Failed to install package: {e}"))
+        };
+        let first = install()?;
+        if first.status.success() {
+            return Self::command_output(first, "Package installation");
+        }
+
+        // nginx is commonly provided by EPEL on CentOS 7. Keep this fallback
+        // narrow so installing an unrelated package never adds a repository.
+        if name == "nginx" && matches!(self.package_manager_type, PackageManagerType::Yum) {
+            let epel = Command::new("yum")
+                .args(["install", "-y", "epel-release"])
+                .output()
+                .map_err(|e| format!("Failed to enable EPEL for nginx: {e}"))?;
+            Self::command_output(epel, "Enabling EPEL for nginx")?;
+            return Self::command_output(install()?, "Package installation");
+        }
+        Self::command_output(first, "Package installation")
+    }
+
     fn system_update_yum(&self) -> Result<String, String> {
         let cmd = if matches!(self.package_manager_type, PackageManagerType::Dnf) {
             "dnf"
@@ -725,6 +919,14 @@ impl PackageManager {
         }
     }
 
+    fn install_pacman_package(&self, name: &str) -> Result<String, String> {
+        let output = Command::new("pacman")
+            .args(["-S", "--noconfirm", "--needed", name])
+            .output()
+            .map_err(|e| format!("Failed to install package: {e}"))?;
+        Self::command_output(output, "Package installation")
+    }
+
     fn system_update_pacman(&self) -> Result<String, String> {
         let output = Command::new("pacman")
             .args(["-Syu", "--noconfirm"])
@@ -822,6 +1024,14 @@ impl PackageManager {
         } else {
             Err(String::from_utf8_lossy(&output.stderr).to_string())
         }
+    }
+
+    fn install_brew_package(&self, name: &str) -> Result<String, String> {
+        let output = Command::new("brew")
+            .args(["install", name])
+            .output()
+            .map_err(|e| format!("Failed to install package: {e}"))?;
+        Self::command_output(output, "Package installation")
     }
 
     fn system_update_brew(&self) -> Result<String, String> {
@@ -929,6 +1139,22 @@ impl PackageManager {
         }
     }
 
+    fn install_winget_package(&self, name: &str) -> Result<String, String> {
+        let output = Command::new("winget")
+            .args([
+                "install",
+                "--id",
+                name,
+                "--exact",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+                "--silent",
+            ])
+            .output()
+            .map_err(|e| format!("Failed to install package: {e}"))?;
+        Self::command_output(output, "Package installation")
+    }
+
     fn system_update_winget(&self) -> Result<String, String> {
         let output = Command::new("winget")
             .args(["upgrade", "--all", "--accept-source-agreements", "--silent"])
@@ -1027,6 +1253,14 @@ impl PackageManager {
         }
     }
 
+    fn install_choco_package(&self, name: &str) -> Result<String, String> {
+        let output = Command::new("choco")
+            .args(["install", "-y", name])
+            .output()
+            .map_err(|e| format!("Failed to install package: {e}"))?;
+        Self::command_output(output, "Package installation")
+    }
+
     fn system_update_choco(&self) -> Result<String, String> {
         let output = Command::new("choco")
             .args(["upgrade", "-y", "all"])
@@ -1037,6 +1271,28 @@ impl PackageManager {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
         } else {
             Err(String::from_utf8_lossy(&output.stderr).to_string())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PackageManager;
+
+    #[test]
+    fn package_names_are_strictly_validated() {
+        for valid in ["nginx", "java-11-openjdk-headless", "python3.12", "lib_ssl"] {
+            assert!(PackageManager::is_valid_package_name(valid), "{valid}");
+        }
+        for invalid in [
+            "",
+            "../nginx",
+            "nginx;reboot",
+            "-nginx",
+            "nginx.",
+            "nginx repo",
+        ] {
+            assert!(!PackageManager::is_valid_package_name(invalid), "{invalid}");
         }
     }
 }

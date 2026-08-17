@@ -26,6 +26,7 @@
     { "name": "DOCKER_LOGS",     "code": 34, "level": 1 },
     { "name": "SYSTEM_REBOOT",   "code": 40,  "level": 3 },
     { "name": "SHELL_EXECUTE",   "code": 50,  "level": 3 },
+    { "name": "PACKAGE_INSTALL", "code": 84,  "level": 3 },
     { "name": "DEPLOY_EXECUTE",  "code": 120, "level": 3 },
     { "name": "DEPLOY_ROLLBACK", "code": 121, "level": 3 },
     { "name": "BUILD_EXECUTE",   "code": 130, "level": 3 },

@@ -38,9 +38,14 @@ public class Command {
 
         SYSTEM_REBOOT(40, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
         SHELL_EXECUTE(50, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
+        PACKAGE_INSTALL(84, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
 
         DEPLOY_EXECUTE(120, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
-        DEPLOY_ROLLBACK(121, TokenValidator.PermissionLevel.SYSTEM_ADMIN);
+        DEPLOY_ROLLBACK(121, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
+
+        BUILD_EXECUTE(130, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
+        BUILD_CANCEL(131, TokenValidator.PermissionLevel.SYSTEM_ADMIN),
+        BUILD_GIT_STATUS(132, TokenValidator.PermissionLevel.SYSTEM_ADMIN);
 
         private final int code;
         private final int requiredPermission;
