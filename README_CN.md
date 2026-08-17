@@ -1,4 +1,4 @@
-﻿# NanoLink
+# NanoLink
 
 [![Test](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml)
 [![Release](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml)
@@ -813,7 +813,7 @@ TLS 已使用公钥/私钥完成密钥协商和身份认证，能够防止网络
 <dependency>
     <groupId>com.kkape</groupId>
     <artifactId>nanolink-sdk</artifactId>
-    <version>0.4.9</version>
+    <version>0.4.10</version>
 </dependency>
 ```
 

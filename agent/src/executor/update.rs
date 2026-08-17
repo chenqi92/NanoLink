@@ -9,9 +9,13 @@ use crate::config::{UpdateConfig, UpdateSource};
 use crate::proto::{CommandResult, UpdateInfo};
 
 const CLOUDFLARE_UPDATE_BASE_URL: &str = "https://agent.download.kkape.com/newest";
+#[cfg(unix)]
 const UPDATE_CONNECT_TIMEOUT_SECONDS: &str = "15";
+#[cfg(unix)]
 const UPDATE_DOWNLOAD_TIMEOUT_SECONDS: &str = "300";
+#[cfg(unix)]
 const UPDATE_METADATA_TIMEOUT_SECONDS: &str = "30";
+#[cfg(unix)]
 const MAX_UPDATE_METADATA_BYTES: &str = "1048576";
 
 /// Validate URL to prevent command injection

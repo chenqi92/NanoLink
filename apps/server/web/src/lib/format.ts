@@ -70,12 +70,14 @@ export function timeAgoIso(iso: string): string {
   return timeAgo(t / 1000)
 }
 
-/** Whether an agent is considered online (heartbeat < 60s). */
+/** Whether an agent is considered online (allows four missed 30s heartbeats). */
+export const AGENT_ONLINE_WINDOW_MS = 120_000
+
 export function isOnline(lastHeartbeat: string): boolean {
   if (!lastHeartbeat) return false
   const t = new Date(lastHeartbeat).getTime()
   if (Number.isNaN(t)) return false
-  return Date.now() - t < 60_000
+  return Date.now() - t < AGENT_ONLINE_WINDOW_MS
 }
 
 export type AgentStatus = "online" | "offline" | "connecting"

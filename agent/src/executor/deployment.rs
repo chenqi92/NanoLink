@@ -19,11 +19,14 @@ use crate::security::validation::validate_service_name;
 const MAX_EXTRACTED_ENTRIES: usize = 100_000;
 const MAX_EXTRACTED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_TOOL_OUTPUT_BYTES: u64 = 1024 * 1024;
+#[cfg(unix)]
 const ARCHIVE_TOOL_TIMEOUT: Duration = Duration::from_secs(120);
+#[cfg(unix)]
 const SERVICE_TOOL_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct ToolOutput {
     status: ExitStatus,
+    #[cfg_attr(not(unix), allow(dead_code))]
     stdout: Vec<u8>,
     stderr: Vec<u8>,
 }
@@ -158,9 +161,10 @@ impl DeploymentExecutor {
     }
 }
 
-fn command_result(
-    result: Result<Result<Vec<String>, (Vec<String>, String)>, tokio::task::JoinError>,
-) -> CommandResult {
+type DeploymentWorkResult = Result<Vec<String>, (Vec<String>, String)>;
+type DeploymentJoinResult = Result<DeploymentWorkResult, tokio::task::JoinError>;
+
+fn command_result(result: DeploymentJoinResult) -> CommandResult {
     match result {
         Ok(Ok(lines)) => CommandResult {
             command_id: String::new(),
@@ -786,7 +790,7 @@ fn validate_archive_entries(artifact: &Path, name: &str) -> Result<(), String> {
     #[cfg(not(unix))]
     {
         let _ = (artifact, name);
-        return Err("Static archive deployment is currently supported on Unix agents".to_string());
+        Err("Static archive deployment is currently supported on Unix agents".to_string())
     }
     #[cfg(unix)]
     {
@@ -834,7 +838,7 @@ fn extract_archive(artifact: &Path, name: &str, stage: &Path) -> Result<(), Stri
     #[cfg(not(unix))]
     {
         let _ = (artifact, name, stage);
-        return Err("Static archive deployment is currently supported on Unix agents".to_string());
+        Err("Static archive deployment is currently supported on Unix agents".to_string())
     }
     #[cfg(unix)]
     {

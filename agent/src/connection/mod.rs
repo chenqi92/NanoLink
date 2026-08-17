@@ -75,6 +75,19 @@ fn connection_snapshot(
     Some((Arc::new(config.clone()), server))
 }
 
+const MIN_DUPLICATE_RECONNECT_DELAY_SECS: u64 = 15;
+
+fn is_duplicate_connection_error(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        let message = cause.to_string().to_ascii_lowercase();
+        message.contains("already connected") || message.contains("already exists")
+    })
+}
+
+fn duplicate_reconnect_delay(current: u64, maximum: u64) -> u64 {
+    current.max(MIN_DUPLICATE_RECONNECT_DELAY_SECS).min(maximum)
+}
+
 impl ConnectionManager {
     /// Create a new connection manager
     ///
@@ -255,12 +268,11 @@ impl ConnectionManager {
                     // Authenticate
                     match client.authenticate().await {
                         Ok(auth) if auth.success => {
-                            // A TCP handshake alone is not a healthy connection.
-                            // Reset backoff only after credentials are accepted;
-                            // otherwise an expired token retries forever at the
-                            // minimum delay and can hammer the server.
-                            reconnect_delay = initial_delay;
-                            connection_attempts = 0;
+                            // Authentication proves the credential but not that
+                            // the metrics stream has taken ownership of the agent
+                            // ID. Keep the current backoff until the stream stays
+                            // healthy; an older server may reject the stream as a
+                            // duplicate only after this unary call succeeds.
                             was_previously_connected = true;
                             {
                                 let mut s = status.write().await;
@@ -341,6 +353,10 @@ impl ConnectionManager {
 
                             let connection_duration = connection_start.elapsed();
                             total_connected_time += connection_duration.as_secs();
+                            let duplicate_rejected = matches!(
+                                &stream_result,
+                                Some(Err(error)) if is_duplicate_connection_error(error)
+                            );
 
                             match &stream_result {
                                 Some(Ok(_)) => {
@@ -348,6 +364,16 @@ impl ConnectionManager {
                                         "gRPC stream ended normally for {} after {:?} (server may have closed the connection)",
                                         grpc_url, connection_duration
                                     );
+                                }
+                                Some(Err(e)) if duplicate_rejected => {
+                                    warn!(
+                                        "Server still owns a previous session for {}; backing off before retry: {}",
+                                        grpc_url, e
+                                    );
+                                    let mut s = status.write().await;
+                                    if let Some(st) = s.get_mut(status_idx) {
+                                        st.last_error = Some(e.to_string());
+                                    }
                                 }
                                 Some(Err(e)) => {
                                     error!(
@@ -370,6 +396,18 @@ impl ConnectionManager {
                                     st.reconnect_delay_secs = initial_delay;
                                 }
                                 continue;
+                            }
+
+                            let stable_threshold =
+                                Duration::from_secs(config.agent.heartbeat_interval.max(10));
+                            if connection_duration >= stable_threshold {
+                                reconnect_delay = initial_delay;
+                                connection_attempts = 0;
+                                was_previously_connected = true;
+                            } else if duplicate_rejected {
+                                reconnect_delay =
+                                    duplicate_reconnect_delay(reconnect_delay, max_delay);
+                                was_previously_connected = false;
                             }
                         }
                         Ok(auth) => {
@@ -530,6 +568,23 @@ impl ConnectionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duplicate_reconnects_use_a_non_aggressive_floor() {
+        assert_eq!(duplicate_reconnect_delay(5, 300), 15);
+        assert_eq!(duplicate_reconnect_delay(30, 300), 30);
+        assert_eq!(duplicate_reconnect_delay(5, 10), 10);
+    }
+
+    #[test]
+    fn duplicate_errors_are_detected_through_context() {
+        let error = anyhow::anyhow!("agent node-1 is already connected")
+            .context("Failed to start metrics stream");
+        assert!(is_duplicate_connection_error(&error));
+        assert!(!is_duplicate_connection_error(&anyhow::anyhow!(
+            "TLS handshake timeout"
+        )));
+    }
 
     #[test]
     fn reconnect_snapshot_uses_updated_token_and_runtime_config() {

@@ -1,4 +1,4 @@
-﻿#Requires -RunAsAdministrator
+#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     NanoLink Agent Interactive Installation Script for Windows
@@ -83,7 +83,7 @@ $ErrorActionPreference = "Stop"
 # =============================================================================
 # Configuration
 # =============================================================================
-$Script:VERSION = "0.4.9"
+$Script:VERSION = "0.4.10"
 $Script:ServiceName = "NanoLinkAgent"
 $Script:ServiceDisplayName = "NanoLink Monitoring Agent"
 $Script:InstallDir = "C:\Program Files\NanoLink"

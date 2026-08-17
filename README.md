@@ -1,4 +1,4 @@
-﻿# NanoLink
+# NanoLink
 
 [![Test](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml)
 [![Release](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml)
@@ -794,7 +794,7 @@ TLS already uses asymmetric cryptography for authentication and key agreement, p
 <dependency>
     <groupId>com.kkape</groupId>
     <artifactId>nanolink-sdk</artifactId>
-    <version>0.4.9</version>
+    <version>0.4.10</version>
 </dependency>
 ```
 

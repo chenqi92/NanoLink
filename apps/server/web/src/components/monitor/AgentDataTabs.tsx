@@ -6,6 +6,7 @@ import { Modal } from "@/components/shell/Dialog"
 import { formatBytes, toneFor } from "@/lib/format"
 import { ContentState, LoadingState, RequestState } from "@/components/shell/RequestState"
 import { userErrorMessage } from "@/lib/errors"
+import { isServiceActive } from "@/lib/fleet"
 
 const SERVICE_CONTROL_LEVEL = 2
 
@@ -218,7 +219,7 @@ export function ServicesTab({ agentId, permission = 0 }: { agentId: string; perm
             <thead><tr><th>{t("mon.tabServices")}</th><th>{t("acc.status")}</th><th>{t("mon.state")}</th><th>{t("dev.uptime")}</th><th style={{ textAlign: "right" }}>{t("dev.restarts")}</th><th>{t("dev.path")}</th><th style={{ textAlign: "right" }}>{t("dev.actions")}</th></tr></thead>
             <tbody>
               {rows.slice(0, 400).map((s, i) => {
-                const active = /active|running/i.test(s.status) || /running/i.test(s.subState || "")
+                const active = isServiceActive(s.status, s.subState)
                 const failed = /fail/i.test(s.status) || /fail|dead/i.test(s.subState || "")
                 const k = (op: string) => `svc-${op}-${s.name}`
                 return (

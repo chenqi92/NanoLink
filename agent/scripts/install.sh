@@ -13,7 +13,7 @@ set -e
 # =============================================================================
 # Configuration
 # =============================================================================
-VERSION="0.4.9"
+VERSION="0.4.10"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/nanolink"
 LOG_DIR="/var/log/nanolink"
@@ -1265,24 +1265,25 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/run/nanolink /var/log/nanolink /var/lib/nanolink /usr/local/bin -/opt/nanolink/apps -/var/www/nanolink -/var/lib/nanolink/builds
-ReadOnlyPaths=/etc/nanolink
+ReadWriteDirectories=/run/nanolink /var/log/nanolink /var/lib/nanolink /usr /etc -/opt/nanolink/apps -/var/www/nanolink -/var/lib/nanolink/builds
+ReadOnlyDirectories=/etc/nanolink
 
 # Resource limits
-MemoryMax=128M
-CPUQuota=10%
+MemoryLimit=512M
+CPUQuota=100%
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
     # systemd before v232 (for example CentOS 7's v219) does not understand
-    # ProtectSystem=strict. Fall back to the strongest supported mode instead
-    # of silently dropping filesystem protection for the whole service.
+    # ProtectSystem=strict and cannot reliably make /usr writable again after
+    # ProtectSystem=full. Package installation therefore needs protection
+    # disabled on those hosts; /etc/nanolink remains explicitly read-only.
     local systemd_version
     systemd_version="$(systemctl --version 2>/dev/null | awk 'NR == 1 { print $2 }')"
     if [[ "$systemd_version" =~ ^[0-9]+$ ]] && (( systemd_version < 232 )); then
-        sed -i 's/^ProtectSystem=strict$/ProtectSystem=full/' /etc/systemd/system/nanolink-agent.service
+        sed -i 's/^ProtectSystem=strict$/ProtectSystem=false/' /etc/systemd/system/nanolink-agent.service
     fi
 
     systemctl daemon-reload

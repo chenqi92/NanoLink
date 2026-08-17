@@ -21,17 +21,21 @@ ExecStartPre=/usr/bin/chmod 0750 /run/nanolink
 
 # Security hardening
 NoNewPrivileges=true
-ProtectSystem=strict
+ProtectSystem=false
 ProtectHome=true
 PrivateTmp=true
 # Optional deployment roots are writable only when they exist. Deployment is
 # still disabled by default in nanolink.yaml and restricted by allowed_roots.
-ReadWritePaths=/run/nanolink /var/log/nanolink /usr/local/bin -/opt/nanolink/apps -/var/www/nanolink -/var/lib/nanolink/builds
-ReadOnlyPaths=/etc/nanolink
+# Use the legacy directive names because they are also understood by modern
+# systemd and keep package/config operations working on systemd 219 hosts.
+ReadWriteDirectories=/run/nanolink /var/log/nanolink /usr /etc -/opt/nanolink/apps -/var/www/nanolink -/var/lib/nanolink/builds
+ReadOnlyDirectories=/etc/nanolink
 
 # Resource limits
-MemoryMax=128M
-CPUQuota=10%
+# Package installation and archive staging run in the Agent cgroup. Leave
+# enough burst capacity so management work cannot starve gRPC heartbeats.
+MemoryLimit=512M
+CPUQuota=100%
 
 [Install]
 WantedBy=multi-user.target

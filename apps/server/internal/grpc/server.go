@@ -142,6 +142,7 @@ type Server struct {
 	authInterceptor *AuthInterceptor
 	agents          map[string]*GrpcAgent
 	agentsMu        sync.RWMutex
+	disconnectGrace time.Duration
 
 	// Event subscribers for dashboard
 	agentEventSubscribers []chan *pb.AgentEvent
@@ -162,17 +163,23 @@ type Server struct {
 	metricsHistoryMu sync.Mutex
 }
 
-// registerAgentIfAbsent atomically reserves an agent ID for one active gRPC
-// stream. Duplicate processes using the same persistent ID are rejected instead
-// of replacing the dashboard's healthy connection and making its status flap.
-func (s *Server) registerAgentIfAbsent(agentID string, agent *GrpcAgent) bool {
+// replaceAgent atomically promotes the newest authenticated stream for an agent
+// ID. A transport proxy can keep the old upstream HTTP/2 stream alive after the
+// Agent has already detected a broken downstream connection. Rejecting the new
+// stream in that window traps the Agent in an AlreadyExists reconnect loop, so
+// the newest authenticated session must take ownership instead.
+func (s *Server) replaceAgent(agentID string, agent *GrpcAgent) *GrpcAgent {
 	s.agentsMu.Lock()
 	defer s.agentsMu.Unlock()
-	if _, exists := s.agents[agentID]; exists {
-		return false
-	}
+	previous := s.agents[agentID]
 	s.agents[agentID] = agent
-	return true
+	return previous
+}
+
+func (s *Server) isCurrentAgent(agentID string, agent *GrpcAgent) bool {
+	s.agentsMu.RLock()
+	defer s.agentsMu.RUnlock()
+	return s.agents[agentID] == agent
 }
 
 // removeAgentIfCurrent prevents a stale stream's deferred cleanup from
@@ -185,6 +192,40 @@ func (s *Server) removeAgentIfCurrent(agentID string, agent *GrpcAgent) bool {
 	}
 	delete(s.agents, agentID)
 	return true
+}
+
+const defaultAgentDisconnectGrace = 60 * time.Second
+
+func (s *Server) agentDisconnectGrace() time.Duration {
+	if s.disconnectGrace > 0 {
+		return s.disconnectGrace
+	}
+	return defaultAgentDisconnectGrace
+}
+
+// scheduleAgentDisconnect keeps the last session visible during a short
+// reconnect window. If a replacement stream arrives, pointer identity prevents
+// the stale timer from unregistering that newer session.
+func (s *Server) scheduleAgentDisconnect(agentID string, agent *GrpcAgent) {
+	agent.markClosed()
+	grace := s.agentDisconnectGrace()
+	time.AfterFunc(grace, func() {
+		if !s.removeAgentIfCurrent(agentID, agent) {
+			hostname, _ := agent.identity()
+			s.logger.Infof("Superseded gRPC stream cleanup skipped for %s (%s)", hostname, agentID)
+			return
+		}
+
+		s.agentService.UnregisterAgent(agentID)
+		s.metricsService.RemoveAgent(agentID)
+		s.metricsHistoryMu.Lock()
+		delete(s.metricsHistory, agentID)
+		s.metricsHistoryMu.Unlock()
+
+		hostname, _ := agent.identity()
+		s.logger.Infof("gRPC agent disconnected after %s grace: %s (%s)", grace, hostname, agentID)
+		s.notifyAgentEvent(pb.AgentEvent_DISCONNECTED, agent)
+	})
 }
 
 // maxMetricsHistory bounds the per-agent SyncMetrics buffer.
@@ -304,11 +345,9 @@ func (s *Server) Start(port int, tlsCert, tlsKey, clientCAPath string) error {
 
 	// Configure keepalive
 	opts = append(opts, grpc.KeepaliveParams(keepalive.ServerParameters{
-		MaxConnectionIdle:     5 * time.Minute,
-		MaxConnectionAge:      30 * time.Minute,
-		MaxConnectionAgeGrace: 5 * time.Second,
-		Time:                  30 * time.Second,
-		Timeout:               10 * time.Second,
+		MaxConnectionIdle: 15 * time.Minute,
+		Time:              30 * time.Second,
+		Timeout:           10 * time.Second,
 	}))
 
 	opts = append(opts, grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
@@ -502,8 +541,25 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 	permissionLevel = effectiveAgentPermission(permissionLevel, agent.RemoteReadOnly)
 	agent.PermissionLevel = int32(permissionLevel)
 
-	// Send immediate HeartbeatAck after authentication to prevent client-side timeout
-	// (Some clients have RPC timeout that kills the stream if no response is received)
+	// Promote the newest authenticated session before acknowledging stream
+	// readiness. The ACK is the Agent's signal that it may start the relatively
+	// expensive layered collector, so sending it before registration caused every
+	// rejected reconnect to initialize another collector.
+	if previous := s.replaceAgent(agentID, agent); previous != nil && previous != agent {
+		previous.markClosed()
+		s.logger.Warnf("Replaced previous gRPC connection for %s (%s)", agent.Hostname, agentID)
+	}
+	defer s.scheduleAgentDisconnect(agentID, agent)
+
+	// Also register to AgentService so it appears in dashboard API
+	s.agentService.RegisterGrpcAgent(agentID, service.AgentInfo{
+		Hostname: agent.Hostname,
+		OS:       agent.OS,
+		Arch:     agent.Arch,
+		Version:  agent.Version,
+	}, int(agent.PermissionLevel))
+
+	// Send the readiness ACK only after the stream owns the persistent agent ID.
 	initAck := &pb.MetricsStreamResponse{
 		Response: &pb.MetricsStreamResponse_HeartbeatAck{
 			HeartbeatAck: &pb.HeartbeatAck{
@@ -516,22 +572,6 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 		return err
 	}
 	s.logger.Info("StreamMetrics: Sent initial heartbeat ack")
-
-	// Reserve the persistent ID for exactly one active stream. This protects the
-	// service even when an older Agent binary without a local instance lock is
-	// accidentally started alongside the supervised process.
-	if !s.registerAgentIfAbsent(agentID, agent) {
-		s.logger.Warnf("Rejected duplicate gRPC connection for %s (%s)", agent.Hostname, agentID)
-		return status.Errorf(codes.AlreadyExists, "agent %s is already connected", agentID)
-	}
-
-	// Also register to AgentService so it appears in dashboard API
-	s.agentService.RegisterGrpcAgent(agentID, service.AgentInfo{
-		Hostname: agent.Hostname,
-		OS:       agent.OS,
-		Arch:     agent.Arch,
-		Version:  agent.Version,
-	}, int(agent.PermissionLevel))
 
 	// Auto-sync agent to database for persistence
 	if s.agentTokenService != nil {
@@ -546,29 +586,6 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 
 	// Notify subscribers
 	s.notifyAgentEvent(pb.AgentEvent_CONNECTED, agent)
-
-	// Handle disconnection
-	defer func() {
-		if !s.removeAgentIfCurrent(agentID, agent) {
-			agent.markClosed()
-			s.logger.Infof("Stale gRPC stream closed without unregistering current agent: %s (%s)", agent.Hostname, agentID)
-			return
-		}
-
-		// Unregister from AgentService
-		s.agentService.UnregisterAgent(agentID)
-
-		// Clean up metrics data to prevent accumulation on reconnect with new ID
-		s.metricsService.RemoveAgent(agentID)
-		s.metricsHistoryMu.Lock()
-		delete(s.metricsHistory, agentID)
-		s.metricsHistoryMu.Unlock()
-
-		agent.markClosed()
-
-		s.logger.Infof("gRPC agent disconnected: %s (%s)", agent.Hostname, agentID)
-		s.notifyAgentEvent(pb.AgentEvent_DISCONNECTED, agent)
-	}()
 
 	// Process first message
 	s.processStreamMessage(agent, firstMsg)
@@ -596,8 +613,15 @@ func (s *Server) StreamMetrics(stream pb.NanoLinkService_StreamMetricsServer) er
 			return nil
 		}
 		if err != nil {
-			s.logger.Errorf("Stream error from %s: %v", agent.Hostname, err)
+			if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
+				s.logger.Infof("Stream closed for %s: %v", agent.Hostname, err)
+			} else {
+				s.logger.Errorf("Stream error from %s: %v", agent.Hostname, err)
+			}
 			return err
+		}
+		if !s.isCurrentAgent(agentID, agent) {
+			return status.Error(codes.Canceled, "stream superseded by a newer connection")
 		}
 
 		s.processStreamMessage(agent, msg)

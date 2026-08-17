@@ -34,12 +34,16 @@ func (AgentToken) TableName() string {
 	return "agent_tokens"
 }
 
-// IsOnline returns true if the agent was seen within the last 30 seconds
+const AgentOnlineWindow = 120 * time.Second
+
+// IsOnline allows several missed 30-second heartbeats before declaring an
+// agent offline. Using the heartbeat interval itself as the timeout made normal
+// scheduler and network jitter appear as an outage.
 func (a *AgentToken) IsOnline() bool {
 	if a.LastSeenAt == nil {
 		return false
 	}
-	return time.Since(*a.LastSeenAt) < 30*time.Second
+	return time.Since(*a.LastSeenAt) < AgentOnlineWindow
 }
 
 // MaskToken returns a masked version of the token for display

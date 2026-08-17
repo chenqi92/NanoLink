@@ -404,8 +404,7 @@ fn parse_request(
         validate_image(&container_image)?;
         if !cfg.allowed_images.is_empty() && !cfg.allowed_images.contains(&container_image) {
             return Err(format!(
-                "Container image '{}' is not allowed",
-                container_image
+                "Container image '{container_image}' is not allowed"
             ));
         }
     }
@@ -829,7 +828,7 @@ where
                 return if status.success() {
                     Ok(output)
                 } else {
-                    Err(format!("{}\nProcess exited with {}", output, status))
+                    Err(format!("{output}\nProcess exited with {status}"))
                 };
             }
             Ok(None) if start.elapsed() >= timeout => {
@@ -1322,8 +1321,10 @@ mod tests {
 
     #[test]
     fn validates_server_managed_git_authentication() {
-        let mut cfg = BuildsConfig::default();
-        cfg.enabled = true;
+        let cfg = BuildsConfig {
+            enabled: true,
+            ..Default::default()
+        };
         let mut params = valid_git_params();
         params.insert("git_auth_type".into(), "basic".into());
         params.insert("git_username".into(), "builder".into());

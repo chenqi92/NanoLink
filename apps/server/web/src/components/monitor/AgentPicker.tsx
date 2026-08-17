@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { useData } from "@/contexts/DataContext"
 import { agentStatus } from "@/lib/format"
+import { reconcileAgentSelection } from "@/lib/fleet"
 
 /** Dropdown to pick an agent (online first); auto-selects the first online one. */
 export function AgentPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
@@ -8,10 +9,8 @@ export function AgentPicker({ value, onChange }: { value: string; onChange: (id:
   const sorted = [...agents].sort((a, b) => Number(agentStatus(b.lastHeartbeat) === "online") - Number(agentStatus(a.lastHeartbeat) === "online"))
 
   useEffect(() => {
-    if (!value && sorted.length) {
-      const firstOnline = sorted.find((a) => agentStatus(a.lastHeartbeat) === "online") || sorted[0]
-      onChange(firstOnline.id)
-    }
+    const nextValue = reconcileAgentSelection(value, sorted)
+    if (nextValue !== value) onChange(nextValue)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, agents])
 
