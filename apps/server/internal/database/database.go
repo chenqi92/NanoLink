@@ -55,7 +55,7 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 			cfg.Path = "./data/nanolink.db"
 		}
 		// Ensure directory exists
-		if err := os.MkdirAll("./data", 0755); err != nil {
+		if err := os.MkdirAll("./data", 0o750); err != nil {
 			return fmt.Errorf("failed to create data directory: %w", err)
 		}
 		// WAL lets readers continue while a writer commits. The busy timeout

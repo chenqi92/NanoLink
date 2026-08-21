@@ -1,0 +1,44 @@
+[Unit]
+Description=NanoOps Server
+Documentation=file:///data/nanoops/README_CN.md
+Wants=network-online.target
+After=network-online.target local-fs.target
+ConditionFileIsExecutable=/data/nanoops/nanoops-server
+ConditionPathExists=/data/nanoops/config.yaml
+ConditionPathExists=/data/nanoops/server.env
+
+[Service]
+Type=simple
+User=nanoops
+Group=nanoops
+WorkingDirectory=/data/nanoops
+EnvironmentFile=/data/nanoops/server.env
+ExecStart=/data/nanoops/nanoops-server -config /data/nanoops/config.yaml
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+UMask=0027
+LimitNOFILE=65536
+
+# Keep the unit compatible with systemd 219 (CentOS 7) while making the
+# application directory read-only except for the persistent data directory.
+ProtectSystem=full
+ReadOnlyDirectories=/data/nanoops
+ReadWriteDirectories=/data/nanoops/data
+
+# General systemd hardening.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nanoops-server
+
+[Install]
+WantedBy=multi-user.target

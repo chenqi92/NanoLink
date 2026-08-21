@@ -326,7 +326,7 @@ func (s *AuthService) RegisterUser(username, password, email string) (*database.
 // saved the setting yet.
 func (s *AuthService) PublicRegistrationEnabled() (bool, error) {
 	var setting database.Setting
-	if err := s.db.First(&setting, "key = ?", publicRegistrationSettingKey).Error; err != nil {
+	if err := s.db.Where(map[string]any{"key": publicRegistrationSettingKey}).First(&setting).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if !s.allowPublicRegistration {
 				return false, nil

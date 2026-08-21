@@ -155,7 +155,7 @@ func (m *LLMSettingsManager) Update(ctx context.Context, update LLMSettingsUpdat
 		}
 
 		if update.ClearAPIKey {
-			return tx.Delete(&database.Setting{}, "key = ?", llmSettingAPIKey).Error
+			return tx.Where(map[string]any{"key": llmSettingAPIKey}).Delete(&database.Setting{}).Error
 		}
 		if apiKey := strings.TrimSpace(update.APIKey); apiKey != "" {
 			sealed, err := m.encrypt(apiKey)
@@ -174,7 +174,7 @@ func (m *LLMSettingsManager) Update(ctx context.Context, update LLMSettingsUpdat
 
 func (m *LLMSettingsManager) load(ctx context.Context) (LLMConfig, string, error) {
 	var rows []database.Setting
-	if err := m.db.WithContext(ctx).Where("key IN ?", llmSettingKeys).Find(&rows).Error; err != nil {
+	if err := m.db.WithContext(ctx).Where(map[string]any{"key": llmSettingKeys}).Find(&rows).Error; err != nil {
 		return LLMConfig{}, "none", err
 	}
 	values := make(map[string]string, len(rows))

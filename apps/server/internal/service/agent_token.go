@@ -21,14 +21,36 @@ func NewAgentTokenService(db *gorm.DB, logger *zap.SugaredLogger) *AgentTokenSer
 	// Guarantee at most one token row per (live) agent. Partial index so the many
 	// admin-created tokens not yet bound to an agent (agent_id == '') don't collide.
 	// This is what historically prevented duplicate/auto-mirrored token rows.
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_tokens_agent_id ` +
-		`ON agent_tokens(agent_id) WHERE agent_id != '' AND deleted_at IS NULL`).Error; err != nil {
+	if err := ensureLiveAgentIDUniqueIndex(db); err != nil {
 		logger.Warnf("Failed to create unique index on agent_tokens.agent_id: %v", err)
 	}
 	return &AgentTokenService{
 		db:     db,
 		logger: logger,
 	}
+}
+
+func ensureLiveAgentIDUniqueIndex(db *gorm.DB) error {
+	const indexName = "ux_agent_tokens_live_agent_id"
+	if db.Dialector.Name() != "mysql" {
+		return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS ` + indexName +
+			` ON agent_tokens(agent_id) WHERE agent_id != '' AND deleted_at IS NULL`).Error
+	}
+
+	// MySQL 5.7 has neither partial indexes nor CREATE INDEX IF NOT EXISTS.
+	// A generated nullable key provides the same semantics because a unique
+	// index permits multiple NULL values but rejects duplicate live agent IDs.
+	if !db.Migrator().HasColumn(&database.AgentToken{}, "live_agent_id") {
+		if err := db.Exec(`ALTER TABLE agent_tokens ADD COLUMN live_agent_id VARCHAR(100) ` +
+			`GENERATED ALWAYS AS (CASE WHEN agent_id <> '' AND deleted_at IS NULL ` +
+			`THEN agent_id ELSE NULL END) STORED`).Error; err != nil {
+			return err
+		}
+	}
+	if db.Migrator().HasIndex(&database.AgentToken{}, indexName) {
+		return nil
+	}
+	return db.Exec(`CREATE UNIQUE INDEX ` + indexName + ` ON agent_tokens(live_agent_id)`).Error
 }
 
 // GenerateToken generates a secure random token

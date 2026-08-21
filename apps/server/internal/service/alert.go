@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"net/smtp"
 	"os"
 	"strings"
@@ -467,6 +468,14 @@ func sanitizeEmailHeaderValue(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
+func parseMailboxAddress(value string) (*mail.Address, error) {
+	address, err := mail.ParseAddress(strings.TrimSpace(value))
+	if err != nil || address.Address == "" || strings.ContainsAny(address.Address, "\r\n") {
+		return nil, fmt.Errorf("invalid mailbox address")
+	}
+	return address, nil
+}
+
 // postJSON POSTs a JSON payload to an operator-configured webhook target URL.
 func postJSON(target string, payload interface{}) error {
 	target = strings.TrimSpace(target)
@@ -501,9 +510,9 @@ func sendEmail(to string, inst database.AlertInstance) error {
 	if to == "" {
 		return fmt.Errorf("empty recipient")
 	}
-	safeTo := sanitizeEmailHeaderValue(to)
-	if safeTo == "" {
-		return fmt.Errorf("empty recipient")
+	recipient, err := parseMailboxAddress(to)
+	if err != nil {
+		return fmt.Errorf("invalid recipient address")
 	}
 	host := os.Getenv("SMTP_HOST")
 	if host == "" {
@@ -519,7 +528,12 @@ func sendEmail(to string, inst database.AlertInstance) error {
 	if from == "" {
 		from = user
 	}
-	safeFrom := sanitizeEmailHeaderValue(from)
+	sender, err := parseMailboxAddress(from)
+	if err != nil {
+		return fmt.Errorf("invalid sender address")
+	}
+	safeTo := recipient.String()
+	safeFrom := sender.String()
 	safeSubject := sanitizeEmailHeaderValue(fmt.Sprintf("[NanoLink][%s] %s", strings.ToUpper(inst.Level), inst.Title))
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
 		safeFrom, safeTo, safeSubject, formatAlertText(inst))
@@ -527,5 +541,8 @@ func sendEmail(to string, inst database.AlertInstance) error {
 	if user != "" {
 		auth = smtp.PlainAuth("", user, pass, host)
 	}
-	return smtp.SendMail(host+":"+port, auth, safeFrom, []string{safeTo}, []byte(msg))
+	// Both SMTP envelope values and their rendered header forms come from
+	// net/mail parsing above, so untrusted CRLF/SMTP parameters cannot reach the
+	// command stream.
+	return smtp.SendMail(host+":"+port, auth, sender.Address, []string{recipient.Address}, []byte(msg)) // #nosec G707 -- addresses are strictly parsed above
 }

@@ -1,0 +1,71 @@
+server:
+  # The installer can override these values through /data/nanoops/server.env.
+  # Keep all three ports >= 1024 because the service runs without root privileges.
+  http_port: 18080
+  ws_port: 19100
+  grpc_port: 39100
+  mode: release
+  allowed_origins: []
+  # The recommended nginx deployment connects from loopback. Trust no other
+  # forwarding headers unless the proxy IP/CIDR is explicitly added here.
+  trusted_proxies:
+    - 127.0.0.1/32
+    - ::1/128
+  max_request_body_bytes: 1048576
+
+auth:
+  # This controls only legacy static Agent tokens. Dashboard account login and
+  # DB-backed Agent tokens remain available. Leave public registration closed.
+  enabled: false
+  allow_public_registration: false
+
+storage:
+  type: sqlite
+  path: /data/nanoops/data/nanoops.db
+
+database:
+  type: sqlite
+  path: /data/nanoops/data/nanoops.db
+
+metrics:
+  retention_days: 7
+  hourly_retention_days: 30
+  daily_retention_days: 365
+  max_agents: 100
+  persist_to_db: true
+  max_memory_history: 600
+  prometheus_enabled: false
+
+timeseries:
+  type: memory
+  retention_days: 7
+  max_entries: 600
+
+mcp:
+  enabled: false
+
+llm:
+  enabled: false
+
+deployment:
+  storage_path: /data/nanoops/data/artifacts
+  max_artifact_bytes: 536870912
+  download_ttl_minutes: 30
+
+build:
+  storage_path: /data/nanoops/data/builds
+  allowed_source_hosts: []
+  max_source_bytes: 536870912
+  max_artifact_bytes: 536870912
+  download_ttl_minutes: 60
+  fetch_timeout_seconds: 300
+  max_log_bytes: 2097152
+
+# Standalone packages are upgraded by replacing the binary deliberately. This
+# disables the network-facing self-update path until a signed update policy is
+# explicitly designed and enabled by the operator.
+update:
+  source: disabled
+  auto_check: false
+  require_signature: true
+
