@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { agentsApi, deploymentsApi, type Agent, type ApiError, type DeploymentProject, type DeploymentProjectDetail, type DeploymentProjectInput, type DeploymentRelease, type DeploymentTask } from "@/lib/api"
+import { agentsApi, deploymentsApi, type Agent, type ApiError, type DeploymentProject, type DeploymentProjectDetail, type DeploymentProjectInput, type DeploymentRelease, type DeploymentTarget, type DeploymentTask } from "@/lib/api"
 import { I } from "@/lib/icons"
 import { ConfirmDialog, Modal } from "@/components/shell/Dialog"
 import { EmptyState, FormBlock, PageHeader } from "@/components/shell/primitives"
 import "./deployments.css"
 import { completedDeploymentSteps, DEPLOYMENT_STEPS } from "@/lib/fleet"
 import { findReconciledDeploymentTask } from "@/lib/deployment"
+import { RemoteDeploymentManager } from "@/components/deployments/RemoteDeploymentManager"
 
 const terminal = (status?: string) => status === "success" || status === "failed"
 
@@ -14,6 +15,7 @@ export function DeploymentsScreen() {
   const { t } = useTranslation()
   const [projects, setProjects] = useState<DeploymentProject[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
+  const [targets, setTargets] = useState<DeploymentTarget[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [detail, setDetail] = useState<DeploymentProjectDetail | null>(null)
   const [liveTask, setLiveTask] = useState<DeploymentTask | null>(null)
@@ -23,13 +25,15 @@ export function DeploymentsScreen() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [confirm, setConfirm] = useState<{ release: DeploymentRelease; action: "deploy" | "rollback" } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [remoteManagerOpen, setRemoteManagerOpen] = useState(false)
 
   const loadProjects = useCallback(async () => {
     setLoading(true)
     try {
-      const [projectRows, agentRows] = await Promise.all([deploymentsApi.projects(), agentsApi.list()])
+      const [projectRows, agentRows, targetRows] = await Promise.all([deploymentsApi.projects(), agentsApi.list(), deploymentsApi.targets()])
       setProjects(projectRows)
       setAgents(agentRows)
+      setTargets(targetRows)
       setSelectedId((current) => current ?? projectRows[0]?.id ?? null)
       setError(null)
     } catch (e) {
@@ -77,6 +81,7 @@ export function DeploymentsScreen() {
   }, [liveTaskId, liveTaskStatus, selectedId, loadDetail, loadProjects])
 
   const hostname = useMemo(() => new Map(agents.map((a) => [a.id, a.hostname])), [agents])
+  const targetById = useMemo(() => new Map(targets.map((target) => [target.id, target])), [targets])
   const currentRelease = detail?.releases.find((r) => r.id === detail.currentReleaseId)
   const currentExtract = currentRelease?.extract ?? detail?.extractArchive ?? true
 
@@ -137,6 +142,7 @@ export function DeploymentsScreen() {
         actions={
           <>
             <button className="btn" onClick={loadProjects}>{I.refresh({ size: 13 })}<span>{t("common.refresh")}</span></button>
+            <button className="btn" onClick={() => setRemoteManagerOpen(true)}>{I.globe({ size: 13 })}<span>{t("deploy.remote.manage")}</span></button>
             <button className="btn btn-primary" onClick={() => setProjectModal("new")}>{I.plus({ size: 13 })}<span>{t("deploy.newProject")}</span></button>
           </>
         }
@@ -158,7 +164,7 @@ export function DeploymentsScreen() {
                   <span className={`deploy-project-mark ${project.type}`}>{project.type === "java" ? "J" : "S"}</span>
                   <span className="col flex-1" style={{ gap: 2, minWidth: 0 }}>
                     <span className="truncate" style={{ fontWeight: 500 }}>{project.name}</span>
-                    <span className="mono truncate dim" style={{ fontSize: 10.5 }}>{hostname.get(project.agentId) ?? project.agentId}</span>
+                    <span className="mono truncate dim" style={{ fontSize: 10.5 }}>{project.targetId ? targetById.get(project.targetId)?.name ?? project.targetId : hostname.get(project.agentId) ?? project.agentId}</span>
                   </span>
                   <span className={`dot ${project.currentReleaseId ? "ok" : "off"}`} />
                 </button>
@@ -191,6 +197,7 @@ export function DeploymentsScreen() {
                     </div>
                     <div className="deploy-meta mono">
                       <span>{I.agents({ size: 12 })} {hostname.get(detail.agentId) ?? detail.agentId}</span>
+                      {detail.targetId && <span>{I.globe({ size: 12 })} {targetById.get(detail.targetId)?.name ?? detail.targetId} · {targetById.get(detail.targetId)?.host}</span>}
                       <span>{I.disk({ size: 12 })} {detail.deployPath}</span>
                       {detail.type === "static" && <span>{currentExtract ? I.expand({ size: 12 }) : I.disk({ size: 12 })} {t(currentExtract ? "deploy.extractEnabled" : "deploy.extractDisabled")}</span>}
                       {detail.serviceName && <span>{I.power({ size: 12 })} {detail.serviceName}</span>}
@@ -254,9 +261,10 @@ export function DeploymentsScreen() {
         </main>
       </div>
 
-      {projectModal && <ProjectModal agents={agents} project={projectModal === "new" ? undefined : projectModal} onClose={() => setProjectModal(null)} onSaved={async (project) => { setProjectModal(null); await loadProjects(); setSelectedId(project.id); await loadDetail(project.id) }} />}
+      {projectModal && <ProjectModal agents={agents} targets={targets} project={projectModal === "new" ? undefined : projectModal} onClose={() => setProjectModal(null)} onSaved={async (project) => { setProjectModal(null); await loadProjects(); setSelectedId(project.id); await loadDetail(project.id) }} />}
       {uploadOpen && detail && <UploadReleaseModal project={detail} onClose={() => setUploadOpen(false)} onUploaded={async () => { setUploadOpen(false); await loadDetail(detail.id) }} />}
       {confirm && <ConfirmDialog title={confirm.action === "deploy" ? t("deploy.confirmDeploy") : t("deploy.confirmRollback")} message={t(confirm.action === "deploy" ? "deploy.confirmDeployDesc" : "deploy.confirmRollbackDesc", { version: confirm.release.version, project: detail?.name })} confirmLabel={confirm.action === "deploy" ? t("deploy.deployNow") : t("deploy.rollback")} danger={confirm.action === "rollback"} busy={busy} onConfirm={runRelease} onClose={() => setConfirm(null)} />}
+      {remoteManagerOpen && <Modal title={t("deploy.remote.title")} subtitle={t("deploy.remote.subtitle")} onClose={() => setRemoteManagerOpen(false)} width={920}><RemoteDeploymentManager agents={agents} onChanged={loadProjects} /></Modal>}
     </div>
   )
 }
@@ -314,12 +322,13 @@ function DeploymentHistory({ tasks, onSelect }: { tasks: DeploymentTask[]; onSel
   )
 }
 
-function ProjectModal({ agents, project, onClose, onSaved }: { agents: Agent[]; project?: DeploymentProject; onClose: () => void; onSaved: (project: DeploymentProject) => void }) {
+function ProjectModal({ agents, targets, project, onClose, onSaved }: { agents: Agent[]; targets: DeploymentTarget[]; project?: DeploymentProject; onClose: () => void; onSaved: (project: DeploymentProject) => void }) {
   const { t } = useTranslation()
   const [form, setForm] = useState<DeploymentProjectInput>({
     name: project?.name ?? "",
     type: project?.type ?? "java",
     agentId: project?.agentId ?? agents[0]?.id ?? "",
+    targetId: project?.targetId ?? null,
     deployPath: project?.deployPath ?? "/opt/nanolink/apps/",
     extractArchive: project?.extractArchive ?? true,
     serviceName: project?.serviceName ?? "",
@@ -329,6 +338,7 @@ function ProjectModal({ agents, project, onClose, onSaved }: { agents: Agent[]; 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   function set<K extends keyof DeploymentProjectInput>(key: K, value: DeploymentProjectInput[K]) { setForm({ ...form, [key]: value }) }
+  const destination = form.targetId ? `remote:${form.targetId}` : `local:${form.agentId}`
   async function save() {
     setBusy(true)
     try {
@@ -345,7 +355,7 @@ function ProjectModal({ agents, project, onClose, onSaved }: { agents: Agent[]; 
       <div className="deploy-form-grid">
         <FormBlock label={t("deploy.projectName")}><input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="orders-api" /></FormBlock>
         <FormBlock label={t("deploy.projectType")}><select className="select" value={form.type} onChange={(e) => { const type = e.target.value as "java" | "static"; setForm({ ...form, type, serviceName: type === "static" && !form.serviceName ? "nginx" : form.serviceName }) }}><option value="java">{t("deploy.typeJava")}</option><option value="static">{t("deploy.typeStatic")}</option></select></FormBlock>
-        <FormBlock label={t("deploy.targetAgent")}><select className="select" value={form.agentId} onChange={(e) => set("agentId", e.target.value)}>{agents.map((a) => <option key={a.id} value={a.id}>{a.hostname} · {a.id.slice(0, 8)}</option>)}</select></FormBlock>
+        <FormBlock label={t("deploy.targetAgent")}><select className="select" value={destination} onChange={(e) => { const [kind, raw] = e.target.value.split(":"); if (kind === "remote") { const target = targets.find((item) => item.id === Number(raw)); if (target) setForm({ ...form, targetId: target.id, agentId: target.agentId }) } else setForm({ ...form, targetId: null, agentId: raw }) }}>{agents.map((a) => <option key={a.id} value={`local:${a.id}`}>{t("deploy.remote.localAgent")} · {a.hostname}</option>)}{targets.map((target) => <option key={target.id} value={`remote:${target.id}`}>{t("deploy.remote.externalTarget")} · {target.name} ({target.host})</option>)}</select></FormBlock>
         <FormBlock label={t("deploy.keepReleases")}><input className="input" type="number" min={2} max={50} value={form.keepReleases} onChange={(e) => set("keepReleases", Number(e.target.value))} /></FormBlock>
         <div className="deploy-form-wide"><FormBlock label={t("deploy.deployPath")} hint={t("deploy.deployPathHint")}><input className="input mono" value={form.deployPath} onChange={(e) => set("deployPath", e.target.value)} placeholder={form.type === "java" ? "/opt/nanolink/apps/orders" : "/var/www/nanolink/portal"} /></FormBlock></div>
         {form.type === "static" && <div className="deploy-form-wide"><label className="deploy-toggle"><input type="checkbox" checked={form.extractArchive} onChange={(e) => set("extractArchive", e.target.checked)} /><span><strong>{t("deploy.extractArchive")}</strong><small>{t("deploy.extractArchiveHint")}</small></span></label></div>}

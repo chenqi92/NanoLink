@@ -78,3 +78,22 @@
 @media (prefers-reduced-motion: reduce) {
   .release-step.active .release-node { animation: none; }
 }
+
+.remote-manager { display: grid; gap: 14px; min-height: 420px; }
+.remote-manager .tabs { width: fit-content; }
+.remote-manager .tab { display: inline-flex; align-items: center; gap: 7px; }
+.remote-manager-head, .remote-editor-head, .remote-editor-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.remote-card-list { display: grid; gap: 8px; max-height: 430px; overflow: auto; padding-right: 2px; }
+.remote-card { display: flex; align-items: center; gap: 10px; min-height: 72px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+.remote-card-icon { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; border-radius: 10px; color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent); }
+.remote-editor { display: grid; gap: 16px; }
+.remote-editor-head { justify-content: flex-start; }
+.remote-editor-actions { justify-content: flex-end; padding-top: 4px; }
+.remote-script-source { min-height: 260px; resize: vertical; line-height: 1.55; }
+.remote-run-result { display: grid; gap: 10px; padding: 13px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); }
+
+@container app-viewport (max-width: 680px) {
+  .remote-card { align-items: flex-start; flex-wrap: wrap; }
+  .remote-card .flex-1 { flex-basis: calc(100% - 52px); }
+  .remote-manager-head { align-items: flex-start; }
+}

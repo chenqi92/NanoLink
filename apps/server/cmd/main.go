@@ -460,7 +460,7 @@ func main() {
 	h.SetAuditService(auditService)
 
 	deploymentHandler, err := handler.NewDeploymentHandler(
-		database.GetDB(), grpcServer, cfg.Deployment, cfg.Server.ExternalURL, sugar,
+		database.GetDB(), grpcServer, buildSecretCodec, cfg.Deployment, cfg.Server.ExternalURL, sugar,
 	)
 	if err != nil {
 		sugar.Fatalf("Failed to initialize deployment service: %v", err)
@@ -488,6 +488,17 @@ func main() {
 		deploymentAPI.POST("/deployment-projects/:id/releases/:releaseId/deploy", deploymentHandler.DeployRelease)
 		deploymentAPI.POST("/deployment-projects/:id/releases/:releaseId/rollback", deploymentHandler.RollbackRelease)
 		deploymentAPI.GET("/deployment-tasks/:taskId", deploymentHandler.GetTask)
+		deploymentAPI.GET("/deployment-targets", deploymentHandler.ListTargets)
+		deploymentAPI.POST("/deployment-targets", deploymentHandler.CreateTarget)
+		deploymentAPI.PUT("/deployment-targets/:id", deploymentHandler.UpdateTarget)
+		deploymentAPI.DELETE("/deployment-targets/:id", deploymentHandler.DeleteTarget)
+		deploymentAPI.GET("/environment-scripts", deploymentHandler.ListEnvironmentScripts)
+		deploymentAPI.GET("/environment-scripts/:id", deploymentHandler.GetEnvironmentScript)
+		deploymentAPI.POST("/environment-scripts", deploymentHandler.CreateEnvironmentScript)
+		deploymentAPI.PUT("/environment-scripts/:id", deploymentHandler.UpdateEnvironmentScript)
+		deploymentAPI.DELETE("/environment-scripts/:id", deploymentHandler.DeleteEnvironmentScript)
+		deploymentAPI.POST("/environment-scripts/:id/run", deploymentHandler.RunEnvironmentScript)
+		deploymentAPI.GET("/environment-script-runs/:runId", deploymentHandler.GetEnvironmentScriptRun)
 	}
 	deploymentUploadAPI := router.Group("/api")
 	deploymentUploadAPI.Use(handler.AuthMiddlewareWithDevices(authService, deviceService), handler.RequireSuperAdmin())

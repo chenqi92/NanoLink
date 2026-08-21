@@ -761,6 +761,7 @@ export interface DeploymentProject {
   name: string
   type: "java" | "static"
   agentId: string
+  targetId?: number | null
   deployPath: string
   extractArchive: boolean
   serviceName: string
@@ -812,6 +813,7 @@ export interface DeploymentProjectInput {
   name: string
   type: "java" | "static"
   agentId: string
+  targetId?: number | null
   deployPath: string
   extractArchive: boolean
   serviceName: string
@@ -828,6 +830,71 @@ export interface DeploymentUploadSession {
   uploadOffset: number
   chunkSize: number
   expiresAt: string
+}
+
+export interface DeploymentTarget {
+  id: number
+  name: string
+  agentId: string
+  host: string
+  port: number
+  username: string
+  authType: "password" | "private_key"
+  credentialConfigured: boolean
+  sshKnownHosts?: string
+  allowUnknownHost: boolean
+  useSudo: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DeploymentTargetInput {
+  name: string
+  agentId: string
+  host: string
+  port: number
+  username: string
+  authType: "password" | "private_key"
+  credential: string
+  sshKnownHosts: string
+  allowUnknownHost: boolean
+  useSudo: boolean
+}
+
+export interface EnvironmentScript {
+  id: number
+  name: string
+  description: string
+  targetId: number
+  content?: string
+  timeoutSeconds: number
+  target?: DeploymentTarget
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EnvironmentScriptInput {
+  name: string
+  description: string
+  targetId: number
+  content: string
+  timeoutSeconds: number
+}
+
+export interface EnvironmentScriptRun {
+  id: string
+  scriptId: number
+  targetId: number
+  agentId: string
+  commandId: string
+  status: "queued" | "running" | "success" | "failed"
+  output: string
+  error: string
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+  script?: EnvironmentScript
+  target?: DeploymentTarget
 }
 
 async function deploymentUploadFetch<T>(url: string, options: RequestInit): Promise<T> {
@@ -918,6 +985,17 @@ export const deploymentsApi = {
   deploy: (projectId: number, releaseId: string) => api.post<DeploymentTask>(`/deployment-projects/${projectId}/releases/${releaseId}/deploy`),
   rollback: (projectId: number, releaseId: string) => api.post<DeploymentTask>(`/deployment-projects/${projectId}/releases/${releaseId}/rollback`),
   task: (taskId: string) => api.get<DeploymentTask>(`/deployment-tasks/${taskId}`),
+  targets: () => api.get<DeploymentTarget[]>("/deployment-targets"),
+  createTarget: (body: DeploymentTargetInput) => api.post<DeploymentTarget>("/deployment-targets", body),
+  updateTarget: (id: number, body: DeploymentTargetInput) => api.put<DeploymentTarget>(`/deployment-targets/${id}`, body),
+  deleteTarget: (id: number) => api.delete(`/deployment-targets/${id}`),
+  environmentScripts: () => api.get<EnvironmentScript[]>("/environment-scripts"),
+  environmentScript: (id: number) => api.get<EnvironmentScript>(`/environment-scripts/${id}`),
+  createEnvironmentScript: (body: EnvironmentScriptInput) => api.post<EnvironmentScript>("/environment-scripts", body),
+  updateEnvironmentScript: (id: number, body: EnvironmentScriptInput) => api.put<EnvironmentScript>(`/environment-scripts/${id}`, body),
+  deleteEnvironmentScript: (id: number) => api.delete(`/environment-scripts/${id}`),
+  runEnvironmentScript: (id: number) => api.post<EnvironmentScriptRun>(`/environment-scripts/${id}/run`),
+  environmentScriptRun: (id: string) => api.get<EnvironmentScriptRun>(`/environment-script-runs/${id}`),
 }
 
 // Automated build pipelines

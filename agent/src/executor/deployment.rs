@@ -13,6 +13,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::config::{Config, DeploymentsConfig};
+use crate::executor::remote::{RemoteSession, shell_quote};
 use crate::proto::CommandResult;
 use crate::security::validation::validate_service_name;
 
@@ -126,6 +127,8 @@ pub struct DeploymentExecutor {
 
 #[derive(Clone)]
 struct DeploymentRequest {
+    deployment_mode: String,
+    remote_params: HashMap<String, String>,
     project_type: String,
     version: String,
     deploy_path: PathBuf,
@@ -157,6 +160,13 @@ impl DeploymentExecutor {
         let cfg = self.config.deployments.clone();
         let params = params.clone();
         let result = tokio::task::spawn_blocking(move || rollback_sync(&cfg, &params)).await;
+        command_result(result)
+    }
+
+    pub async fn execute_remote_script(&self, params: &HashMap<String, String>) -> CommandResult {
+        let cfg = self.config.deployments.clone();
+        let params = params.clone();
+        let result = tokio::task::spawn_blocking(move || remote_script_sync(&cfg, &params)).await;
         command_result(result)
     }
 }
@@ -201,6 +211,10 @@ fn deploy_sync(
         req.project_type, req.version
     ));
     send_log_update(&req, &logs);
+
+    if req.deployment_mode == "ssh" {
+        return deploy_remote_sync(cfg, &req, logs);
+    }
 
     let releases = req.deploy_path.join("releases");
     if let Err(e) = fs::create_dir_all(&releases) {
@@ -356,6 +370,9 @@ fn rollback_sync(
     let mut logs = Vec::new();
     let req = parse_request(cfg, params, false).map_err(|e| (logs.clone(), e))?;
     logs.push(format!("[done] preflight rollback {}", req.version));
+    if req.deployment_mode == "ssh" {
+        return rollback_remote_sync(cfg, &req, logs);
+    }
     let release_path = req.deploy_path.join("releases").join(&req.version);
     if !release_path.is_dir()
         || fs::symlink_metadata(&release_path)
@@ -389,6 +406,452 @@ fn rollback_sync(
     Ok(logs)
 }
 
+fn deploy_remote_sync(
+    cfg: &DeploymentsConfig,
+    req: &DeploymentRequest,
+    mut logs: Vec<String>,
+) -> DeploymentWorkResult {
+    let work_dir = std::env::temp_dir().join(format!("nanolink-remote-deploy-{}", Uuid::new_v4()));
+    if let Err(error) = fs::create_dir(&work_dir) {
+        return fail_with_update(
+            req,
+            logs,
+            format!("Failed to create remote deployment workspace: {error}"),
+        );
+    }
+    let artifact_path = work_dir.join("artifact.part");
+    let result = (|| -> Result<Vec<String>, String> {
+        let download = download_artifact(
+            cfg,
+            req.artifact_url.as_deref().unwrap_or_default(),
+            &artifact_path,
+            req.artifact_size.unwrap_or_default(),
+        )?;
+        logs.push(format!("[done] download {} bytes", download.size));
+        send_log_update(req, &logs);
+        verify_artifact(
+            &artifact_path,
+            req.artifact_size.unwrap_or_default(),
+            req.artifact_sha256.as_deref().unwrap_or_default(),
+        )?;
+        logs.push("[done] verify sha256".to_string());
+        send_log_update(req, &logs);
+
+        if req.project_type == "static" && req.extract_artifact {
+            validate_archive_entries(
+                &artifact_path,
+                req.artifact_name.as_deref().unwrap_or_default(),
+            )?;
+            logs.push("[done] inspect archive paths".to_string());
+            send_log_update(req, &logs);
+        }
+
+        let remote = RemoteSession::connect(
+            &deployment_remote_params(req)?,
+            Duration::from_secs(cfg.timeout_seconds),
+        )?;
+        logs.push("[done] ssh connect and authenticate".to_string());
+        send_log_update(req, &logs);
+
+        let transfer_id = Uuid::new_v4();
+        let remote_artifact = format!("/tmp/nanolink-{transfer_id}-artifact");
+        remote.upload_file(&artifact_path, &remote_artifact)?;
+        logs.push(format!("[done] upload {} bytes over sftp", download.size));
+        send_log_update(req, &logs);
+
+        let deploy_path = req.deploy_path.to_string_lossy();
+        let releases = format!("{deploy_path}/releases");
+        let release_path = format!("{releases}/{}", req.version);
+        let stage = format!("{releases}/.staging-{transfer_id}");
+        let current = format!("{deploy_path}/current");
+        let switch = format!("{deploy_path}/.current-{transfer_id}");
+        let prepare = format!(
+            "set -eu; mkdir -p {releases}; test ! -e {release}; rm -rf {stage}; mkdir {stage}",
+            releases = shell_quote(&releases),
+            release = shell_quote(&release_path),
+            stage = shell_quote(&stage),
+        );
+        if let Err(error) = remote.exec_privileged(&prepare) {
+            let _ = remote.exec(&format!("rm -f {}", shell_quote(&remote_artifact)));
+            return Err(error);
+        }
+
+        let stage_result =
+            stage_remote_artifact(&remote, req, &remote_artifact, &stage).and_then(|_| {
+                remote.exec_privileged(&format!(
+                    "set -eu; mv {} {}",
+                    shell_quote(&stage),
+                    shell_quote(&release_path)
+                ))
+            });
+        if let Err(error) = stage_result {
+            let _ = remote.exec(&format!("rm -f {}", shell_quote(&remote_artifact)));
+            let _ = remote.exec_privileged(&format!("rm -rf {}", shell_quote(&stage)));
+            return Err(error);
+        }
+        logs.push(format!("[done] stage {release_path}"));
+        send_log_update(req, &logs);
+
+        let previous = remote
+            .exec(&format!(
+                "readlink {} 2>/dev/null || true",
+                shell_quote(&current)
+            ))?
+            .trim()
+            .to_string();
+        activate_remote_release(&remote, &release_path, &switch, &current)?;
+        logs.push(format!("[done] activate {}", req.version));
+        send_log_update(req, &logs);
+
+        if let Err(error) = restart_remote_service(&remote, req) {
+            restore_remote_release(
+                &remote,
+                req,
+                &previous,
+                &switch,
+                &current,
+                &release_path,
+                &mut logs,
+            );
+            return Err(error);
+        }
+        logs.push(format!("[done] service {}", service_action_label(req)));
+        send_log_update(req, &logs);
+
+        if let Err(error) = check_remote_health(&remote, &req.health_url) {
+            restore_remote_release(
+                &remote,
+                req,
+                &previous,
+                &switch,
+                &current,
+                &release_path,
+                &mut logs,
+            );
+            return Err(error);
+        }
+        logs.push(if req.health_url.is_empty() {
+            "[done] health check skipped".to_string()
+        } else {
+            "[done] health check passed".to_string()
+        });
+        send_log_update(req, &logs);
+
+        match prune_remote_releases(&remote, &releases, &release_path, req.keep_releases) {
+            Ok(()) => logs.push(format!(
+                "[done] retain latest {} releases",
+                req.keep_releases
+            )),
+            Err(error) => logs.push(format!("[warn] cleanup: {error}")),
+        }
+        send_log_update(req, &logs);
+        Ok(logs.clone())
+    })();
+    let _ = fs::remove_dir_all(&work_dir);
+    match result {
+        Ok(lines) => Ok(lines),
+        Err(error) => fail_with_update(req, logs, error),
+    }
+}
+
+fn rollback_remote_sync(
+    cfg: &DeploymentsConfig,
+    req: &DeploymentRequest,
+    mut logs: Vec<String>,
+) -> DeploymentWorkResult {
+    let remote = RemoteSession::connect(
+        &deployment_remote_params(req).map_err(|e| (logs.clone(), e))?,
+        Duration::from_secs(cfg.timeout_seconds),
+    )
+    .map_err(|e| (logs.clone(), e))?;
+    logs.push("[done] ssh connect and authenticate".to_string());
+    let deploy_path = req.deploy_path.to_string_lossy();
+    let release_path = format!("{deploy_path}/releases/{}", req.version);
+    let current = format!("{deploy_path}/current");
+    let switch = format!("{deploy_path}/.current-{}", Uuid::new_v4());
+    remote
+        .exec(&format!("test -d {}", shell_quote(&release_path)))
+        .map_err(|_| {
+            (
+                logs.clone(),
+                format!(
+                    "Release {} is not present on the remote target",
+                    req.version
+                ),
+            )
+        })?;
+    let previous = remote
+        .exec(&format!(
+            "readlink {} 2>/dev/null || true",
+            shell_quote(&current)
+        ))
+        .map_err(|e| (logs.clone(), e))?
+        .trim()
+        .to_string();
+    if let Err(error) = activate_remote_release(&remote, &release_path, &switch, &current) {
+        return fail(logs, error);
+    }
+    logs.push(format!("[done] activate {}", req.version));
+    if let Err(error) = restart_remote_service(&remote, req) {
+        restore_remote_release(&remote, req, &previous, &switch, &current, "", &mut logs);
+        return fail(logs, error);
+    }
+    logs.push(format!("[done] service {}", service_action_label(req)));
+    if let Err(error) = check_remote_health(&remote, &req.health_url) {
+        restore_remote_release(&remote, req, &previous, &switch, &current, "", &mut logs);
+        return fail(logs, error);
+    }
+    logs.push(if req.health_url.is_empty() {
+        "[done] health check skipped".to_string()
+    } else {
+        "[done] health check passed".to_string()
+    });
+    Ok(logs)
+}
+
+fn remote_script_sync(
+    cfg: &DeploymentsConfig,
+    params: &HashMap<String, String>,
+) -> DeploymentWorkResult {
+    let mut logs = Vec::new();
+    if !cfg.enabled {
+        return fail(
+            logs,
+            "Application deployment is disabled in agent configuration".to_string(),
+        );
+    }
+    let content = params
+        .get("script_content")
+        .filter(|value| !value.trim().is_empty())
+        .cloned()
+        .ok_or_else(|| {
+            (
+                logs.clone(),
+                "Missing remote environment script content".to_string(),
+            )
+        })?;
+    if content.len() > 256 * 1024 || content.contains('\0') {
+        return fail(
+            logs,
+            "Remote environment script is invalid or too large".to_string(),
+        );
+    }
+    let timeout = params
+        .get("script_timeout_seconds")
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(600)
+        .clamp(1, 3600);
+    let remote = RemoteSession::connect(params, Duration::from_secs(timeout + 30))
+        .map_err(|e| (logs.clone(), e))?;
+    logs.push("[done] ssh connect and authenticate".to_string());
+    let remote_script = format!("/tmp/nanolink-{}-environment.sh", Uuid::new_v4());
+    remote
+        .upload_content(content.as_bytes(), &remote_script)
+        .map_err(|e| (logs.clone(), e))?;
+    logs.push("[done] upload environment script".to_string());
+    let command = format!("timeout {timeout} sh {}", shell_quote(&remote_script));
+    let result = remote.exec_privileged(&command);
+    let _ = remote.exec(&format!("rm -f {}", shell_quote(&remote_script)));
+    match result {
+        Ok(output) => {
+            logs.push("[done] execute environment script".to_string());
+            if !output.trim().is_empty() {
+                logs.push(output.trim().to_string());
+            }
+            Ok(logs)
+        }
+        Err(error) => fail(logs, error),
+    }
+}
+
+fn deployment_remote_params(req: &DeploymentRequest) -> Result<HashMap<String, String>, String> {
+    if req.remote_params.is_empty() {
+        return Err("Remote deployment connection parameters are unavailable".to_string());
+    }
+    Ok(req.remote_params.clone())
+}
+
+fn stage_remote_artifact(
+    remote: &RemoteSession,
+    req: &DeploymentRequest,
+    remote_artifact: &str,
+    stage: &str,
+) -> Result<String, String> {
+    let artifact_name = req.artifact_name.as_deref().unwrap_or("artifact");
+    let command = if req.project_type == "java" {
+        format!(
+            "set -eu; mv {} {}/app.jar",
+            shell_quote(remote_artifact),
+            shell_quote(stage)
+        )
+    } else if !req.extract_artifact {
+        format!(
+            "set -eu; mv {} {}/{}",
+            shell_quote(remote_artifact),
+            shell_quote(stage),
+            shell_quote(artifact_name)
+        )
+    } else {
+        let extract = if artifact_name.to_ascii_lowercase().ends_with(".zip") {
+            format!(
+                "timeout 120 unzip -q {} -d {}",
+                shell_quote(remote_artifact),
+                shell_quote(stage)
+            )
+        } else if artifact_name.to_ascii_lowercase().ends_with(".tar.gz")
+            || artifact_name.to_ascii_lowercase().ends_with(".tgz")
+        {
+            format!(
+                "timeout 120 tar -xzf {} -C {}",
+                shell_quote(remote_artifact),
+                shell_quote(stage)
+            )
+        } else {
+            format!(
+                "timeout 120 tar -xf {} -C {}",
+                shell_quote(remote_artifact),
+                shell_quote(stage)
+            )
+        };
+        let strip = if req.strip_top_level {
+            let stripped = format!("{stage}.stripped");
+            format!(
+                "; count=$(find {stage} -mindepth 1 -maxdepth 1 -print | wc -l); test \"$count\" -eq 1; first=$(find {stage} -mindepth 1 -maxdepth 1 -print -quit); test -d \"$first\"; mkdir {stripped}; cp -a \"$first\"/. {stripped}/; rm -rf {stage}; mv {stripped} {stage}",
+                stage = shell_quote(stage),
+                stripped = shell_quote(&stripped),
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            "set -eu; {extract}; rm -f {artifact}; test -z \"$(find {stage} -xdev -type l -print -quit)\"; entries=$(find {stage} -xdev -mindepth 1 -print | wc -l); test \"$entries\" -le {max_entries}; bytes=$(du -sb -- {stage} | cut -f1); test \"$bytes\" -le {max_bytes}{strip}",
+            artifact = shell_quote(remote_artifact),
+            stage = shell_quote(stage),
+            max_entries = MAX_EXTRACTED_ENTRIES,
+            max_bytes = MAX_EXTRACTED_BYTES,
+        )
+    };
+    remote.exec_privileged(&command)
+}
+
+fn activate_remote_release(
+    remote: &RemoteSession,
+    release_path: &str,
+    switch: &str,
+    current: &str,
+) -> Result<(), String> {
+    remote.exec_privileged(&format!(
+        "set -eu; ln -sfn {} {}; mv -Tf {} {}",
+        shell_quote(release_path),
+        shell_quote(switch),
+        shell_quote(switch),
+        shell_quote(current),
+    ))?;
+    Ok(())
+}
+
+fn restart_remote_service(remote: &RemoteSession, req: &DeploymentRequest) -> Result<(), String> {
+    if req.service_name.is_empty() {
+        return Ok(());
+    }
+    if req.project_type == "static" && req.service_name.to_ascii_lowercase().starts_with("nginx") {
+        remote.exec_privileged("nginx -t")?;
+    }
+    let action = if req.project_type == "static" {
+        "reload"
+    } else {
+        "restart"
+    };
+    remote.exec_privileged(&format!(
+        "systemctl {action} -- {}",
+        shell_quote(&req.service_name),
+    ))?;
+    Ok(())
+}
+
+fn check_remote_health(remote: &RemoteSession, url: &str) -> Result<(), String> {
+    if url.is_empty() {
+        return Ok(());
+    }
+    let command = format!(
+        "curl -fsS --connect-timeout 3 --max-time 10 -- {} >/dev/null",
+        shell_quote(url)
+    );
+    let mut last_error = String::new();
+    for attempt in 1..=10 {
+        match remote.exec(&command) {
+            Ok(_) => return Ok(()),
+            Err(error) => last_error = error,
+        }
+        if attempt < 10 {
+            thread::sleep(Duration::from_secs(2));
+        }
+    }
+    Err(format!(
+        "Remote health check failed after 10 attempts: {last_error}"
+    ))
+}
+
+fn restore_remote_release(
+    remote: &RemoteSession,
+    req: &DeploymentRequest,
+    previous: &str,
+    switch: &str,
+    current: &str,
+    failed_release: &str,
+    logs: &mut Vec<String>,
+) {
+    let restore = if previous.is_empty() {
+        remote.exec_privileged(&format!("rm -f {}", shell_quote(current)))
+    } else {
+        activate_remote_release(remote, previous, switch, current).map(|_| String::new())
+    };
+    if restore.is_ok() {
+        let _ = restart_remote_service(remote, req);
+        logs.push("[warn] restored previous remote release".to_string());
+        if !failed_release.is_empty() {
+            let _ = remote.exec_privileged(&format!("rm -rf {}", shell_quote(failed_release)));
+        }
+    } else {
+        logs.push("[warn] failed to restore previous remote release".to_string());
+    }
+}
+
+fn prune_remote_releases(
+    remote: &RemoteSession,
+    releases: &str,
+    current: &str,
+    keep: usize,
+) -> Result<(), String> {
+    // GNU find is available on the Linux targets supported by systemd deploys.
+    // Paths are read after the first space so a normal path containing spaces
+    // remains intact; newlines are rejected by deploy-path validation.
+    remote.exec_privileged(&format!(
+        "set -eu; find {releases} -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\\n' | sort -nr | tail -n +{start} | while IFS=' ' read -r stamp old; do test \"$old\" = {current} || rm -rf -- \"$old\"; done",
+        releases = shell_quote(releases),
+        current = shell_quote(current),
+        start = keep + 1,
+    ))?;
+    Ok(())
+}
+
+fn validate_remote_deploy_path(target: &Path) -> Result<(), String> {
+    let raw = target.to_string_lossy();
+    if !raw.starts_with('/')
+        || raw == "/"
+        || raw.len() > 1000
+        || raw.contains('\0')
+        || raw.contains('\n')
+        || raw.contains('\r')
+        || raw
+            .split('/')
+            .any(|component| component == "." || component == "..")
+    {
+        return Err("Remote deployment path must be a normalized absolute Linux path".to_string());
+    }
+    Ok(())
+}
+
 fn parse_request(
     cfg: &DeploymentsConfig,
     params: &HashMap<String, String>,
@@ -396,6 +859,13 @@ fn parse_request(
 ) -> Result<DeploymentRequest, String> {
     if !cfg.enabled {
         return Err("Application deployment is disabled in agent configuration".to_string());
+    }
+    let deployment_mode = params
+        .get("deployment_mode")
+        .map(|value| value.trim().to_ascii_lowercase())
+        .unwrap_or_else(|| "local".to_string());
+    if deployment_mode != "local" && deployment_mode != "ssh" {
+        return Err("deployment_mode must be local or ssh".to_string());
     }
     let project_type = required(params, "project_type")?.to_lowercase();
     if project_type != "java" && project_type != "static" {
@@ -411,7 +881,11 @@ fn parse_request(
         return Err("Invalid release version".to_string());
     }
     let deploy_path = PathBuf::from(required(params, "deploy_path")?);
-    validate_deploy_path(cfg, &deploy_path)?;
+    if deployment_mode == "ssh" {
+        validate_remote_deploy_path(&deploy_path)?;
+    } else {
+        validate_deploy_path(cfg, &deploy_path)?;
+    }
     let service_name = params
         .get("service_name")
         .map(|s| s.trim().to_string())
@@ -473,7 +947,31 @@ fn parse_request(
         validate_http_url(&log_update_url)?;
     }
 
+    let remote_params = if deployment_mode == "ssh" {
+        [
+            "ssh_host",
+            "ssh_port",
+            "ssh_username",
+            "ssh_auth_type",
+            "ssh_credential",
+            "ssh_known_hosts",
+            "ssh_allow_unknown_host",
+            "ssh_use_sudo",
+        ]
+        .into_iter()
+        .filter_map(|key| {
+            params
+                .get(key)
+                .map(|value| (key.to_string(), value.clone()))
+        })
+        .collect()
+    } else {
+        HashMap::new()
+    };
+
     Ok(DeploymentRequest {
+        deployment_mode,
+        remote_params,
         project_type,
         version,
         deploy_path,
@@ -1356,6 +1854,8 @@ mod tests {
         assert_eq!(previous, PathBuf::from("releases/bootstrap"));
 
         let req = DeploymentRequest {
+            deployment_mode: "local".into(),
+            remote_params: HashMap::new(),
             project_type: "static".into(),
             version: "next".into(),
             deploy_path: deploy_path.clone(),
@@ -1453,5 +1953,51 @@ mod tests {
         assert!(validate_http_url("https://example.com/a.jar?token=x").is_ok());
         assert!(validate_http_url("https://user:pass@example.com/a.jar").is_err());
         assert!(validate_http_url("file:///tmp/a.jar").is_err());
+    }
+
+    #[test]
+    fn remote_deployment_path_is_linux_absolute_on_every_agent_platform() {
+        assert!(validate_remote_deploy_path(Path::new("/opt/apps/orders")).is_ok());
+        assert!(validate_remote_deploy_path(Path::new("/opt/apps/../orders")).is_err());
+        assert!(validate_remote_deploy_path(Path::new("relative/orders")).is_err());
+        assert!(validate_remote_deploy_path(Path::new("/")).is_err());
+    }
+
+    #[test]
+    fn remote_request_retains_connection_params_without_logging_them() {
+        let cfg = DeploymentsConfig {
+            enabled: true,
+            allowed_roots: Vec::new(),
+            max_artifact_size: 1024,
+            timeout_seconds: 30,
+        };
+        let params = HashMap::from([
+            ("deployment_mode".into(), "ssh".into()),
+            ("project_type".into(), "java".into()),
+            ("version".into(), "1.0.0".into()),
+            ("deploy_path".into(), "/opt/apps/orders".into()),
+            ("service_name".into(), "orders.service".into()),
+            (
+                "artifact_url".into(),
+                "https://example.com/orders.jar".into(),
+            ),
+            ("artifact_sha256".into(), "a".repeat(64)),
+            ("artifact_size".into(), "12".into()),
+            ("artifact_name".into(), "orders.jar".into()),
+            ("ssh_host".into(), "example.com".into()),
+            ("ssh_port".into(), "22".into()),
+            ("ssh_username".into(), "deploy".into()),
+            ("ssh_auth_type".into(), "password".into()),
+            ("ssh_credential".into(), "secret".into()),
+        ]);
+        let request = parse_request(&cfg, &params, true).expect("remote request");
+        assert_eq!(request.deployment_mode, "ssh");
+        assert_eq!(
+            request
+                .remote_params
+                .get("ssh_credential")
+                .map(String::as_str),
+            Some("secret")
+        );
     }
 }

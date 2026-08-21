@@ -23,6 +23,7 @@ import (
 	"github.com/chenqi92/NanoLink/apps/server/internal/database"
 	grpcserver "github.com/chenqi92/NanoLink/apps/server/internal/grpc"
 	pb "github.com/chenqi92/NanoLink/apps/server/internal/proto"
+	"github.com/chenqi92/NanoLink/apps/server/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -44,6 +45,7 @@ type DeploymentHandler struct {
 	maxArtifact int64
 	downloadTTL time.Duration
 	logger      *zap.SugaredLogger
+	codec       service.SecretCodec
 	dispatchMu  sync.Mutex
 	uploadMu    sync.Mutex
 }
@@ -52,6 +54,7 @@ type deploymentProjectRequest struct {
 	Name           string `json:"name" binding:"required"`
 	Type           string `json:"type" binding:"required"`
 	AgentID        string `json:"agentId" binding:"required"`
+	TargetID       *uint  `json:"targetId"`
 	DeployPath     string `json:"deployPath" binding:"required"`
 	ExtractArchive *bool  `json:"extractArchive"`
 	ServiceName    string `json:"serviceName"`
@@ -65,7 +68,7 @@ type deploymentProjectView struct {
 	Deployments []database.DeploymentTask    `json:"deployments"`
 }
 
-func NewDeploymentHandler(db *gorm.DB, grpcServer *grpcserver.Server, cfg config.DeploymentConfig, externalURL string, logger *zap.SugaredLogger) (*DeploymentHandler, error) {
+func NewDeploymentHandler(db *gorm.DB, grpcServer *grpcserver.Server, codec service.SecretCodec, cfg config.DeploymentConfig, externalURL string, logger *zap.SugaredLogger) (*DeploymentHandler, error) {
 	root, err := filepath.Abs(cfg.StoragePath)
 	if err != nil {
 		return nil, fmt.Errorf("resolve deployment storage path: %w", err)
@@ -84,6 +87,7 @@ func NewDeploymentHandler(db *gorm.DB, grpcServer *grpcserver.Server, cfg config
 		maxArtifact: cfg.MaxArtifactBytes,
 		downloadTTL: time.Duration(cfg.DownloadTTLMin) * time.Minute,
 		logger:      logger,
+		codec:       codec,
 	}, nil
 }
 
@@ -129,9 +133,14 @@ func (h *DeploymentHandler) CreateProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := h.resolveDeploymentProjectTarget(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	user := GetCurrentUser(c)
 	project := database.DeploymentProject{
 		Name: strings.TrimSpace(req.Name), Type: strings.ToLower(req.Type), AgentID: strings.TrimSpace(req.AgentID),
+		TargetID:   req.TargetID,
 		DeployPath: path.Clean(req.DeployPath), ServiceName: strings.TrimSpace(req.ServiceName), HealthURL: strings.TrimSpace(req.HealthURL),
 		KeepReleases: req.KeepReleases, CreatedBy: user.ID,
 	}
@@ -160,6 +169,10 @@ func (h *DeploymentHandler) UpdateProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := h.resolveDeploymentProjectTarget(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	var project database.DeploymentProject
 	if err := h.db.First(&project, id).Error; err != nil {
 		respondDeploymentDBError(c, err, "project")
@@ -168,6 +181,7 @@ func (h *DeploymentHandler) UpdateProject(c *gin.Context) {
 	project.Name = strings.TrimSpace(req.Name)
 	project.Type = strings.ToLower(req.Type)
 	project.AgentID = strings.TrimSpace(req.AgentID)
+	project.TargetID = req.TargetID
 	project.DeployPath = path.Clean(req.DeployPath)
 	if req.ExtractArchive != nil {
 		project.ExtractArchive = *req.ExtractArchive
@@ -303,6 +317,21 @@ func (h *DeploymentHandler) dispatch(c *gin.Context, project database.Deployment
 		CreatedBy: user.ID, CreatedByName: user.Username, StartedAt: &now,
 	}
 	params := deploymentCommandParams(project, release, action == database.DeploymentActionDeploy)
+	if project.TargetID != nil {
+		remoteParams, relayAgentID, err := h.deploymentTargetCommandParams(*project.TargetID)
+		if err != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		// Resolve the relay from the target at dispatch time. This keeps the
+		// command, audit record and decrypted credential on the same Agent even
+		// when a target edit races with a deployment request.
+		project.AgentID = relayAgentID
+		task.AgentID = relayAgentID
+		for key, value := range remoteParams {
+			params[key] = value
+		}
+	}
 	commandType := pb.CommandType_DEPLOY_ROLLBACK
 	if action == database.DeploymentActionDeploy {
 		plainToken, tokenHash, err := newArtifactToken()
@@ -393,6 +422,7 @@ func (h *DeploymentHandler) HandleCommandResult(agentID, commandID, output strin
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			h.logger.Warnf("deployment result lookup failed: %v", err)
 		}
+		h.handleEnvironmentScriptResult(agentID, commandID, output, success)
 		return
 	}
 	if task.Status != database.DeploymentStatusQueued && task.Status != database.DeploymentStatusRunning {

@@ -326,7 +326,15 @@ impl MessageHandler {
             }
 
             // Structured application deployment
-            CommandType::DeployExecute => self.deployment_executor.deploy(&command.params).await,
+            CommandType::DeployExecute => {
+                if command.params.get("operation").map(String::as_str) == Some("remote_script") {
+                    self.deployment_executor
+                        .execute_remote_script(&command.params)
+                        .await
+                } else {
+                    self.deployment_executor.deploy(&command.params).await
+                }
+            }
             CommandType::DeployRollback => self.deployment_executor.rollback(&command.params).await,
             CommandType::BuildExecute => self.build_executor.execute(&command.params).await,
             CommandType::BuildCancel => self.build_executor.cancel(&command.target),

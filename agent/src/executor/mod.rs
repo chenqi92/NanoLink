@@ -7,6 +7,7 @@ mod health;
 mod log_ops;
 mod package_mgr;
 mod process_mgr;
+mod remote;
 mod script_executor;
 mod service_mgr;
 mod shell;
