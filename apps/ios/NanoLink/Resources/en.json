@@ -199,7 +199,7 @@
     "notifications": "Notifications", "notifyOffline": "Offline alerts", "notifyHigh": "High CPU / Memory",
     "notifyDisk": "Disk space", "sourceCodeLabel": "Source",
     "pairNeedsLogin": "Generating a pairing code requires signing in to a server with an account first",
-    "footer": "NanoOps Mobile · {version}", "nodeCount": "{n} nodes", "compactMode": "Compact mode",
+    "footer": "NanoOps · {version}", "nodeCount": "{n} nodes", "compactMode": "Compact mode",
     "terminal": "Terminal", "termTheme": "Theme", "termTheme_phosphor": "Phosphor (green)",
     "termTheme_amber": "Amber", "termTheme_mono": "Mono", "termTheme_solarized": "Solarized",
     "termFontSize": "Font size", "ptValue": "{n} pt", "termCursor": "Cursor style",
@@ -208,8 +208,8 @@
     "security": "Security", "faceId": "Unlock with Face ID", "faceIdNote": "Biometric protection is enabled.",
     "autoLock": "Auto-lock", "autoLockOff": "Off", "minutesValue": "{n} min", "clearTokens": "Clear all tokens",
     "clearTokensConfirm": "This removes every saved server and deletes its tokens and credentials from secure storage. This cannot be undone.",
-    "clearTokensConfirmAction": "Clear all", "clearTokensDone": "All tokens cleared", "docsHelp": "Docs & help",
-    "docsCopied": "Docs link copied", "sendFeedback": "Send feedback", "feedbackCopied": "Feedback address copied",
+    "clearTokensConfirmAction": "Clear all", "clearTokensDone": "All tokens cleared", "docsHelp": "Docs & help", "privacyPolicy": "Privacy Policy",
+    "docsCopied": "Docs link copied", "sendFeedback": "Report an Issue or Bug", "feedbackCopied": "Feedback address copied",
     "logout": "Log out", "logoutConfirm": "Log out of all signed-in servers? Their saved credentials will be removed.",
     "logoutDone": "Logged out"
   },
@@ -285,7 +285,7 @@
   "serverSwitch": { "title": "Switch Server", "addServer": "Add Server" },
   "shell": {
     "appName": "NanoOps", "servers": "{n} servers", "aiAssistant": "AI Ops Assistant", "settings": "Settings",
-    "footer": "NanoOps Mobile", "sectionServers": "Servers", "sectionOther": "Other", "addServer": "Add Server",
+    "footer": "NanoOps", "sectionServers": "Servers", "sectionOther": "Other", "addServer": "Add Server",
     "permissions": "Permissions & Roles", "auditLog": "Audit Log", "roleAccount": "Account · full permissions",
     "roleDevice": "Device token · read-only", "noServer": "No server connected", "signOut": "Sign Out",
     "signOutTitle": "Sign out?", "signOutBody": "This disconnects and removes the local config for “{name}”."

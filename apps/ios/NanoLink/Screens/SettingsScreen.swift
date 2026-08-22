@@ -262,8 +262,11 @@ struct SettingsScreen: View {
             settingsRow(tr("settings.docsHelp")) {
                 open("https://github.com/chenqi92/NanoLink#readme")
             }
+            settingsRow(tr("settings.privacyPolicy")) {
+                open("https://github.com/chenqi92/NanoLink/blob/main/PRIVACY.md")
+            }
             settingsRow(tr("settings.sendFeedback"), divider: false) {
-                open("mailto:feedback@nanolink.io")
+                open("https://github.com/chenqi92/NanoLink/issues/new/choose")
             }
         }
     }

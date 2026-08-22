@@ -157,7 +157,7 @@
     "current": "当前", "addNewServer": "添加新服务器", "tools": "工具", "aiAssistant": "AI 运维助手", "pairDevice": "配对新设备",
     "themeLight": "浅色", "themeDark": "深色", "themeSystem": "跟随系统", "langChinese": "中文（简体）", "langEnglish": "English",
     "notifications": "通知", "notifyOffline": "离线告警", "notifyHigh": "高 CPU / 内存", "notifyDisk": "磁盘空间",
-    "sourceCodeLabel": "源码", "pairNeedsLogin": "生成配对码需要先用账号登录一个服务器", "footer": "NanoOps Mobile · {version}",
+    "sourceCodeLabel": "源码", "pairNeedsLogin": "生成配对码需要先用账号登录一个服务器", "footer": "NanoOps · {version}",
     "nodeCount": "{n} 节点", "compactMode": "紧凑模式", "terminal": "终端", "termTheme": "主题",
     "termTheme_phosphor": "Phosphor (绿色)", "termTheme_amber": "Amber (琥珀)", "termTheme_mono": "Mono (单色)",
     "termTheme_solarized": "Solarized", "termFontSize": "字号", "ptValue": "{n} pt", "termCursor": "光标样式",
@@ -165,8 +165,8 @@
     "notifyAudit": "审计日志通知", "notifyAuditNote": "应用运行期间每 15 秒检查一次新的审计活动。", "security": "安全", "faceId": "使用 Face ID 解锁",
     "faceIdNote": "生物识别保护已启用。", "autoLock": "自动锁定", "autoLockOff": "关闭", "minutesValue": "{n} 分钟",
     "clearTokens": "清除所有 Token", "clearTokensConfirm": "将移除所有已保存的服务器，并从安全存储中删除其 Token 与凭据，此操作不可撤销。",
-    "clearTokensConfirmAction": "全部清除", "clearTokensDone": "已清除所有 Token", "docsHelp": "文档与帮助", "docsCopied": "已复制文档链接",
-    "sendFeedback": "发送反馈", "feedbackCopied": "已复制反馈地址", "logout": "退出登录",
+    "clearTokensConfirmAction": "全部清除", "clearTokensDone": "已清除所有 Token", "docsHelp": "文档与帮助", "privacyPolicy": "隐私政策", "docsCopied": "已复制文档链接",
+    "sendFeedback": "反馈问题与 Bug", "feedbackCopied": "已复制反馈地址", "logout": "退出登录",
     "logoutConfirm": "退出所有已登录的服务器？其已保存的凭据将被移除。", "logoutDone": "已退出登录"
   },
   "serverDetail": {
@@ -222,7 +222,7 @@
   },
   "serverSwitch": { "title": "切换服务器", "addServer": "添加服务器" },
   "shell": {
-    "appName": "NanoOps", "servers": "{n} 服务器", "aiAssistant": "AI 运维助手", "settings": "设置", "footer": "NanoOps Mobile",
+    "appName": "NanoOps", "servers": "{n} 服务器", "aiAssistant": "AI 运维助手", "settings": "设置", "footer": "NanoOps",
     "sectionServers": "服务器", "sectionOther": "其他", "addServer": "添加服务器", "permissions": "权限与角色",
     "auditLog": "审计日志", "roleAccount": "账号 · 完整权限", "roleDevice": "设备令牌 · 只读", "noServer": "未连接服务器",
     "signOut": "退出登录", "signOutTitle": "退出登录？", "signOutBody": "这将断开连接并删除“{name}”的本地配置。"

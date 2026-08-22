@@ -37,9 +37,9 @@ final class AppStore: ObservableObject {
 
     // MARK: Notification prefs (persisted) + alert-dedup state
 
-    @Published var notifyOffline = true { didSet { UserDefaults.standard.set(notifyOffline, forKey: "notify_offline") } }
-    @Published var notifyHigh = true { didSet { UserDefaults.standard.set(notifyHigh, forKey: "notify_high") } }
-    @Published var notifyDisk = true { didSet { UserDefaults.standard.set(notifyDisk, forKey: "notify_disk") } }
+    @Published var notifyOffline = false { didSet { UserDefaults.standard.set(notifyOffline, forKey: "notify_offline") } }
+    @Published var notifyHigh = false { didSet { UserDefaults.standard.set(notifyHigh, forKey: "notify_high") } }
+    @Published var notifyDisk = false { didSet { UserDefaults.standard.set(notifyDisk, forKey: "notify_disk") } }
 
     private var activeAlerts: Set<String> = []
     private var alertsSeeded = false
@@ -137,10 +137,18 @@ final class AppStore: ObservableObject {
         guard !hasStarted else { return }
         hasStarted = true
         isLoading = true
-        notifyOffline = UserDefaults.standard.object(forKey: "notify_offline") as? Bool ?? true
-        notifyHigh = UserDefaults.standard.object(forKey: "notify_high") as? Bool ?? true
-        notifyDisk = UserDefaults.standard.object(forKey: "notify_disk") as? Bool ?? true
-        notifications.requestAuthorization()
+
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--app-store-screenshot") {
+            loadAppStoreScreenshotFixture()
+            isLoading = false
+            return
+        }
+#endif
+
+        notifyOffline = UserDefaults.standard.object(forKey: "notify_offline") as? Bool ?? false
+        notifyHigh = UserDefaults.standard.object(forKey: "notify_high") as? Bool ?? false
+        notifyDisk = UserDefaults.standard.object(forKey: "notify_disk") as? Bool ?? false
 
         servers = storage.getServers()
         let persistedServerId = PreferencesStore.activeServerId
@@ -366,6 +374,16 @@ final class AppStore: ObservableObject {
     }
 
     func setNotifyPref(_ key: String, _ value: Bool) {
+        guard value else {
+            applyNotifyPref(key, false)
+            return
+        }
+        notifications.requestAuthorization { [weak self] granted in
+            Task { @MainActor in self?.applyNotifyPref(key, granted) }
+        }
+    }
+
+    private func applyNotifyPref(_ key: String, _ value: Bool) {
         switch key {
         case "notify_offline": notifyOffline = value
         case "notify_high": notifyHigh = value
@@ -375,9 +393,104 @@ final class AppStore: ObservableObject {
     }
 
     func setAuditNotifications(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: AppPreferenceKey.notifyAudit)
-        configureAuditPolling()
+        guard enabled else {
+            UserDefaults.standard.set(false, forKey: AppPreferenceKey.notifyAudit)
+            configureAuditPolling()
+            return
+        }
+        notifications.requestAuthorization { [weak self] granted in
+            Task { @MainActor in
+                UserDefaults.standard.set(granted, forKey: AppPreferenceKey.notifyAudit)
+                self?.configureAuditPolling()
+            }
+        }
     }
+
+#if DEBUG
+    /// Deterministic, non-networked sample state used only to capture App Store
+    /// artwork from the real native views. It is stripped from release builds.
+    private func loadAppStoreScreenshotFixture() {
+        let serverId = "sample-control-plane"
+        var server = ServerConnection(
+            id: serverId,
+            name: "Production Fleet",
+            url: "https://ops.example.net",
+            userToken: "sample",
+            username: "ops-admin",
+            lastConnected: Date()
+        )
+        server.isConnected = true
+        servers = [server]
+        activeServerIdRaw = serverId
+        connectionModes = [serverId: .websocket]
+
+        let now = ISO8601DateFormatter().string(from: Date())
+        let stale = ISO8601DateFormatter().string(from: Date(timeIntervalSinceNow: -7_200))
+        let agentRows: [[String: Any]] = [
+            ["id": "edge-gateway", "hostname": "edge-gateway", "os": "Linux", "arch": "arm64", "version": "0.5.0", "permissionLevel": 3, "lastHeartbeat": now],
+            ["id": "api-cluster-01", "hostname": "api-cluster-01", "os": "Ubuntu 24.04", "arch": "x86_64", "version": "0.5.0", "permissionLevel": 2, "lastHeartbeat": now],
+            ["id": "build-runner", "hostname": "build-runner", "os": "macOS 26", "arch": "arm64", "version": "0.5.0", "permissionLevel": 2, "lastHeartbeat": now],
+            ["id": "backup-node", "hostname": "backup-node", "os": "Windows Server", "arch": "x86_64", "version": "0.5.0", "permissionLevel": 1, "lastHeartbeat": stale],
+        ]
+        allAgents = agentRows.map { Agent.from(JSON($0), serverId: serverId) }
+
+        let metricRows: [[String: Any]] = [
+            screenshotMetrics(agentId: "edge-gateway", cpu: 32, memory: 44, disk: 58, rx: 18_400_000, tx: 7_600_000),
+            screenshotMetrics(agentId: "api-cluster-01", cpu: 68, memory: 63, disk: 72, rx: 42_100_000, tx: 28_900_000),
+            screenshotMetrics(agentId: "build-runner", cpu: 84, memory: 76, disk: 87, rx: 9_800_000, tx: 16_200_000),
+        ]
+        allMetrics = Dictionary(uniqueKeysWithValues: metricRows.map {
+            let metrics = AgentMetrics.from(JSON($0))
+            return (metrics.agentId, metrics)
+        })
+        serverSummaries = [serverId: ServerSummary(connectedAgents: 3, avgCpuUsage: 61.3, avgMemoryUsage: 61, totalAlerts: 2)]
+
+        serverAlertsMap = [serverId: [
+            AlertInstance(id: "alert-disk", level: "warn",
+                          title: tr("alerts.diskFull", ["host": "build-runner"]),
+                          description: tr("alerts.diskDetail", ["mount": "/data", "value": "87"]),
+                          agent: "build-runner", rule: "disk_usage", since: "8m", acked: false, ackedBy: "", value: 87),
+            AlertInstance(id: "alert-offline", level: "crit",
+                          title: tr("alerts.nodeOffline", ["host": "backup-node"]),
+                          description: tr("alerts.nodeOfflineDetail"), agent: "backup-node",
+                          rule: "heartbeat", since: "2h", acked: false, ackedBy: "", value: nil),
+        ]]
+        recentActivityMap = [serverId: [
+            AuditEntry(id: "audit-1", type: "service.restart", user: "ops-admin", agentId: "api-cluster-01", agentHostname: "api-cluster-01", target: "nanolink-api", params: "{}", ok: true, error: "", durationMs: 420, at: Date(timeIntervalSinceNow: -180)),
+            AuditEntry(id: "audit-2", type: "docker.logs", user: "maintainer", agentId: "edge-gateway", agentHostname: "edge-gateway", target: "gateway", params: "{}", ok: true, error: "", durationMs: 96, at: Date(timeIntervalSinceNow: -620)),
+            AuditEntry(id: "audit-3", type: "file.read", user: "ops-admin", agentId: "build-runner", agentHostname: "build-runner", target: "/var/log/build.log", params: "{}", ok: true, error: "", durationMs: 72, at: Date(timeIntervalSinceNow: -1_260)),
+        ]]
+
+        let sectionValue = ProcessInfo.processInfo.arguments
+            .first { $0.hasPrefix("--app-store-section=") }?
+            .replacingOccurrences(of: "--app-store-section=", with: "")
+        let router = ShellRouter.shared
+        switch sectionValue {
+        case "nodes":
+            router.show(.nodes)
+            router.selectedAgentID = "api-cluster-01"
+        case "activity": router.show(.activity)
+        case "terminal": router.show(.terminal)
+        case "settings": router.show(.settings)
+        default: router.show(.overview)
+        }
+    }
+
+    private func screenshotMetrics(agentId: String, cpu: Double, memory: Double,
+                                   disk: Double, rx: Double, tx: Double) -> [String: Any] {
+        let memoryTotal = 34_359_738_368
+        let diskTotal = 1_099_511_627_776
+        return [
+            "agentId": agentId,
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "cpu": ["usagePercent": cpu, "coreCount": 12, "model": "Apple / AMD Compute", "temperature": 52, "loadAverage": [1.2, 1.7, 1.9]],
+            "memory": ["total": memoryTotal, "used": Int(Double(memoryTotal) * memory / 100), "available": Int(Double(memoryTotal) * (100 - memory) / 100), "swapTotal": 4_294_967_296, "swapUsed": 536_870_912, "cached": 2_147_483_648, "buffers": 268_435_456],
+            "disks": [["mountPoint": "/data", "device": "nvme0n1", "fsType": "apfs", "total": diskTotal, "used": Int(Double(diskTotal) * disk / 100), "available": Int(Double(diskTotal) * (100 - disk) / 100), "readBytesPerSec": 28_000_000, "writeBytesPerSec": 12_000_000, "diskType": "NVMe", "temperature": 43]],
+            "networks": [["interface": "en0", "rxBytesPerSec": rx, "txBytesPerSec": tx, "isUp": true, "ipAddresses": ["10.0.0.24"], "speedMbps": 1000]],
+            "systemInfo": ["osName": "Linux", "osVersion": "24.04", "kernelVersion": "6.8", "hostname": agentId, "uptimeSeconds": 428_400, "primaryIp": "10.0.0.24"],
+        ]
+    }
+#endif
 
     private func configureAuditPolling() {
         auditPollingTask?.cancel()

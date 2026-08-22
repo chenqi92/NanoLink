@@ -18,9 +18,10 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    func requestAuthorization() {
+    func requestAuthorization(completion: @escaping (Bool) -> Void = { _ in }) {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { [weak self] granted, _ in
             self?.authorized = granted
+            DispatchQueue.main.async { completion(granted) }
         }
     }
 
