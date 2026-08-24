@@ -36,6 +36,23 @@ use crate::security::remote_read_only_allows;
 /// reconnects.
 static AGENT_START: OnceLock<Instant> = OnceLock::new();
 const MAX_PENDING_COMMAND_RESULTS: usize = 128;
+// Keep only a small amount of outbound telemetry buffered. On a constrained
+// link, old samples are less valuable than heartbeats and command results.
+const OUTBOUND_STREAM_CAPACITY: usize = 16;
+
+fn try_send_telemetry(
+    tx: &mpsc::Sender<MetricsStreamRequest>,
+    request: MetricsStreamRequest,
+) -> bool {
+    match tx.try_send(request) {
+        Ok(()) => true,
+        Err(mpsc::error::TrySendError::Full(_)) => {
+            debug!("Dropping stale telemetry because the outbound stream is backpressured");
+            true
+        }
+        Err(mpsc::error::TrySendError::Closed(_)) => false,
+    }
+}
 
 fn accepts_remote_command(remote_read_only: bool, command_type: CommandType) -> bool {
     if !remote_read_only {
@@ -379,7 +396,7 @@ impl GrpcClient {
         Fut: std::future::Future<Output = CommandResult> + Send + 'static,
     {
         // Create channel for sending requests
-        let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(100);
+        let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(OUTBOUND_STREAM_CAPACITY);
         let request_stream = ReceiverStream::new(rx);
 
         // Start the bidirectional stream
@@ -417,7 +434,7 @@ impl GrpcClient {
                             let request = MetricsStreamRequest {
                                 request: Some(metrics_stream_request::Request::Metrics(metrics)),
                             };
-                            if tx_clone.send(request).await.is_err() {
+                            if !try_send_telemetry(&tx_clone, request) {
                                 break;
                             }
                         }
@@ -471,10 +488,15 @@ impl GrpcClient {
                             read_only_rejection(cmd)
                         };
                         remember_command_result(&pending_results, &result).await;
+                        let command_id = result.command_id.clone();
                         let request = MetricsStreamRequest {
                             request: Some(metrics_stream_request::Request::CommandResult(result)),
                         };
-                        let _ = result_tx.send(request).await;
+                        if let Err(send_error) = result_tx.send(request).await {
+                            warn!(
+                                "Command result {command_id} could not be queued; it will be replayed after reconnect: {send_error}"
+                            );
+                        }
                     });
                 }
                 Some(metrics_stream_response::Response::HeartbeatAck(ack)) => {
@@ -623,7 +645,7 @@ impl GrpcClient {
         Fut: std::future::Future<Output = CommandResult> + Send + 'static,
     {
         // Create channel for sending requests
-        let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(100);
+        let (tx, rx) = mpsc::channel::<MetricsStreamRequest>(OUTBOUND_STREAM_CAPACITY);
         let request_stream = ReceiverStream::new(rx);
 
         // Queue AgentInit as the FIRST message BEFORE opening the stream. The
@@ -712,7 +734,7 @@ impl GrpcClient {
                             }
                         };
 
-                        if tx_clone.send(request).await.is_err() {
+                        if !try_send_telemetry(&tx_clone, request) {
                             error!("Failed to send to gRPC stream");
                             break;
                         }
@@ -761,10 +783,15 @@ impl GrpcClient {
                             read_only_rejection(cmd)
                         };
                         remember_command_result(&pending_results, &result).await;
+                        let command_id = result.command_id.clone();
                         let request = MetricsStreamRequest {
                             request: Some(metrics_stream_request::Request::CommandResult(result)),
                         };
-                        let _ = result_tx.send(request).await;
+                        if let Err(send_error) = result_tx.send(request).await {
+                            warn!(
+                                "Command result {command_id} could not be queued; it will be replayed after reconnect: {send_error}"
+                            );
+                        }
                     });
                 }
                 Some(metrics_stream_response::Response::HeartbeatAck(ack)) => {
@@ -892,5 +919,26 @@ mod pending_result_tests {
                 if result.command_id == "command-2"
         ));
         assert!(pending.lock().await.contains_key("command-2"));
+    }
+
+    #[test]
+    fn telemetry_is_dropped_instead_of_waiting_behind_a_full_queue() {
+        let (tx, mut rx) = mpsc::channel(1);
+        tx.try_send(MetricsStreamRequest::default()).unwrap();
+
+        assert!(try_send_telemetry(&tx, MetricsStreamRequest::default()));
+        assert!(rx.try_recv().is_ok());
+        assert!(matches!(
+            rx.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
+    fn telemetry_sender_reports_a_closed_stream() {
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+
+        assert!(!try_send_telemetry(&tx, MetricsStreamRequest::default()));
     }
 }

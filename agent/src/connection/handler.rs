@@ -81,7 +81,7 @@ impl MessageHandler {
             docker_executor: DockerExecutor::new(),
             shell_executor: ShellExecutor::new(config.clone()),
             update_executor: UpdateExecutor::new(config.update.clone()),
-            log_executor: LogExecutor::new(),
+            log_executor: LogExecutor::from_config(config.clone()),
             script_executor: ScriptExecutor::new(config.clone()),
             config_manager: ConfigManager::new(config.clone()),
             package_manager: PackageManager::new(config.clone()),
@@ -218,11 +218,14 @@ impl MessageHandler {
                     .unwrap_or(100);
                 self.file_executor.tail_file(&command.target, lines).await
             }
-            CommandType::FileDownload => self.file_executor.download_file(&command.target).await,
-            CommandType::FileUpload => {
-                let content = command.params.get("content").map(|s| s.as_bytes().to_vec());
+            CommandType::FileDownload => {
                 self.file_executor
-                    .upload_file(&command.target, content)
+                    .download_file(&command.target, &command.params)
+                    .await
+            }
+            CommandType::FileUpload => {
+                self.file_executor
+                    .upload_file(&command.target, &command.params)
                     .await
             }
             CommandType::FileTruncate => self.file_executor.truncate_file(&command.target).await,
@@ -266,8 +269,9 @@ impl MessageHandler {
                     .get("rows")
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0);
+                let cwd = command.params.get("cwd").map(String::as_str).unwrap_or("/");
                 self.shell_executor
-                    .execute(&command.target, &command.super_token, cols, rows)
+                    .execute(&command.target, &command.super_token, cols, rows, cwd)
                     .await
             }
 

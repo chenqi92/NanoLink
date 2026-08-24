@@ -119,6 +119,9 @@ release/
 .env.*
 !.env.example
 !.env.*.example
+server.env
+frps.toml
+frpc.toml
 nanolink.yaml
 nanolink.yml
 config.yaml

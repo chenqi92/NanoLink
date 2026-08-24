@@ -20,7 +20,7 @@ export function Modal({ title, subtitle, onClose, footer, children, width = 520 
   )
 }
 
-export function ConfirmDialog({ title, message, danger, confirmLabel, onConfirm, onClose, busy }: { title: ReactNode; message: ReactNode; danger?: boolean; confirmLabel?: ReactNode; onConfirm: () => void; onClose: () => void; busy?: boolean }) {
+export function ConfirmDialog({ title, message, danger, confirmLabel, onConfirm, onClose, busy, confirmDisabled }: { title: ReactNode; message: ReactNode; danger?: boolean; confirmLabel?: ReactNode; onConfirm: () => void; onClose: () => void; busy?: boolean; confirmDisabled?: boolean }) {
   const { t } = useTranslation()
   return (
     <Modal
@@ -30,7 +30,7 @@ export function ConfirmDialog({ title, message, danger, confirmLabel, onConfirm,
       footer={
         <>
           <button className="btn btn-sm" onClick={onClose}>{t("common.cancel")}</button>
-          <button className={`btn btn-sm ${danger ? "btn-danger" : "btn-primary"}`} onClick={onConfirm} disabled={busy}>
+          <button className={`btn btn-sm ${danger ? "btn-danger" : "btn-primary"}`} onClick={onConfirm} disabled={busy || confirmDisabled}>
             {busy && <span className="dot pulse ok" />}
             {confirmLabel ?? t("common.confirm")}
           </button>

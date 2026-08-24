@@ -5,10 +5,10 @@
 agent:
   # Override hostname (optional, defaults to system hostname)
   # hostname: my-server
-  
+
   # Heartbeat interval in seconds
   heartbeat_interval: 30
-  
+
   # Reconnect delay in seconds (uses exponential backoff)
   reconnect_delay: 5
   max_reconnect_delay: 300
@@ -45,19 +45,19 @@ collector:
   # Realtime metrics interval (CPU/Memory/IO) in milliseconds
   # Default: 5000 (5 seconds) - balance between responsiveness and resource usage
   realtime_interval_ms: 5000
-  
+
   # Disk space usage interval in milliseconds
   disk_usage_interval_ms: 30000   # 30 seconds
-  
+
   # User sessions check interval
   session_interval_ms: 60000      # 1 minute
-  
-  # IP address check interval  
+
+  # IP address check interval
   ip_check_interval_ms: 60000     # 1 minute
-  
+
   # S.M.A.R.T health check interval
   health_check_interval_ms: 300000  # 5 minutes
-  
+
   # Feature flags
   enable_disk_io: true
   enable_network: true
@@ -75,6 +75,12 @@ shell:
   enabled: false
   # super_token: your_super_secret_token
   timeout_seconds: 30
+  # Enables the built-in, parsed read-only diagnostic profile. This permits
+  # common commands and safe filter pipelines; it never enables arbitrary sh.
+  readonly_profile: false
+  allowed_working_directories:
+    - /
+    - /var/log
   whitelist: []
   blacklist:
     - "rm -rf"
@@ -114,6 +120,17 @@ logging:
   # file: /var/log/nanolink-agent.log
   audit_enabled: true
   audit_file: /var/log/nanolink-audit.log
+  # SYSTEM_LOGS may only read these exact files or directory descendants.
+  allowed_paths:
+    - /var/log/messages
+    - /var/log/syslog
+    - /var/log/nginx
+
+# Generic file browser and transfer policy. Uploads fail closed when
+# allowed_paths is empty, and completed uploads are committed atomically.
+security:
+  allowed_paths: []
+  max_file_size: 52428800 # 50 MiB
 
 # Management API (localhost only)
 management:

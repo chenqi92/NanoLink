@@ -1,12 +1,13 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { I } from "@/lib/icons"
 import { useAgentCommand, runAgentCommand } from "@/hooks/useAgentCommand"
-import { Modal } from "@/components/shell/Dialog"
+import { ConfirmDialog, Modal } from "@/components/shell/Dialog"
 import { formatBytes, toneFor } from "@/lib/format"
 import { ContentState, LoadingState, RequestState } from "@/components/shell/RequestState"
 import { userErrorMessage } from "@/lib/errors"
 import { isServiceActive } from "@/lib/fleet"
+import { LOG_SOURCE_PRESETS } from "@/lib/logSources"
 
 const SERVICE_CONTROL_LEVEL = 2
 
@@ -371,11 +372,40 @@ const parentDir = (p: string) => {
   return idx <= 0 ? "/" : trimmed.slice(0, idx)
 }
 
+const TRANSFER_CHUNK_BYTES = 512 * 1024
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ""
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  }
+  return btoa(binary)
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+function parseTransferMeta(output = ""): Record<string, string> {
+  return Object.fromEntries(output.split(";").map((item) => item.split("=", 2)).filter((pair) => pair.length === 2))
+}
+
+async function sha256Hex(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer())
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
 export function FilesTab({ agentId, permission = 0 }: { agentId: string; permission?: number }) {
   const { t } = useTranslation()
   const [path, setPath] = useState("/var/log")
   const [input, setInput] = useState("/var/log")
   const [selected, setSelected] = useState<string | null>(null)
+  const [pendingUpload, setPendingUpload] = useState<{ file: File; target: string; overwrite: boolean } | null>(null)
+  const [transfer, setTransfer] = useState<{ kind: "upload" | "download"; done: number; total: number; error?: string } | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
   const { data, loading, error, reload } = useAgentCommand(agentId, "FILE_LIST", { target: path })
   const entries = data?.files ?? []
 
@@ -383,6 +413,47 @@ export function FilesTab({ agentId, permission = 0 }: { agentId: string; permiss
     setPath(p)
     setInput(p)
     setSelected(null)
+  }
+
+  function chooseUpload(file?: File) {
+    if (!file) return
+    const target = `${path.replace(/\/+$/, "")}/${file.name}`
+    setPendingUpload({ file, target, overwrite: entries.some((entry) => entry.name === file.name) })
+    if (fileInput.current) fileInput.current.value = ""
+  }
+
+  async function upload() {
+    if (!pendingUpload) return
+    const { file, target, overwrite } = pendingUpload
+    const uploadId = crypto.randomUUID().replaceAll("-", "")
+    setTransfer({ kind: "upload", done: 0, total: file.size })
+    try {
+      const checksum = await sha256Hex(file)
+      const common = { upload_id: uploadId, total_size: String(file.size), overwrite: String(overwrite) }
+      await runAgentCommand(agentId, "FILE_UPLOAD", { target, params: { ...common, phase: "begin" }, timeoutMs: 30_000 })
+      let offset = 0
+      while (offset < file.size) {
+        const bytes = new Uint8Array(await file.slice(offset, offset + TRANSFER_CHUNK_BYTES).arrayBuffer())
+        await runAgentCommand(agentId, "FILE_UPLOAD", {
+          target,
+          params: { ...common, phase: "chunk", offset: String(offset), content_base64: bytesToBase64(bytes) },
+          timeoutMs: 30_000,
+        })
+        offset += bytes.length
+        setTransfer({ kind: "upload", done: offset, total: file.size })
+      }
+      await runAgentCommand(agentId, "FILE_UPLOAD", { target, params: { ...common, phase: "finish", sha256: checksum }, timeoutMs: 120_000 })
+      setPendingUpload(null)
+      setTransfer(null)
+      reload()
+    } catch (error) {
+      try {
+        await runAgentCommand(agentId, "FILE_UPLOAD", { target, params: { phase: "abort", upload_id: uploadId, total_size: String(file.size) }, timeoutMs: 10_000 })
+      } catch {
+        // The original transfer error is the useful one; abort is best-effort.
+      }
+      setTransfer({ kind: "upload", done: 0, total: file.size, error: userErrorMessage(error, t) })
+    }
   }
 
   return (
@@ -395,7 +466,16 @@ export function FilesTab({ agentId, permission = 0 }: { agentId: string; permiss
             <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") go(input) }} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "var(--font-mono)", fontSize: 11.5 }} />
           </div>
           <button className="btn btn-sm btn-ghost btn-icon" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 13 })}</button>
+          <input ref={fileInput} type="file" hidden onChange={(e) => chooseUpload(e.target.files?.[0])} />
+          <button className="btn btn-sm btn-ghost" disabled={permission < 3 || !!transfer} title={permission < 3 ? t("dev.needL3Upload") : t("dev.uploadTo", { path })} onClick={() => fileInput.current?.click()}>
+            {I.arrowUp({ size: 12 })}<span>{t("dev.upload")}</span>
+          </button>
         </div>
+        {transfer && (
+          <div style={{ padding: "7px 10px", borderBottom: "1px solid var(--border)", fontSize: 10.5, color: transfer.error ? "var(--crit)" : "var(--fg-3)" }}>
+            {transfer.error ?? t("dev.transferProgress", { action: t(`dev.${transfer.kind}`), percent: transfer.total ? Math.round((transfer.done / transfer.total) * 100) : 100 })}
+          </div>
+        )}
         <div className="col" style={{ flex: 1, overflow: "auto" }}>
           <StatePanel loading={loading && !data} error={error} empty={!!data && entries.length === 0} emptyMsg={t("common.noData")} onRetry={reload} />
           {entries.map((e) => {
@@ -421,6 +501,17 @@ export function FilesTab({ agentId, permission = 0 }: { agentId: string; permiss
           </div>
         )}
       </div>
+      {pendingUpload && (
+        <ConfirmDialog
+          title={pendingUpload.overwrite ? t("dev.confirmOverwrite") : t("dev.confirmUpload")}
+          message={t(pendingUpload.overwrite ? "dev.confirmOverwriteDesc" : "dev.confirmUploadDesc", { name: pendingUpload.file.name, path: pendingUpload.target, size: formatBytes(pendingUpload.file.size) })}
+          confirmLabel={pendingUpload.overwrite ? t("dev.overwrite") : t("dev.upload")}
+          danger={pendingUpload.overwrite}
+          busy={transfer?.kind === "upload" && !transfer.error}
+          onClose={() => { if (!transfer || transfer.error) { setPendingUpload(null); setTransfer(null) } }}
+          onConfirm={upload}
+        />
+      )}
     </div>
   )
 }
@@ -429,13 +520,63 @@ function FileViewer({ agentId, path, permission }: { agentId: string; path: stri
   const { t } = useTranslation()
   const [tailing, setTailing] = useState(true)
   const { data, loading, error, reload } = useAgentCommand(agentId, "FILE_TAIL", { target: path, params: { lines: "300" } })
-  const { busy, flash, setFlash, run } = useCommandAction(agentId)
+  const { flash, setFlash } = useCommandAction(agentId)
+  const [downloading, setDownloading] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
+  const reloadRef = useRef(reload)
+  const loadingRef = useRef(loading)
+  useEffect(() => { reloadRef.current = reload }, [reload])
+  useEffect(() => { loadingRef.current = loading }, [loading])
+  useEffect(() => {
+    if (!tailing) return
+    const id = setInterval(() => {
+      if (!loadingRef.current) void reloadRef.current()
+    }, 4000)
+    return () => clearInterval(id)
+  }, [tailing])
   const lines = useMemo(() => {
     const fromResult = data?.logResult?.lines
     if (fromResult && fromResult.length) return fromResult.map((l) => ({ level: l.level, text: `${l.timestamp ? l.timestamp + " " : ""}${l.message}` }))
     const out = data?.output ?? ""
     return out ? out.split("\n").map((text) => ({ level: undefined as string | undefined, text })) : []
   }, [data])
+
+  async function download() {
+    setDownloading(true)
+    setDownloadProgress(0)
+    setFlash(null)
+    try {
+      const parts: BlobPart[] = []
+      let offset = 0
+      let total = 0
+      let eof = false
+      while (!eof) {
+        const result = await runAgentCommand(agentId, "FILE_DOWNLOAD", { target: path, params: { offset: String(offset), length: String(TRANSFER_CHUNK_BYTES) }, timeoutMs: 30_000 })
+        const bytes = base64ToBytes(result.fileContent ?? "")
+        const meta = parseTransferMeta(result.output)
+        total = Number(meta.total ?? total)
+        eof = meta.eof === "true"
+        if (!bytes.length && !eof) throw new Error("Empty download chunk")
+        parts.push(bytes.buffer as ArrayBuffer)
+        offset += bytes.length
+        setDownloadProgress(total ? Math.round((offset / total) * 100) : 100)
+      }
+      const url = URL.createObjectURL(new Blob(parts, { type: "application/octet-stream" }))
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = path.split("/").filter(Boolean).at(-1) ?? "download"
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setFlash({ kind: "ok", text: t("dev.downloadComplete") })
+    } catch (error) {
+      setFlash({ kind: "crit", text: userErrorMessage(error, t) })
+    } finally {
+      setDownloading(false)
+      setDownloadProgress(null)
+    }
+  }
 
   return (
     <>
@@ -446,7 +587,7 @@ function FileViewer({ agentId, path, permission }: { agentId: string; path: stri
             <span className={`dot ${tailing ? "ok pulse" : ""}`} />
             <span>{t("dev.tail")}</span>
           </button>
-          <button className="btn btn-sm btn-ghost" disabled={!!busy || permission < 1} title={permission < 1 ? t("access.permissionLevelDesc", { level: "L1" }) : undefined} onClick={() => run("dl", "FILE_DOWNLOAD", { target: path })}>{busy === "dl" ? <span className="dot pulse ok" /> : I.external({ size: 12 })}<span>{t("dev.download")}</span></button>
+          <button className="btn btn-sm btn-ghost" disabled={downloading || permission < 1} title={permission < 1 ? t("access.permissionLevelDesc", { level: "L1" }) : undefined} onClick={download}>{downloading ? <span className="dot pulse ok" /> : I.download({ size: 12 })}<span>{downloadProgress == null ? t("dev.download") : `${downloadProgress}%`}</span></button>
           <button className="btn btn-sm btn-ghost btn-icon" onClick={reload} disabled={loading}>{loading ? <span className="dot pulse ok" /> : I.refresh({ size: 12 })}</button>
         </div>
       </div>
@@ -482,7 +623,20 @@ const LOG_LEVELS = ["all", "info", "warn", "error", "debug"] as const
 export function AgentLogsTab({ agentId, permission }: { agentId: string; permission: number }) {
   const { t } = useTranslation()
   const enabled = permission >= 1
-  const { data, loading, error, reload } = useAgentCommand(agentId, "SYSTEM_LOGS", { enabled })
+  const [source, setSource] = useState("")
+  const params = useMemo(() => ({ lines: "300", ...(source.trim() ? { file: source.trim() } : {}) }), [source])
+  const { data, loading, error, reload } = useAgentCommand(agentId, "SYSTEM_LOGS", { enabled, params })
+  const reloadRef = useRef(reload)
+  const loadingRef = useRef(loading)
+  useEffect(() => { reloadRef.current = reload }, [reload])
+  useEffect(() => { loadingRef.current = loading }, [loading])
+  useEffect(() => {
+    if (!enabled) return
+    const id = setInterval(() => {
+      if (!loadingRef.current) void reloadRef.current()
+    }, 4000)
+    return () => clearInterval(id)
+  }, [enabled])
   const [level, setLevel] = useState<(typeof LOG_LEVELS)[number]>("all")
   const [q, setQ] = useState("")
   const all = useMemo(() => data?.logResult?.lines ?? [], [data])
@@ -501,6 +655,11 @@ export function AgentLogsTab({ agentId, permission }: { agentId: string; permiss
     <div className="col" style={{ padding: 20, gap: 12, height: "100%" }}>
       <div className="row gap-2" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
         <div className="row gap-2" style={{ alignItems: "center" }}>
+          <div className="row gap-2" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", height: 28, minWidth: 310 }}>
+            {I.audit({ size: 12 })}
+            <input list={`log-sources-${agentId}`} value={source} onChange={(e) => setSource(e.target.value)} placeholder={t("dev.logSourcePlaceholder")} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "var(--font-mono)", fontSize: 11.5 }} />
+            <datalist id={`log-sources-${agentId}`}>{LOG_SOURCE_PRESETS.map((item) => <option key={item.label} value={item.path}>{item.label}</option>)}</datalist>
+          </div>
           <div className="row gap-2" style={{ height: 28, padding: "0 4px 0 10px", background: "var(--panel-2)", border: "1px solid var(--border-2)", borderRadius: 6, alignItems: "center", fontSize: 11.5 }}>
             <span className="muted">{t("dev.level")}</span>
             <select value={level} onChange={(e) => setLevel(e.target.value as typeof level)} className="select" style={{ width: "auto", height: 24, border: "none", background: "transparent", padding: "0 4px" }}>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	pathpkg "path"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +41,7 @@ type ShellHandler struct {
 type cmdRoute struct {
 	session *shellSession
 	at      time.Time
+	nextCwd string
 }
 
 type shellSession struct {
@@ -53,6 +55,9 @@ type shellSession struct {
 	// with each command so width-aware tools (ls, ps, top) render correctly.
 	cols int
 	rows int
+	cwd  string
+
+	stateMu sync.Mutex
 
 	// writeMu serializes writes to conn. gorilla/websocket forbids concurrent
 	// writers, and output arrives from the gRPC stream goroutine while the read
@@ -65,6 +70,7 @@ type shellMessage struct {
 	Data string `json:"data,omitempty"`
 	Cols int    `json:"cols,omitempty"`
 	Rows int    `json:"rows,omitempty"`
+	Cwd  string `json:"cwd,omitempty"`
 	// Success reports whether the command that produced this output frame exited
 	// successfully. It is only meaningful on "output" frames and lets the client
 	// style failed commands distinctly. Pointer so it is omitted (not sent as
@@ -121,6 +127,7 @@ func (h *ShellHandler) HandleShellWS(c *gin.Context) {
 		userID:    user.ID,
 		username:  user.Username,
 		createdAt: time.Now(),
+		cwd:       "/",
 	}
 
 	defer h.dropRoutesForSession(session)
@@ -138,6 +145,39 @@ func (h *ShellHandler) HandleShellWS(c *gin.Context) {
 	}
 
 	h.handleSession(session)
+}
+
+func (s *shellSession) currentCwd() string {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.cwd == "" {
+		return "/"
+	}
+	return s.cwd
+}
+
+func (s *shellSession) setCwd(cwd string) {
+	s.stateMu.Lock()
+	s.cwd = cwd
+	s.stateMu.Unlock()
+}
+
+// parseShellCD recognizes only the shell built-in form `cd [directory]`.
+// Metacharacters or extra arguments deliberately fall through to the Agent's
+// normal injection validator instead of being interpreted here.
+func parseShellCD(command string) (string, bool) {
+	fields := strings.Fields(command)
+	if len(fields) == 1 && fields[0] == "cd" {
+		return "/", true
+	}
+	if len(fields) != 2 || fields[0] != "cd" {
+		return "", false
+	}
+	target := fields[1]
+	if target == "" || strings.ContainsAny(target, ";&|<>$`\r\n\x00") {
+		return "", false
+	}
+	return target, true
 }
 
 func (h *ShellHandler) handleSession(session *shellSession) {
@@ -170,23 +210,39 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 
 		switch msg.Type {
 		case "input":
+			requestedCommand := strings.TrimSpace(msg.Data)
+			commandTarget := requestedCommand
+			commandCwd := session.currentCwd()
+			nextCwd := ""
+			if requested, ok := parseShellCD(requestedCommand); ok {
+				if strings.HasPrefix(requested, "/") {
+					nextCwd = pathpkg.Clean(requested)
+				} else {
+					nextCwd = pathpkg.Clean(pathpkg.Join(commandCwd, requested))
+				}
+				if !strings.HasPrefix(nextCwd, "/") {
+					h.sendError(session, "invalid working directory")
+					continue
+				}
+				commandTarget = "pwd"
+				commandCwd = nextCwd
+			}
 			commandID := uuid.New().String()
 			cmd := &pb.Command{
 				CommandId:  commandID,
 				Type:       pb.CommandType_SHELL_EXECUTE,
-				Target:     msg.Data,
+				Target:     commandTarget,
 				SuperToken: h.shellSuperToken,
+				Params:     map[string]string{"cwd": commandCwd},
 			}
 			// Forward the current terminal size so the agent can export
 			// COLUMNS/LINES for width-aware commands.
 			if session.cols > 0 || session.rows > 0 {
-				cmd.Params = map[string]string{
-					"cols": strconv.Itoa(session.cols),
-					"rows": strconv.Itoa(session.rows),
-				}
+				cmd.Params["cols"] = strconv.Itoa(session.cols)
+				cmd.Params["rows"] = strconv.Itoa(session.rows)
 			}
 
-			h.registerRoute(commandID, session)
+			h.registerRoute(commandID, session, nextCwd)
 			if err := h.grpcServer.SendCommandToAgent(session.agentID, cmd); err != nil {
 				h.dropRoute(commandID)
 				h.sendError(session, "failed to send command: "+err.Error())
@@ -210,7 +266,7 @@ func (h *ShellHandler) handleSession(session *shellSession) {
 
 func (h *ShellHandler) sendOutput(session *shellSession, data string, success bool) {
 	ok := success
-	msg := shellMessage{Type: "output", Data: data, Success: &ok}
+	msg := shellMessage{Type: "output", Data: data, Success: &ok, Cwd: session.currentCwd()}
 	if jsonData, err := json.Marshal(msg); err == nil {
 		session.writeMu.Lock()
 		_ = session.conn.WriteMessage(websocket.TextMessage, jsonData)
@@ -245,13 +301,17 @@ func (h *ShellHandler) SendOutputToSession(agentID, commandID, output string, su
 	if !ok || route.session.agentID != agentID {
 		return
 	}
+	if success && route.nextCwd != "" {
+		route.session.setCwd(route.nextCwd)
+		output = ""
+	}
 
 	h.sendOutput(route.session, output, success)
 }
 
 // registerRoute records the session that issued commandID and opportunistically
 // sweeps stale routes whose results never arrived.
-func (h *ShellHandler) registerRoute(commandID string, session *shellSession) {
+func (h *ShellHandler) registerRoute(commandID string, session *shellSession, nextCwd string) {
 	now := time.Now()
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -260,7 +320,7 @@ func (h *ShellHandler) registerRoute(commandID string, session *shellSession) {
 			delete(h.cmdRoutes, id)
 		}
 	}
-	h.cmdRoutes[commandID] = &cmdRoute{session: session, at: now}
+	h.cmdRoutes[commandID] = &cmdRoute{session: session, at: now, nextCwd: nextCwd}
 }
 
 func (h *ShellHandler) dropRoute(commandID string) {

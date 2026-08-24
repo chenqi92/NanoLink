@@ -726,7 +726,9 @@ export interface CommandResultData {
   commandId: string
   success: boolean
   output?: string
-  error?: string
+    error?: string
+    /** Base64-encoded protobuf bytes, returned for chunked FILE_DOWNLOAD. */
+    fileContent?: string
   processes?: AgentProcess[]
   containers?: AgentContainer[]
   packages?: AgentPackage[]

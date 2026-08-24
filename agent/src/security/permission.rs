@@ -1,5 +1,7 @@
+use std::path::{Component, Path};
 use std::sync::{Arc, OnceLock};
 
+use glob::Pattern;
 use regex::Regex;
 use subtle::ConstantTimeEq;
 use tracing::warn;
@@ -155,14 +157,33 @@ impl PermissionChecker {
             ));
         }
 
-        // P0-2: 检测命令注入
+        // P0-2: 检测命令注入。A single read-only pipeline is handled by the
+        // structured validator below; all other shell control syntax is denied.
         if Self::detect_command_injection(command) {
             warn!("[SECURITY] Shell command injection pattern detected");
             return Err("Command blocked: potential command injection detected".to_string());
         }
 
-        // Check blacklist (both original and normalized)
+        let safe_readonly = self.config.shell.readonly_profile
+            && if command.contains('|') {
+                self.is_safe_readonly_pipeline(command)
+            } else {
+                self.is_safe_readonly_command(command)
+            };
+
+        if command.contains('|') && !safe_readonly {
+            return Err(
+                "Command blocked: only validated read-only pipelines are allowed".to_string(),
+            );
+        }
+
+        // Check blacklist (both original and normalized). A legacy literal `|`
+        // blacklist entry may coexist with the structured read-only profile;
+        // it is skipped only after the entire pipeline has validated.
         for pattern in &self.config.shell.blacklist {
+            if pattern == "|" && safe_readonly && command.contains('|') {
+                continue;
+            }
             if command.contains(pattern) || normalized.contains(pattern) {
                 return Err(format!("Command contains blacklisted pattern: {pattern}"));
             }
@@ -177,12 +198,508 @@ impl PermissionChecker {
                 .iter()
                 .any(|p| Self::matches_pattern(&p.pattern, command));
 
-            if !matched {
+            if !matched && !safe_readonly {
                 return Err("Command not in whitelist".to_string());
             }
+        } else if self.config.shell.readonly_profile && !safe_readonly {
+            return Err("Command is outside the built-in read-only profile".to_string());
         }
 
         Ok(())
+    }
+
+    /// Validate a requested per-session working directory. Root is allowed only
+    /// as the root itself; it never implicitly grants every descendant.
+    pub fn check_shell_cwd(&self, cwd: &str) -> Result<(), String> {
+        let canonical = Path::new(cwd)
+            .canonicalize()
+            .map_err(|_| "Working directory does not exist".to_string())?;
+        if !canonical.is_dir() {
+            return Err("Working directory is not a directory".to_string());
+        }
+        let allowed = &self.config.shell.allowed_working_directories;
+        let matched = if allowed.is_empty() {
+            canonical == Path::new("/")
+        } else {
+            allowed.iter().any(|root| {
+                let root_path = Path::new(root);
+                let normalized = root_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| root_path.to_path_buf());
+                if normalized == Path::new("/") {
+                    canonical == normalized
+                } else {
+                    canonical.starts_with(normalized)
+                }
+            })
+        };
+        if matched {
+            Ok(())
+        } else {
+            Err("Working directory is outside the allowed roots".to_string())
+        }
+    }
+
+    fn is_safe_readonly_pipeline(&self, command: &str) -> bool {
+        let parts: Vec<&str> = command.split('|').map(str::trim).collect();
+        if !(2..=3).contains(&parts.len()) || parts.iter().any(|part| part.is_empty()) {
+            return false;
+        }
+        if !self.is_safe_readonly_command(parts[0]) {
+            return false;
+        }
+        parts[1..]
+            .iter()
+            .all(|part| Self::is_safe_pipeline_filter(part))
+    }
+
+    fn is_safe_readonly_command(&self, command: &str) -> bool {
+        let Some(tokens) = shlex::split(command) else {
+            return false;
+        };
+        if tokens.is_empty() || tokens[0].contains('/') {
+            return false;
+        }
+
+        let normalized = tokens.join(" ");
+        const EXACT: &[&str] = &[
+            "pwd",
+            "whoami",
+            "id",
+            "uname -a",
+            "hostname",
+            "hostname -f",
+            "hostnamectl",
+            "uptime",
+            "date",
+            "timedatectl",
+            "who",
+            "w",
+            "users",
+            "last -n 20",
+            "df -h",
+            "df -hT",
+            "free -h",
+            "free -m",
+            "vmstat",
+            "vmstat 1 5",
+            "lsblk",
+            "lsblk -f",
+            "findmnt",
+            "mount",
+            "ps -ef",
+            "ps aux",
+            "pstree -ap",
+            "top -b -n 1",
+            "ss -s",
+            "ss -lntp",
+            "ss -lntup",
+            "netstat -s",
+            "netstat -lntp",
+            "netstat -lntup",
+            "ip addr show",
+            "ip link show",
+            "ip route show",
+            "ip neigh show",
+            "lscpu",
+            "ipcs -a",
+            "getenforce",
+            "sestatus",
+            "ulimit -a",
+            "firewall-cmd --state",
+            "firewall-cmd --list-all",
+            "jps -lv",
+            "jcmd -l",
+            "rpm -qa",
+            "systemctl list-units --type=service --all --no-pager",
+            "systemctl list-unit-files --type=service --no-pager",
+        ];
+        if EXACT.contains(&normalized.as_str()) {
+            return true;
+        }
+
+        match tokens[0].as_str() {
+            "ls" => self.validate_ls(&tokens[1..]),
+            "cat" => self.validate_file_args(&tokens[1..], false),
+            "head" | "tail" => self.validate_head_tail(&tokens[1..]),
+            "stat" => self.validate_file_args(&tokens[1..], false),
+            "du" => self.validate_du(&tokens[1..]),
+            "grep" => self.validate_grep_files(&tokens[1..]),
+            "find" => self.validate_find(&tokens[1..]),
+            "file" | "readlink" | "realpath" | "md5sum" | "sha256sum" => {
+                self.validate_path_utility(tokens[0].as_str(), &tokens[1..])
+            }
+            "wc" => self.validate_wc_files(&tokens[1..]),
+            "which" | "whereis" => Self::validate_binary_lookup(&tokens[1..]),
+            "pgrep" => Self::validate_pgrep(&tokens[1..]),
+            "sysctl" => Self::validate_sysctl_read(&tokens[1..]),
+            "systemctl" => Self::validate_systemctl_read(&tokens[1..]),
+            "journalctl" => Self::validate_journalctl_read(&tokens[1..]),
+            "rpm" => Self::validate_rpm_read(&tokens[1..]),
+            "yum" => Self::validate_yum_read(&tokens[1..]),
+            _ => false,
+        }
+    }
+
+    fn validate_ls(&self, args: &[String]) -> bool {
+        let mut paths = 0usize;
+        for arg in args {
+            if let Some(flags) = arg.strip_prefix('-') {
+                if arg == "--" || !flags.chars().all(|c| "alhtrS1dA".contains(c)) {
+                    return false;
+                }
+            } else {
+                paths += 1;
+                if !self.is_allowed_read_path(arg, true) {
+                    return false;
+                }
+            }
+        }
+        paths <= 8
+    }
+
+    fn validate_file_args(&self, args: &[String], allow_options: bool) -> bool {
+        if args.is_empty() || args.len() > 8 {
+            return false;
+        }
+        args.iter().all(|arg| {
+            (allow_options && arg.starts_with('-')) || self.is_allowed_read_path(arg, false)
+        })
+    }
+
+    fn validate_head_tail(&self, args: &[String]) -> bool {
+        if args.is_empty() {
+            return false;
+        }
+        let mut index = 0usize;
+        if args.get(index).is_some_and(|arg| arg == "-n") {
+            let Some(lines) = args
+                .get(index + 1)
+                .and_then(|value| value.parse::<u32>().ok())
+            else {
+                return false;
+            };
+            if lines > 5000 {
+                return false;
+            }
+            index += 2;
+        } else if let Some(value) = args.get(index).and_then(|arg| arg.strip_prefix('-')) {
+            if value.is_empty() || value.parse::<u32>().ok().is_none_or(|lines| lines > 5000) {
+                return false;
+            }
+            index += 1;
+        }
+        self.validate_file_args(&args[index..], false)
+    }
+
+    fn validate_du(&self, args: &[String]) -> bool {
+        let mut paths = 0usize;
+        for arg in args {
+            if arg.starts_with('-') {
+                let ok = matches!(arg.as_str(), "-h" | "-s" | "-sh" | "-ah")
+                    || arg
+                        .strip_prefix("--max-depth=")
+                        .and_then(|v| v.parse::<u8>().ok())
+                        .is_some_and(|v| v <= 5);
+                if !ok {
+                    return false;
+                }
+            } else {
+                paths += 1;
+                if !self.is_allowed_read_path(arg, false) {
+                    return false;
+                }
+            }
+        }
+        paths == 1
+    }
+
+    fn validate_grep_files(&self, args: &[String]) -> bool {
+        let mut positional = Vec::new();
+        for arg in args {
+            if arg.starts_with('-') {
+                if !matches!(arg.as_str(), "-i" | "-v" | "-E" | "-F" | "-n" | "-w" | "-x") {
+                    return false;
+                }
+            } else {
+                positional.push(arg);
+            }
+        }
+        if positional.len() < 2 || !Self::safe_filter_pattern(positional[0]) {
+            return false;
+        }
+        positional[1..]
+            .iter()
+            .all(|path| self.is_allowed_read_path(path, false))
+    }
+
+    fn validate_find(&self, args: &[String]) -> bool {
+        if args.is_empty() || !self.is_allowed_read_path(&args[0], false) {
+            return false;
+        }
+        const DENIED: &[&str] = &[
+            "-exec", "-execdir", "-ok", "-okdir", "-delete", "-fls", "-fprint", "-fprintf",
+        ];
+        !args[1..].iter().any(|arg| {
+            DENIED.contains(&arg.as_str())
+                || arg
+                    .chars()
+                    .any(|c| matches!(c, ';' | '&' | '|' | '<' | '>' | '$' | '`'))
+        })
+    }
+
+    fn validate_path_utility(&self, command: &str, args: &[String]) -> bool {
+        let paths = if command == "readlink" && args.first().is_some_and(|arg| arg == "-f") {
+            &args[1..]
+        } else {
+            args
+        };
+        self.validate_file_args(paths, false)
+    }
+
+    fn validate_wc_files(&self, args: &[String]) -> bool {
+        let paths: Vec<String> = args
+            .iter()
+            .filter(|arg| !arg.starts_with('-'))
+            .cloned()
+            .collect();
+        args.iter()
+            .all(|arg| !arg.starts_with('-') || matches!(arg.as_str(), "-l" | "-w" | "-c" | "-m"))
+            && self.validate_file_args(&paths, false)
+    }
+
+    fn validate_binary_lookup(args: &[String]) -> bool {
+        !args.is_empty()
+            && args.len() <= 8
+            && args.iter().all(|arg| {
+                !arg.starts_with('-')
+                    && arg.len() <= 128
+                    && arg
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '+'))
+            })
+    }
+
+    fn validate_pgrep(args: &[String]) -> bool {
+        if args.len() != 2 || !matches!(args[0].as_str(), "-af" | "-fl") {
+            return false;
+        }
+        Self::safe_filter_pattern(&args[1])
+    }
+
+    fn validate_sysctl_read(args: &[String]) -> bool {
+        matches!(args, [arg] if arg == "-a")
+            || (!args.is_empty()
+                && args.len() <= 8
+                && args.iter().all(|arg| {
+                    !arg.starts_with('-')
+                        && !arg.contains('=')
+                        && arg
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+                }))
+    }
+
+    fn validate_systemctl_read(args: &[String]) -> bool {
+        if args.is_empty() {
+            return false;
+        }
+        let action = args[0].as_str();
+        if !matches!(
+            action,
+            "status" | "is-active" | "is-enabled" | "show" | "cat"
+        ) {
+            return false;
+        }
+        let units: Vec<&String> = args[1..]
+            .iter()
+            .filter(|arg| arg.as_str() != "--no-pager")
+            .collect();
+        !units.is_empty() && units.len() <= 8 && units.iter().all(|unit| Self::safe_unit_name(unit))
+    }
+
+    fn validate_journalctl_read(args: &[String]) -> bool {
+        if args.is_empty()
+            || args.iter().any(|arg| {
+                arg.starts_with("--vacuum")
+                    || matches!(arg.as_str(), "--rotate" | "--flush" | "--sync")
+            })
+        {
+            return false;
+        }
+        let mut has_limit = false;
+        let mut index = 0usize;
+        while index < args.len() {
+            match args[index].as_str() {
+                "-n" | "--lines" => {
+                    let Some(lines) = args.get(index + 1).and_then(|v| v.parse::<u32>().ok())
+                    else {
+                        return false;
+                    };
+                    if lines > 5000 {
+                        return false;
+                    }
+                    has_limit = true;
+                    index += 2;
+                }
+                "-u" | "--unit" => {
+                    if args
+                        .get(index + 1)
+                        .is_none_or(|unit| !Self::safe_unit_name(unit))
+                    {
+                        return false;
+                    }
+                    index += 2;
+                }
+                "-p" | "--priority" => {
+                    if args
+                        .get(index + 1)
+                        .is_none_or(|v| !v.chars().all(|c| c.is_ascii_alphanumeric() || c == '.'))
+                    {
+                        return false;
+                    }
+                    index += 2;
+                }
+                "--no-pager" | "-r" | "--reverse" | "-b" => index += 1,
+                value if value.starts_with("--since=") || value.starts_with("--until=") => {
+                    if value
+                        .chars()
+                        .any(|c| matches!(c, '$' | '`' | ';' | '|' | '&'))
+                    {
+                        return false;
+                    }
+                    index += 1;
+                }
+                _ => return false,
+            }
+        }
+        has_limit
+    }
+
+    fn validate_rpm_read(args: &[String]) -> bool {
+        matches!(args, [arg] if arg == "-qa")
+            || matches!(args, [flag, package] if matches!(flag.as_str(), "-qi" | "-ql") && Self::safe_package_name(package))
+    }
+
+    fn validate_yum_read(args: &[String]) -> bool {
+        matches!(args, [a, b] if a == "list" && b == "installed")
+            || matches!(args, [a, package] if a == "info" && Self::safe_package_name(package))
+    }
+
+    fn is_safe_pipeline_filter(command: &str) -> bool {
+        let Some(tokens) = shlex::split(command) else {
+            return false;
+        };
+        if tokens.is_empty() || tokens[0].contains('/') {
+            return false;
+        }
+        match tokens[0].as_str() {
+            "grep" => {
+                let mut pattern = None;
+                for arg in &tokens[1..] {
+                    if arg.starts_with('-') {
+                        if !matches!(arg.as_str(), "-i" | "-v" | "-E" | "-F" | "-n" | "-w" | "-x") {
+                            return false;
+                        }
+                    } else if pattern.replace(arg).is_some() {
+                        return false;
+                    }
+                }
+                pattern.is_some_and(|value| Self::safe_filter_pattern(value))
+            }
+            "head" | "tail" => {
+                matches!(tokens.as_slice(), [_, flag, value] if flag == "-n" && value.parse::<u32>().is_ok_and(|v| v <= 5000))
+                    || matches!(tokens.as_slice(), [_, flag] if flag.strip_prefix('-').and_then(|v| v.parse::<u32>().ok()).is_some_and(|v| v <= 5000))
+            }
+            "sort" => {
+                tokens.len() == 1
+                    || matches!(tokens.as_slice(), [_, flag] if matches!(flag.as_str(), "-n" | "-r" | "-nr" | "-rn"))
+            }
+            "uniq" => {
+                tokens.len() == 1
+                    || matches!(tokens.as_slice(), [_, flag] if matches!(flag.as_str(), "-c" | "-d" | "-u"))
+            }
+            "wc" => {
+                tokens.len() == 1
+                    || matches!(tokens.as_slice(), [_, flag] if matches!(flag.as_str(), "-l" | "-w" | "-c"))
+            }
+            "cut" => {
+                tokens.len() >= 2
+                    && tokens[1..].iter().all(|arg| {
+                        (arg.starts_with("-d") || arg.starts_with("-f") || arg.starts_with("-c"))
+                            && !arg
+                                .chars()
+                                .any(|c| matches!(c, '/' | '$' | '`' | ';' | '|' | '&'))
+                    })
+            }
+            _ => false,
+        }
+    }
+
+    fn safe_filter_pattern(value: &str) -> bool {
+        !value.is_empty()
+            && value.len() <= 128
+            && value.chars().all(|c| {
+                c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':' | '/' | '@' | '+')
+            })
+    }
+
+    fn safe_unit_name(value: &str) -> bool {
+        !value.is_empty()
+            && value.len() <= 128
+            && value
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '@'))
+    }
+
+    fn safe_package_name(value: &str) -> bool {
+        !value.is_empty()
+            && value.len() <= 128
+            && value
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '+' | ':'))
+    }
+
+    fn is_allowed_read_path(&self, value: &str, allow_root: bool) -> bool {
+        if value.is_empty()
+            || value
+                .chars()
+                .any(|c| matches!(c, '*' | '?' | '[' | ']' | '{' | '}'))
+        {
+            return false;
+        }
+        let path = Path::new(value);
+        if path
+            .components()
+            .any(|component| component == Component::ParentDir)
+        {
+            return false;
+        }
+        let Ok(canonical) = path.canonicalize() else {
+            return false;
+        };
+        if allow_root && canonical == Path::new("/") {
+            return true;
+        }
+        let canonical_str = canonical.to_string_lossy();
+        if self.config.security.denied_paths.iter().any(|rule| {
+            if rule.chars().any(|c| matches!(c, '*' | '?' | '[' | ']')) {
+                Pattern::new(rule).is_ok_and(|pattern| pattern.matches(&canonical_str))
+            } else {
+                let denied = Path::new(rule)
+                    .canonicalize()
+                    .unwrap_or_else(|_| Path::new(rule).to_path_buf());
+                canonical.starts_with(denied)
+            }
+        }) {
+            return false;
+        }
+        self.config.security.allowed_paths.iter().any(|rule| {
+            let allowed = Path::new(rule)
+                .canonicalize()
+                .unwrap_or_else(|_| Path::new(rule).to_path_buf());
+            canonical.starts_with(allowed)
+        })
     }
 
     /// 规范化命令字符串，移除可能用于绕过检测的字符
@@ -279,6 +796,18 @@ impl PermissionChecker {
 
     /// 检测命令注入尝试
     fn detect_command_injection(command: &str) -> bool {
+        // The shell executor uses `sh -c`, so every shell control operator must
+        // be rejected before whitelist matching. A prefix/wildcard allowlist
+        // such as `ps *` must never turn `ps -ef; <second command>` into an
+        // implicit second-command execution primitive.
+        if command.contains("||")
+            || command
+                .chars()
+                .any(|c| matches!(c, ';' | '&' | '<' | '>' | '$' | '`' | '\n' | '\r' | '\0'))
+        {
+            return true;
+        }
+
         // 命令替换 $(...) 或 `...`
         if command.contains("$(") || command.contains('`') {
             return true;
@@ -406,10 +935,115 @@ mod tests {
     }
 
     #[test]
+    fn shell_control_operators_are_always_treated_as_injection() {
+        for command in [
+            "ps -ef; id",
+            "ps -ef && id",
+            "ps -ef || id",
+            "df -h > /tmp/out",
+            "cat < /etc/passwd",
+            "ps -ef\nid",
+            "ps -ef\rid",
+            "echo $PATH",
+            "echo `id`",
+        ] {
+            assert!(
+                PermissionChecker::detect_command_injection(command),
+                "control operator was not blocked: {command:?}"
+            );
+        }
+
+        // A pipe is not accepted by itself; it is delegated to the structured
+        // read-only pipeline validator in check_shell_command.
+        assert!(!PermissionChecker::detect_command_injection(
+            "ps -ef | grep java"
+        ));
+
+        for command in ["ls", "ls -lah /data", "ps -ef", "df -hT", "pwd"] {
+            assert!(
+                !PermissionChecker::detect_command_injection(command),
+                "read-only command was incorrectly blocked: {command:?}"
+            );
+        }
+    }
+
+    #[test]
     fn read_only_level_includes_listing_commands() {
         let checker = PermissionChecker::new(Arc::new(Config::sample()));
 
         assert!(checker.check_permission(CommandType::ServiceList, 0));
         assert!(checker.check_permission(CommandType::FileList, 0));
+    }
+
+    #[test]
+    fn readonly_profile_allows_diagnostics_but_rejects_pipeline_escape() {
+        let checker = PermissionChecker::new(Arc::new(Config::sample()));
+        let token = "super_secret_token";
+
+        for command in [
+            "ps -ef",
+            "ps -ef | grep java",
+            "ps -ef | grep java | grep -v grep",
+            "df -hT",
+            "ss -lntp",
+            "systemctl status nginx --no-pager",
+            "journalctl -n 200 -u nginx --no-pager",
+            "which java nginx",
+            "sysctl net.ipv4.ip_forward",
+        ] {
+            assert!(
+                checker.check_shell_command(command, token).is_ok(),
+                "expected read-only command to be allowed: {command}"
+            );
+        }
+
+        for command in [
+            "ps -ef | xargs kill",
+            "ps -ef | sh",
+            "ps -ef | grep java > /tmp/pids",
+            "ps -ef; id",
+            "cat",
+            "env",
+            "curl http://127.0.0.1",
+            "sysctl -w net.ipv4.ip_forward=1",
+            "journalctl --vacuum-time=1s -n 20",
+        ] {
+            assert!(
+                checker.check_shell_command(command, token).is_err(),
+                "expected command to be blocked: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn readonly_file_commands_remain_bounded_by_allowed_paths() {
+        let mut config = Config::sample();
+        let root = std::env::temp_dir().join(format!(
+            "nanolink-readonly-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create test dir");
+        let file = root.join("app.log");
+        std::fs::write(&file, "hello").expect("write test file");
+        config.security.allowed_paths = vec![root.to_string_lossy().to_string()];
+        config.security.denied_paths = Vec::new();
+        let checker = PermissionChecker::new(Arc::new(config));
+        let safe_path = file.to_string_lossy().replace('\\', "/");
+
+        assert!(
+            checker
+                .check_shell_command(&format!("cat {safe_path}"), "super_secret_token")
+                .is_ok()
+        );
+        assert!(
+            checker
+                .check_shell_command("cat /etc/passwd", "super_secret_token")
+                .is_err()
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }

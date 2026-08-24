@@ -6,7 +6,7 @@ import { AgentPicker } from "@/components/monitor/AgentPicker"
 import { Modal, ConfirmDialog } from "@/components/shell/Dialog"
 import { useAgentCommand, runAgentCommand } from "@/hooks/useAgentCommand"
 import { formatBytes } from "@/lib/format"
-import type { AgentConfigResult } from "@/lib/api"
+import type { AgentConfigResult, AgentScript } from "@/lib/api"
 import { ContentState, LoadingState, RequestState } from "@/components/shell/RequestState"
 import { userErrorMessage } from "@/lib/errors"
 import { useData } from "@/contexts/DataContext"
@@ -162,16 +162,28 @@ function ScriptsPanel({ agentId, permission }: { agentId: string; permission: nu
   const { data, loading, error, reload } = useAgentCommand(agentId, "SCRIPT_LIST", { enabled: !!agentId })
   const [busy, setBusy] = useState<string | null>(null)
   const [flash, setFlash] = useState<{ kind: "ok" | "crit"; text: string } | null>(null)
-  const [confirm, setConfirm] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<AgentScript | null>(null)
+  const [scriptArgs, setScriptArgs] = useState<Record<string, string>>({})
   const scripts = data?.scripts ?? []
 
-  async function runScript(name: string) {
+  function confirmScript(script: AgentScript) {
+    setScriptArgs(Object.fromEntries((script.requiredArgs ?? []).map((arg) => [arg, ""])))
+    setConfirm(script)
+  }
+
+  async function runScript(script: AgentScript) {
+    const requiredArgs = script.requiredArgs ?? []
+    if (requiredArgs.some((arg) => !scriptArgs[arg]?.trim())) return
+
     setConfirm(null)
-    setBusy(name)
+    setBusy(script.name)
     setFlash(null)
     try {
-      const res = await runAgentCommand(agentId, "SCRIPT_EXECUTE", { params: { name }, timeoutMs: 90_000 })
-      setFlash({ kind: "ok", text: res.output ? `${name}: ${res.output.slice(0, 200)}` : t("dev.cmdSent") })
+      const args = requiredArgs.map((arg) => scriptArgs[arg].trim()).join(" ")
+      const params: Record<string, string> = { name: script.name }
+      if (args) params.args = args
+      const res = await runAgentCommand(agentId, "SCRIPT_EXECUTE", { params, timeoutMs: 90_000 })
+      setFlash({ kind: "ok", text: res.output ? `${script.name}: ${res.output.slice(0, 200)}` : t("dev.cmdSent") })
     } catch (e) {
       setFlash({ kind: "crit", text: userErrorMessage(e, t) })
     } finally {
@@ -199,13 +211,13 @@ function ScriptsPanel({ agentId, permission }: { agentId: string; permission: nu
               {(s.fileSize != null || s.lastModified) && (
                 <div className="row gap-3 dim mono" style={{ fontSize: 10.5, marginBottom: 6 }}>
                   {s.fileSize != null && <span>{t("dev.size")} {formatBytes(s.fileSize)}</span>}
-                  {s.lastModified && <span>{t("dev.lastRun")} {new Date(s.lastModified).toLocaleDateString()}</span>}
+                  {s.lastModified && <span>{t("dev.modified")} {new Date(s.lastModified).toLocaleDateString()}</span>}
                 </div>
               )}
               <div className="hr" />
               <div className="row" style={{ justifyContent: "space-between", fontSize: 11 }}>
                 {s.signatureVerified ? <span className="badge ok" style={{ fontSize: 9.5 }}>{I.check({ size: 10 })} {t("dev.signed")}</span> : <span />}
-                <button className="btn btn-sm btn-ghost" disabled={busy === s.name || permission < Math.max(2, s.requiredPermission ?? 0)} title={permission < Math.max(2, s.requiredPermission ?? 0) ? t("access.permissionLevelDesc", { level: `L${Math.max(2, s.requiredPermission ?? 0)}` }) : undefined} onClick={() => setConfirm(s.name)}>{busy === s.name ? <span className="dot pulse ok" /> : I.bolt({ size: 12 })}<span>{t("dev.run")}</span></button>
+                <button className="btn btn-sm btn-ghost" disabled={busy === s.name || permission < Math.max(2, s.requiredPermission ?? 0)} title={permission < Math.max(2, s.requiredPermission ?? 0) ? t("access.permissionLevelDesc", { level: `L${Math.max(2, s.requiredPermission ?? 0)}` }) : undefined} onClick={() => confirmScript(s)}>{busy === s.name ? <span className="dot pulse ok" /> : I.bolt({ size: 12 })}<span>{t("dev.run")}</span></button>
               </div>
             </div>
           ))}
@@ -214,8 +226,26 @@ function ScriptsPanel({ agentId, permission }: { agentId: string; permission: nu
       {confirm && (
         <ConfirmDialog
           title={t("dev.runScript")}
-          message={<span className="mono">{confirm}</span>}
+          message={(
+            <div className="col gap-3">
+              <span className="mono">{confirm.name}</span>
+              {(confirm.requiredArgs ?? []).map((arg) => (
+                <label key={arg} className="col gap-2">
+                  <span>{t("dev.scriptArgs")} · <span className="mono">{arg}</span></span>
+                  <input
+                    className="input mono"
+                    aria-label={`${t("dev.scriptArgs")} ${arg}`}
+                    value={scriptArgs[arg] ?? ""}
+                    onChange={(e) => setScriptArgs((current) => ({ ...current, [arg]: e.target.value }))}
+                    autoComplete="off"
+                  />
+                </label>
+              ))}
+            </div>
+          )}
           confirmLabel={t("dev.run")}
+          danger
+          confirmDisabled={(confirm.requiredArgs ?? []).some((arg) => !scriptArgs[arg]?.trim())}
           onConfirm={() => runScript(confirm)}
           onClose={() => setConfirm(null)}
         />

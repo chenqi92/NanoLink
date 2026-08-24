@@ -7,6 +7,7 @@ import { useAgentCommand } from "@/hooks/useAgentCommand"
 import type { AgentLogEntry } from "@/lib/api"
 import { useData } from "@/contexts/DataContext"
 import { ContentState, LoadingState, RequestState } from "@/components/shell/RequestState"
+import { LOG_SOURCE_PRESETS } from "@/lib/logSources"
 
 type Scope = "system" | "server" | "audit"
 
@@ -42,6 +43,7 @@ export function LogsScreen() {
   const [scope, setScope] = useState<Scope>("system")
   const [agentId, setAgentId] = useState("")
   const [service, setService] = useState("")
+  const [logFile, setLogFile] = useState("")
   const [level, setLevel] = useState("all")
   const [q, setQ] = useState("")
   const [paused, setPaused] = useState(false)
@@ -53,18 +55,25 @@ export function LogsScreen() {
   const params = useMemo<Record<string, string>>(() => {
     const p: Record<string, string> = { lines: "200" }
     if (scope === "server") p.service = service
+    if (scope === "system" && logFile.trim()) p.file = logFile.trim()
     return p
-  }, [scope, service])
+  }, [scope, service, logFile])
   const { data, loading, error, reload } = useAgentCommand(agentId, SCOPE_CMD[scope], { params, enabled })
 
   // live tail: re-poll while not paused
   const reloadRef = useRef(reload)
+  const loadingRef = useRef(loading)
   useEffect(() => {
     reloadRef.current = reload
   }, [reload])
   useEffect(() => {
+    loadingRef.current = loading
+  }, [loading])
+  useEffect(() => {
     if (paused || !enabled) return
-    const id = setInterval(() => reloadRef.current(), 4000)
+    const id = setInterval(() => {
+      if (!loadingRef.current) void reloadRef.current()
+    }, 4000)
     return () => clearInterval(id)
   }, [paused, enabled])
 
@@ -105,6 +114,13 @@ export function LogsScreen() {
             <div className="row gap-2" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", height: 30, minWidth: 180 }}>
               {I.bolt({ size: 13 })}
               <input value={service} onChange={(e) => setService(e.target.value)} placeholder={t("dev.serviceNamePlaceholder")} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "inherit", fontSize: 12 }} />
+            </div>
+          )}
+          {scope === "system" && (
+            <div className="row gap-2" style={{ background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0 10px", height: 30, minWidth: 320, flex: 1 }}>
+              {I.audit({ size: 13 })}
+              <input list="global-log-sources" value={logFile} onChange={(e) => setLogFile(e.target.value)} placeholder={t("dev.logSourcePlaceholder")} style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontFamily: "var(--font-mono)", fontSize: 11.5 }} />
+              <datalist id="global-log-sources">{LOG_SOURCE_PRESETS.map((item) => <option key={item.label} value={item.path}>{item.label}</option>)}</datalist>
             </div>
           )}
           <select className="select" style={{ width: "auto" }} value={level} onChange={(e) => setLevel(e.target.value)}>

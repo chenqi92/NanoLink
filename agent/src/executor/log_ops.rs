@@ -10,8 +10,10 @@
 
 use std::collections::HashMap;
 use std::process::Command;
+use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
+use crate::config::Config;
 use crate::proto::{CommandResult, LogEntry, LogQueryResult};
 use crate::security::validation::validate_service_name;
 
@@ -104,6 +106,22 @@ const SENSITIVE_PATTERNS: &[(&str, &str)] = &[
     (r"X-Api-Key\s*:\s*\S+", "X-Api-Key: ***REDACTED***"),
 ];
 
+/// Compile the redaction rules once. Compiling every pattern for every log
+/// line made a 100-line query perform thousands of regex compilations and
+/// could delay command results long enough for the dashboard to time out.
+static SENSITIVE_REGEXES: LazyLock<Vec<(regex::Regex, &'static str)>> = LazyLock::new(|| {
+    SENSITIVE_PATTERNS
+        .iter()
+        .map(|(pattern, replacement)| {
+            (
+                regex::Regex::new(&format!("(?i){pattern}"))
+                    .expect("built-in log redaction pattern must compile"),
+                *replacement,
+            )
+        })
+        .collect()
+});
+
 /// Allowed log file paths (whitelist)
 const ALLOWED_LOG_PATHS: &[&str] = &[
     "/var/log/syslog",
@@ -133,6 +151,8 @@ pub struct LogExecutor {
     max_lines: u32,
     /// Whether to sanitize sensitive data
     sanitize: bool,
+    /// Canonical file or directory roots that may be queried.
+    allowed_paths: Vec<String>,
 }
 
 impl LogExecutor {
@@ -141,6 +161,20 @@ impl LogExecutor {
         Self {
             max_lines: 1000,
             sanitize: true,
+            allowed_paths: ALLOWED_LOG_PATHS
+                .iter()
+                .map(|path| (*path).to_string())
+                .collect(),
+        }
+    }
+
+    /// Create a log executor from Agent configuration so application logs can
+    /// be exposed explicitly without hard-coding them into the binary.
+    pub fn from_config(config: Arc<Config>) -> Self {
+        Self {
+            max_lines: 1000,
+            sanitize: true,
+            allowed_paths: config.logging.allowed_paths.clone(),
         }
     }
 
@@ -150,6 +184,10 @@ impl LogExecutor {
         Self {
             max_lines,
             sanitize,
+            allowed_paths: ALLOWED_LOG_PATHS
+                .iter()
+                .map(|path| (*path).to_string())
+                .collect(),
         }
     }
 
@@ -162,24 +200,20 @@ impl LogExecutor {
         let mut result = line.to_string();
         let mut was_sanitized = false;
 
-        for (pattern, replacement) in SENSITIVE_PATTERNS {
-            if let Ok(re) = regex::Regex::new(&format!("(?i){pattern}")) {
-                if re.is_match(&result) {
-                    result = re.replace_all(&result, *replacement).to_string();
-                    was_sanitized = true;
-                }
+        for (re, replacement) in SENSITIVE_REGEXES.iter() {
+            if re.is_match(&result) {
+                result = re.replace_all(&result, *replacement).to_string();
+                was_sanitized = true;
             }
         }
 
         (result, was_sanitized)
     }
 
-    /// Parse a log line into LogEntry
+    /// Parse an already-sanitized log line into a LogEntry.
     fn parse_log_entry(&self, line: &str, source: &str) -> LogEntry {
-        let (sanitized_message, _) = self.sanitize_line(line);
-
         // Try to extract timestamp and level from common log formats
-        let (timestamp, level, message) = self.parse_log_format(&sanitized_message);
+        let (timestamp, level, message) = self.parse_log_format(line);
 
         LogEntry {
             timestamp,
@@ -534,10 +568,16 @@ impl LogExecutor {
 
     /// Query system logs from /var/log (Linux/macOS)
     pub async fn get_system_logs(&self, params: &HashMap<String, String>) -> CommandResult {
-        let log_file = params
+        let requested_file = params
             .get("file")
-            .map(|s| s.as_str())
-            .unwrap_or("/var/log/syslog");
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
+        let auto_file = if std::path::Path::new("/var/log/messages").is_file() {
+            "/var/log/messages"
+        } else {
+            "/var/log/syslog"
+        };
+        let log_file = requested_file.unwrap_or(auto_file);
         let lines = params
             .get("lines")
             .and_then(|s| s.parse().ok())
@@ -553,7 +593,7 @@ impl LogExecutor {
                 log_file
             );
             return Self::error_result(format!(
-                "Access denied: '{log_file}' is not in the allowed log paths. Allowed paths: {ALLOWED_LOG_PATHS:?}"
+                "Access denied: '{log_file}' is not in the configured log paths"
             ));
         }
 
@@ -599,7 +639,7 @@ impl LogExecutor {
             return false;
         }
 
-        for allowed in ALLOWED_LOG_PATHS {
+        for allowed in &self.allowed_paths {
             // For directory entries (ending with /), check if canonical path starts with it
             if allowed.ends_with('/') {
                 if canonical_path.starts_with(allowed) {

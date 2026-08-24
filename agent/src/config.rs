@@ -889,6 +889,17 @@ pub struct ShellConfig {
     #[serde(default = "default_shell_timeout")]
     pub timeout_seconds: u64,
 
+    /// Enable the built-in grammar for common read-only Linux diagnostics.
+    /// Commands are parsed and validated; this is not a wildcard allow-all.
+    #[serde(default)]
+    pub readonly_profile: bool,
+
+    /// Directories that a web-shell session may use as its working directory.
+    /// `/` permits only the root directory itself; subdirectories require their
+    /// own explicit entry.
+    #[serde(default)]
+    pub allowed_working_directories: Vec<String>,
+
     /// Whitelisted command patterns
     #[serde(default)]
     pub whitelist: Vec<CommandPattern>,
@@ -908,6 +919,8 @@ impl Default for ShellConfig {
             enabled: false,
             super_token: None,
             timeout_seconds: default_shell_timeout(),
+            readonly_profile: false,
+            allowed_working_directories: Vec::new(),
             whitelist: Vec::new(),
             blacklist: default_blacklist(),
             require_confirmation: Vec::new(),
@@ -941,6 +954,11 @@ pub struct LoggingConfig {
     /// Audit log file path
     #[serde(default = "default_audit_file")]
     pub audit_file: String,
+
+    /// File or directory paths exposed through SYSTEM_LOGS. Directory entries
+    /// include their descendants after canonicalization.
+    #[serde(default = "default_allowed_log_paths")]
+    pub allowed_paths: Vec<String>,
 }
 
 impl Default for LoggingConfig {
@@ -950,14 +968,37 @@ impl Default for LoggingConfig {
             file: None,
             audit_enabled: true,
             audit_file: default_audit_file(),
+            allowed_paths: default_allowed_log_paths(),
         }
     }
 }
 
+fn default_allowed_log_paths() -> Vec<String> {
+    vec![
+        "/var/log/syslog".to_string(),
+        "/var/log/messages".to_string(),
+        "/var/log/auth.log".to_string(),
+        "/var/log/secure".to_string(),
+        "/var/log/kern.log".to_string(),
+        "/var/log/daemon.log".to_string(),
+        "/var/log/cron".to_string(),
+        "/var/log/maillog".to_string(),
+        "/var/log/boot.log".to_string(),
+        "/var/log/dmesg".to_string(),
+        "/var/log/nginx".to_string(),
+        "/var/log/apache2".to_string(),
+        "/var/log/httpd".to_string(),
+        "/var/log/mysql".to_string(),
+        "/var/log/postgresql".to_string(),
+        "/var/log/redis".to_string(),
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
-    /// Allowed paths for file operations (empty = all paths allowed)
-    /// Paths are checked after canonicalization
+    /// Allowed paths for file operations. Reads use the denylist when empty;
+    /// writes fail closed until at least one explicit root is configured.
+    /// Paths are checked after canonicalization.
     #[serde(default)]
     pub allowed_paths: Vec<String>,
 
@@ -1334,6 +1375,8 @@ impl Config {
                 enabled: true,
                 super_token: Some("super_secret_token".to_string()),
                 timeout_seconds: 30,
+                readonly_profile: true,
+                allowed_working_directories: vec!["/".to_string(), "/var/log".to_string()],
                 whitelist: vec![
                     CommandPattern {
                         pattern: "df -h".to_string(),

@@ -1,10 +1,12 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use glob::Pattern;
+use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
 use crate::config::Config;
@@ -12,6 +14,7 @@ use crate::proto::{CommandResult, FileEntry};
 
 const MAX_TAIL_LINES: usize = 1_000;
 const MAX_TAIL_OUTPUT_BYTES: usize = 1024 * 1024;
+const MAX_TRANSFER_CHUNK_BYTES: usize = 512 * 1024;
 
 fn has_glob_chars(rule: &str) -> bool {
     rule.chars().any(|c| matches!(c, '*' | '?' | '[' | ']'))
@@ -298,8 +301,13 @@ impl FileExecutor {
         }
     }
 
-    /// Download a file (read full content)
-    pub async fn download_file(&self, path: &str) -> CommandResult {
+    /// Download one bounded chunk. The caller repeats the request with the
+    /// returned offset; this keeps command results below gRPC/message limits.
+    pub async fn download_file(
+        &self,
+        path: &str,
+        params: &HashMap<String, String>,
+    ) -> CommandResult {
         // Validate path first
         let validated_path = match self.validate_path(path, false) {
             Ok(p) => p,
@@ -331,81 +339,283 @@ impl FileExecutor {
             ));
         }
 
+        if !metadata.is_file() {
+            return Self::error_result("Only regular files can be downloaded".to_string());
+        }
+
+        let offset = match params.get("offset").map(|s| s.parse::<u64>()) {
+            Some(Ok(value)) => value,
+            Some(Err(_)) => return Self::error_result("Invalid download offset".to_string()),
+            None => 0,
+        };
+        if offset > metadata.len() {
+            return Self::error_result("Download offset exceeds file size".to_string());
+        }
+        let requested = match params.get("length").map(|s| s.parse::<usize>()) {
+            Some(Ok(value)) if value > 0 => value.min(MAX_TRANSFER_CHUNK_BYTES),
+            Some(Ok(_)) | Some(Err(_)) => {
+                return Self::error_result("Invalid download chunk length".to_string());
+            }
+            None => MAX_TRANSFER_CHUNK_BYTES,
+        };
+
         info!(
-            "[AUDIT] FileDownload: {} ({} bytes)",
+            "[AUDIT] FileDownload: {} (offset {}, at most {} bytes, total {})",
             validated_path.display(),
+            offset,
+            requested,
             metadata.len()
         );
 
-        match fs::read(&validated_path) {
+        let read_chunk = || -> Result<Vec<u8>, String> {
+            let mut file =
+                File::open(&validated_path).map_err(|e| format!("Failed to open file: {e}"))?;
+            file.seek(SeekFrom::Start(offset))
+                .map_err(|e| format!("Failed to seek file: {e}"))?;
+            let remaining = metadata.len().saturating_sub(offset);
+            let mut content = vec![0_u8; requested.min(remaining as usize)];
+            let read = file
+                .read(&mut content)
+                .map_err(|e| format!("Failed to read file: {e}"))?;
+            content.truncate(read);
+            Ok(content)
+        };
+
+        match read_chunk() {
             Ok(content) => CommandResult {
                 command_id: String::new(),
                 success: true,
-                output: format!("Downloaded {} bytes", content.len()),
+                output: format!(
+                    "offset={};length={};total={};eof={}",
+                    offset,
+                    content.len(),
+                    metadata.len(),
+                    offset + content.len() as u64 >= metadata.len()
+                ),
                 error: String::new(),
                 file_content: content,
                 ..Default::default()
             },
-            Err(e) => Self::error_result(format!("Failed to read file: {e}")),
+            Err(e) => Self::error_result(e),
         }
     }
 
-    /// Upload a file (write content)
-    pub async fn upload_file(&self, path: &str, content: Option<Vec<u8>>) -> CommandResult {
-        let content = match content {
-            Some(c) => c,
-            None => return Self::error_result("No content provided".to_string()),
-        };
-
-        // Check content size
-        let max_size = self.config.security.max_file_size;
-        if content.len() as u64 > max_size {
-            warn!(
-                "[AUDIT] FileUpload blocked - content too large: {} bytes > {} bytes limit",
-                content.len(),
-                max_size
-            );
-            return Self::error_result(format!(
-                "Content too large ({}MB). Maximum allowed: {}MB",
-                content.len() / 1024 / 1024,
-                max_size / 1024 / 1024
-            ));
-        }
-
-        // Validate path
+    /// Handle a resumable, bounded upload. Files are assembled into a sibling
+    /// temporary file, verified, then atomically renamed on `finish`.
+    pub async fn upload_file(&self, path: &str, params: &HashMap<String, String>) -> CommandResult {
         let validated_path = match self.validate_path(path, true) {
             Ok(p) => p,
             Err(e) => return Self::error_result(e),
         };
+        let phase = params.get("phase").map(String::as_str).unwrap_or("");
+        let upload_id = match params.get("upload_id") {
+            Some(id)
+                if !id.is_empty()
+                    && id.len() <= 64
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') =>
+            {
+                id
+            }
+            _ => return Self::error_result("Invalid upload id".to_string()),
+        };
+        let parent = match validated_path.parent() {
+            Some(parent) if parent.is_dir() => parent,
+            _ => return Self::error_result("Upload parent directory does not exist".to_string()),
+        };
+        let temp_path = parent.join(format!(".nanolink-upload-{upload_id}.part"));
 
-        // Create parent directories if they don't exist
-        if let Some(parent) = validated_path.parent() {
-            if !parent.exists() {
-                if let Err(e) = fs::create_dir_all(parent) {
-                    return Self::error_result(format!("Failed to create parent directories: {e}"));
+        let total_size = || -> Result<u64, String> {
+            let size = params
+                .get("total_size")
+                .ok_or("Missing total size")?
+                .parse::<u64>()
+                .map_err(|_| "Invalid total size".to_string())?;
+            if size > self.config.security.max_file_size {
+                return Err(format!(
+                    "File too large ({}MB). Maximum allowed: {}MB",
+                    size / 1024 / 1024,
+                    self.config.security.max_file_size / 1024 / 1024
+                ));
+            }
+            Ok(size)
+        };
+
+        match phase {
+            "begin" => {
+                let size = match total_size() {
+                    Ok(value) => value,
+                    Err(e) => return Self::error_result(e),
+                };
+                if validated_path.exists()
+                    && params.get("overwrite").map(String::as_str) != Some("true")
+                {
+                    return Self::error_result(
+                        "Target already exists; confirm overwrite".to_string(),
+                    );
+                }
+                let _ = fs::remove_file(&temp_path);
+                match OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&temp_path)
+                {
+                    Ok(_) => {
+                        info!(
+                            "[AUDIT] FileUpload begin: {} ({} bytes)",
+                            validated_path.display(),
+                            size
+                        );
+                        CommandResult {
+                            success: true,
+                            output: "offset=0".to_string(),
+                            ..Default::default()
+                        }
+                    }
+                    Err(e) => Self::error_result(format!("Failed to start upload: {e}")),
                 }
             }
-        }
-
-        info!(
-            "[AUDIT] FileUpload: {} ({} bytes)",
-            validated_path.display(),
-            content.len()
-        );
-
-        match fs::write(&validated_path, &content) {
-            Ok(_) => CommandResult {
-                command_id: String::new(),
-                success: true,
-                output: format!(
-                    "Written {} bytes to {}",
-                    content.len(),
-                    validated_path.display()
-                ),
-                error: String::new(),
-                ..Default::default()
+            "chunk" => {
+                let size = match total_size() {
+                    Ok(value) => value,
+                    Err(e) => return Self::error_result(e),
+                };
+                let offset = match params.get("offset").map(|s| s.parse::<u64>()) {
+                    Some(Ok(value)) => value,
+                    _ => return Self::error_result("Invalid upload offset".to_string()),
+                };
+                let content = match params
+                    .get("content_base64")
+                    .ok_or("Missing upload chunk")
+                    .and_then(|content| {
+                        BASE64
+                            .decode(content)
+                            .map_err(|_| "Invalid base64 upload chunk")
+                    }) {
+                    Ok(content) if content.len() <= MAX_TRANSFER_CHUNK_BYTES => content,
+                    Ok(_) => return Self::error_result("Upload chunk is too large".to_string()),
+                    Err(e) => return Self::error_result(e.to_string()),
+                };
+                if offset.saturating_add(content.len() as u64) > size {
+                    return Self::error_result(
+                        "Upload chunk exceeds declared file size".to_string(),
+                    );
+                }
+                let mut file = match OpenOptions::new().append(true).open(&temp_path) {
+                    Ok(file) => file,
+                    Err(e) => return Self::error_result(format!("Upload session not found: {e}")),
+                };
+                let current = match file.metadata() {
+                    Ok(meta) => meta.len(),
+                    Err(e) => return Self::error_result(format!("Failed to inspect upload: {e}")),
+                };
+                if current != offset {
+                    return Self::error_result(format!(
+                        "Upload offset mismatch: expected {current}, received {offset}"
+                    ));
+                }
+                if let Err(e) = file.write_all(&content).and_then(|_| file.flush()) {
+                    return Self::error_result(format!("Failed to write upload chunk: {e}"));
+                }
+                CommandResult {
+                    success: true,
+                    output: format!("offset={}", offset + content.len() as u64),
+                    ..Default::default()
+                }
+            }
+            "finish" => {
+                let size = match total_size() {
+                    Ok(value) => value,
+                    Err(e) => return Self::error_result(e),
+                };
+                let expected_hash = match params.get("sha256") {
+                    Some(hash)
+                        if hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()) =>
+                    {
+                        hash.to_ascii_lowercase()
+                    }
+                    _ => return Self::error_result("Invalid SHA-256 checksum".to_string()),
+                };
+                let metadata = match fs::metadata(&temp_path) {
+                    Ok(meta) if meta.len() == size => meta,
+                    Ok(meta) => {
+                        return Self::error_result(format!(
+                            "Upload size mismatch: expected {size}, received {}",
+                            meta.len()
+                        ));
+                    }
+                    Err(e) => return Self::error_result(format!("Upload session not found: {e}")),
+                };
+                let _ = metadata;
+                let mut file = match File::open(&temp_path) {
+                    Ok(file) => file,
+                    Err(e) => return Self::error_result(format!("Failed to verify upload: {e}")),
+                };
+                let mut hasher = Sha256::new();
+                let mut buffer = [0_u8; 64 * 1024];
+                loop {
+                    let read = match file.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(read) => read,
+                        Err(e) => {
+                            return Self::error_result(format!("Failed to verify upload: {e}"));
+                        }
+                    };
+                    hasher.update(&buffer[..read]);
+                }
+                let actual_hash = format!("{:x}", hasher.finalize());
+                if actual_hash != expected_hash {
+                    let _ = fs::remove_file(&temp_path);
+                    return Self::error_result("Upload checksum mismatch".to_string());
+                }
+                if validated_path.exists()
+                    && params.get("overwrite").map(String::as_str) != Some("true")
+                {
+                    return Self::error_result(
+                        "Target already exists; confirm overwrite".to_string(),
+                    );
+                }
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Err(e) =
+                        fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o640))
+                    {
+                        return Self::error_result(format!(
+                            "Failed to set upload permissions: {e}"
+                        ));
+                    }
+                }
+                if let Err(e) = fs::rename(&temp_path, &validated_path) {
+                    return Self::error_result(format!("Failed to finalize upload: {e}"));
+                }
+                info!(
+                    "[AUDIT] FileUpload complete: {} ({} bytes, sha256 {})",
+                    validated_path.display(),
+                    size,
+                    actual_hash
+                );
+                CommandResult {
+                    success: true,
+                    output: format!("Uploaded {size} bytes"),
+                    ..Default::default()
+                }
+            }
+            "abort" => match fs::remove_file(&temp_path) {
+                Ok(_) => CommandResult {
+                    success: true,
+                    output: "Upload aborted".to_string(),
+                    ..Default::default()
+                },
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => CommandResult {
+                    success: true,
+                    output: "Upload session already absent".to_string(),
+                    ..Default::default()
+                },
+                Err(e) => Self::error_result(format!("Failed to abort upload: {e}")),
             },
-            Err(e) => Self::error_result(format!("Failed to write file: {e}")),
+            _ => Self::error_result("Invalid upload phase".to_string()),
         }
     }
 
@@ -521,6 +731,79 @@ mod tests {
                 .validate_path(&denied_file.to_string_lossy(), false)
                 .is_err()
         );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn chunked_upload_is_verified_then_downloaded_in_chunks() {
+        let root = unique_temp_dir("chunk-transfer");
+        let target = root.join("artifact.jar");
+        let executor = test_executor(vec![root.to_string_lossy().into_owned()], vec![]);
+        let payload = b"production-safe-chunk";
+        let checksum = format!("{:x}", Sha256::digest(payload));
+        let common = HashMap::from([
+            ("upload_id".to_string(), "test-upload-1".to_string()),
+            ("total_size".to_string(), payload.len().to_string()),
+            ("overwrite".to_string(), "false".to_string()),
+        ]);
+
+        let mut begin = common.clone();
+        begin.insert("phase".to_string(), "begin".to_string());
+        assert!(
+            executor
+                .upload_file(&target.to_string_lossy(), &begin)
+                .await
+                .success
+        );
+
+        let mut chunk = common.clone();
+        chunk.insert("phase".to_string(), "chunk".to_string());
+        chunk.insert("offset".to_string(), "0".to_string());
+        chunk.insert("content_base64".to_string(), BASE64.encode(payload));
+        assert!(
+            executor
+                .upload_file(&target.to_string_lossy(), &chunk)
+                .await
+                .success
+        );
+
+        let mut finish = common;
+        finish.insert("phase".to_string(), "finish".to_string());
+        finish.insert("sha256".to_string(), checksum);
+        assert!(
+            executor
+                .upload_file(&target.to_string_lossy(), &finish)
+                .await
+                .success
+        );
+        assert_eq!(fs::read(&target).expect("read upload"), payload);
+
+        let first = executor
+            .download_file(
+                &target.to_string_lossy(),
+                &HashMap::from([
+                    ("offset".to_string(), "0".to_string()),
+                    ("length".to_string(), "7".to_string()),
+                ]),
+            )
+            .await;
+        assert!(first.success);
+        assert_eq!(first.file_content, &payload[..7]);
+        assert!(first.output.contains("eof=false"));
+
+        let second = executor
+            .download_file(
+                &target.to_string_lossy(),
+                &HashMap::from([
+                    ("offset".to_string(), "7".to_string()),
+                    ("length".to_string(), "512".to_string()),
+                ]),
+            )
+            .await;
+        assert!(second.success);
+        assert_eq!(second.file_content, &payload[7..]);
+        assert!(second.output.contains("eof=true"));
 
         let _ = fs::remove_dir_all(root);
     }

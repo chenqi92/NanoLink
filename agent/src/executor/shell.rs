@@ -75,6 +75,7 @@ impl ShellExecutor {
         super_token: &str,
         cols: u16,
         rows: u16,
+        cwd: &str,
     ) -> CommandResult {
         // Check permissions
         if let Err(e) = self
@@ -91,13 +92,23 @@ impl ShellExecutor {
             };
         }
 
+        if let Err(e) = self.permission_checker.check_shell_cwd(cwd) {
+            warn!("Shell working directory denied: {} - {}", cwd, e);
+            return CommandResult {
+                command_id: String::new(),
+                success: false,
+                error: e,
+                ..Default::default()
+            };
+        }
+
         info!(
             "Executing validated shell command ({} bytes)",
             command.len()
         );
 
         let timeout_secs = self.config.shell.timeout_seconds;
-        let result = self.run(command, timeout_secs, cols, rows).await;
+        let result = self.run(command, timeout_secs, cols, rows, cwd).await;
 
         if result.success {
             info!("Shell command completed successfully");
@@ -126,7 +137,14 @@ impl ShellExecutor {
     /// shell_ws.go plumbing (see LOG_STREAM for the existing streaming pattern);
     /// that is out of scope here. The COLUMNS/LINES env vars are exported so
     /// width-aware tools still format correctly despite the absence of a PTY.
-    async fn run(&self, command: &str, timeout_secs: u64, cols: u16, rows: u16) -> CommandResult {
+    async fn run(
+        &self,
+        command: &str,
+        timeout_secs: u64,
+        cols: u16,
+        rows: u16,
+        cwd: &str,
+    ) -> CommandResult {
         let mut cmd = if cfg!(windows) {
             let mut c = Command::new("cmd");
             c.args(["/C", command]);
@@ -145,6 +163,7 @@ impl ShellExecutor {
         if rows > 0 {
             cmd.env("LINES", rows.to_string());
         }
+        cmd.current_dir(cwd);
 
         // Put the shell in its own process group on Unix. Killing only the shell
         // on timeout leaves grandchildren (for example `sleep 600 & wait`)
@@ -319,7 +338,7 @@ mod tests {
         } else {
             "printf out; printf err >&2; exit 7"
         };
-        let result = executor().run(command, 5, 0, 0).await;
+        let result = executor().run(command, 5, 0, 0, "/").await;
 
         assert!(!result.success);
         assert_eq!(result.output.trim_end(), "out");
@@ -334,7 +353,7 @@ mod tests {
         } else {
             "printf before-timeout; sleep 5"
         };
-        let result = executor().run(command, 1, 0, 0).await;
+        let result = executor().run(command, 1, 0, 0, "/").await;
 
         assert!(!result.success);
         assert_eq!(result.output.trim_end(), "before-timeout");
@@ -348,7 +367,11 @@ mod tests {
         } else {
             "yes x | head -c 1100000"
         };
-        let result = executor().run(command, 5, 0, 0).await;
+        // PowerShell startup can exceed five seconds on a busy Windows runner
+        // (notably after clippy in the pre-commit hook). The behavior under test
+        // is output capping, so give process startup enough headroom.
+        let timeout_secs = if cfg!(windows) { 20 } else { 5 };
+        let result = executor().run(command, timeout_secs, 0, 0, "/").await;
 
         assert!(result.success);
         assert!(
