@@ -11,11 +11,15 @@ use tracing::warn;
 /// Default timeout for subprocess commands
 pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Execute a command with a timeout
+/// Execute a command with a timeout.
 ///
 /// Returns None if the command fails to start or times out with no output.
 /// For streaming commands, partial output is returned even on timeout.
-/// This prevents hanging subprocesses from blocking the async runtime.
+///
+/// IMPORTANT: this call blocks the calling thread (it polls the child with a
+/// short sleep). It MUST only be invoked from a blocking context — a dedicated
+/// thread or `tokio::task::spawn_blocking` — never directly on an async task,
+/// otherwise it stalls a tokio worker for up to `timeout`.
 pub fn exec_with_timeout(mut cmd: Command, timeout: Duration) -> Option<Output> {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -31,6 +35,10 @@ pub fn exec_with_timeout(mut cmd: Command, timeout: Duration) -> Option<Output> 
     };
 
     let start = std::time::Instant::now();
+    // Adaptive backoff: start tight for fast commands, grow toward a cap so the
+    // long NPU/GPU timeouts don't spin with thousands of needless wakeups.
+    let mut poll_interval = Duration::from_millis(2);
+    const MAX_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
     loop {
         match child.try_wait() {
@@ -127,7 +135,8 @@ pub fn exec_with_timeout(mut cmd: Command, timeout: Duration) -> Option<Output> 
                     warn!("Command timed out after {:?}, killed", timeout);
                     return None;
                 }
-                std::thread::sleep(Duration::from_millis(50));
+                std::thread::sleep(poll_interval);
+                poll_interval = (poll_interval * 2).min(MAX_POLL_INTERVAL);
             }
             Err(_) => return None,
         }

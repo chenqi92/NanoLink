@@ -153,6 +153,7 @@ htmlcov/
 .coverage
 .pytest_cache/
 __pycache__/
+*.egg-info/
 
 # =========================
 # Temporary Files

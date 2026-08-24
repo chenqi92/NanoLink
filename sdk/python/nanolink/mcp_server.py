@@ -9,7 +9,7 @@ import asyncio
 import json
 import sys
 from typing import Any, Callable, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
 from .server import NanoLinkServer
 
@@ -185,23 +185,24 @@ class MCPServer:
         ]
         return {"tools": tools}
     
-    def _handle_tools_call(self, params: dict) -> dict:
+    async def _handle_tools_call(self, params: dict) -> dict:
         name = params.get("name")
         args = params.get("arguments", {})
-        
+
         tool = self.tools.get(name)
         if not tool:
             raise ValueError(f"Unknown tool: {name}")
-        
+
         try:
-            # Execute with timeout using asyncio
-            loop = asyncio.get_event_loop()
+            # Await coroutine tools directly; never call run_until_complete on a
+            # running loop (it raises RuntimeError). Run sync tools off-thread so
+            # they cannot block the event loop and can be bounded by wait_for.
             if asyncio.iscoroutinefunction(tool.handler):
-                result = loop.run_until_complete(
-                    asyncio.wait_for(tool.handler(args), timeout=DEFAULT_TOOL_TIMEOUT)
-                )
+                result = await asyncio.wait_for(tool.handler(args), timeout=DEFAULT_TOOL_TIMEOUT)
             else:
-                result = tool.handler(args)
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(tool.handler, args), timeout=DEFAULT_TOOL_TIMEOUT
+                )
             content = self._format_result(result)
             return {"content": content}
         except asyncio.TimeoutError:
@@ -314,7 +315,8 @@ class MCPServer:
         ))
     
     def _tool_list_agents(self, args: dict) -> dict:
-        agents = self.nano.get_agents()
+        # NanoLinkServer exposes connected agents via the `agents` property
+        agents = self.nano.agents
         result = [
             {"id": a.agent_id, "hostname": a.hostname, "os": a.os, "arch": a.arch}
             for a in agents.values()
@@ -326,10 +328,11 @@ class MCPServer:
         agent = self.nano.get_agent(agent_id) or self.nano.get_agent_by_hostname(agent_id)
         if not agent:
             raise ValueError(f"Agent not found: {agent_id}")
-        return agent.last_metrics.to_dict() if agent.last_metrics else {}
+        # Metrics is a dataclass; serialize it with asdict (no to_dict method exists)
+        return asdict(agent.last_metrics) if agent.last_metrics else {}
     
     def _tool_get_system_summary(self, args: dict) -> dict:
-        agents = self.nano.get_agents()
+        agents = self.nano.agents
         total_cpu = 0.0
         total_mem_used = 0
         total_mem_total = 0
@@ -359,7 +362,7 @@ class MCPServer:
         if threshold < 0 or threshold > 100:
             raise ValueError("threshold must be between 0 and 100")
         
-        agents = self.nano.get_agents()
+        agents = self.nano.agents
         high_cpu = []
         
         for agent in agents.values():

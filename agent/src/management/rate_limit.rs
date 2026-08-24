@@ -19,11 +19,16 @@ use tokio::sync::RwLock;
 
 use crate::config::RateLimitConfig;
 
+/// Hard cap on the number of token buckets kept in memory. Bounds memory under a
+/// bucket-flooding attack (many source IPs); when reached, new sources fall back to
+/// the default per-IP limit being unable to register and are rejected (fail closed).
+const MAX_BUCKETS: usize = 10_000;
+
 /// State for rate limiting
 pub struct RateLimitState {
     /// Rate limit configuration
     config: RateLimitConfig,
-    /// Token buckets per IP:endpoint
+    /// Token buckets keyed by IP:known-endpoint, or by source IP for unknown paths
     buckets: RwLock<HashMap<String, TokenBucket>>,
 }
 
@@ -103,17 +108,36 @@ pub async fn rate_limit_middleware(
 
     let path = request.uri().path().to_string();
     let source_ip = addr.ip();
-    let bucket_key = format!("{source_ip}:{path}");
 
-    // Get endpoint-specific or default rate limit
-    let (requests_per_minute, burst) = state
-        .config
-        .endpoints
-        .get(&path)
-        .map(|e| (e.requests_per_minute, e.burst))
-        .unwrap_or((state.config.requests_per_minute, state.config.burst));
+    // Get endpoint-specific or default rate limit. Only configured (known) endpoints get
+    // their own per-path bucket; any other path shares a single per-IP default bucket so
+    // an attacker cannot spawn unbounded buckets by varying the path (memory DoS).
+    let (requests_per_minute, burst, bucket_key) = match state.config.endpoints.get(&path) {
+        Some(e) => (
+            e.requests_per_minute,
+            e.burst,
+            format!("{source_ip}:{path}"),
+        ),
+        None => (
+            state.config.requests_per_minute,
+            state.config.burst,
+            source_ip.to_string(),
+        ),
+    };
 
     let mut buckets = state.buckets.write().await;
+
+    // Cap total buckets to bound memory; reject new sources once the cap is hit.
+    if !buckets.contains_key(&bucket_key) && buckets.len() >= MAX_BUCKETS {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(RateLimitResponse {
+                success: false,
+                message: "Rate limiter capacity reached. Try again later.".to_string(),
+                retry_after_ms: Some(1000),
+            }),
+        ));
+    }
 
     let bucket = buckets
         .entry(bucket_key)

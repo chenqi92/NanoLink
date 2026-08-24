@@ -293,7 +293,10 @@ impl MessageHandler {
             // Script execution commands
             CommandType::ScriptList => self.script_executor.list_scripts(&command.params).await,
             CommandType::ScriptExecute => {
-                self.script_executor.execute_script(&command.params).await
+                // Pass the connection permission so per-script `# Permission` headers are enforced.
+                self.script_executor
+                    .execute_script(&command.params, self.permission_level)
+                    .await
             }
 
             // Config management commands

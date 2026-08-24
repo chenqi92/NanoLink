@@ -7,6 +7,7 @@ import (
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
+	"github.com/influxdata/influxdb-client-go/v2/api/write"
 )
 
 // InfluxDBStore is an InfluxDB time-series store
@@ -54,56 +55,55 @@ func NewInfluxDBStore(cfg Config) (*InfluxDBStore, error) {
 }
 
 // Write stores a metrics point
+//
+// All measurements for a single timestamp are collected and written in one batched
+// WritePoint call. Writing the whole point atomically (instead of one synchronous
+// WritePoint per measurement) avoids discarding the entire sample when a later
+// per-measurement write would have failed, and cuts round-trips.
 func (s *InfluxDBStore) Write(point *MetricsPoint) error {
 	ctx := context.Background()
 
-	// Create InfluxDB point for CPU
-	p := influxdb2.NewPointWithMeasurement("cpu").
+	points := make([]*write.Point, 0, 2+len(point.Disks)+len(point.Networks))
+
+	// CPU
+	points = append(points, influxdb2.NewPointWithMeasurement("cpu").
 		AddTag("agent_id", point.AgentID).
 		AddField("usage_percent", point.CPU.UsagePercent).
-		SetTime(point.Timestamp)
-	if err := s.writeAPI.WritePoint(ctx, p); err != nil {
-		return fmt.Errorf("influxdb: failed to write cpu: %w", err)
-	}
+		SetTime(point.Timestamp))
 
 	// Memory
-	p = influxdb2.NewPointWithMeasurement("memory").
+	points = append(points, influxdb2.NewPointWithMeasurement("memory").
 		AddTag("agent_id", point.AgentID).
 		AddField("total", int64(point.Memory.Total)).
 		AddField("used", int64(point.Memory.Used)).
 		AddField("available", int64(point.Memory.Available)).
-		SetTime(point.Timestamp)
-	if err := s.writeAPI.WritePoint(ctx, p); err != nil {
-		return fmt.Errorf("influxdb: failed to write memory: %w", err)
-	}
+		SetTime(point.Timestamp))
 
 	// Disks
 	for _, disk := range point.Disks {
-		p = influxdb2.NewPointWithMeasurement("disk").
+		points = append(points, influxdb2.NewPointWithMeasurement("disk").
 			AddTag("agent_id", point.AgentID).
 			AddTag("mount_point", disk.MountPoint).
 			AddField("total", int64(disk.Total)).
 			AddField("used", int64(disk.Used)).
 			AddField("read_bytes_per_sec", int64(disk.ReadBytesPerSec)).
 			AddField("write_bytes_per_sec", int64(disk.WriteBytesPerSec)).
-			SetTime(point.Timestamp)
-		if err := s.writeAPI.WritePoint(ctx, p); err != nil {
-			return fmt.Errorf("influxdb: failed to write disk: %w", err)
-		}
+			SetTime(point.Timestamp))
 	}
 
 	// Networks
 	for _, net := range point.Networks {
-		p = influxdb2.NewPointWithMeasurement("network").
+		points = append(points, influxdb2.NewPointWithMeasurement("network").
 			AddTag("agent_id", point.AgentID).
 			AddTag("interface", net.Interface).
 			AddField("rx_bytes_per_sec", int64(net.RxBytesPerSec)).
 			AddField("tx_bytes_per_sec", int64(net.TxBytesPerSec)).
 			AddField("is_up", net.IsUp).
-			SetTime(point.Timestamp)
-		if err := s.writeAPI.WritePoint(ctx, p); err != nil {
-			return fmt.Errorf("influxdb: failed to write network: %w", err)
-		}
+			SetTime(point.Timestamp))
+	}
+
+	if err := s.writeAPI.WritePoint(ctx, points...); err != nil {
+		return fmt.Errorf("influxdb: failed to write metrics point: %w", err)
 	}
 
 	return nil

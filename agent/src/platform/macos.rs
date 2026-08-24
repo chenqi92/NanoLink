@@ -54,3 +54,40 @@ pub fn is_service_running() -> bool {
         .map(|s| s.success())
         .unwrap_or(false)
 }
+
+/// Start (load) the nanolink-agent launchd service.
+///
+/// Provides parity with the Windows/Linux platform modules so callers get a real
+/// implementation with an explicit error instead of a silent no-op.
+#[allow(dead_code)]
+pub fn start_service() -> Result<(), String> {
+    let out = Command::new("launchctl")
+        .args(["load", "-w", LAUNCHD_PLIST])
+        .output()
+        .map_err(|e| format!("Failed to execute launchctl load: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "launchctl load failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ))
+    }
+}
+
+/// Stop (unload) the nanolink-agent launchd service.
+#[allow(dead_code)]
+pub fn stop_service() -> Result<(), String> {
+    let out = Command::new("launchctl")
+        .args(["unload", "-w", LAUNCHD_PLIST])
+        .output()
+        .map_err(|e| format!("Failed to execute launchctl unload: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "launchctl unload failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ))
+    }
+}

@@ -116,14 +116,11 @@ impl DiskCollector {
                     };
                 }
 
-                // Use device name as key (e.g., "sda", "nvme0n1")
-                info.insert(name.clone(), disk_info);
-
-                // Also add with /dev/ prefix
-                info.insert(
-                    format!("/dev/{}", name),
-                    info.get(&name).cloned().unwrap_or_default(),
-                );
+                // Index under both the bare device name (e.g. "sda", "nvme0n1") and
+                // the "/dev/" path. Clone the value directly instead of re-reading it
+                // back out of the map via info.get.
+                info.insert(format!("/dev/{}", name), disk_info.clone());
+                info.insert(name, disk_info);
             }
         }
 

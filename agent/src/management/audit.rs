@@ -23,6 +23,12 @@ use tracing::{error, info};
 
 use crate::config::AuditConfig;
 
+/// Caller permission level, propagated from auth_middleware via response extensions
+/// so the audit middleware (which runs as the outer layer, before auth resolves the
+/// token) can record the authenticated permission level.
+#[derive(Debug, Clone, Copy)]
+pub struct CallerPermission(pub u8);
+
 /// Audit log entry in JSON format
 #[derive(Debug, Serialize)]
 pub struct AuditLogEntry {
@@ -263,6 +269,10 @@ pub async fn audit_middleware(
     let duration = start.elapsed();
     let status = response.status().as_u16();
 
+    // Read the caller permission injected by auth_middleware (None for public endpoints
+    // or rejected requests that never reached auth).
+    let permission = response.extensions().get::<CallerPermission>().map(|p| p.0);
+
     // Create audit log entry
     let entry = AuditLogEntry {
         ts: Utc::now().to_rfc3339(),
@@ -270,7 +280,7 @@ pub async fn audit_middleware(
         endpoint: path,
         method,
         token,
-        permission: None, // Would need to be passed from auth middleware
+        permission,
         status,
         duration_ms: duration.as_millis() as u64,
     };

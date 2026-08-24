@@ -819,13 +819,21 @@ impl ConfigManager {
             return Err("Path traversal detected after canonicalization".to_string());
         }
 
-        // Check forbidden paths against canonical path
+        // Check forbidden paths against canonical path.
+        // Match the path AND all its ancestors so that a rule like "/home/*/.ssh"
+        // also blocks "/home/alice/.ssh/id_rsa" (a plain glob won't, since '*'
+        // doesn't cross '/').
         for forbidden in FORBIDDEN_PATHS {
-            if glob::Pattern::new(forbidden)
-                .map(|p| p.matches(&canonical_str) || p.matches(path))
-                .unwrap_or(false)
-            {
-                return Err("Access to this path is forbidden".to_string());
+            if let Ok(pattern) = glob::Pattern::new(forbidden) {
+                let hit = pattern.matches(&canonical_str)
+                    || pattern.matches(path)
+                    || canonical_path
+                        .ancestors()
+                        .skip(1)
+                        .any(|a| pattern.matches(&a.to_string_lossy()));
+                if hit {
+                    return Err("Access to this path is forbidden".to_string());
+                }
             }
         }
 

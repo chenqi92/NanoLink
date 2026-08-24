@@ -795,6 +795,10 @@ impl PermissionChecker {
     }
 
     /// 检测命令注入尝试
+    ///
+    /// This denylist is defense in depth for unrestricted L3 shells. Nodes using
+    /// `readonly_profile` are additionally constrained by the structured command
+    /// grammar above, which rejects shell control syntax before execution.
     fn detect_command_injection(command: &str) -> bool {
         // The shell executor uses `sh -c`, so every shell control operator must
         // be rejected before whitelist matching. A prefix/wildcard allowlist

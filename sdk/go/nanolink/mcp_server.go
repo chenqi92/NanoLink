@@ -112,47 +112,52 @@ func (m *MCPServer) serve(ctx context.Context) error {
 
 	log.Println("MCP server starting...")
 
+	// Use a single long-lived reader goroutine instead of spawning one per
+	// message. A per-message goroutine blocked in ReadMessage leaks on ctx
+	// cancel/shutdown and multiple of them race on the same stdin reader.
+	type readResult struct {
+		msg []byte
+		err error
+	}
+	readChan := make(chan readResult)
+	go func() {
+		for {
+			msg, err := m.transport.ReadMessage()
+			select {
+			case readChan <- readResult{msg: msg, err: err}:
+			case <-m.shutdown:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-m.shutdown:
 			return nil
-		default:
-			// Wrap ReadMessage in goroutine for cancellation support
-			msgChan := make(chan []byte, 1)
-			errChan := make(chan error, 1)
-			go func() {
-				msg, err := m.transport.ReadMessage()
-				if err != nil {
-					errChan <- err
-					return
-				}
-				msgChan <- msg
-			}()
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-m.shutdown:
-				return nil
-			case err := <-errChan:
-				if err == io.EOF {
+		case r := <-readChan:
+			if r.err != nil {
+				if r.err == io.EOF {
 					return nil
 				}
-				log.Printf("MCP read error: %v", err)
-				continue
-			case msg := <-msgChan:
-				response, err := m.handleMessage(ctx, msg)
-				if err != nil {
-					log.Printf("MCP handle error: %v", err)
-					continue
-				}
+				log.Printf("MCP read error: %v", r.err)
+				return r.err
+			}
 
-				if response != nil {
-					if err := m.transport.WriteMessage(response); err != nil {
-						log.Printf("MCP write error: %v", err)
-					}
+			response, err := m.handleMessage(ctx, r.msg)
+			if err != nil {
+				log.Printf("MCP handle error: %v", err)
+				continue
+			}
+
+			if response != nil {
+				if err := m.transport.WriteMessage(response); err != nil {
+					log.Printf("MCP write error: %v", err)
 				}
 			}
 		}

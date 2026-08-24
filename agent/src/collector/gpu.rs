@@ -1119,12 +1119,25 @@ impl GpuCollector {
     fn collect_windows_gpu(&self, nvidia_names: &[String]) -> Option<Vec<GpuMetrics>> {
         let mut gpus = Vec::new();
 
-        // Step 1: Get GPU info via WMI (Get-CimInstance Win32_VideoController)
+        // Step 1: Get GPU info via WMI (Get-CimInstance Win32_VideoController).
+        // AdapterRAM is a CIM uint32 capped at 4 GiB, so it is wrong for modern GPUs;
+        // prefer the 64-bit registry value HardwareInformation.qwMemorySize, and emit it
+        // as VramBytes (falling back to the unsigned-reinterpreted AdapterRAM).
         let mut cmd = Command::new("powershell");
         cmd.args([
             "-NoProfile",
             "-Command",
-            r#"Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM, VideoProcessor | ConvertTo-Json -Compress"#,
+            r#"Get-CimInstance Win32_VideoController | ForEach-Object {
+                $ram = $_.AdapterRAM
+                if ($ram -lt 0) { $ram = $ram + 4294967296 }
+                $qw = $null
+                if ($_.PNPDeviceID) {
+                    $key = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($_.PNPDeviceID)\Device Parameters"
+                    try { $qw = (Get-ItemProperty -Path $key -Name 'HardwareInformation.qwMemorySize' -ErrorAction Stop).'HardwareInformation.qwMemorySize' } catch {}
+                }
+                $vram = if ($qw -gt 0) { [uint64]$qw } else { [uint64]$ram }
+                [PSCustomObject]@{ Name = $_.Name; VramBytes = $vram; VideoProcessor = $_.VideoProcessor }
+            } | ConvertTo-Json -Compress"#,
         ]);
 
         if let Some(output) = exec_with_timeout(cmd, GPU_COMMAND_TIMEOUT) {
@@ -1237,9 +1250,25 @@ impl GpuCollector {
             gpu.vendor = "Unknown".to_string();
         }
 
-        // Extract AdapterRAM (in bytes)
-        if let Some(ram_str) = Self::extract_json_number_field(json, "AdapterRAM") {
-            gpu.memory_total = ram_str.parse().unwrap_or(0);
+        // Prefer the 64-bit VramBytes computed by the PowerShell query above. Fall back
+        // to AdapterRAM, reinterpreting a wrapped negative value as unsigned 32-bit so
+        // GPUs reporting >4 GiB via the legacy uint32 field are not parsed as 0.
+        if let Some(vram_str) = Self::extract_json_number_field(json, "VramBytes") {
+            gpu.memory_total = vram_str.parse::<u64>().unwrap_or(0);
+        }
+        if gpu.memory_total == 0 {
+            if let Some(ram_str) = Self::extract_json_number_field(json, "AdapterRAM") {
+                gpu.memory_total = ram_str
+                    .parse::<i64>()
+                    .map(|v| {
+                        if v < 0 {
+                            (v + 4_294_967_296) as u64
+                        } else {
+                            v as u64
+                        }
+                    })
+                    .unwrap_or(0);
+            }
         }
 
         Some(gpu)

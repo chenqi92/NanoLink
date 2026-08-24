@@ -96,6 +96,8 @@ class NanoLinkServer:
         self._grpc_servicer = None
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._running = False
+        # Main event loop captured in start(); gRPC threads schedule callbacks on it
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Callbacks
         self._on_agent_connect: Optional[Callable[[AgentConnection], Awaitable[None]]] = None
@@ -157,6 +159,15 @@ class NanoLinkServer:
             raise RuntimeError("gRPC is not available. Install grpcio and grpcio-tools.")
 
         self._running = True
+
+        # Capture the running loop so gRPC worker threads can schedule the
+        # user's async callbacks onto it via run_coroutine_threadsafe.
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
+            logger.warning("start() called without a running event loop; async callbacks will be skipped")
+
         self._start_grpc_server()
 
         # Start heartbeat checker
@@ -214,58 +225,43 @@ class NanoLinkServer:
         if not GRPC_AVAILABLE:
             raise RuntimeError("gRPC is not available. Install grpcio and grpcio-tools.")
 
+        # Schedule an async callback coroutine onto the captured main loop.
+        # gRPC handlers run on worker threads with no running loop, so
+        # get_running_loop() here would always fail; use the saved reference.
+        def _dispatch(coro) -> None:
+            loop = self._loop
+            if loop is None:
+                logger.warning("No event loop available; dropping async callback")
+                coro.close()
+                return
+            asyncio.run_coroutine_threadsafe(coro, loop)
+
         # Create callback wrappers that work with both sync and async
         def sync_on_agent_connect(agent: AgentConnection) -> None:
             if self._on_agent_connect:
                 self._agents[agent.agent_id] = agent
-                try:
-                    # Run async callback in event loop if possible
-                    loop = asyncio.get_running_loop()
-                    asyncio.run_coroutine_threadsafe(self._on_agent_connect(agent), loop)
-                except RuntimeError:
-                    # No event loop running, just register the agent
-                    pass
+                _dispatch(self._on_agent_connect(agent))
 
         def sync_on_agent_disconnect(agent: AgentConnection) -> None:
             if self._on_agent_disconnect:
                 self._agents.pop(agent.agent_id, None)
-                try:
-                    loop = asyncio.get_running_loop()
-                    asyncio.run_coroutine_threadsafe(self._on_agent_disconnect(agent), loop)
-                except RuntimeError:
-                    pass
+                _dispatch(self._on_agent_disconnect(agent))
 
         def sync_on_metrics(metrics: Metrics) -> None:
             if self._on_metrics:
-                try:
-                    loop = asyncio.get_running_loop()
-                    asyncio.run_coroutine_threadsafe(self._on_metrics(metrics), loop)
-                except RuntimeError:
-                    pass
+                _dispatch(self._on_metrics(metrics))
 
         def sync_on_realtime(realtime: RealtimeMetrics) -> None:
             if self._on_realtime_metrics:
-                try:
-                    loop = asyncio.get_running_loop()
-                    asyncio.run_coroutine_threadsafe(self._on_realtime_metrics(realtime), loop)
-                except RuntimeError:
-                    pass
+                _dispatch(self._on_realtime_metrics(realtime))
 
         def sync_on_static(static_info: StaticInfo) -> None:
             if self._on_static_info:
-                try:
-                    loop = asyncio.get_running_loop()
-                    asyncio.run_coroutine_threadsafe(self._on_static_info(static_info), loop)
-                except RuntimeError:
-                    pass
+                _dispatch(self._on_static_info(static_info))
 
         def sync_on_periodic(periodic: PeriodicData) -> None:
             if self._on_periodic_data:
-                try:
-                    loop = asyncio.get_running_loop()
-                    asyncio.run_coroutine_threadsafe(self._on_periodic_data(periodic), loop)
-                except RuntimeError:
-                    pass
+                _dispatch(self._on_periodic_data(periodic))
 
         # Create the gRPC servicer with callback wrappers
         self._grpc_servicer = NanoLinkServicer(

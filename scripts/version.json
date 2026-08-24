@@ -9,8 +9,8 @@
     },
     {
       "path": "agent/src/main.rs",
-      "pattern": "const VERSION: &str = \".*\";",
-      "replacement": "const VERSION: &str = \"{{VERSION}}\";",
+      "pattern": "#\\[command\\(version = \".*\"\\)\\]",
+      "replacement": "#[command(version = \"{{VERSION}}\")]",
       "type": "regex"
     },
     {

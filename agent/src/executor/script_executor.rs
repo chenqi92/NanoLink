@@ -2,7 +2,6 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
@@ -98,7 +97,15 @@ impl ScriptExecutor {
     }
 
     /// Execute a predefined script
-    pub async fn execute_script(&self, params: &HashMap<String, String>) -> CommandResult {
+    ///
+    /// `caller_permission` is the permission level of the current connection; it is
+    /// compared against the script's `# Permission` header so a script can require a
+    /// higher level than the global ScriptExecute gate.
+    pub async fn execute_script(
+        &self,
+        params: &HashMap<String, String>,
+        caller_permission: u8,
+    ) -> CommandResult {
         if !self.config.scripts.enabled {
             return CommandResult {
                 command_id: String::new(),
@@ -199,6 +206,28 @@ impl ScriptExecutor {
             }
         }
 
+        // Enforce the script's per-script `# Permission` header against the caller.
+        // Without this, the only gate is the global ScriptExecute level, so a script
+        // marked `# Permission: 3` would run for any caller allowed ScriptExecute.
+        if let Some(info) = self.parse_script_info(&canonical_script) {
+            if (caller_permission as i32) < info.required_permission {
+                warn!(
+                    "Script '{}' requires permission {}, caller has {}",
+                    script_name, info.required_permission, caller_permission
+                );
+                return CommandResult {
+                    command_id: String::new(),
+                    success: false,
+                    output: String::new(),
+                    error: format!(
+                        "Permission denied. Script requires level {}, your level: {}",
+                        info.required_permission, caller_permission
+                    ),
+                    ..Default::default()
+                };
+            }
+        }
+
         // Parse and validate arguments
         let args_str = params.get("args").map(|s| s.as_str()).unwrap_or("");
         let args: Vec<&str> = if args_str.is_empty() {
@@ -225,7 +254,9 @@ impl ScriptExecutor {
 
         // Execute the script
         let timeout_secs = self.config.scripts.timeout_seconds;
-        let result = self.run_script(&canonical_script, &args, timeout_secs);
+        let result = self
+            .run_script(&canonical_script, &args, timeout_secs)
+            .await;
 
         // Truncate output if needed
         let mut output = result.0;
@@ -396,175 +427,133 @@ impl ScriptExecutor {
         }
     }
 
-    /// Run the script with timeout
-    fn run_script(
+    /// Run the script with timeout.
+    ///
+    /// stdout/stderr are drained concurrently while the child runs (see `spawn_and_drain`):
+    /// reading the pipes only after the process exits deadlocks any script whose output
+    /// exceeds the OS pipe buffer (~64KB on Linux), since the child blocks on write and
+    /// never exits, forcing a false timeout.
+    async fn run_script(
         &self,
         script_path: &Path,
         args: &[&str],
         timeout_secs: u64,
     ) -> (String, bool, String) {
         #[cfg(unix)]
-        let result = self.run_script_unix(script_path, args, timeout_secs);
+        {
+            let mut cmd = tokio::process::Command::new(script_path);
+            cmd.args(args);
+            self.spawn_and_drain(cmd, timeout_secs).await
+        }
 
         #[cfg(windows)]
-        let result = self.run_script_windows(script_path, args, timeout_secs);
+        {
+            // Determine script type and executor
+            let ext = script_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_lowercase());
 
-        result
-    }
-
-    #[cfg(unix)]
-    fn run_script_unix(
-        &self,
-        script_path: &Path,
-        args: &[&str],
-        timeout_secs: u64,
-    ) -> (String, bool, String) {
-        use std::io::Read;
-        use std::process::Stdio;
-
-        let mut cmd = Command::new(script_path);
-        cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
-
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => {
-                return (
-                    String::new(),
-                    false,
-                    format!("Failed to spawn script: {}", e),
-                );
-            }
-        };
-
-        // Wait with timeout
-        let timeout = Duration::from_secs(timeout_secs);
-        let start = std::time::Instant::now();
-
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    let mut stdout = String::new();
-                    let mut stderr = String::new();
-
-                    if let Some(mut out) = child.stdout.take() {
-                        let _ = out.read_to_string(&mut stdout);
-                    }
-                    if let Some(mut err) = child.stderr.take() {
-                        let _ = err.read_to_string(&mut stderr);
-                    }
-
-                    return (stdout, status.success(), stderr);
+            let (program, script_args): (&str, Vec<&str>) = match ext.as_deref() {
+                Some("ps1") => (
+                    "powershell",
+                    vec![
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        script_path.to_str().unwrap_or(""),
+                    ],
+                ),
+                Some("bat") | Some("cmd") => {
+                    ("cmd", vec!["/C", script_path.to_str().unwrap_or("")])
                 }
-                Ok(None) => {
-                    if start.elapsed() > timeout {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return (
-                            String::new(),
-                            false,
-                            format!("Script timed out after {} seconds", timeout_secs),
-                        );
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(e) => {
+                _ => {
                     return (
                         String::new(),
                         false,
-                        format!("Failed to wait for script: {}", e),
+                        "Unsupported script type on Windows".to_string(),
                     );
                 }
-            }
+            };
+
+            let mut cmd = tokio::process::Command::new(program);
+            cmd.args(&script_args).args(args);
+            self.spawn_and_drain(cmd, timeout_secs).await
         }
     }
 
-    #[cfg(windows)]
-    fn run_script_windows(
+    /// Spawn the command, concurrently drain stdout/stderr, and wait with timeout.
+    async fn spawn_and_drain(
         &self,
-        script_path: &Path,
-        args: &[&str],
+        mut cmd: tokio::process::Command,
         timeout_secs: u64,
     ) -> (String, bool, String) {
-        use std::io::Read;
         use std::process::Stdio;
+        use tokio::io::AsyncReadExt;
 
-        // Determine script type and executor
-        let ext = script_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase());
-
-        let (program, script_args): (&str, Vec<&str>) = match ext.as_deref() {
-            Some("ps1") => (
-                "powershell",
-                vec![
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    script_path.to_str().unwrap_or(""),
-                ],
-            ),
-            Some("bat") | Some("cmd") => ("cmd", vec!["/C", script_path.to_str().unwrap_or("")]),
-            _ => {
-                return (
-                    String::new(),
-                    false,
-                    "Unsupported script type on Windows".to_string(),
-                );
-            }
-        };
-
-        let mut cmd = Command::new(program);
-        cmd.args(&script_args)
-            .args(args)
+        let mut child = match cmd
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = match cmd.spawn() {
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+        {
             Ok(c) => c,
             Err(e) => {
                 return (String::new(), false, format!("Failed to spawn script: {e}"));
             }
         };
 
-        // Wait with timeout
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Drain both pipes in parallel so the child is never blocked on a full pipe.
+        let stdout_task = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            if let Some(mut s) = stdout {
+                let _ = s.read_to_end(&mut buf).await;
+            }
+            buf
+        });
+        let stderr_task = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            if let Some(mut s) = stderr {
+                let _ = s.read_to_end(&mut buf).await;
+            }
+            buf
+        });
+
         let timeout = Duration::from_secs(timeout_secs);
-        let start = std::time::Instant::now();
+        let wait_result = tokio::time::timeout(timeout, child.wait()).await;
 
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    let mut stdout = String::new();
-                    let mut stderr = String::new();
-
-                    if let Some(mut out) = child.stdout.take() {
-                        let _ = out.read_to_string(&mut stdout);
-                    }
-                    if let Some(mut err) = child.stderr.take() {
-                        let _ = err.read_to_string(&mut stderr);
-                    }
-
-                    return (stdout, status.success(), stderr);
-                }
-                Ok(None) => {
-                    if start.elapsed() > timeout {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return (
-                            String::new(),
-                            false,
-                            format!("Script timed out after {timeout_secs} seconds"),
-                        );
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(e) => {
-                    return (
-                        String::new(),
-                        false,
-                        format!("Failed to wait for script: {e}"),
-                    );
-                }
+        match wait_result {
+            Ok(Ok(status)) => {
+                let stdout = stdout_task.await.unwrap_or_default();
+                let stderr = stderr_task.await.unwrap_or_default();
+                (
+                    String::from_utf8_lossy(&stdout).to_string(),
+                    status.success(),
+                    String::from_utf8_lossy(&stderr).to_string(),
+                )
+            }
+            Ok(Err(e)) => {
+                stdout_task.abort();
+                stderr_task.abort();
+                (
+                    String::new(),
+                    false,
+                    format!("Failed to wait for script: {e}"),
+                )
+            }
+            Err(_) => {
+                // kill_on_drop reaps the child; abort the drain tasks.
+                let _ = child.kill().await;
+                stdout_task.abort();
+                stderr_task.abort();
+                (
+                    String::new(),
+                    false,
+                    format!("Script timed out after {timeout_secs} seconds"),
+                )
             }
         }
     }
