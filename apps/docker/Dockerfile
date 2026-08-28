@@ -1,5 +1,5 @@
 # Build stage - Web UI
-FROM node:24-alpine3.24 AS web-builder
+FROM node:26-alpine3.24 AS web-builder
 
 WORKDIR /app/web
 COPY apps/server/web/package*.json ./
