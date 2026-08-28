@@ -1,6 +1,6 @@
-# NanoLink Python SDK
+# NanoOps Python SDK
 
-Python SDK for NanoLink monitoring system.
+Python SDK for NanoOps monitoring system.
 
 ## Installation
 

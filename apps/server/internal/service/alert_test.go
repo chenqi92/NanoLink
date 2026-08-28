@@ -16,8 +16,8 @@ func TestSanitizeEmailHeaderValueRemovesCRLF(t *testing.T) {
 }
 
 func TestSanitizeEmailHeaderValueKeepsNormalHeader(t *testing.T) {
-	got := sanitizeEmailHeaderValue("NanoLink Alert")
-	if got != "NanoLink Alert" {
+	got := sanitizeEmailHeaderValue("NanoOps Alert")
+	if got != "NanoOps Alert" {
 		t.Fatalf("got %q", got)
 	}
 }

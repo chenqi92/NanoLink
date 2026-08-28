@@ -1,7 +1,7 @@
 """
-MCP (Model Context Protocol) Server wrapper for NanoLink SDK.
+MCP (Model Context Protocol) Server wrapper for NanoOps SDK.
 
-Provides AI/LLM integration capabilities for NanoLink monitoring servers,
+Provides AI/LLM integration capabilities for NanoOps monitoring servers,
 allowing tools like Claude Desktop to interact with the monitoring system.
 """
 
@@ -52,7 +52,7 @@ class MCPServer:
     """
     MCP wrapper for NanoLinkServer.
     
-    Enables AI/LLM applications to interact with NanoLink monitoring system
+    Enables AI/LLM applications to interact with NanoOps monitoring system
     using the Model Context Protocol.
     
     Example:

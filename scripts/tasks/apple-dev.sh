@@ -5,9 +5,9 @@ set -Eeuo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$script_dir/../.." && pwd)
 
-project_path="${PROJECT_PATH:-$repo_root/apps/ios/NanoLink.xcodeproj}"
-ios_scheme="${IOS_SCHEME:-NanoLink}"
-mac_scheme="${MAC_SCHEME:-NanoLink}"
+project_path="${PROJECT_PATH:-$repo_root/apps/ios/NanoOps.xcodeproj}"
+ios_scheme="${IOS_SCHEME:-NanoOps}"
+mac_scheme="${MAC_SCHEME:-NanoOps}"
 ios_configuration="${IOS_CONFIGURATION:-Debug}"
 mac_configuration="${MAC_CONFIGURATION:-Debug}"
 development_team="${DEVELOPMENT_TEAM:-2U97K3U27A}"
@@ -21,8 +21,8 @@ mac_signing_mode="${MAC_SIGNING_MODE:-adhoc}"
 
 ios_derived_data="${IOS_DERIVED_DATA:-$repo_root/apps/ios/build/DeveloperWorkflow/iOS}"
 mac_derived_data="${MAC_DERIVED_DATA:-$repo_root/apps/ios/build/DeveloperWorkflow/macOS}"
-ios_app_path="${IOS_APP_PATH:-$ios_derived_data/Build/Products/$ios_configuration-iphoneos/NanoLink.app}"
-mac_app_path="${MAC_APP_PATH:-$mac_derived_data/Build/Products/$mac_configuration-maccatalyst/NanoLink.app}"
+ios_app_path="${IOS_APP_PATH:-$ios_derived_data/Build/Products/$ios_configuration-iphoneos/NanoOps.app}"
+mac_app_path="${MAC_APP_PATH:-$mac_derived_data/Build/Products/$mac_configuration-maccatalyst/NanoOps.app}"
 
 device_temp_dir=""
 device_json=""

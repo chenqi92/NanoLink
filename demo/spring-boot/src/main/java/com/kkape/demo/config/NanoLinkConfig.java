@@ -14,9 +14,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
 /**
- * NanoLink Server Configuration
+ * NanoOps Server Configuration
  *
- * Configures and starts the NanoLink server to receive metrics from agents.
+ * Configures and starts the NanoOps server to receive metrics from agents.
  * 
  * <p>
  * Architecture:
@@ -39,11 +39,11 @@ public class NanoLinkConfig {
     private NanoLinkServer nanoLinkServer;
 
     /**
-     * Creates and configures the NanoLink server
+     * Creates and configures the NanoOps server
      */
     @Bean
     public NanoLinkServer nanoLinkServer(MetricsService metricsService) {
-        log.info("Starting NanoLink Server - gRPC port: {}", grpcPort);
+        log.info("Starting NanoOps Server - gRPC port: {}", grpcPort);
 
         var builder = NanoLinkServer.builder()
                 .grpcPort(grpcPort)
@@ -78,11 +78,11 @@ public class NanoLinkConfig {
             try {
                 nanoLinkServer.start();
             } catch (Exception e) {
-                log.error("Failed to start NanoLink server", e);
+                log.error("Failed to start NanoOps server", e);
             }
         }, "nanolink-server").start();
 
-        log.info("NanoLink Server started successfully");
+        log.info("NanoOps Server started successfully");
         return nanoLinkServer;
     }
 
@@ -108,7 +108,7 @@ public class NanoLinkConfig {
     @PreDestroy
     public void shutdown() {
         if (nanoLinkServer != null) {
-            log.info("Stopping NanoLink Server...");
+            log.info("Stopping NanoOps Server...");
             nanoLinkServer.stop();
         }
     }

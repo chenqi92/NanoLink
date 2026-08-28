@@ -7,11 +7,11 @@ case "${1:-}" in
     if is_running; then
       exit 0
     fi
-    [ -f "$CONFIG" ] || { write_error "NanoLink Agent 尚未配置，请重新安装并填写服务端信息"; exit 1; }
+    [ -f "$CONFIG" ] || { write_error "NanoOps Agent 尚未配置，请重新安装并填写服务端信息"; exit 1; }
     "$BIN" nas-start --config-path "$CONFIG" >> "$LOG_FILE" 2>&1 &
     printf '%s\n' "$!" > "$PID_FILE"
     sleep 1
-    is_running || { write_error "NanoLink Agent 启动失败，请查看 ${LOG_FILE}"; exit 1; }
+    is_running || { write_error "NanoOps Agent 启动失败，请查看 ${LOG_FILE}"; exit 1; }
     ;;
   stop)
     stop_service

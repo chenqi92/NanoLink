@@ -31,7 +31,7 @@ type PromptContent struct {
 	Text string `json:"text"`
 }
 
-// registerDefaultPrompts registers the default NanoLink prompts
+// registerDefaultPrompts registers the default NanoOps prompts
 func (s *Server) registerDefaultPrompts() {
 	// diagnose_high_cpu - Diagnose high CPU usage
 	s.RegisterPrompt(&Prompt{

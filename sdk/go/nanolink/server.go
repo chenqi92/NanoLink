@@ -74,7 +74,7 @@ const (
 	PermissionSystemAdmin    = 3
 )
 
-// Server is the NanoLink gRPC server
+// Server is the NanoOps gRPC server
 type Server struct {
 	config            Config
 	agents            map[string]*AgentConnection
@@ -90,7 +90,7 @@ type Server struct {
 	heartbeatStop     chan struct{} // Channel to stop heartbeat checker
 }
 
-// NewServer creates a new NanoLink gRPC server
+// NewServer creates a new NanoOps gRPC server
 func NewServer(config Config) *Server {
 	if config.GrpcPort == 0 {
 		config.GrpcPort = DefaultGrpcPort
@@ -155,7 +155,7 @@ func (s *Server) Start() error {
 	// Start heartbeat checker
 	s.startHeartbeatChecker()
 
-	log.Printf("NanoLink gRPC Server started on port %d", s.config.GrpcPort)
+	log.Printf("NanoOps gRPC Server started on port %d", s.config.GrpcPort)
 	return nil
 }
 

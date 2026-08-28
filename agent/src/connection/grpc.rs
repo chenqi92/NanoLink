@@ -1,4 +1,4 @@
-//! gRPC client implementation for NanoLink Agent
+//! gRPC client implementation for NanoOps Agent
 //!
 //! Provides high-performance bidirectional streaming for metrics and commands.
 
@@ -215,7 +215,7 @@ impl Drop for TaskCleanupGuard {
     }
 }
 
-/// gRPC client for communicating with NanoLink server
+/// gRPC client for communicating with NanoOps server
 pub struct GrpcClient {
     client: NanoLinkServiceClient<Channel>,
     config: Arc<Config>,

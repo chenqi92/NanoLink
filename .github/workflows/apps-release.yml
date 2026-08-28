@@ -142,7 +142,7 @@ jobs:
           fi
           ./gradlew assembleRelease -PversionName="$VERSION"
           mkdir -p release
-          cp app/build/outputs/apk/release/app-release.apk "release/NanoLink-Android-$VERSION.apk"
+          cp app/build/outputs/apk/release/app-release.apk "release/NanoOps-Android-$VERSION.apk"
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -175,8 +175,8 @@ jobs:
       - name: Build Mac Catalyst app (no codesign)
         run: |
           xcodebuild \
-            -project apps/ios/NanoLink.xcodeproj \
-            -scheme NanoLink \
+            -project apps/ios/NanoOps.xcodeproj \
+            -scheme NanoOps \
             -configuration Release \
             -destination "generic/platform=macOS,variant=Mac Catalyst" \
             -derivedDataPath apps/ios/build-macos \
@@ -186,11 +186,11 @@ jobs:
 
       - name: Package macOS app
         run: |
-          APP_PATH="apps/ios/build-macos/Build/Products/Release-maccatalyst/NanoLink.app"
+          APP_PATH="apps/ios/build-macos/Build/Products/Release-maccatalyst/NanoOps.app"
           test -d "$APP_PATH"
           mkdir -p apps/ios/release
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" \
-            "apps/ios/release/NanoLink-macOS-${{ steps.version.outputs.version }}.zip"
+            "apps/ios/release/NanoOps-macOS-${{ steps.version.outputs.version }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -223,8 +223,8 @@ jobs:
       - name: Build native iOS app (no codesign)
         run: |
           xcodebuild \
-            -project apps/ios/NanoLink.xcodeproj \
-            -scheme NanoLink \
+            -project apps/ios/NanoOps.xcodeproj \
+            -scheme NanoOps \
             -configuration Release \
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
@@ -235,12 +235,12 @@ jobs:
 
       - name: Create unsigned IPA
         run: |
-          APP_PATH="apps/ios/build/Build/Products/Release-iphoneos/NanoLink.app"
+          APP_PATH="apps/ios/build/Build/Products/Release-iphoneos/NanoOps.app"
           test -d "$APP_PATH"
           mkdir -p apps/ios/release apps/ios/Payload
           cp -R "$APP_PATH" apps/ios/Payload/
           cd apps/ios
-          zip -r "release/NanoLink-iOS-${{ steps.version.outputs.version }}-unsigned.ipa" Payload
+          zip -r "release/NanoOps-iOS-${{ steps.version.outputs.version }}-unsigned.ipa" Payload
           rm -rf Payload
 
       - name: Upload artifact
@@ -333,7 +333,7 @@ jobs:
           ASSETS=$(gh release view "$TAG" --json assets -q '.assets[].name' --repo ${{ github.repository }} 2>/dev/null || true)
           
           APP_COUNT=0
-          for filename in $(echo "$ASSETS" | grep -E "NanoLink-.*(zip|dmg|tar.gz|apk|ipa)$" || true); do
+          for filename in $(echo "$ASSETS" | grep -E "NanoOps-.*(zip|dmg|tar.gz|apk|ipa)$" || true); do
             APP_COUNT=$((APP_COUNT + 1))
             url="https://github.com/${{ github.repository }}/releases/download/${TAG}/${filename}"
             case "$filename" in

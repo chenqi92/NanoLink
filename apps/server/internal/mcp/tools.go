@@ -20,7 +20,7 @@ type Tool struct {
 	Handler     func(ctx context.Context, args map[string]interface{}) (interface{}, error)
 }
 
-// registerDefaultTools registers the default NanoLink tools
+// registerDefaultTools registers the default NanoOps tools
 func (s *Server) registerDefaultTools() {
 	// list_agents - List all connected agents
 	s.RegisterTool(&Tool{

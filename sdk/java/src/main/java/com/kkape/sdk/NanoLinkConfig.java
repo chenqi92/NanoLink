@@ -1,7 +1,7 @@
 package com.kkape.sdk;
 
 /**
- * Configuration for NanoLink gRPC Server
+ * Configuration for NanoOps gRPC Server
  */
 public class NanoLinkConfig {
     /** Default gRPC port for agent connections */

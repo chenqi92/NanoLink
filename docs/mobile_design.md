@@ -1,18 +1,18 @@
-# NanoLink Mobile UI & Interaction Design
+# NanoOps Mobile UI & Interaction Design
 
 ## Design Philosophy
-The NanoLink mobile application follows the **"Liquid Glass"** design system, emphasizing depth, transparency, and fluidity. It is designed for high-efficiency monitoring and quick remote management.
+The NanoOps mobile application follows the **"Liquid Glass"** design system, emphasizing depth, transparency, and fluidity. It is designed for high-efficiency monitoring and quick remote management.
 
 
 ## Visual Design Concepts
 
-![Mobile Dashboard](/Volumes/od/NanoLink/docs/assets/mobile_dashboard.png)
+![Mobile Dashboard](/Volumes/od/NanoOps/docs/assets/mobile_dashboard.png)
 *Mobile Dashboard concept with Liquid Glass aesthetic.*
 
-![Mobile Agent Detail](/Volumes/od/NanoLink/docs/assets/mobile_detail.png)
+![Mobile Agent Detail](/Volumes/od/NanoOps/docs/assets/mobile_detail.png)
 *Mobile Agent Detail concept showing real-time resource charts.*
 
-![Add Server QR](/Volumes/od/NanoLink/docs/assets/add_server_qr.png)
+![Add Server QR](/Volumes/od/NanoOps/docs/assets/add_server_qr.png)
 *Add Server screen with integrated QR code scanner for seamless pairing.*
 
 ## Connection & Onboarding

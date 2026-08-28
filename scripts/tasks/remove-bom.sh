@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Remove BOM (Byte Order Mark) from text files in the NanoLink project.
+# Remove BOM (Byte Order Mark) from text files in the NanoOps project.
 # BOM characters can cause build failures in Go, Python, and Docker.
 #
 # Usage:

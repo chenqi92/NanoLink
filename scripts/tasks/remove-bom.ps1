@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Remove BOM (Byte Order Mark) from text files in the NanoLink project.
+    Remove BOM (Byte Order Mark) from text files in the NanoOps project.
 
 .DESCRIPTION
     This script scans specified file types for UTF-8 BOM (0xEF 0xBB 0xBF) and removes it.

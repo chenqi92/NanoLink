@@ -147,7 +147,7 @@ func generateBuildSSHKey() (privateKey, publicKey string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	block, err := ssh.MarshalPrivateKey(private, "NanoLink build deploy key")
+	block, err := ssh.MarshalPrivateKey(private, "NanoOps build deploy key")
 	if err != nil {
 		return "", "", err
 	}

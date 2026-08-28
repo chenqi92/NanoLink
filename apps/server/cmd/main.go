@@ -687,7 +687,7 @@ func main() {
 		}()
 	}
 
-	sugar.Infof("NanoLink Server started successfully")
+	sugar.Infof("NanoOps Server started successfully")
 	httpScheme, wsScheme, grpcScheme := "http", "ws", "grpc"
 	if cfg.Server.TLSCert != "" {
 		httpScheme, wsScheme, grpcScheme = "https", "wss", "grpcs"

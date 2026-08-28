@@ -1,4 +1,4 @@
-# NanoLink Version Bump Script for Windows
+# NanoOps Version Bump Script for Windows
 # Usage: .\bump-version.ps1 <new_version>
 # Example: .\bump-version.ps1 0.2.0
 
@@ -87,7 +87,7 @@ function Main {
 
     Write-Host ""
     Write-Host "=========================================="
-    Write-Host "  NanoLink Version Bump"
+    Write-Host "  NanoOps Version Bump"
     Write-Host "=========================================="
     Write-Host ""
     Write-Info "Current version: $CurrentVersion"

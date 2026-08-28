@@ -19,7 +19,7 @@ const MaxMCPMessageSize = 1024 * 1024
 const DefaultToolTimeout = 30 * time.Second
 
 // MCPServer wraps NanoLinkServer with MCP (Model Context Protocol) capabilities.
-// This allows AI/LLM applications like Claude Desktop to interact with NanoLink.
+// This allows AI/LLM applications like Claude Desktop to interact with NanoOps.
 type MCPServer struct {
 	nano      *Server
 	transport MCPTransport
@@ -34,14 +34,14 @@ type MCPServer struct {
 // MCPOption configures the MCP server
 type MCPOption func(*MCPServer)
 
-// WithDefaultTools registers the default NanoLink tools
+// WithDefaultTools registers the default NanoOps tools
 func WithDefaultTools() MCPOption {
 	return func(m *MCPServer) {
 		m.registerDefaultTools()
 	}
 }
 
-// WithDefaultResources registers the default NanoLink resources
+// WithDefaultResources registers the default NanoOps resources
 func WithDefaultResources() MCPOption {
 	return func(m *MCPServer) {
 		m.registerDefaultResources()
@@ -55,7 +55,7 @@ func WithDefaultPrompts() MCPOption {
 	}
 }
 
-// NewMCPServer creates a new MCP server wrapping an existing NanoLink server
+// NewMCPServer creates a new MCP server wrapping an existing NanoOps server
 func NewMCPServer(nano *Server, opts ...MCPOption) *MCPServer {
 	m := &MCPServer{
 		nano:      nano,

@@ -1,10 +1,10 @@
-# NanoLink Spring Boot Demo
+# NanoOps Spring Boot Demo
 
-This demo shows how to integrate NanoLink SDK with Spring Boot to create a monitoring server that receives metrics from agents.
+This demo shows how to integrate NanoOps SDK with Spring Boot to create a monitoring server that receives metrics from agents.
 
 ## Features
 
-- Receives real-time metrics from NanoLink agents
+- Receives real-time metrics from NanoOps agents
 - REST API for querying agents and metrics
 - Alert logging for high resource usage
 - Command execution on remote agents
@@ -13,7 +13,7 @@ This demo shows how to integrate NanoLink SDK with Spring Boot to create a monit
 
 - Java 17+
 - Maven 3.8+
-- NanoLink SDK (built from parent project)
+- NanoOps SDK (built from parent project)
 
 ## Quick Start
 
@@ -105,7 +105,7 @@ spring-boot/
 ├── src/main/java/io/nanolink/demo/
 │   ├── NanoLinkDemoApplication.java    # Main application
 │   ├── config/
-│   │   └── NanoLinkConfig.java         # NanoLink server configuration
+│   │   └── NanoLinkConfig.java         # NanoOps server configuration
 │   ├── controller/
 │   │   ├── MetricsController.java      # Metrics REST API
 │   │   └── CommandController.java      # Command REST API
@@ -121,7 +121,7 @@ spring-boot/
 
 ## How It Works
 
-1. **NanoLinkConfig** creates and starts a NanoLink server on the configured port
+1. **NanoLinkConfig** creates and starts a NanoOps server on the configured port
 2. When agents connect, **MetricsService** registers them and stores their info
 3. Incoming metrics are processed and stored in memory
 4. **MetricsController** exposes REST endpoints to query the data
@@ -181,7 +181,7 @@ public class MetricsRecord {
 
 ### Agent can't connect
 
-1. Check if NanoLink gRPC server is running on port 39100
+1. Check if NanoOps gRPC server is running on port 39100
 2. Verify the agent's server URL configuration
 3. Check firewall rules
 

@@ -1,7 +1,7 @@
-# NanoLink Functional Analysis
+# NanoOps Functional Analysis
 
 ## Project Overview
-NanoLink is a high-performance system monitoring and management framework consisting of a Go server, a Rust agent, and native Android and Apple applications. It provides real-time metrics, remote shell access, and agent management capability.
+NanoOps is a high-performance system monitoring and management framework consisting of a Go server, a Rust agent, and native Android and Apple applications. It provides real-time metrics, remote shell access, and agent management capability.
 
 ## Core Functionalities
 
@@ -24,7 +24,7 @@ NanoLink is a high-performance system monitoring and management framework consis
 
 ### 4. Advanced Features
 - **MCP (Model Context Protocol)**: Integration with AI models for intelligent monitoring and automation.
-- **Multi-Server Support**: The client app can connect to multiple NanoLink servers.
+- **Multi-Server Support**: The client app can connect to multiple NanoOps servers.
 - **Seamless Pairing**: Rapid connection via QR Code (Mobile) or 6-digit Codes (Desktop) for instant server/token propagation.
 
 ## Current UI Patterns (Existing App)

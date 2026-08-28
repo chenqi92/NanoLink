@@ -1,10 +1,10 @@
 [
   {
-    "step_title": "Connect to NanoLink",
+    "step_title": "Connect to NanoOps",
     "items": [
       {
         "type": "textfield",
-        "desc": "Enter the NanoLink server connection.",
+        "desc": "Enter the NanoOps server connection.",
         "subitems": [
           {
             "key": "wizard_server_host",

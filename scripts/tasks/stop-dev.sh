@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Internal task: stop NanoLink development servers
+# Internal task: stop NanoOps development servers
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-echo -e "${GREEN}Stopping NanoLink Development Environment${NC}"
+echo -e "${GREEN}Stopping NanoOps Development Environment${NC}"
 
 # Kill by saved PIDs
 if [ -f /tmp/nanolink-backend.pid ]; then

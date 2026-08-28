@@ -1,5 +1,5 @@
 {
   "port-config": {
-    "protocol-file": "port_conf/NanoLinkAgent.sc"
+    "protocol-file": "port_conf/NanoOpsAgent.sc"
   }
 }

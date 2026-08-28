@@ -1,10 +1,10 @@
 [
   {
-    "step_title": "连接 NanoLink",
+    "step_title": "连接 NanoOps",
     "items": [
       {
         "type": "textfield",
-        "desc": "填写 NanoLink 服务端连接信息。",
+        "desc": "填写 NanoOps 服务端连接信息。",
         "subitems": [
           {
             "key": "wizard_server_host",

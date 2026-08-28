@@ -258,7 +258,7 @@
     "error": "错误",
     "agentName": "代理名称",
     "agentNamePlaceholder": "留空自动生成",
-    "serverConnection": "NanoLink 服务端",
+    "serverConnection": "NanoOps 服务端",
     "serverConnectionHint": "已按当前服务端自动填写，地址、端口和 TLS 均可修改。",
     "serverDetected": "已读取当前服务端连接信息",
     "serverNeedsInput": "请补全有效的服务端地址和端口",
@@ -300,7 +300,7 @@
     "installSteps": "安装步骤",
     "installStepDownload": "下载与 NAS 平台、CPU 架构匹配的原生套件。",
     "installStepParameters": "在 NAS 套件中心上传，并填入上方自动生成的连接参数。",
-    "installStepOnline": "完成安装并启动套件，节点会自动出现在 NanoLink。",
+    "installStepOnline": "完成安装并启动套件，节点会自动出现在 NanoOps。",
     "importantToken": "重要: 保存此令牌",
     "tokenWarning": "代理需要此令牌进行身份验证。请确保将其添加到服务器配置中。",
     "token": "令牌"
@@ -1202,7 +1202,7 @@
     }
   },
   "assistant": {
-    "name": "NanoLink 助手",
+    "name": "NanoOps 助手",
     "subtitle": "基于实时、权限过滤后的集群视图进行对话",
     "requestFailed": "请求失败",
     "chatLabel": "AI 助手对话",
@@ -1243,7 +1243,7 @@
     "none": "无",
     "noCapabilities": "当前没有已注册的 MCP 能力。",
     "noActivity": "本次服务进程启动后尚无 MCP 调用。",
-    "mcpDisabled": "MCP 服务已禁用。此列表展示当前 NanoLink 版本支持的能力。",
+    "mcpDisabled": "MCP 服务已禁用。此列表展示当前 NanoOps 版本支持的能力。",
     "mcpScopeNote": "这些能力供已配置的 MCP 客户端使用。内置助手使用权限过滤后的集群快照，不会执行 MCP 工具。",
     "mcpState": {
       "disabled": "已禁用",

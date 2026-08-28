@@ -2,7 +2,7 @@
 name = "nanolink-agent"
 version = "0.4.10"
 edition = "2024"
-authors = ["NanoLink Team"]
+authors = ["NanoOps Team"]
 description = "Lightweight server monitoring agent"
 license = "MIT"
 repository = "https://github.com/chenqi92/nanolink"
@@ -58,6 +58,7 @@ glob = "0.3"
 subtle = "2.6"           # P1-1: 常量时间比较
 regex = "1.11"           # P0-2: Shell命令模式匹配
 sha2 = "0.11"            # Script checksum verification
+hex = "0.4"              # Stable lowercase digest encoding across digest releases
 base64 = "0.22"          # Chunked file transfer encoding
 shlex = "1.3"            # Parse validated read-only shell commands without ad-hoc splitting
 ring = "0.17"            # Ed25519 verification of self-update binaries (already in tree via rustls/tonic)

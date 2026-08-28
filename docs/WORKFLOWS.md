@@ -1,4 +1,4 @@
-# NanoLink GitHub Workflows 使用指南
+# NanoOps GitHub Workflows 使用指南
 
 [English](#english) | [中文](#中文)
 
@@ -8,7 +8,7 @@
 
 ### 概述
 
-NanoLink 项目包含三个 GitHub Actions 工作流：
+NanoOps 项目包含三个 GitHub Actions 工作流：
 
 | 工作流 | 文件 | 触发条件 | 用途 |
 |--------|------|----------|------|
@@ -225,7 +225,7 @@ A: 在Actions页面找到对应的运行，点击 **Cancel workflow**。
 
 ### Overview
 
-NanoLink project includes three GitHub Actions workflows:
+NanoOps project includes three GitHub Actions workflows:
 
 | Workflow | File | Trigger | Purpose |
 |----------|------|---------|---------|

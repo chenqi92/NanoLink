@@ -35,7 +35,7 @@ write_config() {
   tls_enabled="${wizard_tls_enabled:-true}"
   agent_hostname="${wizard_hostname:-}"
 
-  [ -n "$server_host" ] || { write_error "请填写 NanoLink 服务端地址"; return 1; }
+  [ -n "$server_host" ] || { write_error "请填写 NanoOps 服务端地址"; return 1; }
   [ -n "$server_token" ] || { write_error "请填写 Agent 认证令牌"; return 1; }
   case "$server_port" in
     ''|*[!0-9]*) write_error "服务端端口必须是数字"; return 1 ;;

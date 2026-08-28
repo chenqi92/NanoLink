@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Environment plumbing for the NanoLink design tokens.
+/// Environment plumbing for the NanoOps design tokens.
 ///
 /// A root view resolves `NanoTokens` from the `ThemeStore` (style + mode) and the
 /// system color scheme, then injects them via `.nanoTheme(...)`. Descendant views

@@ -1,10 +1,10 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    NanoLink Agent Uninstallation Script for Windows
+    NanoOps Agent Uninstallation Script for Windows
 
 .DESCRIPTION
-    Removes the NanoLink monitoring agent and associated files.
+    Removes the NanoOps monitoring agent and associated files.
 #>
 
 [CmdletBinding()]
@@ -17,9 +17,9 @@ $ErrorActionPreference = "Stop"
 
 # Configuration
 $ServiceName = "NanoLinkAgent"
-$InstallDir = "C:\Program Files\NanoLink"
-$ConfigDir = "C:\ProgramData\NanoLink"
-$LogDir = "C:\ProgramData\NanoLink\logs"
+$InstallDir = "C:\Program Files\NanoOps"
+$ConfigDir = "C:\ProgramData\NanoOps"
+$LogDir = "C:\ProgramData\NanoOps\logs"
 
 $Script:ScriptLang = if ($Lang) {
     $Lang
@@ -48,8 +48,8 @@ $Script:EnMsgs = @{
     remove_data_prompt = "Remove configuration and data? (y/N)"
     data_removed = "Configuration and data removed"
     data_preserved = "Configuration and data preserved"
-    title = "NanoLink Agent Uninstallation"
-    confirm = "Are you sure you want to uninstall NanoLink Agent? (y/N)"
+    title = "NanoOps Agent Uninstallation"
+    confirm = "Are you sure you want to uninstall NanoOps Agent? (y/N)"
     aborted = "Aborted"
     complete = "Uninstallation Complete!"
 }
@@ -73,8 +73,8 @@ $Script:ZhMsgs = @{
     remove_data_prompt = "是否删除配置和数据？(y/N)"
     data_removed = "配置和数据已删除"
     data_preserved = "已保留配置和数据"
-    title = "卸载 NanoLink Agent"
-    confirm = "确定要卸载 NanoLink Agent 吗？(y/N)"
+    title = "卸载 NanoOps Agent"
+    confirm = "确定要卸载 NanoOps Agent 吗？(y/N)"
     aborted = "已取消"
     complete = "卸载完成！"
 }

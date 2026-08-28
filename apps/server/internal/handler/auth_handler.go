@@ -40,7 +40,7 @@ type LoginRequest struct {
 // AuthResponse represents an authentication response.
 //
 // Browser clients receive the JWT only in an HttpOnly cookie. Native clients
-// explicitly opt into a body token with X-NanoLink-Client: native and must not
+// explicitly opt into a body token with X-NanoOps-Client: native and must not
 // send a browser Origin header. Origin is a forbidden browser-controlled header,
 // so injected JavaScript cannot suppress it to extract a reusable bearer token.
 type AuthResponse struct {
@@ -48,13 +48,19 @@ type AuthResponse struct {
 	Token string       `json:"token,omitempty"`
 }
 
-const NativeClientHeader = "X-NanoLink-Client"
+const (
+	NativeClientHeader       = "X-NanoOps-Client"
+	LegacyNativeClientHeader = "X-NanoLink-Client"
+)
 
 func responseToken(c *gin.Context, token string) string {
 	if strings.TrimSpace(c.GetHeader("Origin")) != "" {
 		return ""
 	}
 	clientKind := strings.TrimSpace(c.GetHeader(NativeClientHeader))
+	if clientKind == "" {
+		clientKind = strings.TrimSpace(c.GetHeader(LegacyNativeClientHeader))
+	}
 	if strings.EqualFold(clientKind, "native") || strings.EqualFold(clientKind, "cli") || strings.EqualFold(clientKind, "sdk") {
 		return token
 	}

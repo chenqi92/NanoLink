@@ -1,4 +1,4 @@
-//! Internationalization (i18n) module for NanoLink Agent
+//! Internationalization (i18n) module for NanoOps Agent
 //!
 //! Provides bilingual support (English/Chinese) with automatic language detection.
 
@@ -80,8 +80,8 @@ pub fn resolve_language(config_path: Option<&Path>) -> Lang {
 pub fn t(key: &str, lang: Lang) -> &'static str {
     match (key, lang) {
         // Main menu
-        ("menu.title", Lang::Zh) => "NanoLink Agent",
-        ("menu.title", Lang::En) => "NanoLink Agent",
+        ("menu.title", Lang::Zh) => "NanoOps Agent",
+        ("menu.title", Lang::En) => "NanoOps Agent",
         ("menu.select_action", Lang::Zh) => "请选择操作",
         ("menu.select_action", Lang::En) => "Select an action",
         ("menu.start_agent", Lang::Zh) => "启动 Agent",
@@ -536,8 +536,8 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("logs.lines_count", Lang::En) => "Lines to show",
         ("logs.showing_minutes", Lang::Zh) => "（显示最近 {} 分钟的日志）",
         ("logs.showing_minutes", Lang::En) => "(Showing logs from the last {} minutes)",
-        ("logs.event_viewer", Lang::Zh) => "请在事件查看器中查看 NanoLink Agent 日志",
-        ("logs.event_viewer", Lang::En) => "Check Event Viewer for NanoLink Agent logs",
+        ("logs.event_viewer", Lang::Zh) => "请在事件查看器中查看 NanoOps Agent 日志",
+        ("logs.event_viewer", Lang::En) => "Check Event Viewer for NanoOps Agent logs",
 
         // Export config
         ("export.title", Lang::Zh) => "导出配置",
@@ -584,12 +584,12 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("config.management_required", Lang::En) => "Please enable Management API first",
 
         // Graphical configuration wizard
-        ("gui.title", Lang::Zh) => "NanoLink Agent 配置",
-        ("gui.title", Lang::En) => "NanoLink Agent Configuration",
+        ("gui.title", Lang::Zh) => "NanoOps Agent 配置",
+        ("gui.title", Lang::En) => "NanoOps Agent Configuration",
         ("gui.version", Lang::Zh) => "版本",
         ("gui.version", Lang::En) => "Version",
-        ("gui.welcome", Lang::Zh) => "欢迎使用 NanoLink Agent！",
-        ("gui.welcome", Lang::En) => "Welcome to NanoLink Agent!",
+        ("gui.welcome", Lang::Zh) => "欢迎使用 NanoOps Agent！",
+        ("gui.welcome", Lang::En) => "Welcome to NanoOps Agent!",
         ("gui.no_config", Lang::Zh) => "未找到配置文件。",
         ("gui.no_config", Lang::En) => "No configuration file was found.",
         ("gui.help", Lang::Zh) => "此向导将帮助你完成 Agent 配置。",
@@ -598,8 +598,8 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("gui.start_config", Lang::En) => "Start Configuration",
         ("gui.server_config", Lang::Zh) => "服务器配置",
         ("gui.server_config", Lang::En) => "Server Configuration",
-        ("gui.enter_details", Lang::Zh) => "请输入 NanoLink 服务器信息：",
-        ("gui.enter_details", Lang::En) => "Enter the NanoLink server details:",
+        ("gui.enter_details", Lang::Zh) => "请输入 NanoOps 服务器信息：",
+        ("gui.enter_details", Lang::En) => "Enter the NanoOps server details:",
         ("gui.server_host", Lang::Zh) => "服务器地址：",
         ("gui.server_host", Lang::En) => "Server Host:",
         ("gui.server_host_hint", Lang::Zh) => "例如 192.168.1.100 或 server.example.com",
@@ -634,8 +634,8 @@ pub fn t(key: &str, lang: Lang) -> &'static str {
         ("gui.service_hint", Lang::En) => "Or install as a Windows Service:",
         ("gui.close", Lang::Zh) => "关闭",
         ("gui.close", Lang::En) => "Close",
-        ("gui.window_title", Lang::Zh) => "NanoLink Agent - 配置向导",
-        ("gui.window_title", Lang::En) => "NanoLink Agent - Configuration Wizard",
+        ("gui.window_title", Lang::Zh) => "NanoOps Agent - 配置向导",
+        ("gui.window_title", Lang::En) => "NanoOps Agent - Configuration Wizard",
         ("gui.error.host_required", Lang::Zh) => "服务器地址不能为空",
         ("gui.error.host_required", Lang::En) => "Server host is required",
         ("gui.error.port_required", Lang::Zh) => "端口不能为空",

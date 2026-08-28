@@ -1,4 +1,4 @@
-//! Configuration wizard for NanoLink Agent
+//! Configuration wizard for NanoOps Agent
 
 use crate::config::{Config, ServerConfig};
 use crate::i18n::{Lang, t};

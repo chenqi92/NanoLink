@@ -1,4 +1,4 @@
 "CFBundleDisplayName" = "NanoOps";
 "NSCameraUsageDescription" = "NanoOps uses the camera only when you choose to scan a pairing QR code from the web console.";
 "NSFaceIDUsageDescription" = "NanoOps uses Face ID to protect saved server connections and operational data.";
-"NSLocalNetworkUsageDescription" = "NanoOps connects to NanoLink servers and managed devices on your local network.";
+"NSLocalNetworkUsageDescription" = "NanoOps connects to NanoOps servers and managed devices on your local network.";

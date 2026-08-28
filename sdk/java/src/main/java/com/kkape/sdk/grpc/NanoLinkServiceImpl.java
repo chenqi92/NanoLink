@@ -20,7 +20,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * gRPC service implementation for NanoLink agent communication.
+ * gRPC service implementation for NanoOps agent communication.
  * Handles authentication, metrics streaming, and command execution.
  */
 public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImplBase {
@@ -42,7 +42,7 @@ public class NanoLinkServiceImpl extends NanoLinkServiceGrpc.NanoLinkServiceImpl
     /**
      * Constructor with optional authentication requirement.
      *
-     * @param server               The NanoLink server instance
+     * @param server               The NanoOps server instance
      * @param tokenValidator       Token validator for authentication
      * @param requireAuthentication If true, rejects unauthenticated stream connections
      */

@@ -33,10 +33,10 @@ parameters:
     i18n:
       en-US:
         name: Server address
-        description: NanoLink server hostname or IP address
+        description: NanoOps server hostname or IP address
       zh-CN:
         name: 服务端地址
-        description: NanoLink 服务端域名或 IP 地址
+        description: NanoOps 服务端域名或 IP 地址
   - key: NANOLINK_SERVER_PORT
     type: number
     required: true
@@ -44,10 +44,10 @@ parameters:
     i18n:
       en-US:
         name: gRPC port
-        description: NanoLink gRPC port, normally 39100
+        description: NanoOps gRPC port, normally 39100
       zh-CN:
         name: gRPC 端口
-        description: NanoLink gRPC 端口，通常为 39100
+        description: NanoOps gRPC 端口，通常为 39100
   - key: NANOLINK_SERVER_TOKEN
     type: password
     required: true
@@ -55,10 +55,10 @@ parameters:
     i18n:
       en-US:
         name: Agent token
-        description: Authentication token issued by the NanoLink server
+        description: Authentication token issued by the NanoOps server
       zh-CN:
         name: Agent 认证令牌
-        description: 由 NanoLink 服务端签发的认证令牌
+        description: 由 NanoOps 服务端签发的认证令牌
   - key: NANOLINK_TLS_ENABLED
     type: string
     required: false
@@ -77,22 +77,22 @@ parameters:
     i18n:
       en-US:
         name: Device name
-        description: Optional name shown in NanoLink
+        description: Optional name shown in NanoOps
       zh-CN:
         name: 设备名称
-        description: 可选，显示在 NanoLink 中的设备名称
+        description: 可选，显示在 NanoOps 中的设备名称
 i18n:
   en-US:
-    name: NanoLink Agent
+    name: NanoOps Agent
     description: Reports NAS metrics and answers safe inventory queries in remote read-only mode. Shell, file/log access, configuration changes, service control, updates, and deployments are blocked.
-    author: NanoLink Team
+    author: NanoOps Team
     help: https://github.com/chenqi92/NanoLink
-    publisher: NanoLink Team
+    publisher: NanoOps Team
     publisher_link: https://github.com/chenqi92/NanoLink
   zh-CN:
-    name: NanoLink Agent
+    name: NanoOps Agent
     description: 以远程只读模式采集 NAS 指标并响应安全清单查询，始终拒绝 Shell、文件与日志读取、配置修改、服务控制、更新和部署。
-    author: NanoLink Team
+    author: NanoOps Team
     help: https://github.com/chenqi92/NanoLink
-    publisher: NanoLink Team
+    publisher: NanoOps Team
     publisher_link: https://github.com/chenqi92/NanoLink

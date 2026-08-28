@@ -1,6 +1,6 @@
 [
   {
-    "stepTitle": "NanoLink Agent 设置",
+    "stepTitle": "NanoOps Agent 设置",
     "items": [
       {
         "type": "text",
@@ -48,7 +48,7 @@
       },
       {
         "type": "tips",
-        "helpText": "保存后请在应用中心重启 NanoLink Agent。"
+        "helpText": "保存后请在应用中心重启 NanoOps Agent。"
       }
     ]
   }

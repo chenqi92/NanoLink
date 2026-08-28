@@ -303,7 +303,7 @@ func main() {
 	// Initialize metrics service
 	metricsService := NewMetricsService()
 
-	// Initialize NanoLink server
+	// Initialize NanoOps server
 	// GrpcPort: for agent gRPC connections (default: 39100)
 	server := nanolink.NewServer(nanolink.Config{
 		GrpcPort: 39100,
@@ -344,11 +344,11 @@ func main() {
 		metricsService.ProcessPeriodic(periodic)
 	})
 
-	// Start NanoLink server in background
+	// Start NanoOps server in background
 	go func() {
-		log.Printf("NanoLink Server starting - gRPC port 39100")
+		log.Printf("NanoOps Server starting - gRPC port 39100")
 		if err := server.Start(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start NanoLink server: %v", err)
+			log.Fatalf("Failed to start NanoOps server: %v", err)
 		}
 	}()
 

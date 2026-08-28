@@ -1,6 +1,6 @@
-//! Connection management for NanoLink Agent
+//! Connection management for NanoOps Agent
 //!
-//! Manages gRPC connections to NanoLink servers with automatic reconnection.
+//! Manages gRPC connections to NanoOps servers with automatic reconnection.
 
 pub mod grpc;
 mod handler;

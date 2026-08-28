@@ -6,7 +6,7 @@
       "icon": "images/icon_{0}.png",
       "port": "29091",
       "protocol": "http",
-      "title": "NanoLink Agent",
+      "title": "NanoOps Agent",
       "type": "url",
       "url": "/"
     }

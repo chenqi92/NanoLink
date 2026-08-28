@@ -7,10 +7,10 @@ import java.util.function.Function;
 import com.google.gson.*;
 
 /**
- * MCP (Model Context Protocol) Server wrapper for NanoLink SDK.
+ * MCP (Model Context Protocol) Server wrapper for NanoOps SDK.
  * 
  * Enables AI/LLM applications like Claude Desktop to interact with
- * NanoLink monitoring servers.
+ * NanoOps monitoring servers.
  * 
  * Example:
  * 
@@ -63,7 +63,7 @@ public class MCPServer {
     }
 
     /**
-     * Register default NanoLink tools, resources, and prompts.
+     * Register default NanoOps tools, resources, and prompts.
      */
     public void registerDefaults() {
         registerDefaultTools();

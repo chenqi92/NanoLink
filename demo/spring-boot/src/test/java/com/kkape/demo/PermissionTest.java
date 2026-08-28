@@ -8,7 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Permission level tests for NanoLink
+ * Permission level tests for NanoOps
  *
  * Permission Levels:
  * - 0 (READ_ONLY): Can view metrics, process list, service status, docker list, file tail

@@ -1,6 +1,6 @@
-# NanoLink Applications
+# NanoOps Applications
 
-Complete standalone applications for monitoring servers with NanoLink.
+Complete standalone applications for monitoring servers with NanoOps.
 
 ## Applications
 
@@ -14,7 +14,7 @@ Complete standalone applications for monitoring servers with NanoLink.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    NanoLink Applications                         │
+│                    NanoOps Applications                         │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
@@ -25,7 +25,7 @@ Complete standalone applications for monitoring servers with NanoLink.
 │           └────────────────────┴─────────────────────┘           │
 │                                │                                  │
 │                    ┌───────────▼───────────┐                     │
-│                    │   NanoLink Server     │                     │
+│                    │   NanoOps Server     │                     │
 │                    │  (Go/WebSocket/API)   │                     │
 │                    └───────────┬───────────┘                     │
 │                                │                                  │
@@ -57,9 +57,9 @@ docker run -d -p 9100:9100 -p 8080:8080 ghcr.io/chenqi92/nanolink-server:latest
 
 Download from [Releases](https://github.com/chenqi92/NanoLink/releases):
 
-- **macOS**: `NanoLink-macOS-<version>.zip`
-- **Android**: `NanoLink-Android-<version>.apk`
-- **iOS**: `NanoLink-iOS-<version>-unsigned.ipa` (unsigned, for sideloading)
+- **macOS**: `NanoOps-macOS-<version>.zip`
+- **Android**: `NanoOps-Android-<version>.apk`
+- **iOS**: `NanoOps-iOS-<version>-unsigned.ipa` (unsigned, for sideloading)
 
 ## Building
 
@@ -85,11 +85,11 @@ cd android
 ./gradlew assembleRelease
 
 # iOS / iPadOS (requires Xcode)
-xcodebuild -project ios/NanoLink.xcodeproj -scheme NanoLink \
+xcodebuild -project ios/NanoOps.xcodeproj -scheme NanoOps \
   -configuration Release -sdk iphoneos build
 
 # macOS through Mac Catalyst
-xcodebuild -project ios/NanoLink.xcodeproj -scheme NanoLink \
+xcodebuild -project ios/NanoOps.xcodeproj -scheme NanoOps \
   -configuration Release \
   -destination "platform=macOS,variant=Mac Catalyst" build
 ```

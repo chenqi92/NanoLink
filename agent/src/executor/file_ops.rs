@@ -564,7 +564,7 @@ impl FileExecutor {
                     };
                     hasher.update(&buffer[..read]);
                 }
-                let actual_hash = format!("{:x}", hasher.finalize());
+                let actual_hash = hex::encode(hasher.finalize());
                 if actual_hash != expected_hash {
                     let _ = fs::remove_file(&temp_path);
                     return Self::error_result("Upload checksum mismatch".to_string());
@@ -741,7 +741,7 @@ mod tests {
         let target = root.join("artifact.jar");
         let executor = test_executor(vec![root.to_string_lossy().into_owned()], vec![]);
         let payload = b"production-safe-chunk";
-        let checksum = format!("{:x}", Sha256::digest(payload));
+        let checksum = hex::encode(Sha256::digest(payload));
         let common = HashMap::from([
             ("upload_id".to_string(), "test-upload-1".to_string()),
             ("total_size".to_string(), payload.len().to_string()),

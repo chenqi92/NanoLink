@@ -20,7 +20,7 @@ const (
 
 // DeploymentTarget is an SSH destination reached by a connected Agent. The
 // control-plane never dials the target directly: AgentID selects the outbound
-// relay, which is useful when the NanoLink Server itself has no Internet or
+// relay, which is useful when the NanoOps Server itself has no Internet or
 // target-network access. Credential is encrypted by the server secret codec.
 type DeploymentTarget struct {
 	ID               uint      `gorm:"primarykey" json:"id"`

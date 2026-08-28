@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# NanoLink Version Bump Script
+# NanoOps Version Bump Script
 # Usage: ./bump-version.sh <new_version>
 # Example: ./bump-version.sh 0.2.0
 
@@ -88,7 +88,7 @@ main() {
 
     echo ""
     echo "=========================================="
-    echo "  NanoLink Version Bump"
+    echo "  NanoOps Version Bump"
     echo "=========================================="
     echo ""
     info "Current version: $CURRENT_VERSION"

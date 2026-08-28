@@ -19,10 +19,10 @@ use windows_service::{
 };
 
 const SERVICE_NAME: &str = "NanoLinkAgent";
-const SERVICE_DISPLAY_NAME: &str = "NanoLink Agent";
-const SERVICE_DESCRIPTION: &str = "Lightweight server monitoring agent for NanoLink";
+const SERVICE_DISPLAY_NAME: &str = "NanoOps Agent";
+const SERVICE_DESCRIPTION: &str = "Lightweight server monitoring agent for NanoOps";
 
-/// Install the NanoLink Agent as a Windows Service
+/// Install the NanoOps Agent as a Windows Service
 pub fn install_service(config_path: Option<PathBuf>) -> Result<(), String> {
     let manager = ServiceManager::local_computer(
         None::<&str>,
@@ -69,7 +69,7 @@ pub fn install_service(config_path: Option<PathBuf>) -> Result<(), String> {
     Ok(())
 }
 
-/// Uninstall the NanoLink Agent Windows Service
+/// Uninstall the NanoOps Agent Windows Service
 pub fn uninstall_service() -> Result<(), String> {
     let manager = ServiceManager::local_computer(
         None::<&str>,
@@ -331,6 +331,10 @@ fn find_config_path() -> PathBuf {
             .ok()
             .and_then(|p| p.parent().map(|p| p.join("nanolink.yaml"))),
         // ProgramData directory
+        std::env::var("ProgramData")
+            .ok()
+            .map(|p| PathBuf::from(p).join("NanoOps").join("nanolink.yaml")),
+        // Legacy NanoLink location, retained so upgrades keep their configuration.
         std::env::var("ProgramData")
             .ok()
             .map(|p| PathBuf::from(p).join("NanoLink").join("nanolink.yaml")),

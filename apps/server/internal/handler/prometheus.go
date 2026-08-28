@@ -120,9 +120,9 @@ func (c *MetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-// NewMetricsPromHandler returns an http.Handler that serves the NanoLink
+// NewMetricsPromHandler returns an http.Handler that serves the NanoOps
 // metrics in Prometheus text exposition format. It uses a dedicated registry
-// so only NanoLink gauges (not the default process/go collectors) are exposed.
+// so only NanoOps gauges (not the default process/go collectors) are exposed.
 func NewMetricsPromHandler(ms *service.MetricsService) http.Handler {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(NewMetricsCollector(ms))

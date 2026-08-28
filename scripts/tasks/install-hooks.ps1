@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Install Git hooks for NanoLink project.
+    Install Git hooks for NanoOps project.
 
 .DESCRIPTION
     This script installs the pre-commit hook that automatically removes BOM characters
@@ -19,11 +19,11 @@ $RootDir = Split-Path $ScriptDir -Parent
 $HooksDir = Join-Path $RootDir ".git\hooks"
 $HooksSrc = Join-Path $ScriptDir "hooks"
 
-Write-Host "Installing Git hooks for NanoLink..." -ForegroundColor Cyan
+Write-Host "Installing Git hooks for NanoOps..." -ForegroundColor Cyan
 
 # Check if we're in a git repository
 if (-not (Test-Path (Join-Path $RootDir ".git"))) {
-    Write-Host "Error: Not a git repository. Run this script from the NanoLink root directory." -ForegroundColor Red
+    Write-Host "Error: Not a git repository. Run this script from the NanoOps root directory." -ForegroundColor Red
     exit 1
 }
 

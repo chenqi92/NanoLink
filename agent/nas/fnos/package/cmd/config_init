@@ -1,5 +1,5 @@
 #!/bin/sh
 set -eu
 . "$(dirname "$0")/package-common"
-[ -x "$BIN" ] || { write_error "NanoLink Agent 可执行文件缺失"; exit 1; }
+[ -x "$BIN" ] || { write_error "NanoOps Agent 可执行文件缺失"; exit 1; }
 exit 0

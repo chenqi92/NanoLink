@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ANDROID_ROOT = REPO_ROOT / "apps" / "android"
 ANDROID_GRADLE = ANDROID_ROOT / "app" / "build.gradle.kts"
 ANDROID_SIGNING_PROPERTIES = ANDROID_ROOT / "keystore.properties"
-IOS_PROJECT = REPO_ROOT / "apps" / "ios" / "NanoLink.xcodeproj" / "project.pbxproj"
+IOS_PROJECT = REPO_ROOT / "apps" / "ios" / "NanoOps.xcodeproj" / "project.pbxproj"
 DEFAULT_OUTPUT = REPO_ROOT / "artifacts" / "mobile" / "NanoOps-Filing-Info.txt"
 
 

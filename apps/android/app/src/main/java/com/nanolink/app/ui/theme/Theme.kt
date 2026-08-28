@@ -37,7 +37,7 @@ private val LightColors = lightColorScheme(
 )
 
 @Composable
-fun NanoLinkTheme(
+fun NanoOpsTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {

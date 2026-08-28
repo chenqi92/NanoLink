@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Visual language of the NanoLink app. Ships two platform looks that share the
+/// Visual language of the NanoOps app. Ships two platform looks that share the
 /// same data and primitives:
 /// - `.ios` — Apple system colors, large titles, grouped cards.
 /// - `.md`  — Material 3 / Material You surfaces.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Proto file generation script for NanoLink
+# Proto file generation script for NanoOps
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROTO_FILE="$SCRIPT_DIR/nanolink.proto"

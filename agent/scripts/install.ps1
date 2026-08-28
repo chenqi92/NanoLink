@@ -1,10 +1,10 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    NanoLink Agent Interactive Installation Script for Windows
+    NanoOps Agent Interactive Installation Script for Windows
 
 .DESCRIPTION
-    Downloads and installs the NanoLink monitoring agent as a Windows Service.
+    Downloads and installs the NanoOps monitoring agent as a Windows Service.
     Supports both interactive and silent installation modes.
 
 .PARAMETER Silent
@@ -85,10 +85,12 @@ $ErrorActionPreference = "Stop"
 # =============================================================================
 $Script:VERSION = "0.4.10"
 $Script:ServiceName = "NanoLinkAgent"
-$Script:ServiceDisplayName = "NanoLink Monitoring Agent"
-$Script:InstallDir = "C:\Program Files\NanoLink"
-$Script:ConfigDir = "C:\ProgramData\NanoLink"
-$Script:LogDir = "C:\ProgramData\NanoLink\logs"
+$Script:ServiceDisplayName = "NanoOps Monitoring Agent"
+$Script:InstallDir = "C:\Program Files\NanoOps"
+$Script:ConfigDir = "C:\ProgramData\NanoOps"
+$Script:LogDir = "C:\ProgramData\NanoOps\logs"
+$Script:LegacyInstallDir = "C:\Program Files\NanoLink"
+$Script:LegacyConfigDir = "C:\ProgramData\NanoLink"
 $Script:BinaryName = "nanolink-agent.exe"
 $Script:GitHubRepo = "chenqi92/NanoLink"
 $Script:TlsEnabled = -not $NoTls
@@ -159,7 +161,7 @@ $Script:EnMsgs = @{
     "shell_token_prompt"  = "Shell Super Token (different from auth token)"
     
     # Download & Install
-    "downloading"         = "Downloading NanoLink Agent"
+    "downloading"         = "Downloading NanoOps Agent"
     "download_success"    = "Downloaded successfully"
     "download_failed"     = "Failed to download"
     "unsupported_arch"    = "Unsupported Windows architecture"
@@ -194,7 +196,7 @@ $Script:EnMsgs = @{
     "uninstall"           = "Uninstall"
     
     # Management menu
-    "mgmt_menu_title"     = "NanoLink Agent Management Menu"
+    "mgmt_menu_title"     = "NanoOps Agent Management Menu"
     "server_management"   = "Server Management"
     "add_server"          = "Add new server"
     "modify_server"       = "Modify server configuration"
@@ -225,14 +227,14 @@ $Script:EnMsgs = @{
     "configuration"       = "Configuration"
     
     # Uninstall
-    "uninstall_title"     = "Uninstall NanoLink Agent"
-    "uninstall_warn"      = "This will remove the NanoLink Agent from your system."
+    "uninstall_title"     = "Uninstall NanoOps Agent"
+    "uninstall_warn"      = "This will remove the NanoOps Agent from your system."
     "confirm_uninstall"   = "Are you sure you want to uninstall?"
     "uninstall_cancelled" = "Uninstall cancelled"
     "binary_removed"      = "Binary removed"
     "remove_data"         = "Remove configuration and data?"
     "data_removed"        = "Configuration and data removed"
-    "uninstall_complete"  = "NanoLink Agent has been uninstalled"
+    "uninstall_complete"  = "NanoOps Agent has been uninstalled"
     
     # Logs
     "log_file_not_found"  = "Log file not found"
@@ -304,7 +306,7 @@ $Script:EnMsgs = @{
     "tls_file_not_found"  = "TLS file not found"
 
     # Help
-    "help_title"          = "NanoLink Agent Installer for Windows"
+    "help_title"          = "NanoOps Agent Installer for Windows"
     "usage"               = "Usage"
     "install_options"     = "Installation Options"
     "silent_mode"         = "Silent mode (no prompts)"
@@ -392,7 +394,7 @@ $Script:ZhMsgs = @{
     "shell_token_prompt"  = "Shell 超级令牌（与认证令牌不同）"
     
     # Download & Install
-    "downloading"         = "正在下载 NanoLink Agent"
+    "downloading"         = "正在下载 NanoOps Agent"
     "download_success"    = "下载成功"
     "download_failed"     = "下载失败"
     "unsupported_arch"    = "不支持的 Windows 处理器架构"
@@ -427,7 +429,7 @@ $Script:ZhMsgs = @{
     "uninstall"           = "卸载"
     
     # Management menu
-    "mgmt_menu_title"     = "NanoLink Agent 管理菜单"
+    "mgmt_menu_title"     = "NanoOps Agent 管理菜单"
     "server_management"   = "服务器管理"
     "add_server"          = "添加新服务器"
     "modify_server"       = "修改服务器配置"
@@ -458,14 +460,14 @@ $Script:ZhMsgs = @{
     "configuration"       = "配置文件"
     
     # Uninstall
-    "uninstall_title"     = "卸载 NanoLink Agent"
-    "uninstall_warn"      = "这将从系统中移除 NanoLink Agent。"
+    "uninstall_title"     = "卸载 NanoOps Agent"
+    "uninstall_warn"      = "这将从系统中移除 NanoOps Agent。"
     "confirm_uninstall"   = "确定要卸载吗？"
     "uninstall_cancelled" = "卸载已取消"
     "binary_removed"      = "二进制文件已删除"
     "remove_data"         = "删除配置和数据？"
     "data_removed"        = "配置和数据已删除"
-    "uninstall_complete"  = "NanoLink Agent 已卸载"
+    "uninstall_complete"  = "NanoOps Agent 已卸载"
     
     # Logs
     "log_file_not_found"  = "日志文件未找到"
@@ -537,7 +539,7 @@ $Script:ZhMsgs = @{
     "tls_file_not_found"  = "未找到 TLS 文件"
 
     # 帮助
-    "help_title"          = "NanoLink Agent Windows 安装程序"
+    "help_title"          = "NanoOps Agent Windows 安装程序"
     "usage"               = "用法"
     "install_options"     = "安装选项"
     "silent_mode"         = "静默模式（无提示）"
@@ -863,6 +865,19 @@ function Test-ServerConnection {
 function Test-ExistingAgent {
     $binaryPath = Join-Path $Script:InstallDir $Script:BinaryName
     $configPath = Join-Path $Script:ConfigDir "nanolink.yaml"
+
+    if (-not (Test-Path $binaryPath)) {
+        $legacyBinaryPath = Join-Path $Script:LegacyInstallDir $Script:BinaryName
+        if (Test-Path $legacyBinaryPath) {
+            $binaryPath = $legacyBinaryPath
+        }
+    }
+    if (-not (Test-Path $configPath)) {
+        $legacyConfigPath = Join-Path $Script:LegacyConfigDir "nanolink.yaml"
+        if (Test-Path $legacyConfigPath) {
+            $configPath = $legacyConfigPath
+        }
+    }
     
     # Check if binary exists
     if (-not (Test-Path $binaryPath)) {
@@ -991,6 +1006,13 @@ function New-Directories {
         }
     }
 
+    $configPath = Join-Path $Script:ConfigDir "nanolink.yaml"
+    $legacyConfigPath = Join-Path $Script:LegacyConfigDir "nanolink.yaml"
+    if (-not (Test-Path $configPath) -and (Test-Path $legacyConfigPath)) {
+        Copy-Item -LiteralPath $legacyConfigPath -Destination $configPath
+        Write-Info "Migrated legacy NanoLink configuration to $configPath"
+    }
+
     Write-Success (Get-Msg "dirs_created")
 }
 
@@ -1058,7 +1080,7 @@ function New-Configuration {
     $tlsConfigSection = $tlsConfigLines -join "`r`n"
 
     $config = @"
-# NanoLink Agent Configuration
+# NanoOps Agent Configuration
 # Generated on $(Get-Date)
 
 agent:
@@ -1133,7 +1155,7 @@ function Install-Service {
         Name           = $Script:ServiceName
         BinaryPathName = "`"$binaryPath`" -c `"$configPath`""
         DisplayName    = $Script:ServiceDisplayName
-        Description    = "NanoLink lightweight server monitoring agent"
+        Description    = "NanoOps lightweight server monitoring agent"
         StartupType    = "Automatic"
     }
 

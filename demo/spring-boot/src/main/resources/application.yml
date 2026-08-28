@@ -8,7 +8,7 @@ server:
   address: ${NANOLINK_HTTP_BIND_ADDRESS:127.0.0.1}
   port: 8080
 
-# NanoLink Configuration
+# NanoOps Configuration
 nanolink:
   api:
     token: ${NANOLINK_API_TOKEN}

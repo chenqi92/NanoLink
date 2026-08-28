@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Git pre-commit hook for NanoLink
+# Git pre-commit hook for NanoOps
 # - Removes BOM characters from staged files
 # - Checks code format and runs tests
 #
@@ -47,7 +47,10 @@ if [ -n "$STAGED_FILES" ]; then
     echo "Re-staging files that were already selected for this commit."
     printf '%s\n' "$STAGED_FILES" | while IFS= read -r staged_file; do
         if [ -f "$staged_file" ]; then
-            git add -- "$staged_file"
+            # The path was already staged before cleanup. Force-add so tracked
+            # files below an ignored parent directory (for example docs/) do
+            # not make the hook fail while unrelated files remain excluded.
+            git add -f -- "$staged_file"
         fi
     done
 fi

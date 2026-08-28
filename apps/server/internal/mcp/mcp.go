@@ -1,5 +1,5 @@
-// Package mcp implements the Model Context Protocol (MCP) server for NanoLink.
-// MCP enables AI/LLM applications to interact with NanoLink for intelligent operations.
+// Package mcp implements the Model Context Protocol (MCP) server for NanoOps.
+// MCP enables AI/LLM applications to interact with NanoOps for intelligent operations.
 package mcp
 
 import (

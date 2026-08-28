@@ -1,6 +1,6 @@
-# NanoLink Docker Deployment
+# NanoOps Docker Deployment
 
-Docker configuration for deploying NanoLink Server.
+Docker configuration for deploying NanoOps Server.
 
 ## Quick Start
 
@@ -85,7 +85,7 @@ The container includes a health check:
 ## Building Native Applications
 
 Android is built from `apps/android` with Gradle. iOS, iPadOS and macOS
-(Mac Catalyst) are built from `apps/ios/NanoLink.xcodeproj` with Xcode. The
+(Mac Catalyst) are built from `apps/ios/NanoOps.xcodeproj` with Xcode. The
 release workflow packages the native APK, IPA and macOS application.
 
 ## License

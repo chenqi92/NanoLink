@@ -1,7 +1,7 @@
 {
   ".url": {
     "nanolink-agent.Agent": {
-      "title": "NanoLink Agent",
+      "title": "NanoOps Agent",
       "desc": "NAS 只读 Agent 状态",
       "icon": "images/{0}.png",
       "type": "url",

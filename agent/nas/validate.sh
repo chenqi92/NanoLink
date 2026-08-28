@@ -32,7 +32,7 @@ for file in \
   "$SCRIPT_DIR/synology/package/conf/resource" \
   "$SCRIPT_DIR/synology/package/scripts/start-stop-status" \
   "$SCRIPT_DIR/synology/payload/ui/config" \
-  "$SCRIPT_DIR/synology/payload/port_conf/NanoLinkAgent.sc" \
+  "$SCRIPT_DIR/synology/payload/port_conf/NanoOpsAgent.sc" \
   "$SCRIPT_DIR/synology/package/PACKAGE_ICON.PNG" \
   "$SCRIPT_DIR/synology/package/PACKAGE_ICON_256.PNG" \
   "$SCRIPT_DIR/ugos/project.yaml" \

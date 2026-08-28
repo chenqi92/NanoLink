@@ -109,7 +109,7 @@ fn calculate_sha256(path: &Path) -> Result<String, String> {
     }
 
     let hash = hasher.finalize();
-    Ok(format!("{hash:x}"))
+    Ok(hex::encode(hash))
 }
 
 /// Agent version from Cargo.toml
@@ -282,7 +282,7 @@ impl UpdateExecutor {
                     "--max-filesize",
                     MAX_UPDATE_METADATA_BYTES,
                     "-H",
-                    "User-Agent: NanoLink-Agent",
+                    "User-Agent: NanoOps-Agent",
                     url,
                 ])
                 .output()
@@ -307,7 +307,7 @@ impl UpdateExecutor {
                 .args([
                     "-Command",
                     &format!(
-                        "Invoke-RestMethod -Uri '{url}' -Headers @{{'User-Agent'='NanoLink-Agent'}} | ConvertTo-Json -Depth 10"
+                        "Invoke-RestMethod -Uri '{url}' -Headers @{{'User-Agent'='NanoOps-Agent'}} | ConvertTo-Json -Depth 10"
                     ),
                 ])
                 .output()
@@ -648,7 +648,7 @@ del /F "%~f0"
                     "--max-filesize",
                     MAX_UPDATE_METADATA_BYTES,
                     "-H",
-                    "User-Agent: NanoLink-Agent",
+                    "User-Agent: NanoOps-Agent",
                     api_url,
                 ])
                 .output()
@@ -673,7 +673,7 @@ del /F "%~f0"
                 .args([
                     "-Command",
                     &format!(
-                        "Invoke-RestMethod -Uri '{api_url}' -Headers @{{'User-Agent'='NanoLink-Agent'}} | ConvertTo-Json -Depth 10"
+                        "Invoke-RestMethod -Uri '{api_url}' -Headers @{{'User-Agent'='NanoOps-Agent'}} | ConvertTo-Json -Depth 10"
                     ),
                 ])
                 .output()

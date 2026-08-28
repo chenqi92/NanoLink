@@ -1,6 +1,6 @@
-# NanoLink Android
+# NanoOps Android
 
-Native Android client for NanoLink, built with Jetpack Compose.
+Native Android client for NanoOps, built with Jetpack Compose.
 
 ## Requirements
 
@@ -62,7 +62,7 @@ app/src/main/
 
 Open the project in Android Studio and run on a device or emulator (API 26+).
 
-The app connects to NanoLink servers via HTTP/HTTPS + WebSocket. Network security configuration permits cleartext traffic for local/self-hosted deployments.
+The app connects to NanoOps servers via HTTP/HTTPS + WebSocket. Network security configuration permits cleartext traffic for local/self-hosted deployments.
 
 ## Features Implemented
 
@@ -108,4 +108,4 @@ The app connects to NanoLink servers via HTTP/HTTPS + WebSocket. Network securit
 
 ## License
 
-Proprietary - NanoLink
+Proprietary - NanoOps

@@ -187,7 +187,7 @@ class ServerService(
             "POST",
             "/auth/login",
             body,
-            mapOf("Content-Type" to "application/json", "X-NanoLink-Client" to "native"),
+            mapOf("Content-Type" to "application/json", "X-NanoOps-Client" to "native"),
         ) ?: return LoginResult(error = LoginError.NETWORK, message = localized("errors.connectionFailed", "connection failed"))
         if (response.status == 200) {
             val token = runCatching { NanoJson.parseToJsonElement(response.body).jsonObject.stringOrNull("token") }.getOrNull()

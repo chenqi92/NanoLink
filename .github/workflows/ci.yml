@@ -200,6 +200,20 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install protoc
 
+      - name: Configure Perl for vendored OpenSSL (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $perl = 'C:\Strawberry\perl\bin\perl.exe'
+          if (-not (Test-Path -LiteralPath $perl)) {
+            choco install strawberryperl --yes --no-progress
+          }
+          if (-not (Test-Path -LiteralPath $perl)) {
+            throw "Strawberry Perl was not installed at $perl"
+          }
+          "OPENSSL_SRC_PERL=$perl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PERL=$perl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Cache cargo
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -311,7 +325,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.6"
           cache: true
           cache-dependency-path: sdk/go/go.sum
 
@@ -486,9 +500,9 @@ jobs:
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ needs.setup.outputs.tag }}
-          name: NanoLink ${{ needs.setup.outputs.tag }}
+          name: NanoOps ${{ needs.setup.outputs.tag }}
           body: |
-            ## NanoLink Release ${{ needs.setup.outputs.version }}
+            ## NanoOps Release ${{ needs.setup.outputs.version }}
 
             本 Release 包含 Agent、SDK 和桌面应用的所有构建产物。
 

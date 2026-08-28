@@ -1,1 +1,1 @@
-# Tests for NanoLink Python SDK
+# Tests for NanoOps Python SDK

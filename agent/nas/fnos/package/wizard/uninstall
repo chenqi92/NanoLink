@@ -1,6 +1,6 @@
 [
   {
-    "stepTitle": "卸载 NanoLink Agent",
+    "stepTitle": "卸载 NanoOps Agent",
     "items": [
       {
         "type": "radio",

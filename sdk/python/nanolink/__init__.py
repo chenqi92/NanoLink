@@ -1,5 +1,5 @@
 """
-NanoLink SDK - Python SDK for NanoLink monitoring system
+NanoOps SDK - Python SDK for NanoOps monitoring system
 
 A lightweight, cross-platform server monitoring agent system.
 """

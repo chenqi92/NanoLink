@@ -1,4 +1,4 @@
-# NanoLink
+# NanoOps
 
 [![Test](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml)
 [![Release](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml)
@@ -6,7 +6,7 @@
 
 [English](README.md) | 中文
 
-**NanoLink** 是一个轻量级、跨平台的服务器监控系统，包含 Agent、SDK、Dashboard 和独立应用程序。
+**NanoOps** 是一个轻量级、跨平台的服务器监控系统，包含 Agent、SDK、Dashboard 和独立应用程序。
 
 ## 核心组件
 
@@ -23,7 +23,7 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              目标服务器                                      │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                         NanoLink Agent (Rust)                          │  │
+│  │                         NanoOps Agent (Rust)                          │  │
 │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐          │  │
 │  │  │   CPU   │ │  Memory │ │  Disk   │ │ Network │ │   GPU   │          │  │
 │  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘          │  │
@@ -63,7 +63,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    NanoLink Applications                         │
+│                    NanoOps Applications                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
 │  │  Linux Server   │  │     Android     │  │   Apple 平台    │  │
@@ -74,7 +74,7 @@
 │           └────────────────────┴────────────────────┘           │
 │                                │                                 │
 │                     ┌──────────▼──────────┐                      │
-│                     │   NanoLink Server   │                      │
+│                     │   NanoOps Server   │                      │
 │                     │ (WebSocket/gRPC+API)│                      │
 │                     └─────────────────────┘                      │
 └─────────────────────────────────────────────────────────────────┘
@@ -178,7 +178,7 @@
 
 ### 通信协议
 
-NanoLink 使用分层通信架构：
+NanoOps 使用分层通信架构：
 
 | 协议 | 端口 | 用途 | 特点 |
 |------|------|------|------|
@@ -268,7 +268,7 @@ Server address (e.g., monitor.example.com:39100):
 | `主机:端口` | `api.example.com:39100` | 完整格式，自定义端口 |
 | `主机` | `api.example.com` | 使用默认端口 39100 |
 
-> **注意:** 这是 NanoLink Server 的 gRPC 端点，不是 Web 地址。
+> **注意:** 这是 NanoOps Server 的 gRPC 端点，不是 Web 地址。
 
 ### 第二步：认证令牌
 
@@ -367,7 +367,7 @@ Shell Super Token (different from auth token):
 
 ## Token 类型说明
 
-NanoLink 使用**多种不同类型的 Token**，用途各不相同：
+NanoOps 使用**多种不同类型的 Token**，用途各不相同：
 
 | Token 类型 | 用途 | 配置位置 |
 |------------|------|----------|
@@ -476,7 +476,7 @@ curl -fsSL URL | sudo bash -s -- --silent \
 |------|----------|
 | TLS 不匹配 | 如果服务端没有 TLS，选择 `Enable TLS? [y/N]: N` |
 | 防火墙 | 开放 39100 端口（或你的自定义端口） |
-| 服务端未运行 | 先启动 NanoLink Server |
+| 服务端未运行 | 先启动 NanoOps Server |
 | 端口错误 | 确认 gRPC 端口（默认：39100） |
 
 ### "Management API token not set" 管理 API 令牌未设置
@@ -508,7 +508,7 @@ sudo journalctl -u nanolink-agent -f
 tail -f /var/log/nanolink/agent.log
 
 # Windows (PowerShell)
-Get-Content "C:\ProgramData\NanoLink\logs\agent.log" -Wait
+Get-Content "C:\ProgramData\NanoOps\logs\agent.log" -Wait
 ```
 
 ### 交互式 CLI 模式
@@ -519,7 +519,7 @@ Get-Content "C:\ProgramData\NanoLink\logs\agent.log" -Wait
 $ nanolink-agent
 
 ╭──────────────────────────────────────╮
-│       NanoLink Agent v1.0.0          │
+│       NanoOps Agent v1.0.0          │
 ╰──────────────────────────────────────╯
 
 ? 请选择操作:
@@ -801,7 +801,7 @@ server:
   grpc_client_ca: /etc/nanolink/tls/agent-ca.crt
 ```
 
-也可用环境变量 `NANOLINK_TLS_CERT`、`NANOLINK_TLS_KEY` 和 `NANOLINK_GRPC_CLIENT_CA`。mTLS 启用后，Agent 必须同时通过客户端证书和 Token 认证；证书用于设备身份，Token 用于 NanoLink 权限。服务端私钥、Agent 私钥应只对服务账号可读，建议权限 `0600`，不要放入镜像、Git 或安装命令行。Token 可使用已有的环境变量或 `file://` 引用，避免明文写入配置。
+也可用环境变量 `NANOLINK_TLS_CERT`、`NANOLINK_TLS_KEY` 和 `NANOLINK_GRPC_CLIENT_CA`。mTLS 启用后，Agent 必须同时通过客户端证书和 Token 认证；证书用于设备身份，Token 用于 NanoOps 权限。服务端私钥、Agent 私钥应只对服务账号可读，建议权限 `0600`，不要放入镜像、Git 或安装命令行。Token 可使用已有的环境变量或 `file://` 引用，避免明文写入配置。
 
 TLS 已使用公钥/私钥完成密钥协商和身份认证，能够防止网络中间人读取或篡改应用数据与凭据；关键前提是 CA、证书域名和私钥可信。TLS 不会隐藏连接端点和流量时序。`tls_verify: false` 在 TLS 连接中会被拒绝。
 
@@ -988,7 +988,7 @@ server.requestData(agentId, DataRequestType.DATA_REQUEST_STATIC);
 
 ## MCP 集成 (Model Context Protocol)
 
-NanoLink 支持 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 规范，使其能够与 AI 应用（如 Claude Desktop、Cursor 等）无缝集成，实现智能运维能力。
+NanoOps 支持 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 规范，使其能够与 AI 应用（如 Claude Desktop、Cursor 等）无缝集成，实现智能运维能力。
 
 ### 支持的 MCP 功能
 
@@ -1077,7 +1077,7 @@ MCP 实现包含以下安全措施：
 ## 项目结构
 
 ```
-NanoLink/
+NanoOps/
 ├── agent/                      # Rust Agent
 │   ├── src/
 │   │   ├── collector/          # 数据采集器
@@ -1117,8 +1117,8 @@ NanoLink/
 │   │   └── web/                # 嵌入式 Dashboard
 │   ├── android/                # 原生 Android 应用（Kotlin/Compose）
 │   ├── ios/                    # 原生 iOS/iPadOS/macOS 应用（SwiftUI）
-│   │   ├── NanoLink/           # Swift 源码
-│   │   └── NanoLink.xcodeproj
+│   │   ├── NanoOps/           # Swift 源码
+│   │   └── NanoOps.xcodeproj
 │   └── docker/                 # Docker 配置
 │       ├── Dockerfile
 │       ├── docker-compose.yml
@@ -1178,14 +1178,14 @@ cd apps/docker && docker-compose build
 cd apps/android && ./gradlew assembleRelease
 
 # iOS / iPadOS / macOS（需要 Xcode）
-xcodebuild -project apps/ios/NanoLink.xcodeproj -scheme NanoLink \
+xcodebuild -project apps/ios/NanoOps.xcodeproj -scheme NanoOps \
   -configuration Release -sdk iphoneos build
 ```
 
 ## 应用部署
 
 Web Dashboard 已提供仅超级管理员可见的部署中心，首版支持 Java/systemd
-服务和静态站点/Nginx。版本制品以不可变文件保存到 NanoLink Server，目标
+服务和静态站点/Nginx。版本制品以不可变文件保存到 NanoOps Server，目标
 Agent 使用短时令牌下载，完成 SHA-256 校验后通过 `current` 软链接原子切换。
 服务启动或健康检查失败时，Agent 会自动恢复上一版本。
 

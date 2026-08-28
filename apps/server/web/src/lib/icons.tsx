@@ -31,13 +31,18 @@ function Icon({ d, size = 16, fill, sw = 1.5, children, ...rest }: IconProps) {
 type IconCmp = (p: IconProps) => ReactNode
 
 export const I = {
-  brand: ({ size = 18 }: IconProps) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor" />
-      <rect x="13" y="3" width="8" height="8" rx="1.5" fill="currentColor" opacity="0.5" />
-      <rect x="3" y="13" width="8" height="8" rx="1.5" fill="currentColor" opacity="0.5" />
-      <rect x="13" y="13" width="8" height="8" rx="1.5" fill="currentColor" opacity="0.85" />
-      <circle cx="17" cy="17" r="1.5" fill="var(--bg)" />
+  brand: ({ size = 18, ...props }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" {...props}>
+      <defs>
+        <linearGradient id="nanoops-brand-gradient" x1="8" y1="48" x2="56" y2="16" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#0878ff" />
+          <stop offset="1" stopColor="#26d3f2" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="15" fill="#071733" />
+      <path d="M8.5 44c3.7-1.2 4.8-5.8 6.1-12.4 1.7-8.5 4-13.1 8-13.1 3.1 0 5.5 3.5 8.5 8.5l5.8 9.7c2.2 3.7 4.2 6.2 7.8 7.3" fill="none" stroke="url(#nanoops-brand-gradient)" strokeWidth="5.6" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="45" cy="32" r="13.5" fill="none" stroke="url(#nanoops-brand-gradient)" strokeWidth="5.6" />
+      <path d="M38.3 32h3.8l2.1-5.7 2.7 12 2.4-7 2.1.7h3.2" fill="none" stroke="url(#nanoops-brand-gradient)" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   dashboard: (p) => <Icon {...p}><rect x="2.5" y="2.5" width="4.5" height="4.5" rx=".5"/><rect x="9" y="2.5" width="4.5" height="4.5" rx=".5"/><rect x="2.5" y="9" width="4.5" height="4.5" rx=".5"/><rect x="9" y="9" width="4.5" height="4.5" rx=".5"/></Icon>,

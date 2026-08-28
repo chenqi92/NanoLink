@@ -1,14 +1,14 @@
-# NanoLink Demo Projects
+# NanoOps Demo Projects
 
-This directory contains demo projects showing how to integrate NanoLink SDK into various frameworks and languages.
+This directory contains demo projects showing how to integrate NanoOps SDK into various frameworks and languages.
 
 ## Available Demos
 
 | Demo | Language | Framework | Description |
 |------|----------|-----------|-------------|
-| [spring-boot](./spring-boot) | Java | Spring Boot 3.x | REST API server with NanoLink integration |
-| [go-gin](./go-gin) | Go | Gin | REST API server with NanoLink integration |
-| [python-fastapi](./python-fastapi) | Python | FastAPI | REST API server with NanoLink integration |
+| [spring-boot](./spring-boot) | Java | Spring Boot 3.x | REST API server with NanoOps integration |
+| [go-gin](./go-gin) | Go | Gin | REST API server with NanoOps integration |
+| [python-fastapi](./python-fastapi) | Python | FastAPI | REST API server with NanoOps integration |
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ mvn spring-boot:run
 
 The demo will start:
 - REST API on `http://localhost:8080`
-- NanoLink server on port `9100`
+- NanoOps server on port `9100`
 - Dashboard on `http://localhost:9100/`
 
 ### Connect an Agent

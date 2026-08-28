@@ -1,7 +1,7 @@
 """
-NanoLink FastAPI Demo
+NanoOps FastAPI Demo
 
-This demo shows how to integrate NanoLink SDK with FastAPI to create a
+This demo shows how to integrate NanoOps SDK with FastAPI to create a
 monitoring server that receives metrics from agents.
 """
 
@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-# Import NanoLink SDK (use local path for development)
+# Import NanoOps SDK (use local path for development)
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "sdk" / "python"))
@@ -328,7 +328,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler"""
     global nanolink_server
 
-    # Initialize NanoLink server
+    # Initialize NanoOps server
     agent_token = require_secret_env("NANOLINK_AGENT_TOKEN")
     require_secret_env("NANOLINK_API_TOKEN")
 
@@ -372,20 +372,20 @@ async def lifespan(app: FastAPI):
     async def on_periodic(periodic: PeriodicData):
         metrics_service.process_periodic(periodic)
 
-    # Start NanoLink server in background
-    logger.info("Starting NanoLink Server - gRPC port 39100")
+    # Start NanoOps server in background
+    logger.info("Starting NanoOps Server - gRPC port 39100")
     await nanolink_server.start()
 
     yield
 
     # Shutdown
-    logger.info("Stopping NanoLink Server...")
+    logger.info("Stopping NanoOps Server...")
     await nanolink_server.stop()
 
 
 app = FastAPI(
-    title="NanoLink FastAPI Demo",
-    description="Demo server showing NanoLink SDK integration with FastAPI",
+    title="NanoOps FastAPI Demo",
+    description="Demo server showing NanoOps SDK integration with FastAPI",
     version="0.1.0",
     lifespan=lifespan
 )
@@ -457,7 +457,7 @@ async def health():
 async def restart_service(hostname: str, request: ServiceRequest):
     """Restart a service on an agent"""
     if nanolink_server is None:
-        raise HTTPException(status_code=500, detail="NanoLink server not initialized")
+        raise HTTPException(status_code=500, detail="NanoOps server not initialized")
 
     agent = nanolink_server.get_agent_by_hostname(hostname)
     if agent is None:
@@ -479,7 +479,7 @@ async def restart_service(hostname: str, request: ServiceRequest):
 async def kill_process(hostname: str, request: ProcessRequest):
     """Kill a process on an agent"""
     if nanolink_server is None:
-        raise HTTPException(status_code=500, detail="NanoLink server not initialized")
+        raise HTTPException(status_code=500, detail="NanoOps server not initialized")
 
     agent = nanolink_server.get_agent_by_hostname(hostname)
     if agent is None:
@@ -502,7 +502,7 @@ async def kill_process(hostname: str, request: ProcessRequest):
 async def restart_container(hostname: str, request: DockerRequest):
     """Restart a Docker container on an agent"""
     if nanolink_server is None:
-        raise HTTPException(status_code=500, detail="NanoLink server not initialized")
+        raise HTTPException(status_code=500, detail="NanoOps server not initialized")
 
     agent = nanolink_server.get_agent_by_hostname(hostname)
     if agent is None:

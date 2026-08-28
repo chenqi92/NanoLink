@@ -1,5 +1,5 @@
 {
-  "_comment": "Canonical command -> required permission-level matrix, single source of truth for all NanoLink SDKs (Python, Go, Java). Levels: 0=READ_ONLY, 1=BASIC_WRITE, 2=SERVICE_CONTROL, 3=SYSTEM_ADMIN. Unknown/unspecified commands are fail-closed at SYSTEM_ADMIN (3).",
+  "_comment": "Canonical command -> required permission-level matrix, single source of truth for all NanoOps SDKs (Python, Go, Java). Levels: 0=READ_ONLY, 1=BASIC_WRITE, 2=SERVICE_CONTROL, 3=SYSTEM_ADMIN. Unknown/unspecified commands are fail-closed at SYSTEM_ADMIN (3).",
   "levels": {
     "READ_ONLY": 0,
     "BASIC_WRITE": 1,

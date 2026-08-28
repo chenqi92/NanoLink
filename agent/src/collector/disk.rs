@@ -614,8 +614,8 @@ impl DiskCollector {
             "/var/lib/docker/",     // Docker volumes/overlays
             "/var/lib/containers/", // Podman containers
             "/var/lib/kubelet/",    // Kubernetes volumes
-            "/var/lib/nanolink",    // NanoLink data directory
-            "/var/log/nanolink",    // NanoLink log directory
+            "/var/lib/nanolink",    // NanoOps data directory
+            "/var/log/nanolink",    // NanoOps log directory
             "/run/",                // Runtime data
             "/dev/",                // Device files (except /dev/shm which has tmpfs)
             "/sys/",                // Sysfs virtual filesystem

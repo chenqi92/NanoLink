@@ -1,12 +1,12 @@
-# NanoLink Desktop UI & Interaction Design
+# NanoOps Desktop UI & Interaction Design
 
 
 ## Visual Design Concepts
 
-![Desktop Main](/Volumes/od/NanoLink/docs/assets/desktop_main.png)
+![Desktop Main](/Volumes/od/NanoOps/docs/assets/desktop_main.png)
 *Desktop Main Command Center concept with Master-Detail layout.*
 
-![Desktop Terminal](/Volumes/od/NanoLink/docs/assets/desktop_terminal.png)
+![Desktop Terminal](/Volumes/od/NanoOps/docs/assets/desktop_terminal.png)
 *Desktop multi-tasking view with integrated terminal and multi-agent tabs.*
 
 ## Server Connection & Navigation

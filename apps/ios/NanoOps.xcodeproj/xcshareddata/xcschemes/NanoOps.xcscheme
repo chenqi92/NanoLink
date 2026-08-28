@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1A0000000000000000000005"
-               BuildableName = "NanoLink.app"
-               BlueprintName = "NanoLink"
-               ReferencedContainer = "container:NanoLink.xcodeproj">
+               BuildableName = "NanoOps.app"
+               BlueprintName = "NanoOps"
+               ReferencedContainer = "container:NanoOps.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -29,9 +29,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1B0000000000000000000005"
-               BuildableName = "NanoLinkTests.xctest"
-               BlueprintName = "NanoLinkTests"
-               ReferencedContainer = "container:NanoLink.xcodeproj">
+               BuildableName = "NanoOpsTests.xctest"
+               BlueprintName = "NanoOpsTests"
+               ReferencedContainer = "container:NanoOps.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -48,9 +48,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1B0000000000000000000005"
-               BuildableName = "NanoLinkTests.xctest"
-               BlueprintName = "NanoLinkTests"
-               ReferencedContainer = "container:NanoLink.xcodeproj">
+               BuildableName = "NanoOpsTests.xctest"
+               BlueprintName = "NanoOpsTests"
+               ReferencedContainer = "container:NanoOps.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -70,9 +70,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A0000000000000000000005"
-            BuildableName = "NanoLink.app"
-            BlueprintName = "NanoLink"
-            ReferencedContainer = "container:NanoLink.xcodeproj">
+            BuildableName = "NanoOps.app"
+            BlueprintName = "NanoOps"
+            ReferencedContainer = "container:NanoOps.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -87,9 +87,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A0000000000000000000005"
-            BuildableName = "NanoLink.app"
-            BlueprintName = "NanoLink"
-            ReferencedContainer = "container:NanoLink.xcodeproj">
+            BuildableName = "NanoOps.app"
+            BlueprintName = "NanoOps"
+            ReferencedContainer = "container:NanoOps.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

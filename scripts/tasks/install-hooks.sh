@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Install Git hooks for NanoLink project
+# Install Git hooks for NanoOps project
 #
 # This script installs the pre-commit hook that automatically removes BOM characters.
 #
@@ -16,11 +16,11 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 HOOKS_DIR="$ROOT_DIR/.git/hooks"
 HOOKS_SRC="$SCRIPT_DIR/hooks"
 
-echo "Installing Git hooks for NanoLink..."
+echo "Installing Git hooks for NanoOps..."
 
 # Check if we're in a git repository
 if [ ! -d "$ROOT_DIR/.git" ]; then
-    echo "Error: Not a git repository. Run this script from the NanoLink root directory."
+    echo "Error: Not a git repository. Run this script from the NanoOps root directory."
     exit 1
 fi
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# NanoLink Agent Uninstallation Script
+# NanoOps Agent Uninstallation Script
 # Supports: Linux (systemd), macOS (launchd)
 #
 
@@ -59,9 +59,9 @@ msg() {
         ["logs_removed"]="Logs removed"
         ["data_removed"]="Data removed"
         ["data_preserved"]="Configuration and data preserved"
-        ["title"]="NanoLink Agent Uninstallation"
+        ["title"]="NanoOps Agent Uninstallation"
         ["detected"]="Detected"
-        ["confirm"]="Are you sure you want to uninstall NanoLink Agent? (y/N)"
+        ["confirm"]="Are you sure you want to uninstall NanoOps Agent? (y/N)"
         ["aborted"]="Aborted"
         ["complete"]="Uninstallation Complete!"
     )
@@ -92,9 +92,9 @@ msg() {
         ["logs_removed"]="日志已删除"
         ["data_removed"]="数据已删除"
         ["data_preserved"]="已保留配置和数据"
-        ["title"]="卸载 NanoLink Agent"
+        ["title"]="卸载 NanoOps Agent"
         ["detected"]="检测到"
-        ["confirm"]="确定要卸载 NanoLink Agent 吗？(y/N)"
+        ["confirm"]="确定要卸载 NanoOps Agent 吗？(y/N)"
         ["aborted"]="已取消"
         ["complete"]="卸载完成！"
     )

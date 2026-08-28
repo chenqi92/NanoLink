@@ -353,7 +353,7 @@ impl ScriptExecutor {
         let content = fs::read(path).ok()?;
         let mut hasher = Sha256::new();
         hasher.update(&content);
-        Some(format!("{:x}", hasher.finalize()))
+        Some(hex::encode(hasher.finalize()))
     }
 
     /// Verify script signature using SHA256 checksum

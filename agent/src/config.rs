@@ -296,7 +296,7 @@ fn default_build_workspace_root() -> String {
     #[cfg(unix)]
     return "/var/lib/nanolink/builds".to_string();
     #[cfg(windows)]
-    return "C:\\ProgramData\\NanoLink\\builds".to_string();
+    return "C:\\ProgramData\\NanoOps\\builds".to_string();
 }
 
 fn default_build_max_source_size() -> u64 {
@@ -322,7 +322,7 @@ fn default_deployment_roots() -> Vec<String> {
         "/var/www/nanolink".to_string(),
     ];
     #[cfg(windows)]
-    return vec!["C:\\ProgramData\\NanoLink\\apps".to_string()];
+    return vec!["C:\\ProgramData\\NanoOps\\apps".to_string()];
 }
 
 fn default_deployment_max_artifact_size() -> u64 {
@@ -602,7 +602,7 @@ impl Default for AgentConfig {
     }
 }
 
-/// Default gRPC port for NanoLink
+/// Default gRPC port for NanoOps
 pub const DEFAULT_GRPC_PORT: u16 = 39100;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

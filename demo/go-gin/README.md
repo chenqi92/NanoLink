@@ -1,10 +1,10 @@
-# NanoLink Go Gin Demo
+# NanoOps Go Gin Demo
 
-This demo shows how to integrate NanoLink SDK with Go and Gin framework to create a monitoring server that receives metrics from agents.
+This demo shows how to integrate NanoOps SDK with Go and Gin framework to create a monitoring server that receives metrics from agents.
 
 ## Features
 
-- Receives real-time metrics from NanoLink agents
+- Receives real-time metrics from NanoOps agents
 - REST API for querying agents and metrics
 - Alert logging for high resource usage
 - Command execution on remote agents
@@ -12,7 +12,7 @@ This demo shows how to integrate NanoLink SDK with Go and Gin framework to creat
 ## Prerequisites
 
 - Go 1.21+
-- NanoLink Go SDK (local reference via go.mod replace)
+- NanoOps Go SDK (local reference via go.mod replace)
 
 ## Quick Start
 
@@ -102,7 +102,7 @@ go-gin/
 
 ## How It Works
 
-1. **NanoLink Server** starts a token-protected gRPC listener on port 39100
+1. **NanoOps Server** starts a token-protected gRPC listener on port 39100
 2. **MetricsService** stores agent info and processes incoming metrics
 3. **Gin Router** exposes REST API endpoints on port 8080
 4. When agents connect, their info is registered in the service

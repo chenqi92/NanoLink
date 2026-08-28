@@ -1,4 +1,4 @@
-# NanoLink Development Setup
+# NanoOps Development Setup
 
 ## Quick Start
 
@@ -155,7 +155,7 @@ taskkill /PID <PID> /F
 ## Project Structure
 
 ```
-NanoLink/
+NanoOps/
 ├── apps/
 │   ├── server/          # Go backend
 │   │   ├── cmd/         # Main entry point

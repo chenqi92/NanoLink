@@ -16,7 +16,7 @@ type Resource struct {
 	Handler     func(ctx context.Context, uri string) ([]byte, error)
 }
 
-// registerDefaultResources registers the default NanoLink resources
+// registerDefaultResources registers the default NanoOps resources
 func (s *Server) registerDefaultResources() {
 	// nanolink://agents - List of all connected agents
 	s.RegisterResource(&Resource{

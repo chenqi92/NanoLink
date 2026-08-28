@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
- * NanoLink gRPC Server - receives metrics from agents.
+ * NanoOps gRPC Server - receives metrics from agents.
  *
  * <p>
  * This server only handles gRPC connections from agents.
@@ -148,7 +148,7 @@ public class NanoLinkServer {
         // Start heartbeat checker
         startHeartbeatChecker();
 
-        log.info("NanoLink gRPC Server started on port {}", config.getGrpcPort());
+        log.info("NanoOps gRPC Server started on port {}", config.getGrpcPort());
     }
 
     /**
@@ -197,7 +197,7 @@ public class NanoLinkServer {
      * Stop the server
      */
     public void stop() {
-        log.info("Stopping NanoLink Server...");
+        log.info("Stopping NanoOps Server...");
 
         // Stop heartbeat checker
         if (heartbeatChecker != null) {
@@ -240,7 +240,7 @@ public class NanoLinkServer {
         agents.values().forEach(AgentConnection::close);
         agents.clear();
 
-        log.info("NanoLink Server stopped");
+        log.info("NanoOps Server stopped");
     }
 
     /**

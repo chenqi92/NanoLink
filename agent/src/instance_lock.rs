@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 pub const RESTART_WAIT_ENV: &str = "NANOLINK_RESTART_WAIT_FOR_LOCK_MS";
 pub const RUNTIME_DIR_ENV: &str = "NANOLINK_RUNTIME_DIR";
 
-/// Keeps one NanoLink Agent process per canonical configuration file.
+/// Keeps one NanoOps Agent process per canonical configuration file.
 ///
 /// By default the lock file lives next to the resolved configuration file, so
 /// aliases of the same config share one lock. Service managers can instead set
@@ -60,8 +60,8 @@ impl InstanceLock {
                 }
                 Err(TryLockError::AlreadyRunning) => {
                     bail!(
-                        "NanoLink Agent is already running for configuration {}.\n\
-                         NanoLink Agent 已在运行，请勿重复启动。\n\
+                        "NanoOps Agent is already running for configuration {}.\n\
+                         NanoOps Agent 已在运行，请勿重复启动。\n\
                          Use `nanolink-agent status` or `journalctl -fu nanolink-agent` to inspect the service.",
                         resolved_config.display()
                     );

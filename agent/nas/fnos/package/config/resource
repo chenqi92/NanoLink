@@ -1,6 +1,6 @@
 {
   "port-config": {
-    "protocol-file": "NanoLink.sc"
+    "protocol-file": "NanoOps.sc"
   },
   "systemd-unit": {}
 }

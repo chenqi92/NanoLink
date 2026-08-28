@@ -1,5 +1,5 @@
 """
-Metrics data models for NanoLink SDK
+Metrics data models for NanoOps SDK
 """
 
 from dataclasses import dataclass, field

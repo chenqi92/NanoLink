@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Development server startup script for NanoLink
+# Development server startup script for NanoOps
 # Works on macOS and Linux
 
 set -e
@@ -14,7 +14,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}Starting NanoLink Development Environment${NC}"
+echo -e "${GREEN}Starting NanoOps Development Environment${NC}"
 
 # Check if backend binary exists
 if [ ! -f "build/nanolink-server" ] && [ ! -f "build/nanolink-server.exe" ]; then
@@ -77,7 +77,7 @@ echo -e "${YELLOW}Waiting for frontend to start...${NC}"
 sleep 3
 
 echo ""
-echo -e "${GREEN}✓ NanoLink Development Environment is running!${NC}"
+echo -e "${GREEN}✓ NanoOps Development Environment is running!${NC}"
 echo ""
 echo -e "${GREEN}Frontend:${NC} http://localhost:5173/dashboard"
 echo -e "${GREEN}Backend API:${NC} http://localhost:8080/api"

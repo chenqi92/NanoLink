@@ -9,8 +9,8 @@
     <version>0.4.10</version>
     <packaging>jar</packaging>
 
-    <name>NanoLink Spring Boot Demo</name>
-    <description>Demo project showing NanoLink SDK integration with Spring Boot</description>
+    <name>NanoOps Spring Boot Demo</name>
+    <description>Demo project showing NanoOps SDK integration with Spring Boot</description>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -41,7 +41,7 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
-        <!-- NanoLink SDK -->
+        <!-- NanoOps SDK -->
         <dependency>
             <groupId>com.kkape</groupId>
             <artifactId>nanolink-sdk</artifactId>

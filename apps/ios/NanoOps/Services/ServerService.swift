@@ -328,7 +328,7 @@ struct MetricsHistory {
 
 // MARK: - ServerService
 
-/// Communicates with a NanoLink server over WebSocket (real-time) with an HTTP
+/// Communicates with a NanoOps server over WebSocket (real-time) with an HTTP
 /// polling fallback. Ports `server_service.dart`. Emits updates through closure
 /// callbacks assigned by the owning `AppStore`; callbacks are invoked on the
 /// main queue.
@@ -448,7 +448,7 @@ final class ServerService: NSObject {
     // MARK: Auth
 
     func login(_ username: String, _ password: String) async -> String? {
-        let headers = ["Content-Type": "application/json", "X-NanoLink-Client": "native"]
+        let headers = ["Content-Type": "application/json", "X-NanoOps-Client": "native"]
         guard let (data, resp) = await perform("POST", "/auth/login",
                                                body: ["username": username, "password": password],
                                                headers: headers) else { return nil }
@@ -457,7 +457,7 @@ final class ServerService: NSObject {
     }
 
     func loginDetailed(_ username: String, _ password: String) async -> LoginResult {
-        let headers = ["Content-Type": "application/json", "X-NanoLink-Client": "native"]
+        let headers = ["Content-Type": "application/json", "X-NanoOps-Client": "native"]
         guard let (data, resp) = await perform("POST", "/auth/login",
                                                body: ["username": username, "password": password],
                                                headers: headers) else {

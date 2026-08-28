@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# NanoLink Agent Interactive Installation Script
+# NanoOps Agent Interactive Installation Script
 # Supports: Linux (systemd), macOS (launchd)
 #
 # Usage:
@@ -130,7 +130,7 @@ msg() {
         ["connection_failed"]="Connection test failed"
         
         # Download & Install
-        ["downloading"]="Downloading NanoLink Agent"
+        ["downloading"]="Downloading NanoOps Agent"
         ["download_url"]="URL"
         ["download_success"]="Downloaded successfully"
         ["download_failed"]="Failed to download"
@@ -174,7 +174,7 @@ msg() {
         ["uninstall"]="Uninstall"
         
         # Management menu
-        ["mgmt_menu_title"]="NanoLink Agent Management Menu"
+        ["mgmt_menu_title"]="NanoOps Agent Management Menu"
         ["server_management"]="Server Management"
         ["add_server"]="Add new server"
         ["modify_server"]="Modify server configuration"
@@ -213,15 +213,15 @@ msg() {
         ["service_restarted"]="Service restarted"
         
         # Uninstall
-        ["uninstall_title"]="Uninstall NanoLink Agent"
-        ["uninstall_warn"]="This will remove the NanoLink Agent from your system."
+        ["uninstall_title"]="Uninstall NanoOps Agent"
+        ["uninstall_warn"]="This will remove the NanoOps Agent from your system."
         ["confirm_uninstall"]="Are you sure you want to uninstall?"
         ["uninstall_cancelled"]="Uninstall cancelled"
         ["binary_removed"]="Binary removed"
         ["remove_data"]="Remove configuration and data?"
         ["data_removed"]="Configuration and data removed"
         ["data_preserved"]="Configuration and data preserved at"
-        ["uninstall_complete"]="NanoLink Agent has been uninstalled"
+        ["uninstall_complete"]="NanoOps Agent has been uninstalled"
         
         # View logs
         ["log_file_not_found"]="Log file not found"
@@ -277,7 +277,7 @@ msg() {
         ["configuration"]="Configuration"
         
         # Help
-        ["help_title"]="NanoLink Agent Installer"
+        ["help_title"]="NanoOps Agent Installer"
         ["usage"]="Usage"
         ["install_options"]="Installation Options"
         ["silent_mode"]="Silent mode (no prompts)"
@@ -410,7 +410,7 @@ msg() {
         ["connection_failed"]="连接测试失败"
         
         # Download & Install
-        ["downloading"]="正在下载 NanoLink Agent"
+        ["downloading"]="正在下载 NanoOps Agent"
         ["download_url"]="下载地址"
         ["download_success"]="下载成功"
         ["download_failed"]="下载失败"
@@ -454,7 +454,7 @@ msg() {
         ["uninstall"]="卸载"
         
         # Management menu
-        ["mgmt_menu_title"]="NanoLink Agent 管理菜单"
+        ["mgmt_menu_title"]="NanoOps Agent 管理菜单"
         ["server_management"]="服务器管理"
         ["add_server"]="添加新服务器"
         ["modify_server"]="修改服务器配置"
@@ -493,15 +493,15 @@ msg() {
         ["service_restarted"]="服务已重启"
         
         # Uninstall
-        ["uninstall_title"]="卸载 NanoLink Agent"
-        ["uninstall_warn"]="这将从系统中移除 NanoLink Agent。"
+        ["uninstall_title"]="卸载 NanoOps Agent"
+        ["uninstall_warn"]="这将从系统中移除 NanoOps Agent。"
         ["confirm_uninstall"]="确定要卸载吗？"
         ["uninstall_cancelled"]="卸载已取消"
         ["binary_removed"]="二进制文件已删除"
         ["remove_data"]="删除配置和数据？"
         ["data_removed"]="配置和数据已删除"
         ["data_preserved"]="配置和数据已保留在"
-        ["uninstall_complete"]="NanoLink Agent 已卸载"
+        ["uninstall_complete"]="NanoOps Agent 已卸载"
         
         # View logs
         ["log_file_not_found"]="日志文件未找到"
@@ -557,7 +557,7 @@ msg() {
         ["configuration"]="配置文件"
         
         # Help
-        ["help_title"]="NanoLink Agent 安装程序"
+        ["help_title"]="NanoOps Agent 安装程序"
         ["usage"]="用法"
         ["install_options"]="安装选项"
         ["silent_mode"]="静默模式（无提示）"
@@ -1147,7 +1147,7 @@ generate_config() {
 
     # Generate new config
     cat > "$config_file" << EOF
-# NanoLink Agent Configuration
+# NanoOps Agent Configuration
 # Generated on $(date)
 
 agent:
@@ -1233,7 +1233,7 @@ install_systemd_service() {
 
     cat > /etc/systemd/system/nanolink-agent.service << 'EOF'
 [Unit]
-Description=NanoLink Monitoring Agent
+Description=NanoOps Monitoring Agent
 Documentation=https://github.com/chenqi92/NanoLink
 After=network-online.target
 Wants=network-online.target

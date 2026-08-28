@@ -1,6 +1,6 @@
-# NanoLink Server
+# NanoOps Server
 
-Web-based monitoring dashboard for NanoLink agents.
+Web-based monitoring dashboard for NanoOps agents.
 
 ## Features
 

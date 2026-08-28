@@ -1277,7 +1277,7 @@ fn verify_artifact(path: &Path, expected_size: u64, expected_hash: &str) -> Resu
         }
         hasher.update(&buffer[..read]);
     }
-    let actual = format!("{:x}", hasher.finalize());
+    let actual = hex::encode(hasher.finalize());
     if actual != expected_hash {
         return Err("Artifact SHA-256 mismatch".to_string());
     }

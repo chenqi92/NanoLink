@@ -9,14 +9,14 @@ case "${1:-}" in
       exit 0
     fi
     if [ ! -f "$CONFIG" ]; then
-      write_error "NanoLink Agent 尚未配置，请先在应用设置中填写服务端信息"
+      write_error "NanoOps Agent 尚未配置，请先在应用设置中填写服务端信息"
       exit 1
     fi
     "$BIN" nas-start --config-path "$CONFIG" >> "$LOG_FILE" 2>&1 &
     printf '%s\n' "$!" > "$PID_FILE"
     sleep 1
     if ! is_running; then
-      write_error "NanoLink Agent 启动失败，请查看 ${LOG_FILE}"
+      write_error "NanoOps Agent 启动失败，请查看 ${LOG_FILE}"
       exit 1
     fi
     ;;

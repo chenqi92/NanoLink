@@ -49,7 +49,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>NanoOps needs camera access to scan the pairing QR code from the web dashboard.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>NanoOps connects to NanoLink servers and managed devices on your local network.</string>
+	<string>NanoOps connects to NanoOps servers and managed devices on your local network.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>NanoOps uses Face ID to protect access to saved server connections and operational data.</string>
 	<key>NSAppTransportSecurity</key>

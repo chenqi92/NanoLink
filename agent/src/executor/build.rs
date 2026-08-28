@@ -1162,7 +1162,7 @@ fn sha256_file(path: &Path) -> Result<String, String> {
         }
         hasher.update(&buffer[..read]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn ensure_not_canceled(cancel: &AtomicBool) -> Result<(), String> {

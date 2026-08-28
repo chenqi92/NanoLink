@@ -9,8 +9,8 @@
     <version>0.4.10</version>
     <packaging>jar</packaging>
 
-    <name>NanoLink SDK</name>
-    <description>Java SDK for NanoLink monitoring system</description>
+    <name>NanoOps SDK</name>
+    <description>Java SDK for NanoOps monitoring system</description>
     <url>https://github.com/chenqi92/NanoLink</url>
 
     <licenses>

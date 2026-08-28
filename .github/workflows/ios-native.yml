@@ -66,8 +66,8 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild \
-            -project apps/ios/NanoLink.xcodeproj \
-            -scheme NanoLink \
+            -project apps/ios/NanoOps.xcodeproj \
+            -scheme NanoOps \
             -configuration Debug \
             -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.iphone }}" \
             -destination "platform=iOS Simulator,id=${{ steps.simulators.outputs.ipad }}" \
@@ -78,8 +78,8 @@ jobs:
       - name: Build release configuration
         run: |
           xcodebuild \
-            -project apps/ios/NanoLink.xcodeproj \
-            -scheme NanoLink \
+            -project apps/ios/NanoOps.xcodeproj \
+            -scheme NanoOps \
             -configuration Release \
             -destination "generic/platform=iOS Simulator" \
             CODE_SIGNING_ALLOWED=NO \

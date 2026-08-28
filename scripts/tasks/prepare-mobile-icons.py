@@ -21,7 +21,7 @@ IOS_ICON_DIR = (
     REPO_ROOT
     / "apps"
     / "ios"
-    / "NanoLink"
+    / "NanoOps"
     / "Assets.xcassets"
     / "AppIcon.appiconset"
 )
@@ -140,9 +140,9 @@ def main() -> None:
         source_mask, 1024, 760, "#FFFFFF", "#D9D9D9", vertical_offset=-4
     )
 
-    _save(ios_light.convert("RGB"), IOS_ICON_DIR / "NanoLink-AppIcon-1024.png")
-    _save(ios_dark, IOS_ICON_DIR / "NanoLink-AppIcon-Dark-1024.png")
-    _save(ios_tinted, IOS_ICON_DIR / "NanoLink-AppIcon-Tinted-1024.png")
+    _save(ios_light.convert("RGB"), IOS_ICON_DIR / "NanoOps-AppIcon-1024.png")
+    _save(ios_dark, IOS_ICON_DIR / "NanoOps-AppIcon-Dark-1024.png")
+    _save(ios_tinted, IOS_ICON_DIR / "NanoOps-AppIcon-Tinted-1024.png")
 
     # Android adaptive icon layers are 108 dp.  A 432 px master maps to xxxhdpi;
     # the mark stays inside the official 66 dp safe zone (264 px here).

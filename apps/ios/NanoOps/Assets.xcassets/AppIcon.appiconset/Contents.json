@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "NanoLink-AppIcon-1024.png",
+      "filename" : "NanoOps-AppIcon-1024.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "NanoLink-AppIcon-Dark-1024.png",
+      "filename" : "NanoOps-AppIcon-Dark-1024.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -25,67 +25,67 @@
           "value" : "tinted"
         }
       ],
-      "filename" : "NanoLink-AppIcon-Tinted-1024.png",
+      "filename" : "NanoOps-AppIcon-Tinted-1024.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
     },
     {
-      "filename" : "NanoLink-AppIcon-Mac-16.png",
+      "filename" : "NanoOps-AppIcon-Mac-16.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "16x16"
     },
     {
-      "filename" : "NanoLink-AppIcon-Mac-16@2x.png",
+      "filename" : "NanoOps-AppIcon-Mac-16@2x.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "16x16"
     },
     {
-      "filename" : "NanoLink-AppIcon-Mac-32.png",
+      "filename" : "NanoOps-AppIcon-Mac-32.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "32x32"
     },
     {
-      "filename" : "NanoLink-AppIcon-Mac-32@2x.png",
+      "filename" : "NanoOps-AppIcon-Mac-32@2x.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "32x32"
     },
     {
-      "filename" : "NanoLink-AppIcon-Mac-128.png",
+      "filename" : "NanoOps-AppIcon-Mac-128.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "128x128"
     },
     {
-      "filename" : "NanoLink-AppIcon-Mac-128@2x.png",
+      "filename" : "NanoOps-AppIcon-Mac-128@2x.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "128x128"
     },
     {
-      "filename" : "NanoLink-AppIcon-Mac-256.png",
+      "filename" : "NanoOps-AppIcon-Mac-256.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "256x256"
     },
     {
-      "filename" : "NanoLink-AppIcon-Mac-256@2x.png",
+      "filename" : "NanoOps-AppIcon-Mac-256@2x.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "256x256"
     },
     {
-      "filename" : "NanoLink-AppIcon-Mac-512.png",
+      "filename" : "NanoOps-AppIcon-Mac-512.png",
       "idiom" : "mac",
       "scale" : "1x",
       "size" : "512x512"
     },
     {
-      "filename" : "NanoLink-AppIcon-Mac-512@2x.png",
+      "filename" : "NanoOps-AppIcon-Mac-512@2x.png",
       "idiom" : "mac",
       "scale" : "2x",
       "size" : "512x512"

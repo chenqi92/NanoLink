@@ -505,7 +505,7 @@ func (s *NanoLinkServicer) GetAgentInfo(ctx context.Context, req *pb.AgentInfoRe
 	return &pb.AgentInfoResponse{AgentId: req.AgentId}, nil
 }
 
-// CreateGRPCServer creates a gRPC server with the NanoLink servicer.
+// CreateGRPCServer creates a gRPC server with the NanoOps servicer.
 // extraOpts (e.g. grpc.Creds for TLS) are appended to the base options.
 func CreateGRPCServer(servicer *NanoLinkServicer, extraOpts ...grpc.ServerOption) *grpc.Server {
 	opts := []grpc.ServerOption{

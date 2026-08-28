@@ -1,5 +1,5 @@
 """
-Input sanitization utilities for NanoLink Python SDK.
+Input sanitization utilities for NanoOps Python SDK.
 Prevents log injection, path traversal, and other injection attacks from malicious agents.
 """
 

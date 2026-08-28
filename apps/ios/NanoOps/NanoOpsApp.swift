@@ -3,7 +3,7 @@ import SwiftUI
 /// App entry point. Owns the global stores and injects the resolved design
 /// tokens and localization into the whole view tree.
 @main
-struct NanoLinkApp: App {
+struct NanoOpsApp: App {
     @StateObject private var store = AppStore.shared
     @StateObject private var theme = ThemeStore.shared
     @StateObject private var l10n = L10n.shared

@@ -1,5 +1,5 @@
 """
-Command models for NanoLink SDK
+Command models for NanoOps SDK
 """
 
 from dataclasses import dataclass, field

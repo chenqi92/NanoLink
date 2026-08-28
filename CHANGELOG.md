@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 #### Agent
-- Initial release of NanoLink Agent written in Rust
+- Initial release of NanoOps Agent written in Rust
 - Cross-platform support (Linux, macOS, Windows)
 - Comprehensive system monitoring:
   - CPU: usage, model, vendor, frequency, temperature, per-core stats

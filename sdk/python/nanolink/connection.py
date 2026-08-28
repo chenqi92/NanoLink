@@ -1,5 +1,5 @@
 """
-Agent connection management for NanoLink SDK
+Agent connection management for NanoOps SDK
 """
 
 import asyncio
@@ -33,7 +33,7 @@ class AgentInfo:
 
 @dataclass
 class AgentConnection:
-    """Represents a connection to a NanoLink agent (gRPC-based)"""
+    """Represents a connection to a NanoOps agent (gRPC-based)"""
     agent_id: str = ""
     hostname: str = ""
     os: str = ""

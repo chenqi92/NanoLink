@@ -1,4 +1,4 @@
-# NanoLink
+# NanoOps
 
 [![Test](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/test.yml)
 [![Release](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml/badge.svg)](https://github.com/chenqi92/NanoLink/actions/workflows/release.yml)
@@ -6,7 +6,7 @@
 
 English | [中文](README_CN.md)
 
-**NanoLink** is a lightweight, cross-platform server monitoring system that includes Agent, SDK, Dashboard, and standalone applications.
+**NanoOps** is a lightweight, cross-platform server monitoring system that includes Agent, SDK, Dashboard, and standalone applications.
 
 ## Core Components
 
@@ -23,7 +23,7 @@ English | [中文](README_CN.md)
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              Target Server                                   │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                         NanoLink Agent (Rust)                          │  │
+│  │                         NanoOps Agent (Rust)                          │  │
 │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐          │  │
 │  │  │   CPU   │ │  Memory │ │  Disk   │ │ Network │ │   GPU   │          │  │
 │  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘          │  │
@@ -63,7 +63,7 @@ English | [中文](README_CN.md)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    NanoLink Applications                         │
+│                    NanoOps Applications                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
 │  │  Linux Server   │  │     Android     │  │ Apple Platforms │  │
@@ -74,7 +74,7 @@ English | [中文](README_CN.md)
 │           └────────────────────┴────────────────────┘           │
 │                                │                                 │
 │                     ┌──────────▼──────────┐                      │
-│                     │   NanoLink Server   │                      │
+│                     │   NanoOps Server   │                      │
 │                     │ (WebSocket/gRPC+API)│                      │
 │                     └─────────────────────┘                      │
 └─────────────────────────────────────────────────────────────────┘
@@ -178,7 +178,7 @@ English | [中文](README_CN.md)
 
 ### Communication Protocols
 
-NanoLink uses a layered communication architecture:
+NanoOps uses a layered communication architecture:
 
 | Protocol | Port | Purpose | Features |
 |----------|------|---------|----------|
@@ -268,7 +268,7 @@ Server address (e.g., monitor.example.com:39100):
 | `host:port` | `api.example.com:39100` | Full format with custom port |
 | `host` | `api.example.com` | Uses default port 39100 |
 
-> **Note:** This is the gRPC endpoint of your NanoLink Server, not a web URL.
+> **Note:** This is the gRPC endpoint of your NanoOps Server, not a web URL.
 
 ### Step 2: Authentication Token
 
@@ -367,7 +367,7 @@ Shell Super Token (different from auth token):
 
 ## Token Types Explained
 
-NanoLink uses **two different types of tokens** for different purposes:
+NanoOps uses **two different types of tokens** for different purposes:
 
 | Token Type | Purpose | Where Configured |
 |------------|---------|------------------|
@@ -476,7 +476,7 @@ curl -fsSL URL | sudo bash -s -- --silent \
 |-------|----------|
 | TLS mismatch | If server has no TLS, select `Enable TLS? [y/N]: N` |
 | Firewall | Open port 39100 (or your custom port) |
-| Server not running | Start NanoLink Server first |
+| Server not running | Start NanoOps Server first |
 | Wrong port | Verify gRPC port (default: 39100) |
 
 ### "Management API token not set"
@@ -508,7 +508,7 @@ sudo journalctl -u nanolink-agent -f
 tail -f /var/log/nanolink/agent.log
 
 # Windows (PowerShell)
-Get-Content "C:\ProgramData\NanoLink\logs\agent.log" -Wait
+Get-Content "C:\ProgramData\NanoOps\logs\agent.log" -Wait
 ```
 
 ### Interactive CLI Mode
@@ -519,7 +519,7 @@ Running `nanolink-agent` without arguments enters an interactive mode with a use
 $ nanolink-agent
 
 ╭──────────────────────────────────────╮
-│       NanoLink Agent v1.0.0          │
+│       NanoOps Agent v1.0.0          │
 ╰──────────────────────────────────────╯
 
 ? Select an action:
@@ -782,7 +782,7 @@ server:
   grpc_client_ca: /etc/nanolink/tls/agent-ca.crt
 ```
 
-The equivalent environment variables are `NANOLINK_TLS_CERT`, `NANOLINK_TLS_KEY`, and `NANOLINK_GRPC_CLIENT_CA`. With mTLS enabled, an Agent must pass both client-certificate and token authentication: the certificate identifies the device and the token grants NanoLink permissions. Keep Server and Agent private keys readable only by their service accounts (mode `0600` on Linux), outside images, Git, and command lines. Existing environment-variable and `file://` token references avoid storing token values directly in YAML.
+The equivalent environment variables are `NANOLINK_TLS_CERT`, `NANOLINK_TLS_KEY`, and `NANOLINK_GRPC_CLIENT_CA`. With mTLS enabled, an Agent must pass both client-certificate and token authentication: the certificate identifies the device and the token grants NanoOps permissions. Keep Server and Agent private keys readable only by their service accounts (mode `0600` on Linux), outside images, Git, and command lines. Existing environment-variable and `file://` token references avoid storing token values directly in YAML.
 
 TLS already uses asymmetric cryptography for authentication and key agreement, protecting application data and credentials from network interception or modification when the CA, certificate name, and private keys remain trusted. Network endpoints and traffic timing are not hidden by TLS. A TLS connection with `tls_verify: false` is rejected.
 
@@ -969,7 +969,7 @@ All static info plus realtime: CPU usage/temp, memory used, disk IO, network IO,
 
 ## MCP Integration (AI/LLM)
 
-NanoLink supports the **Model Context Protocol (MCP)** for AI-driven operations. This allows tools like Claude Desktop to query metrics, diagnose issues, and automate responses.
+NanoOps supports the **Model Context Protocol (MCP)** for AI-driven operations. This allows tools like Claude Desktop to query metrics, diagnose issues, and automate responses.
 
 ### Enable MCP Server
 
@@ -1039,7 +1039,7 @@ mcp.serveStdio();
 ## Project Structure
 
 ```
-NanoLink/
+NanoOps/
 ├── agent/                      # Rust Agent
 │   ├── src/
 │   │   ├── collector/          # Data collectors
@@ -1079,8 +1079,8 @@ NanoLink/
 │   │   └── web/                # Embedded Dashboard
 │   ├── android/                # Native Android app (Kotlin/Compose)
 │   ├── ios/                    # Native iOS/iPadOS/macOS app (SwiftUI)
-│   │   ├── NanoLink/           # Swift sources
-│   │   └── NanoLink.xcodeproj
+│   │   ├── NanoOps/           # Swift sources
+│   │   └── NanoOps.xcodeproj
 │   └── docker/                 # Docker configuration
 │       ├── Dockerfile
 │       ├── docker-compose.yml
@@ -1140,7 +1140,7 @@ cd apps/docker && docker-compose build
 cd apps/android && ./gradlew assembleRelease
 
 # iOS / iPadOS / macOS (requires Xcode)
-xcodebuild -project apps/ios/NanoLink.xcodeproj -scheme NanoLink \
+xcodebuild -project apps/ios/NanoOps.xcodeproj -scheme NanoOps \
   -configuration Release -sdk iphoneos build
 ```
 
@@ -1148,7 +1148,7 @@ xcodebuild -project apps/ios/NanoLink.xcodeproj -scheme NanoLink \
 
 The web dashboard includes a super-admin deployment center for Java/systemd
 services and static/Nginx sites. Releases are stored as immutable artifacts on
-the NanoLink server, downloaded by the target agent through a short-lived token,
+the NanoOps server, downloaded by the target agent through a short-lived token,
 verified with SHA-256, and activated through a `current` symlink. A failed
 service activation or health check restores the previous release automatically.
 

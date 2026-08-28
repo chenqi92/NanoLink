@@ -1,6 +1,6 @@
 [
   {
-    "step_title": "卸载 NanoLink Agent",
+    "step_title": "卸载 NanoOps Agent",
     "items": [
       {
         "type": "singleselect",

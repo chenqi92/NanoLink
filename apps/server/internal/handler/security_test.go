@@ -97,17 +97,19 @@ func TestSecurityHeadersEnableHSTSForTLS(t *testing.T) {
 func TestResponseTokenIsUnavailableToBrowserOrigins(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, tc := range []struct {
-		name   string
-		origin string
-		want   string
+		name       string
+		headerName string
+		origin     string
+		want       string
 	}{
-		{name: "native", want: "secret"},
-		{name: "browser", origin: "https://example.test", want: ""},
+		{name: "native", headerName: NativeClientHeader, want: "secret"},
+		{name: "legacy native", headerName: LegacyNativeClientHeader, want: "secret"},
+		{name: "browser", headerName: NativeClientHeader, origin: "https://example.test", want: ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 			ctx.Request = httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
-			ctx.Request.Header.Set(NativeClientHeader, "native")
+			ctx.Request.Header.Set(tc.headerName, "native")
 			ctx.Request.Header.Set("Origin", tc.origin)
 			if got := responseToken(ctx, "secret"); got != tc.want {
 				t.Fatalf("response token = %q, want %q", got, tc.want)

@@ -1,7 +1,7 @@
 import XCTest
-@testable import NanoLink
+@testable import NanoOps
 
-final class NanoLinkCoreTests: XCTestCase {
+final class NanoOpsCoreTests: XCTestCase {
     func testJSONCoercesMixedServerPayloadTypes() {
         let json = JSON([
             "integer": "42",

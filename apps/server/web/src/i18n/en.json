@@ -258,7 +258,7 @@
     "error": "Error",
     "agentName": "Agent Name",
     "agentNamePlaceholder": "Leave empty to auto-generate",
-    "serverConnection": "NanoLink server",
+    "serverConnection": "NanoOps server",
     "serverConnectionHint": "Pre-filled from this server. Address, port, and TLS remain editable.",
     "serverDetected": "Current server connection detected",
     "serverNeedsInput": "Enter a valid server address and port",
@@ -300,7 +300,7 @@
     "installSteps": "Installation steps",
     "installStepDownload": "Download the native package matching the NAS platform and CPU architecture.",
     "installStepParameters": "Upload it in the NAS package center and enter the generated connection parameters above.",
-    "installStepOnline": "Finish installation and start the package; the node will appear in NanoLink automatically.",
+    "installStepOnline": "Finish installation and start the package; the node will appear in NanoOps automatically.",
     "importantToken": "Important: Save this token",
     "tokenWarning": "This token is required for the agent to authenticate. Make sure to add it to your server configuration.",
     "token": "Token"
@@ -1202,7 +1202,7 @@
     }
   },
   "assistant": {
-    "name": "NanoLink Assistant",
+    "name": "NanoOps Assistant",
     "subtitle": "Chat with a live, permission-filtered view of your fleet",
     "requestFailed": "Request failed",
     "chatLabel": "AI assistant conversation",
@@ -1243,7 +1243,7 @@
     "none": "None",
     "noCapabilities": "No MCP capabilities are registered.",
     "noActivity": "No MCP activity since this server process started.",
-    "mcpDisabled": "MCP serving is disabled. The catalog shows capabilities supported by this NanoLink build.",
+    "mcpDisabled": "MCP serving is disabled. The catalog shows capabilities supported by this NanoOps build.",
     "mcpScopeNote": "These capabilities are exposed to configured MCP clients. Assistant chat uses a permission-filtered fleet snapshot and does not execute MCP tools.",
     "mcpState": {
       "disabled": "Disabled",

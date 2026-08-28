@@ -29,10 +29,7 @@ function LoginVisual() {
         <circle r="34" fill="none" stroke="var(--fg)" strokeWidth="1" opacity="0.3" style={{ animation: "ring 8s linear infinite" }} />
         <circle r="48" fill="none" stroke="var(--fg)" strokeWidth="1" opacity="0.18" strokeDasharray="4 6" />
         <circle r="64" fill="none" stroke="var(--fg)" strokeWidth="1" opacity="0.1" strokeDasharray="2 8" />
-        <g>
-          <rect x="-12" y="-12" width="24" height="24" rx="3" fill="var(--fg)" />
-          <text x="0" y="4" textAnchor="middle" fontSize="11" fontFamily="var(--font-mono)" fill="var(--bg)" fontWeight="700">N</text>
-        </g>
+        {I.brand({ size: 64, x: -32, y: -32, "aria-label": "NanoOps" })}
       </g>
       <style>{`
         @keyframes dot-pulse { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.6; } }

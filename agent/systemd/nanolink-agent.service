@@ -1,5 +1,5 @@
 [Unit]
-Description=NanoLink Monitoring Agent
+Description=NanoOps Monitoring Agent
 Documentation=https://github.com/chenqi92/nanolink
 After=network-online.target
 Wants=network-online.target

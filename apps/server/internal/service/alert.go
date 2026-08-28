@@ -432,7 +432,7 @@ func (s *AlertService) TestChannel(id uint) error {
 		AgentHostname: "nanolink-server",
 		Level:         "info",
 		Title:         "Test notification",
-		Description:   "This is a test message from NanoLink.",
+		Description:   "This is a test message from NanoOps.",
 		Status:        "firing",
 		FirstSeenAt:   time.Now(),
 		LastSeenAt:    time.Now(),
@@ -534,7 +534,7 @@ func sendEmail(to string, inst database.AlertInstance) error {
 	}
 	safeTo := recipient.String()
 	safeFrom := sender.String()
-	safeSubject := sanitizeEmailHeaderValue(fmt.Sprintf("[NanoLink][%s] %s", strings.ToUpper(inst.Level), inst.Title))
+	safeSubject := sanitizeEmailHeaderValue(fmt.Sprintf("[NanoOps][%s] %s", strings.ToUpper(inst.Level), inst.Title))
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
 		safeFrom, safeTo, safeSubject, formatAlertText(inst))
 	var auth smtp.Auth

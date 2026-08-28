@@ -1,5 +1,5 @@
 """
-gRPC Service implementation for NanoLink Python SDK
+gRPC Service implementation for NanoOps Python SDK
 """
 
 import logging
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class NanoLinkServicer(nanolink_pb2_grpc.NanoLinkServiceServicer):
-    """gRPC service implementation for NanoLink agent communication"""
+    """gRPC service implementation for NanoOps agent communication"""
 
     def __init__(
         self,
@@ -915,7 +915,7 @@ def create_grpc_server(
     tls_cert_path: Optional[str] = None,
     tls_key_path: Optional[str] = None,
 ) -> grpc.Server:
-    """Create a gRPC server with the NanoLink servicer.
+    """Create a gRPC server with the NanoOps servicer.
 
     When tls_cert_path/tls_key_path are provided the listener is bound with TLS.
     Previously these settings were ignored and the server always ran plaintext,

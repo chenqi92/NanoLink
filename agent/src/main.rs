@@ -46,7 +46,7 @@ const CONFIG_SEARCH_PATHS: &[&str] = &[
 
 #[derive(Parser, Debug)]
 #[command(name = "nanolink-agent")]
-#[command(author = "NanoLink Team")]
+#[command(author = "NanoOps Team")]
 #[command(version = "0.4.10")]
 #[command(long_about = None)]
 struct Args {
@@ -100,10 +100,10 @@ enum Commands {
         /// Output configuration path
         #[arg(short, long)]
         output: PathBuf,
-        /// NanoLink server hostname or IP address
+        /// NanoOps server hostname or IP address
         #[arg(long)]
         host: String,
-        /// NanoLink gRPC port
+        /// NanoOps gRPC port
         #[arg(long, default_value = "39100")]
         port: u16,
         /// Authentication token (prefer --token-env in package scripts)
@@ -494,7 +494,7 @@ async fn handle_command(command: &Commands, args: &Args, lang: Lang) -> Result<(
                 ServiceAction::Status => {
                     let status = query_service_status()
                         .map_err(|e| anyhow::anyhow!("{}: {e}", t("service.error", lang)))?;
-                    println!("NanoLink Agent: {}", t(status, lang));
+                    println!("NanoOps Agent: {}", t(status, lang));
                 }
                 ServiceAction::Run => {
                     run_as_service().map_err(|e| anyhow::anyhow!(e))?;
@@ -599,7 +599,7 @@ async fn handle_command(command: &Commands, args: &Args, lang: Lang) -> Result<(
         }
 
         Commands::Status => {
-            println!("NanoLink Agent v{}", env!("CARGO_PKG_VERSION"));
+            println!("NanoOps Agent v{}", env!("CARGO_PKG_VERSION"));
             println!();
 
             match get_config_path(args) {
@@ -1822,7 +1822,7 @@ fn interactive_test_connection(
 /// Show status interactively
 fn interactive_show_status(args: &Args, lang: Lang) -> Result<()> {
     println!();
-    println!("NanoLink Agent v{}", env!("CARGO_PKG_VERSION"));
+    println!("NanoOps Agent v{}", env!("CARGO_PKG_VERSION"));
     println!();
 
     match get_config_path(args) {
@@ -3347,7 +3347,7 @@ fn interactive_service_management(args: &Args, lang: Lang) -> Result<()> {
                 #[cfg(target_os = "windows")]
                 {
                     match crate::platform::query_service_status() {
-                        Ok(status_key) => println!("NanoLink Agent: {}", t(status_key, lang)),
+                        Ok(status_key) => println!("NanoOps Agent: {}", t(status_key, lang)),
                         Err(e) => println!("✗ {}: {}", t("service.error", lang), e),
                     }
                 }
@@ -3436,7 +3436,7 @@ fn install_systemd_service(args: &Args, lang: Lang) -> Result<(), String> {
 
     let service_content = format!(
         r#"[Unit]
-Description=NanoLink Agent
+Description=NanoOps Agent
 After=network.target
 
 [Service]
@@ -3878,7 +3878,7 @@ async fn run_agent_with_mode(config_path: PathBuf, enforce_remote_read_only: boo
     // same canonical config exits before it can create competing gRPC streams.
     let _instance_lock = instance_lock::InstanceLock::acquire(&config_path)?;
 
-    info!("NanoLink Agent v{} starting...", env!("CARGO_PKG_VERSION"));
+    info!("NanoOps Agent v{} starting...", env!("CARGO_PKG_VERSION"));
 
     // Load configuration
     let mut config = Config::load(&config_path)?;
@@ -3966,7 +3966,7 @@ async fn run_agent_with_mode(config_path: PathBuf, enforce_remote_read_only: boo
         })
     };
 
-    info!("NanoLink Agent started successfully");
+    info!("NanoOps Agent started successfully");
     if management_enabled {
         info!("  Management API: http://localhost:{}/api", management_port);
     }
@@ -3984,7 +3984,7 @@ async fn run_agent_with_mode(config_path: PathBuf, enforce_remote_read_only: boo
         let _ = handle.await;
     }
 
-    info!("NanoLink Agent stopped");
+    info!("NanoOps Agent stopped");
     Ok(())
 }
 

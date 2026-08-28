@@ -1,7 +1,7 @@
 """
-NanoLink Server implementation for Python SDK
+NanoOps Server implementation for Python SDK
 
-This module provides a gRPC server for receiving metrics from NanoLink agents.
+This module provides a gRPC server for receiving metrics from NanoOps agents.
 WebSocket/HTTP API should be implemented separately based on your application needs.
 """
 
@@ -69,7 +69,7 @@ class ServerConfig:
 
 class NanoLinkServer:
     """
-    NanoLink Server - receives metrics from agents via gRPC
+    NanoOps Server - receives metrics from agents via gRPC
 
     This server only handles gRPC connections from agents.
     For WebSocket/HTTP API functionality, implement your own server using
@@ -173,7 +173,7 @@ class NanoLinkServer:
         # Start heartbeat checker
         self._start_heartbeat_checker()
 
-        logger.info(f"NanoLink gRPC Server started on port {self.config.grpc_port}")
+        logger.info(f"NanoOps gRPC Server started on port {self.config.grpc_port}")
 
     def _start_heartbeat_checker(self) -> None:
         """Start the heartbeat checker background task"""
@@ -287,7 +287,7 @@ class NanoLinkServer:
 
     async def stop(self) -> None:
         """Stop the server"""
-        logger.info("Stopping NanoLink Server...")
+        logger.info("Stopping NanoOps Server...")
 
         self._running = False
 
@@ -310,7 +310,7 @@ class NanoLinkServer:
             await agent.close()
         self._agents.clear()
 
-        logger.info("NanoLink Server stopped")
+        logger.info("NanoOps Server stopped")
 
     async def run_forever(self) -> None:
         """Run the server forever"""
@@ -375,7 +375,7 @@ async def create_server(
     token_validator: Optional[TokenValidator] = None,
 ) -> NanoLinkServer:
     """
-    Create and start a NanoLink gRPC server with simple configuration
+    Create and start a NanoOps gRPC server with simple configuration
 
     Args:
         grpc_port: gRPC port for agent connections (default: 39100)

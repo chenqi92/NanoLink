@@ -1,10 +1,10 @@
 appname                = nanolink-agent
 version                = 0.4.9
-display_name           = NanoLink Agent
+display_name           = NanoOps Agent
 platform               = x86
-maintainer             = NanoLink Team
+maintainer             = NanoOps Team
 maintainer_url         = https://github.com/chenqi92/NanoLink
-distributor            = NanoLink Team
+distributor            = NanoOps Team
 distributor_url        = https://github.com/chenqi92/NanoLink
 desktop_uidir          = ui
 desktop_applaunchname  = nanolink-agent.Agent
