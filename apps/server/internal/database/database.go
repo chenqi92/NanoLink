@@ -112,6 +112,12 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		&AuditLog{},
 		&AgentToken{},
 		&DeviceToken{},
+		&DeviceAuditEvent{},
+		&ServerConnectionProfile{},
+		&TerminalSession{},
+		&TerminalOutput{},
+		&BatchOperation{},
+		&BatchOperationItem{},
 		&AlertRule{},
 		&AlertInstance{},
 		&NotifyChannel{},
@@ -127,6 +133,24 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 		&BuildRun{},
 		&BuildArtifact{},
 		&LLMProfile{},
+		// IAM models
+		&Role{},
+		&RolePermission{},
+		&Policy{},
+		&RoleBinding{},
+		&PolicyBinding{},
+		&NodeCapability{},
+		&PermissionHistory{},
+		// Operations models
+		&Job{},
+		&JobExecution{},
+		&Script{},
+		&ConfigFile{},
+		&ConfigVersion{},
+		&HealthCheck{},
+		&HealthCheckResult{},
+		&Package{},
+		&Incident{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}
@@ -134,6 +158,11 @@ func Initialize(cfg Config, log *zap.SugaredLogger) error {
 	// Hash any tokens still stored in plaintext from an older schema version.
 	if err := MigratePlaintextTokens(db, log); err != nil {
 		return fmt.Errorf("failed to migrate tokens to hashed storage: %w", err)
+	}
+
+	// Initialize builtin IAM roles
+	if err := InitializeBuiltinRoles(db, log); err != nil {
+		return fmt.Errorf("failed to initialize builtin roles: %w", err)
 	}
 
 	DB = db
