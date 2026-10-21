@@ -47,8 +47,8 @@ try {
     Pop-Location
 }
 
-Write-Host "==> Running Server tests and vet with Go 1.26.6"
-$env:GOTOOLCHAIN = "go1.26.6"
+Write-Host "==> Running Server tests and vet with Go 1.26.10"
+$env:GOTOOLCHAIN = "go1.26.10"
 $env:GOCACHE = Join-Path $repoRoot ".codex-cache\go-build"
 Push-Location $serverRoot
 try {
@@ -98,7 +98,7 @@ $buildInfo = @(
     "version=$version"
     "commit=$commitLabel"
     "build_time=$buildTime"
-    "go_toolchain=1.26.6"
+    "go_toolchain=1.26.10"
     "target=linux/amd64"
     "libc=static-musl"
 ) -join "`n"

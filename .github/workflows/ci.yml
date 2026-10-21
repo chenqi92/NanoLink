@@ -285,6 +285,7 @@ jobs:
           else
             echo "success=false" >> $GITHUB_OUTPUT
             echo "❌ Agent tests failed: ${{ needs.test-agent.result }}"
+            exit 1
           fi
 
   # ============================================================
@@ -325,7 +326,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.6"
+          go-version: "1.26.10"
           cache: true
           cache-dependency-path: sdk/go/go.sum
 
@@ -414,6 +415,7 @@ jobs:
             echo "  Java: ${{ needs.test-java-sdk.result }}"
             echo "  Go: ${{ needs.test-go-sdk.result }}"
             echo "  Python: ${{ needs.test-python-sdk.result }}"
+            exit 1
           fi
 
   # ============================================================
@@ -445,6 +447,10 @@ jobs:
         working-directory: apps/server/web
         run: npm run build
 
+      - name: Run tests
+        working-directory: apps/server/web
+        run: npm test
+
   # Apps 测试汇总
   test-apps-summary:
     name: Apps Test Summary
@@ -463,6 +469,7 @@ jobs:
           else
             echo "success=false" >> $GITHUB_OUTPUT
             echo "❌ Apps tests failed: ${{ needs.test-apps.result }}"
+            exit 1
           fi
 
   # ============================================================
