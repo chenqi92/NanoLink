@@ -24,6 +24,18 @@ jobs:
         with:
           go-version: "1.26.10"
           cache-dependency-path: ${{ matrix.module }}/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: matrix.module == 'apps/server'
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/server/web/package-lock.json
+      - name: Build embedded dashboard for server checks
+        if: matrix.module == 'apps/server'
+        working-directory: apps/server/web
+        run: |
+          npm ci
+          npm run build
       - run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
       - run: go test ./...
         working-directory: ${{ matrix.module }}
