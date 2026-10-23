@@ -38,7 +38,7 @@
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <protobuf.version>4.36.2</protobuf.version>
-        <grpc.version>1.84.0</grpc.version>
+        <grpc.version>1.85.0</grpc.version>
         <slf4j.version>2.0.20</slf4j.version>
         <skip.protobuf>false</skip.protobuf>
     </properties>
@@ -82,7 +82,7 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.6.4</version>
+            <version>1.6.5</version>
             <scope>runtime</scope>
             <optional>true</optional>
         </dependency>
@@ -264,7 +264,7 @@
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>0.11.0</version>
+                        <version>0.12.0</version>
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
