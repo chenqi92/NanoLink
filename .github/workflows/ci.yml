@@ -580,6 +580,7 @@ jobs:
       (needs.test-agent-summary.outputs.success == 'true' || needs.setup.outputs.test_agent != 'true')
     permissions:
       contents: write
+      actions: read
     uses: ./.github/workflows/release.yml
     with:
       skip_tests: true
