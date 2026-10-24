@@ -813,7 +813,7 @@ TLS 已使用公钥/私钥完成密钥协商和身份认证，能够防止网络
 <dependency>
     <groupId>com.kkape</groupId>
     <artifactId>nanolink-sdk</artifactId>
-    <version>0.4.10</version>
+    <version>0.5.0</version>
 </dependency>
 ```
 

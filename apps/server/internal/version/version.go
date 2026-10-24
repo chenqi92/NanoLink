@@ -14,7 +14,7 @@ import "runtime"
 
 var (
 	// Version is the semantic version of this build, without a leading "v".
-	Version = "0.4.9"
+	Version = "0.5.0"
 	// Commit is the short git SHA this binary was built from.
 	Commit = "unknown"
 	// BuildTime is the RFC3339 UTC timestamp of the build.

@@ -794,7 +794,7 @@ TLS already uses asymmetric cryptography for authentication and key agreement, p
 <dependency>
     <groupId>com.kkape</groupId>
     <artifactId>nanolink-sdk</artifactId>
-    <version>0.4.10</version>
+    <version>0.5.0</version>
 </dependency>
 ```
 

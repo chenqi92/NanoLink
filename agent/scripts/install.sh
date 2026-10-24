@@ -13,7 +13,7 @@ set -e
 # =============================================================================
 # Configuration
 # =============================================================================
-VERSION="0.4.10"
+VERSION="0.5.0"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/nanolink"
 LOG_DIR="/var/log/nanolink"

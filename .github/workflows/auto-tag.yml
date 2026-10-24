@@ -68,14 +68,15 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'ci.yml',
-              ref: 'main',
+              ref: `v${{ steps.version.outputs.version }}`,
               inputs: {
                 test_agent: 'true',
                 test_sdk: 'true',
                 test_apps: 'true',
                 release_agent: 'true',
                 release_sdk: 'true',
-                release_apps: 'true'
+                release_apps: 'true',
+                release_server: 'true'
               }
             });
             console.log('✅ CI/CD pipeline triggered successfully');

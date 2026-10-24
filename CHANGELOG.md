@@ -12,6 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Alert rules and notifications
 - Historical data storage integration
 
+## [0.5.0] - 2026-10-24
+
+### Added
+- IAM roles, permission management, and operations jobs.
+- Agent-relayed deployments, secure terminal file transfers, and log access.
+
+### Changed
+- Rebrand applications as NanoOps while retaining existing package and protocol identifiers.
+- Update Agent, Go and Java SDK, dashboard, and CI dependencies.
+- Upgrade the dashboard to Vite 8 while preserving its previous browser targets.
+
+### Fixed
+- Preserve Python 3.9 development compatibility with version-specific test and formatting tools.
+- Build releases from the version tag and require successful tests before creating a release.
+
+### Security
+- Update the PyPI publishing action to remove compromised CA trust (GHSA-5xjx-3w67-w9x9).
+- Update Zod to fix memory exhaustion when validating oversized collections (GHSA-mrhx-c7xc-m3w5).
+- Include Agent certificate distrust and the accumulated authentication, permission, and file-operation hardening.
+
 ## [0.1.0] - 2025-12-19
 
 ### Added
@@ -92,5 +112,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [Documentation](https://github.com/chenqi92/NanoLink#readme)
 - [Issues](https://github.com/chenqi92/NanoLink/issues)
 
-[Unreleased]: https://github.com/chenqi92/NanoLink/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/chenqi92/NanoLink/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/chenqi92/NanoLink/compare/v0.4.10...v0.5.0
 [0.1.0]: https://github.com/chenqi92/NanoLink/releases/tag/v0.1.0

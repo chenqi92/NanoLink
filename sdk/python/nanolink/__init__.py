@@ -4,7 +4,7 @@ NanoOps SDK - Python SDK for NanoOps monitoring system
 A lightweight, cross-platform server monitoring agent system.
 """
 
-__version__ = "0.4.10"
+__version__ = "0.5.0"
 
 from .server import NanoLinkServer, ServerConfig
 from .connection import AgentConnection
