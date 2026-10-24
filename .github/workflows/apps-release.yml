@@ -7,6 +7,11 @@ on:
         description: "Version (e.g., 0.1.0)"
         required: true
         default: "0.1.0"
+      component:
+        description: "Component to release"
+        type: choice
+        options: [all, android, ios, macos, docker]
+        default: all
   workflow_call:
     inputs:
       skip_tests:
@@ -17,6 +22,10 @@ on:
         description: "Version to release (e.g., 0.2.8)"
         type: string
         required: false
+      component:
+        description: "Component to release"
+        type: string
+        default: all
 
 env:
   REGISTRY: ghcr.io
@@ -28,6 +37,7 @@ permissions:
 jobs:
   # Build and push Docker image for Linux
   docker:
+    if: inputs.component == 'all' || inputs.component == 'docker'
     name: Build Docker Image
     runs-on: ubuntu-latest
     permissions:
@@ -116,12 +126,15 @@ jobs:
 
   # Build native Android APK
   mobile-android:
+    if: inputs.component == 'all' || inputs.component == 'android'
     name: Build Native Android APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.version && format('refs/tags/v{0}', inputs.version) || github.ref }}
 
       - name: Setup Java
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -142,7 +155,13 @@ jobs:
           fi
           ./gradlew assembleRelease -PversionName="$VERSION"
           mkdir -p release
-          cp app/build/outputs/apk/release/app-release.apk "release/NanoOps-Android-$VERSION.apk"
+          APK_DIR="app/build/outputs/apk/release"
+          if [ -f "$APK_DIR/app-release.apk" ]; then
+            cp "$APK_DIR/app-release.apk" "release/NanoOps-Android-$VERSION.apk"
+          else
+            test -f "$APK_DIR/app-release-unsigned.apk"
+            cp "$APK_DIR/app-release-unsigned.apk" "release/NanoOps-Android-$VERSION-unsigned.apk"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -152,6 +171,7 @@ jobs:
 
   # Build native Mac Catalyst application
   desktop-macos:
+    if: inputs.component == 'all' || inputs.component == 'macos'
     name: Build Native macOS App
     runs-on: macos-15
 
@@ -200,6 +220,7 @@ jobs:
 
   # Build native iOS IPA (unsigned for sideload)
   mobile-ios:
+    if: inputs.component == 'all' || inputs.component == 'ios'
     name: Build Native iOS IPA
     runs-on: macos-15
 
@@ -263,6 +284,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download macOS artifact
+        if: needs.desktop-macos.result == 'success'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: nanolink-macos
@@ -270,6 +292,7 @@ jobs:
         continue-on-error: true
 
       - name: Download Android artifact
+        if: needs.mobile-android.result == 'success'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: nanolink-android
@@ -277,6 +300,7 @@ jobs:
         continue-on-error: true
 
       - name: Download iOS artifact
+        if: needs.mobile-ios.result == 'success'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: nanolink-ios
